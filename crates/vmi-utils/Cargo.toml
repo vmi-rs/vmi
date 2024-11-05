@@ -1,0 +1,54 @@
+[package]
+name = "vmi-utils"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Utilities for VMI"
+keywords = [
+    "vmi",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+tracing = { workspace = true }
+zerocopy = { workspace = true }
+
+isr-core = { path = "../../../isr/crates/isr-core", version = "0.0.1-rc.1", optional = true }
+isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.0.1-rc.1", optional = true }
+
+vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }
+vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.0.1-rc.1", optional = true }
+vmi-os-windows = { path = "../vmi-os-windows", version = "0.0.1-rc.1", optional = true }
+
+[dev-dependencies]
+# vmi = { path = "../..", version = "0.0.1-rc.1" }
+
+[features]
+default = [
+    "arch-amd64",
+    "os-windows",
+    "bpm",
+    "injector",
+    "interceptor",
+    "ptm"
+]
+
+arch-amd64 = ["vmi-arch-amd64"]
+os-windows = [
+    "vmi-os-windows",
+    "isr-core",
+    "isr-macros"
+]
+
+bpm = []
+injector = []
+interceptor = []
+ptm = []

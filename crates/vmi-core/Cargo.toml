@@ -1,0 +1,33 @@
+[package]
+name = "vmi-core"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Core VMI library"
+keywords = [
+    "vmi",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags = { workspace = true, features = ["serde"] }
+lru = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zerocopy = { workspace = true }
+
+isr-core = { path = "../../../isr/crates/isr-core", version = "0.0.1-rc.1" }
+isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.0.1-rc.1" }
+
+vmi-macros = { path = "../vmi-macros", version = "0.0.1-rc.1" }

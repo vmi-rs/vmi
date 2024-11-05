@@ -1,0 +1,27 @@
+[package]
+name = "vmi-arch-amd64"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "AMD64 architecture specific code for VMI"
+keywords = [
+    "vmi",
+    "amd64",
+    "x86_64",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags = { workspace = true }
+smallvec = { workspace = true }
+zerocopy = { workspace = true, features = ["derive"] }
+
+vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }

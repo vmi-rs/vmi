@@ -1,0 +1,26 @@
+[package]
+name = "vmi-macros"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Procedural macros for VMI"
+keywords = [
+    "vmi",
+]
+
+# [lints]
+# workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

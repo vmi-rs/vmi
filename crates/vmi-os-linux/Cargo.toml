@@ -1,0 +1,28 @@
+[package]
+name = "vmi-os-linux"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Linux OS specific code for VMI"
+keywords = [
+    "vmi",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+memchr = { workspace = true }
+tracing = { workspace = true }
+
+isr-core = { path = "../../../isr/crates/isr-core", version = "0.0.1-rc.1" }
+isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.0.1-rc.1" }
+
+vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.0.1-rc.1" }
+vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }

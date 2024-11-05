@@ -1,0 +1,37 @@
+[package]
+name = "vmi-os-windows"
+version = "0.0.1-rc.1"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Windows OS specific code for VMI"
+keywords = [
+    "vmi",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags = { workspace = true }
+object = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zerocopy = { workspace = true }
+
+isr-core = { path = "../../../isr/crates/isr-core", version = "0.0.1-rc.1" }
+isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.0.1-rc.1" }
+isr-dl-pdb = { path = "../../../isr/crates/isr-dl-pdb", version = "0.0.1-rc.1" } # CodeView
+
+vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.0.1-rc.1" }
+vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }
+vmi-macros = { path = "../vmi-macros", version = "0.0.1-rc.1" }
+
+[dev-dependencies]
+isr = { path = "../../../isr", version = "0.0.1-rc.1" }
+# vmi = { path = "../..", version = "0.0.1-rc.1" }

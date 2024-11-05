@@ -1,0 +1,149 @@
+[workspace]
+members = [
+    "crates/*",
+]
+resolver = "2"
+
+[workspace.package]
+authors = ["Petr Benes <w.benny@outlook.com>"]
+edition = "2021"
+license = "MIT"
+publish = true
+rust-version = "1.81.0"
+
+homepage = "https://github.com/vmi-rs/vmi"
+repository = "https://github.com/vmi-rs/vmi"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.dependencies]
+bitflags = "2"
+indexmap = "2"
+libc = "0.2"
+lru = "0.12"
+memchr = "2.7"
+object = "0.36"
+serde = "1"
+smallvec = "1"
+thiserror = "1.0"
+tracing = "0.1"
+zerocopy = "0.8"
+
+# [workspace.dev-dependencies]
+signal-hook = "0.3"
+tracing-subscriber = "0.3"
+
+[profile.release]
+debug = 1
+
+################################################################################
+# Root package
+################################################################################
+
+[package]
+name = "vmi"
+version = "0.0.1-rc.3"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "A modular and extensible library for Virtual Machine Introspection"
+keywords = [
+    "vmi",
+    "introspection",
+    "xen",
+]
+categories = ["virtualization"]
+
+[package.metadata.docs.rs]
+all-features = true
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+rustdoc-args = ["-Zunstable-options", "--generate-link-to-definition", "--cfg", "docsrs"]
+
+[dependencies]
+indexmap = { workspace = true }
+tracing = { workspace = true }
+zerocopy = { workspace = true }
+
+isr-core = { path = "../isr/crates/isr-core", version = "0.0.1-rc.1" }
+isr-macros = { path = "../isr/crates/isr-macros", version = "0.0.1-rc.1" }
+
+vmi-core = { path = "./crates/vmi-core", version = "0.0.1-rc.1" }
+vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.0.1-rc.1", optional = true }
+vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.0.1-rc.2", optional = true }
+vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.0.1-rc.1", optional = true }
+vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.0.1-rc.1", optional = true }
+vmi-utils = { path = "./crates/vmi-utils", version = "0.0.1-rc.1", optional = true }
+
+[features]
+default = [
+    "arch-amd64",
+    "driver-xen",
+    "os-linux",
+    "os-windows",
+    "utils"
+]
+
+arch-amd64 = [
+    "vmi-arch-amd64",
+    "vmi-utils?/arch-amd64"
+]
+driver-xen = ["vmi-driver-xen"]
+os-linux = ["vmi-os-linux"]
+os-windows = [
+    "vmi-os-windows",
+    "vmi-utils?/os-windows"
+]
+utils = ["vmi-utils"]
+
+[dev-dependencies]
+signal-hook = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+zerocopy = { workspace = true }
+
+isr = { path = "../isr", version = "0.0.1-rc.1" }
+
+# vmi = { path = ".", version = "0.0.1-rc.1" }
+vmi-core = { path = "./crates/vmi-core", version = "0.0.1-rc.1" }
+vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.0.1-rc.1" }
+vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.0.1-rc.2" }
+vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.0.1-rc.1" }
+vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.0.1-rc.1" }
+
+xen = { path = "../xen/xen", version = "0.0.1-rc.2", package = "libxen" }
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+doc-scrape-examples = true
+
+[[example]]
+name = "basic-process-list"
+path = "examples/basic-process-list.rs"
+doc-scrape-examples = true
+
+[[example]]
+name = "breakpoint-manager"
+path = "examples/windows-breakpoint-manager.rs"
+doc-scrape-examples = true
+
+[[example]]
+name = "windows-recipe-messagebox"
+path = "examples/windows-recipe-messagebox.rs"
+doc-scrape-examples = true
+
+[[example]]
+name = "windows-recipe-writefile"
+path = "examples/windows-recipe-writefile.rs"
+doc-scrape-examples = true
+
+[[example]]
+name = "windows-recipe-writefile-advanced"
+path = "examples/windows-recipe-writefile-advanced.rs"
+doc-scrape-examples = true

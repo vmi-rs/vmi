@@ -1,0 +1,28 @@
+[package]
+name = "vmi-driver-xen"
+version = "0.0.1-rc.2"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Xen driver for VMI"
+keywords = [
+    "vmi",
+    "xen",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+tracing = { workspace = true }
+
+vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.0.1-rc.1" }
+vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }
+
+xen = { path = "../../../xen/xen", version = "0.0.1-rc.2", package = "libxen" }
