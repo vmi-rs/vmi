@@ -182,9 +182,13 @@ where
 
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
-        vmi.monitor_enable(EventMonitor::CpuId)?;
         vmi.monitor_enable(EventMonitor::Register(ControlRegister::Cr3))?;
         vmi.monitor_enable(EventMonitor::Singlestep)?;
+
+        let bridge = recipe.bridge;
+        if bridge {
+            vmi.monitor_enable(EventMonitor::CpuId)?;
+        }
 
         Ok(Self {
             pid,
@@ -196,7 +200,7 @@ where
             offsets,
             recipe: RecipeExecutor::new(recipe),
             view,
-            bridge: false,
+            bridge,
             finished: false,
         })
     }
@@ -265,9 +269,6 @@ where
             (SYNC_REQUEST_HELLO, _) => {
                 tracing::debug!("hello request");
                 registers.rax = SYNC_MAGIC_RESPONSE;
-
-                assert!(!self.bridge, "double hello request");
-                self.bridge = true;
             }
 
             (SYNC_REQUEST_STATUS, SYNC_LAST_PHASE) => {

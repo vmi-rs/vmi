@@ -47,6 +47,9 @@ where
 
     /// User-provided data shared between steps.
     pub(super) data: T,
+
+    /// Whether the bridge support is enabled.
+    pub(super) bridge: bool,
 }
 
 impl<Driver, Os, T> Recipe<Driver, Os, T>
@@ -59,6 +62,16 @@ where
         Self {
             steps: Vec::new(),
             data,
+            bridge: false,
+        }
+    }
+
+    /// Creates a new recipe with the given data and bridge support.
+    pub fn new_with_bridge(data: T) -> Self {
+        Self {
+            steps: Vec::new(),
+            data,
+            bridge: true,
         }
     }
 
