@@ -1048,10 +1048,10 @@ where
         }
     }
 
-    /// Parses a FILE_OBJECT structure.
+    /// Parses a `FILE_OBJECT` structure.
     ///
-    /// Extracts the device object and filename from the FILE_OBJECT.
-    /// Returns a WindowsObject::File variant.
+    /// Extracts the device object and filename from the `FILE_OBJECT`.
+    /// Returns a [`WindowsObject::File`] variant.
     fn parse_file_object(
         &self,
         vmi: &VmiCore<Driver>,
@@ -1075,7 +1075,8 @@ where
     /// Parses a Windows section object.
     ///
     /// Delegates to version-specific parsing methods based on the available
-    /// offsets. Returns a WindowsObject::Section variant.
+    /// offsets. Currently supports `SECTION_OBJECT` and `SECTION` structures.
+    /// Returns a [`WindowsObject::Section`] variant.
     fn parse_section_object(
         &self,
         vmi: &VmiCore<Driver>,
@@ -2241,8 +2242,7 @@ where
             return Ok(None);
         }
 
-        // Offset = ObpInfoMaskToOffset[OBJECT_HEADER->InfoMask & (DesiredHeaderBit |
-        // (DesiredHeaderBit-1))]
+        // Offset = ObpInfoMaskToOffset[OBJECT_HEADER->InfoMask & (DesiredHeaderBit | (DesiredHeaderBit-1))]
 
         let mask = info_mask & (InfoFlags::NAME_INFO.bits() | (InfoFlags::NAME_INFO.bits() - 1));
         let mask = mask as u64;

@@ -1,3 +1,1 @@
 VMI utilities
-
-License: MIT

@@ -772,7 +772,7 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 
 [[package]]
 name = "isr"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "isr-cache"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "bincode",
  "isr-core",
@@ -803,7 +803,7 @@ dependencies = [
 
 [[package]]
 name = "isr-core"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "indexmap 2.6.0",
  "serde",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-linux"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "debpkg",
  "flate2",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-pdb"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "object",
  "reqwest",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dwarf"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "gimli",
  "indexmap 2.6.0",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "isr-pdb"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "libxen"
-version = "0.0.1-rc.2"
+version = "0.1.0"
 dependencies = [
  "bitflags",
  "libc",
@@ -951,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "libxen-sys"
-version = "0.0.1-rc.2"
+version = "0.1.0"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -1669,18 +1669,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.68"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02dd99dc800bbb97186339685293e1cc5d9df1f8fae2d0aecd9ff1c77efea892"
+checksum = "15291287e9bff1bc6f9ff3409ed9af665bec7a5fc8ac079ea96be07bca0e2668"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.68"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c61ec9a6f64d2793d8a45faba21efbe3ced62a886d44c36a009b2b519b4c7e"
+checksum = "22efd00f33f93fa62848a7cab956c3d38c8d43095efda1decfc2b3a5dc0b8972"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1890,7 +1890,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vmi"
-version = "0.0.1-rc.3"
+version = "0.1.0"
 dependencies = [
  "indexmap 2.6.0",
  "isr",
@@ -1911,7 +1911,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-arch-amd64"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-core"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "bitflags",
  "indexmap 2.6.0",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen"
-version = "0.0.1-rc.2"
+version = "0.1.0"
 dependencies = [
  "libc",
  "libxen",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-macros"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-linux"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "isr-core",
  "isr-macros",
@@ -1970,7 +1970,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-windows"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "bitflags",
  "isr",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-utils"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 dependencies = [
  "isr-core",
  "isr-macros",

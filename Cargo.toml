@@ -26,7 +26,7 @@ memchr = "2.7"
 object = "0.36"
 serde = "1"
 smallvec = "1"
-thiserror = "1.0"
+thiserror = "2.0"
 tracing = "0.1"
 zerocopy = "0.8"
 
@@ -43,7 +43,7 @@ debug = 1
 
 [package]
 name = "vmi"
-version = "0.0.1-rc.3"
+version = "0.1.0"
 license = "MIT"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -70,15 +70,15 @@ indexmap = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
-isr-core = { path = "../isr/crates/isr-core", version = "0.0.1-rc.1" }
-isr-macros = { path = "../isr/crates/isr-macros", version = "0.0.1-rc.1" }
+isr-core = { path = "../isr/crates/isr-core", version = "0.1.0" }
+isr-macros = { path = "../isr/crates/isr-macros", version = "0.1.0" }
 
-vmi-core = { path = "./crates/vmi-core", version = "0.0.1-rc.1" }
-vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.0.1-rc.1", optional = true }
-vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.0.1-rc.2", optional = true }
-vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.0.1-rc.1", optional = true }
-vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.0.1-rc.1", optional = true }
-vmi-utils = { path = "./crates/vmi-utils", version = "0.0.1-rc.1", optional = true }
+vmi-core = { path = "./crates/vmi-core", version = "0.1.0" }
+vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.1.0", optional = true }
+vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.1.0", optional = true }
+vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.1.0", optional = true }
+vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.1.0", optional = true }
+vmi-utils = { path = "./crates/vmi-utils", version = "0.1.0", optional = true }
 
 [features]
 default = [
@@ -107,16 +107,16 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 zerocopy = { workspace = true }
 
-isr = { path = "../isr", version = "0.0.1-rc.1" }
+isr = { path = "../isr", version = "0.1.0" }
 
-# vmi = { path = ".", version = "0.0.1-rc.1" }
-vmi-core = { path = "./crates/vmi-core", version = "0.0.1-rc.1" }
-vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.0.1-rc.1" }
-vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.0.1-rc.2" }
-vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.0.1-rc.1" }
-vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.0.1-rc.1" }
+# vmi = { path = ".", version = "0.1.0" }
+vmi-core = { path = "./crates/vmi-core", version = "0.1.0" }
+vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.1.0" }
+vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.1.0" }
+vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.1.0" }
+vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.1.0" }
 
-xen = { path = "../xen/xen", version = "0.0.1-rc.2", package = "libxen" }
+xen = { path = "../xen", version = "0.1.0", package = "libxen" }
 
 [[example]]
 name = "basic"

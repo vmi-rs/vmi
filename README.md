@@ -529,8 +529,6 @@ This project is licensed under the MIT license.
 [`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
 
-License: MIT
-
 [`AccessContext`]: https://docs.rs/vmi/latest/vmi/struct.AccessContext.html
 [`AddressContext`]: https://docs.rs/vmi/latest/vmi/struct.AddressContext.html
 [`Architecture`]: https://docs.rs/vmi/latest/vmi/trait.Architecture.html

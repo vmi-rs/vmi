@@ -1,6 +1,6 @@
 [package]
 name = "vmi-os-windows"
-version = "0.0.1-rc.1"
+version = "0.1.0"
 license = "MIT"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -24,14 +24,14 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
-isr-core = { path = "../../../isr/crates/isr-core", version = "0.0.1-rc.1" }
-isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.0.1-rc.1" }
-isr-dl-pdb = { path = "../../../isr/crates/isr-dl-pdb", version = "0.0.1-rc.1" } # CodeView
+isr-core = { path = "../../../isr/crates/isr-core", version = "0.1.0" }
+isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.1.0" }
+isr-dl-pdb = { path = "../../../isr/crates/isr-dl-pdb", version = "0.1.0" } # CodeView
 
-vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.0.1-rc.1" }
-vmi-core = { path = "../vmi-core", version = "0.0.1-rc.1" }
-vmi-macros = { path = "../vmi-macros", version = "0.0.1-rc.1" }
+vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.1.0" }
+vmi-core = { path = "../vmi-core", version = "0.1.0" }
+vmi-macros = { path = "../vmi-macros", version = "0.1.0" }
 
 [dev-dependencies]
-isr = { path = "../../../isr", version = "0.0.1-rc.1" }
-# vmi = { path = "../..", version = "0.0.1-rc.1" }
+isr = { path = "../../../isr", version = "0.1.0" }
+# vmi = { path = "../..", version = "0.1.0" }
