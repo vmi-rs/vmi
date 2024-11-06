@@ -10,7 +10,7 @@
 //! ```text
 //! DEBUG found MZ base_address=0xfffff80002861000
 //!  INFO profile already exists profile_path="cache/windows/ntkrnlmp.pdb/3844dbb920174967be7aa4a2c20430fa2/profile.json"
-//!  INFO Starting monitor
+//!  INFO Creating VMI session
 //!  INFO found explorer.exe pid=1248 object=0xfffffa80030e9060
 //! DEBUG injector{vcpu=0 rip=0x0000000077c62c1a}:memory_access: thread hijacked current_tid=1932
 //! DEBUG injector{vcpu=0 rip=0x0000000077c62c1a}:memory_access: recipe step index=0

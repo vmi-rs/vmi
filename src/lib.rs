@@ -147,7 +147,7 @@
 //!     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
 //!     let profile = entry.profile()?;
 //!
-//!     // Start the monitor.
+//!     // Create the VMI session.
 //!     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
 //!     let session = VmiSession::new(core, os);
 //!
@@ -494,7 +494,7 @@
 //! # ISR
 //!
 //! > *Consult the [`isr`] crate documentation for more information
-//!   and examples.*
+//! > and examples.*
 //!
 //! The framework leverages Intermediate Symbol Representation (ISR) for
 //! version-agnostic OS introspection. It avoids the need for hardcoding

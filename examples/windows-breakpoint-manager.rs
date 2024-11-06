@@ -582,8 +582,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = entry.profile()?;
 
-    // Start the monitor.
-    tracing::info!("Starting monitor");
+    // Create the VMI session.
+    tracing::info!("Creating VMI session");
     let terminate_flag = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGHUP, terminate_flag.clone())?;
     signal_hook::flag::register(signal_hook::consts::SIGINT, terminate_flag.clone())?;

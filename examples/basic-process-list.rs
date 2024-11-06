@@ -35,8 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = entry.profile()?;
 
-    // Start the monitor.
-    tracing::info!("Starting monitor");
+    // Create the VMI session.
+    tracing::info!("Creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
     let session = VmiSession::new(core, os);
 

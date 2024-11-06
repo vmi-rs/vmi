@@ -58,8 +58,8 @@ pub fn create_vmi_session() -> Result<
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = ENTRY.get_or_init(|| entry).profile()?;
 
-    // Start the monitor.
-    tracing::info!("Starting monitor");
+    // Create the VMI session.
+    tracing::info!("Creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
     Ok((VmiSession::new(core, os), profile))
 }
