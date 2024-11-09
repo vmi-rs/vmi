@@ -18,7 +18,7 @@ keywords = [
 workspace = true
 
 [dependencies]
-bitflags = { workspace = true }
+bitflags = { workspace = true, features = ["serde"] }
 object = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
