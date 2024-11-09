@@ -48,7 +48,7 @@ vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.1.0" }
 vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.1.0" }
 vmi-utils = { path = "./crates/vmi-utils", version = "0.1.0" }
 
-xen = { package = "libxen", version = "0.1.0" }
+xen = { package = "libxen", version = "0.1.1" }
 
 [profile.release]
 debug = 1
