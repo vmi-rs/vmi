@@ -772,9 +772,9 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 
 [[package]]
 name = "isr"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fd77aaccb9ff323cc25414fe95594a773244a872c2b48cbb9090c03fa4eb5f2"
+checksum = "2c703f6eb087efe619c27ea587ad911580153c2b1bf6aa70cfc5b8d5ecc8ea8b"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -787,9 +787,9 @@ dependencies = [
 
 [[package]]
 name = "isr-cache"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0fba271de1b74022944f84510db45095bf315c03fb4ddea9665a121764c5301"
+checksum = "a57c10be1c546915ad498ea424f400cfe2c79f5e682e2e2e54498899dc39ac3a"
 dependencies = [
  "bincode",
  "isr-core",
@@ -807,9 +807,9 @@ dependencies = [
 
 [[package]]
 name = "isr-core"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "660f6a3aca9654198bee7164a5726f872d78b2707cdccfa13c747dca8e8bebb6"
+checksum = "92e9f0114ba6ebc8b5c8f6255083a754176877eb6875c1b56ea7f8a8dcb91aab"
 dependencies = [
  "indexmap 2.6.0",
  "serde",
@@ -818,9 +818,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-linux"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dff9895f968b53c4b2e2654cba78fb5b48261c56d31a5cfb3dc17986af994937"
+checksum = "72bb2343ea9f9eae0d754aa3e0ac64675157b152381a2b886cfc00a4c1a51a49"
 dependencies = [
  "debpkg",
  "flate2",
@@ -834,9 +834,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-pdb"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eda53be4400ae795960c5390f6854502e9f1babde196a8a0b5b320744124b88c"
+checksum = "ad7105d41eb95e86862490cd53e79a05683d6f2f4012541d98a2aa8a27a331a7"
 dependencies = [
  "object",
  "reqwest",
@@ -846,9 +846,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dwarf"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdbe2c1c56e730aeac75889b0e070110379ab3f5221a803dd63b31db82c9090a"
+checksum = "bdff591004404c670c4f01ff2f7f00cd7193e84d3d56a9084346de7009029af8"
 dependencies = [
  "gimli",
  "indexmap 2.6.0",
@@ -862,9 +862,9 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18ff1b900e2838cf6331afe99bf232e1f849ea09b76516a6c047448634011436"
+checksum = "0072c791fed80a86985a39839a158830c7fb58705311aed0170edc7ff178fe13"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -877,9 +877,9 @@ dependencies = [
 
 [[package]]
 name = "isr-pdb"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fde4a3339d211d330e5b76e58322e21224f877d95b27543e70d9884c8621a41"
+checksum = "dd61ef4282a14622e4b6abc3472e16aa1bbdacb2fcad7c0172dd2eff6681a0e2"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -1910,7 +1910,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vmi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "indexmap 2.6.0",
  "isr",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-arch-amd64"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags",
  "indexmap 2.6.0",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "libxen",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-macros"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1978,7 +1978,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-linux"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "isr-core",
  "isr-macros",
@@ -1990,7 +1990,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-windows"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags",
  "isr",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-utils"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "isr-core",
  "isr-macros",
