@@ -1,13 +1,14 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  push:                       # Allows push to trigger the workflow.
+  pull_request:               # Allows PRs to trigger the workflow.
+  workflow_dispatch:          # Allows manual triggering of the workflow.
 
 env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -Dwarnings
-  XEN_SYS_USE_BINDINGS: 1
+  CARGO_TERM_COLOR: always    # Enable colored output for cargo.
+  RUSTFLAGS: -Dwarnings       # Enable all warnings for the Rust compiler.
+  XEN_SYS_USE_BINDINGS: 1     # Enable use of Xen bindings in libxen.
 
 permissions:
   contents: read
