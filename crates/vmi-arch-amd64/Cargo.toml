@@ -24,4 +24,4 @@ bitflags = { workspace = true }
 smallvec = { workspace = true }
 zerocopy = { workspace = true, features = ["derive"] }
 
-vmi-core = { path = "../vmi-core", version = "0.1.0" }
+vmi-core = { workspace = true }

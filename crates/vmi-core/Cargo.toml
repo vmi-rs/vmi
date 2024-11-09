@@ -27,7 +27,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
-isr-core = { path = "../../../isr/crates/isr-core", version = "0.1.0" }
-isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.1.0" }
+isr-core = { workspace = true }
+isr-macros = { workspace = true }
 
-vmi-macros = { path = "../vmi-macros", version = "0.1.0" }
+vmi-macros = { workspace = true }

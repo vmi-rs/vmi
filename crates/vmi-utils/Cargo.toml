@@ -21,15 +21,15 @@ workspace = true
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
-isr-core = { path = "../../../isr/crates/isr-core", version = "0.1.0", optional = true }
-isr-macros = { path = "../../../isr/crates/isr-macros", version = "0.1.0", optional = true }
+isr-core = { workspace = true, optional = true }
+isr-macros = { workspace = true, optional = true }
 
-vmi-core = { path = "../vmi-core", version = "0.1.0" }
-vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.1.0", optional = true }
-vmi-os-windows = { path = "../vmi-os-windows", version = "0.1.0", optional = true }
+vmi-core = { workspace = true }
+vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
-# vmi = { path = "../..", version = "0.1.0" }
+# vmi = { workspace = true }
 
 [features]
 default = [

@@ -773,6 +773,8 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 [[package]]
 name = "isr"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fd77aaccb9ff323cc25414fe95594a773244a872c2b48cbb9090c03fa4eb5f2"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -786,6 +788,8 @@ dependencies = [
 [[package]]
 name = "isr-cache"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0fba271de1b74022944f84510db45095bf315c03fb4ddea9665a121764c5301"
 dependencies = [
  "bincode",
  "isr-core",
@@ -804,6 +808,8 @@ dependencies = [
 [[package]]
 name = "isr-core"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "660f6a3aca9654198bee7164a5726f872d78b2707cdccfa13c747dca8e8bebb6"
 dependencies = [
  "indexmap 2.6.0",
  "serde",
@@ -813,6 +819,8 @@ dependencies = [
 [[package]]
 name = "isr-dl-linux"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dff9895f968b53c4b2e2654cba78fb5b48261c56d31a5cfb3dc17986af994937"
 dependencies = [
  "debpkg",
  "flate2",
@@ -827,6 +835,8 @@ dependencies = [
 [[package]]
 name = "isr-dl-pdb"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eda53be4400ae795960c5390f6854502e9f1babde196a8a0b5b320744124b88c"
 dependencies = [
  "object",
  "reqwest",
@@ -837,6 +847,8 @@ dependencies = [
 [[package]]
 name = "isr-dwarf"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdbe2c1c56e730aeac75889b0e070110379ab3f5221a803dd63b31db82c9090a"
 dependencies = [
  "gimli",
  "indexmap 2.6.0",
@@ -851,6 +863,8 @@ dependencies = [
 [[package]]
 name = "isr-macros"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18ff1b900e2838cf6331afe99bf232e1f849ea09b76516a6c047448634011436"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -864,6 +878,8 @@ dependencies = [
 [[package]]
 name = "isr-pdb"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fde4a3339d211d330e5b76e58322e21224f877d95b27543e70d9884c8621a41"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -941,6 +957,8 @@ dependencies = [
 [[package]]
 name = "libxen"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fc29ba5e1928bfd2bdd796ed59e4a2e2981502d468e1264940a7b6f0ad77182"
 dependencies = [
  "bitflags",
  "libc",
@@ -952,6 +970,8 @@ dependencies = [
 [[package]]
 name = "libxen-sys"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf514bed8ec529ffa171da734160e662f8e2da893dac36394ba60f89bce943df"
 dependencies = [
  "bindgen",
  "pkg-config",

@@ -22,7 +22,7 @@ workspace = true
 libc = { workspace = true }
 tracing = { workspace = true }
 
-vmi-arch-amd64 = { path = "../vmi-arch-amd64", version = "0.1.0" }
-vmi-core = { path = "../vmi-core", version = "0.1.0" }
+vmi-arch-amd64 = { workspace = true }
+vmi-core = { workspace = true }
 
-xen = { path = "../../../xen", version = "0.1.0", package = "libxen" }
+xen = { workspace = true }
