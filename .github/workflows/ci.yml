@@ -89,6 +89,9 @@ jobs:
         with:
           components: clippy
 
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Run clippy
         run: cargo +nightly clippy
 
@@ -104,6 +107,9 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Run rustfmt
         run: cargo +nightly fmt --all -- --check
 
@@ -117,6 +123,9 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Run build
         run: cargo build
@@ -135,6 +144,9 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Run check
         run: cargo check --examples
