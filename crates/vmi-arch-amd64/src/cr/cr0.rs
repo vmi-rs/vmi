@@ -24,7 +24,7 @@ impl Cr0 {
     /// the TS flag is also set. If the MP flag is clear, the WAIT instruction
     /// ignores the setting of the TS flag.
     pub fn monitor_coprocessor(self) -> bool {
-        self.0 >> 1 & 1 != 0
+        (self.0 >> 1) & 1 != 0
     }
 
     /// Checks if the CR0.EM flag is set.
@@ -34,7 +34,7 @@ impl Cr0 {
     /// also affects the execution of MMX/SSE/SSE2/SSE3/SSSE3/SSE4
     /// instructions.
     pub fn emulation(self) -> bool {
-        self.0 >> 2 & 1 != 0
+        (self.0 >> 2) & 1 != 0
     }
 
     /// Checks if the CR0.TS flag is set.
@@ -46,7 +46,7 @@ impl Cr0 {
     /// tests it when executing x87 FPU/MMX/SSE/SSE2/SSE3/SSSE3/SSE4
     /// instructions.
     pub fn task_switched(self) -> bool {
-        self.0 >> 3 & 1 != 0
+        (self.0 >> 3) & 1 != 0
     }
 
     /// Checks if the CR0.ET flag is set.
@@ -57,7 +57,7 @@ impl Cr0 {
     /// processors, this flag indicates support of Intel 387 DX math coprocessor
     /// instructions when set.
     pub fn extension_type(self) -> bool {
-        self.0 >> 4 & 1 != 0
+        (self.0 >> 4) & 1 != 0
     }
 
     /// Checks if the CR0.NE flag is set.
@@ -66,7 +66,7 @@ impl Cr0 {
     /// when set; enables the PC-style x87 FPU error reporting mechanism when
     /// clear.
     pub fn numeric_error(self) -> bool {
-        self.0 >> 5 & 1 != 0
+        (self.0 >> 5) & 1 != 0
     }
 
     /// Checks if the CR0.WP flag is set.
@@ -78,7 +78,7 @@ impl Cr0 {
     /// method of creating a new process (forking) used by operating systems
     /// such as UNIX.
     pub fn write_protect(self) -> bool {
-        self.0 >> 16 & 1 != 0
+        (self.0 >> 16) & 1 != 0
     }
 
     /// Checks if the CR0.AM flag is set.
@@ -88,7 +88,7 @@ impl Cr0 {
     /// flag is set, the AC flag in the EFLAGS register is set, CPL is 3,
     /// and the processor is operating in either protected or virtual-8086 mode.
     pub fn alignment_mask(self) -> bool {
-        self.0 >> 18 & 1 != 0
+        (self.0 >> 18) & 1 != 0
     }
 
     /// Checks if the CR0.NW flag is set.
@@ -97,7 +97,7 @@ impl Cr0 {
     /// enabled for writes that hit the cache and invalidation cycles are
     /// enabled.
     pub fn not_write_through(self) -> bool {
-        self.0 >> 29 & 1 != 0
+        (self.0 >> 29) & 1 != 0
     }
 
     /// Checks if the CR0.CD flag is set.
@@ -106,7 +106,7 @@ impl Cr0 {
     /// the whole of physical memory in the processor’s internal (and external)
     /// caches is enabled. When the CD flag is set, caching is restricted.
     pub fn cache_disable(self) -> bool {
-        self.0 >> 30 & 1 != 0
+        (self.0 >> 30) & 1 != 0
     }
 
     /// Checks if the CR0.PG flag is set.
@@ -120,7 +120,7 @@ impl Cr0 {
     /// On Intel 64 processors, enabling and disabling IA-32e mode operation
     /// also requires modifying CR0.PG.
     pub fn paging(self) -> bool {
-        self.0 >> 31 & 1 != 0
+        (self.0 >> 31) & 1 != 0
     }
 }
 

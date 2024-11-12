@@ -14,6 +14,12 @@ impl Va {
     }
 }
 
+/// A trait for types that have a virtual address.
+pub trait VmiVa {
+    /// Returns the virtual address.
+    fn va(&self) -> Va;
+}
+
 /// The mechanism used for translating virtual addresses to physical addresses.
 ///
 /// Understanding and navigating the memory translation mechanisms of the target
@@ -101,7 +107,12 @@ impl From<(Va, Pa)> for AccessContext {
 
 impl From<AddressContext> for AccessContext {
     fn from(value: AddressContext) -> Self {
-        Self::paging(value.va, value.root)
+        Self {
+            address: value.va.0,
+            mechanism: TranslationMechanism::Paging {
+                root: Some(value.root),
+            },
+        }
     }
 }
 

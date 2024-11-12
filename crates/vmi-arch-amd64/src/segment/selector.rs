@@ -27,7 +27,7 @@ impl Selector {
     /// Specifies the descriptor table to use: clearing this flag selects the
     /// GDT; setting this flag selects the current LDT.
     pub fn table(self) -> DescriptorTable {
-        match self.0 >> 2 & 1 {
+        match (self.0 >> 2) & 1 {
             0 => DescriptorTable::Gdt,
             1 => DescriptorTable::Ldt,
             _ => unreachable!(),
@@ -39,7 +39,7 @@ impl Selector {
     /// descriptor) and adds the result to the base address of the GDT or
     /// LDT (from the GDTR or LDTR register, respectively).
     pub fn index(self) -> u16 {
-        self.0 >> 3 & 0x1fff
+        (self.0 >> 3) & 0x1fff
     }
 }
 

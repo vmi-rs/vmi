@@ -154,7 +154,7 @@ where
     Key: KeyType,
     Tag: TagType,
 {
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     /// Creates a new breakpoint manager.
     pub fn new() -> Self {
         Self {
@@ -195,7 +195,7 @@ where
 
         match vmi.translate_address(breakpoint.ctx) {
             Ok(pa) => self.insert_with_hint(vmi, breakpoint, Some(pa)),
-            Err(VmiError::PageFault(_)) => self.insert_with_hint(vmi, breakpoint, None),
+            Err(VmiError::Translation(_)) => self.insert_with_hint(vmi, breakpoint, None),
             Err(err) => Err(err),
         }
     }
@@ -252,7 +252,7 @@ where
 
         match vmi.translate_address(breakpoint.ctx) {
             Ok(pa) => self.remove_with_hint(vmi, breakpoint, Some(pa)),
-            Err(VmiError::PageFault(_)) => self.remove_with_hint(vmi, breakpoint, None),
+            Err(VmiError::Translation(_)) => self.remove_with_hint(vmi, breakpoint, None),
             Err(err) => Err(err),
         }
     }

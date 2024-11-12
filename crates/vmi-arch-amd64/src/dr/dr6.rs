@@ -31,7 +31,7 @@ impl Dr6 {
     /// following reset.) This bit is always 1 if the processor does not support
     /// OS buslock detection
     pub fn bus_lock_detected(self) -> bool {
-        self.0 >> 11 & 1 != 0
+        (self.0 >> 11) & 1 != 0
     }
 
     /// BD (debug register access detected) flag (bit 13).
@@ -41,7 +41,7 @@ impl Dr6 {
     /// is enabled when the GD (general detect) flag in debug control
     /// register DR7 is set.
     pub fn debug_register_access_detected(self) -> bool {
-        self.0 >> 13 & 1 != 0
+        (self.0 >> 13) & 1 != 0
     }
 
     /// BS (single step) flag (bit 14).
@@ -52,7 +52,7 @@ impl Dr6 {
     /// debug exception. When the BS flag is set, any of the other debug status
     /// bits also may be set.
     pub fn single_step(self) -> bool {
-        self.0 >> 14 & 1 != 0
+        (self.0 >> 14) & 1 != 0
     }
 
     /// BT (task switch) flag (bit 15).
@@ -63,7 +63,7 @@ impl Dr6 {
     /// debug exception. When the BS flag is set, any of the other debug status
     /// bits also may be set.
     pub fn task_switch(self) -> bool {
-        self.0 >> 15 & 1 != 0
+        (self.0 >> 15) & 1 != 0
     }
 
     /// RTM (restricted transactional memory) flag (bit 16).
@@ -76,7 +76,7 @@ impl Dr6 {
     /// enabled). This bit is always 1 if the processor does not support
     /// RTM.
     pub fn restricted_transactional_memory(self) -> bool {
-        self.0 >> 16 & 1 != 0
+        (self.0 >> 16) & 1 != 0
     }
 }
 

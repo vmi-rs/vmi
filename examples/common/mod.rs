@@ -3,8 +3,10 @@ use isr::{
     Profile,
 };
 use vmi::{
-    arch::amd64::Amd64, driver::xen::VmiXenDriver, os::windows::WindowsOs, VcpuId, VmiCore,
-    VmiSession,
+    arch::amd64::Amd64,
+    driver::xen::VmiXenDriver,
+    os::{windows::WindowsOs, VmiOsProcess as _},
+    VcpuId, VmiCore, VmiDriver, VmiError, VmiOs, VmiSession, VmiState,
 };
 use xen::XenStore;
 
@@ -39,9 +41,20 @@ pub fn create_vmi_session() -> Result<
     // Try to find the kernel information.
     // This is necessary in order to load the profile.
     let kernel_info = {
+        // Pause the VCPU to get consistent state.
         let _pause_guard = core.pause_guard()?;
+
+        // Get the register state for the first VCPU.
         let registers = core.registers(VcpuId(0))?;
 
+        // On AMD64 architecture, the kernel is usually found using the
+        // `MSR_LSTAR` register, which contains the address of the system call
+        // handler. This register is set by the operating system during boot
+        // and is left unchanged (unless some rootkits are involved).
+        //
+        // Therefore, we can take an arbitrary registers at any point in time
+        // (as long as the OS has booted and the page tables are set up) and
+        // use them to find the kernel.
         WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
     };
 
@@ -62,4 +75,23 @@ pub fn create_vmi_session() -> Result<
     let os = Box::leak(Box::new(os));
 
     Ok((VmiSession::new(core, os), profile))
+}
+
+pub fn find_process<'a, Driver, Os>(
+    vmi: &VmiState<'a, Driver, Os>,
+    name: &str,
+) -> Result<Option<Os::Process<'a>>, VmiError>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    for process in vmi.os().processes()? {
+        let process = process?;
+
+        if process.name()?.to_lowercase() == name {
+            return Ok(Some(process));
+        }
+    }
+
+    Ok(None)
 }

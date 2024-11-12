@@ -15,8 +15,7 @@ use xen::{
     XenMonitor,
 };
 
-use super::arch::ArchAdapter;
-use crate::{Error, IntoExt as _};
+use crate::{ArchAdapter, Error, IntoExt as _};
 
 /// VMI driver for Xen hypervisor.
 pub struct XenDriver<Arch>
@@ -152,7 +151,7 @@ where
                 return Err(Error::NotSupported);
             }
 
-            xen_access = xen::MemoryAccess::R2PW;
+            xen_access = xen::MemoryAccess::R_PW;
         }
 
         if view.0 == 0 {

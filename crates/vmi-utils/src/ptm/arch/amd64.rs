@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View, VmiCore, VmiDriver, VmiError
+    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View,
+    VmiCore, VmiDriver, VmiError,
 };
 
 use super::{
@@ -110,7 +111,12 @@ where
     /// Monitor a guest frame number for write access.
     fn monitor(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View) -> Result<(), VmiError> {
         self.monitored_gfns.insert((view, gfn));
-        vmi.set_memory_access_with_options(gfn, view, MemoryAccess::R, MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES)
+        vmi.set_memory_access_with_options(
+            gfn,
+            view,
+            MemoryAccess::R,
+            MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
+        )
     }
 
     /// Unmonitor a guest frame number.
@@ -124,10 +130,8 @@ where
         match vmi.set_memory_access(gfn, view, MemoryAccess::RW) {
             Ok(()) => Ok(()),
             Err(VmiError::ViewNotFound) => {
-                //
                 // The view was not found. This can happen if the view was
                 // destroyed before unmonitoring.
-                //
                 tracing::debug!(%gfn, %view, "view not found");
                 Ok(())
             }
@@ -406,9 +410,9 @@ where
 
         if old_value.present() && new_value.present() && old_value.pfn() != new_value.pfn() {
             let vas = entry.vas.clone();
-            return self
-                .page_change(vmi, entry_pa, vas, old_value, new_value, view)
-                .map(Some);
+            return Ok(Some(
+                self.page_change(vmi, entry_pa, vas, old_value, new_value, view)?,
+            ));
         }
         else if old_value.present() && !new_value.present() {
             if old_value.large() {
@@ -420,7 +424,7 @@ where
             }
             else {
                 let vas = entry.vas.clone();
-                return self.page_out(vmi, entry_pa, vas, old_value, view).map(Some);
+                return Ok(Some(self.page_out(vmi, entry_pa, vas, old_value, view)?));
             }
         }
         else if !old_value.present() && new_value.present() {
@@ -433,7 +437,7 @@ where
             }
             else {
                 let vas = entry.vas.clone();
-                return self.page_in(vmi, entry_pa, vas, new_value, view).map(Some);
+                return Ok(Some(self.page_in(vmi, entry_pa, vas, new_value, view)?));
             }
         }
 

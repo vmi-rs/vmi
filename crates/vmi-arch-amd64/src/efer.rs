@@ -16,7 +16,7 @@ impl MsrEfer {
     /// it. Long Mode becomes active when both this bit and the paging
     /// enable bit in CR0 are set.
     pub fn long_mode_enable(self) -> bool {
-        self.0 >> 8 & 1 != 0
+        (self.0 >> 8) & 1 != 0
     }
 
     /// Checks if Long Mode (aka IA-32e mode) is active (LMA bit).
@@ -25,7 +25,7 @@ impl MsrEfer {
     /// active. It is set by the processor when Long Mode is enabled and
     /// paging is turned on.
     pub fn long_mode_active(self) -> bool {
-        self.0 >> 10 & 1 != 0
+        (self.0 >> 10) & 1 != 0
     }
 
     /// Checks if the Execute Disable (NX) feature is enabled.
@@ -34,7 +34,7 @@ impl MsrEfer {
     /// It allows marking of memory pages as non-executable, enhancing security
     /// by preventing the execution of code from data pages.
     pub fn execute_disable(self) -> bool {
-        self.0 >> 11 & 1 != 0
+        (self.0 >> 11) & 1 != 0
     }
 }
 

@@ -19,7 +19,7 @@ impl Cr4 {
     /// flag (VIF) in protected mode when set; disables the VIF flag in
     /// protected mode when clear.
     pub fn protected_mode_virtual_interrupts(self) -> bool {
-        self.0 >> 1 & 1 != 0
+        (self.0 >> 1) & 1 != 0
     }
 
     /// Checks if the CR4.TSD flag is set.
@@ -29,7 +29,7 @@ impl Cr4 {
     /// executed at any privilege level when clear. This bit also applies to
     /// the RDTSCP instruction if supported (if CPUID.80000001H:EDX\[27\] = 1).
     pub fn timestamp_disable(self) -> bool {
-        self.0 >> 2 & 1 != 0
+        (self.0 >> 2) & 1 != 0
     }
 
     /// Checks if the CR4.DE flag is set.
@@ -39,7 +39,7 @@ impl Cr4 {
     /// aliases references to registers DR4 and DR5 for compatibility with
     /// software written to run on earlier IA-32 processors.
     pub fn debugging_extensions(self) -> bool {
-        self.0 >> 3 & 1 != 0
+        (self.0 >> 3) & 1 != 0
     }
 
     /// Checks if the CR4.PSE flag is set.
@@ -47,7 +47,7 @@ impl Cr4 {
     /// Enables 4-MByte pages with 32-bit paging when set; restricts
     /// 32-bit paging to pages of 4 KBytes when clear.
     pub fn page_size_extension(self) -> bool {
-        self.0 >> 4 & 1 != 0
+        (self.0 >> 4) & 1 != 0
     }
 
     /// Checks if the CR4.PAE flag is set.
@@ -56,7 +56,7 @@ impl Cr4 {
     /// with more than 32 bits. When clear, restricts physical addresses to 32
     /// bits. PAE must be set before entering IA-32e mode.
     pub fn physical_address_extension(self) -> bool {
-        self.0 >> 5 & 1 != 0
+        (self.0 >> 5) & 1 != 0
     }
 
     /// Checks if the CR4.MCE flag is set.
@@ -64,7 +64,7 @@ impl Cr4 {
     /// Enables the machine-check exception when set; disables the
     /// machine-check exception when clear.
     pub fn machine_check_enable(self) -> bool {
-        self.0 >> 6 & 1 != 0
+        (self.0 >> 6) & 1 != 0
     }
 
     /// Checks if the CR4.PGE flag is set.
@@ -82,7 +82,7 @@ impl Cr4 {
     /// set. Reversing this sequence may affect program correctness, and
     /// processor performance will be impacted.
     pub fn page_global_enable(self) -> bool {
-        self.0 >> 7 & 1 != 0
+        (self.0 >> 7) & 1 != 0
     }
 
     /// Checks if the CR4.PCE flag is set.
@@ -92,7 +92,7 @@ impl Cr4 {
     /// RDPMC instruction can be executed only at protection level 0 when
     /// clear.
     pub fn performance_monitoring_counter_enable(self) -> bool {
-        self.0 >> 8 & 1 != 0
+        (self.0 >> 8) & 1 != 0
     }
 
     /// Checks if the CR4.OSFXSR flag is set.
@@ -116,7 +116,7 @@ impl Cr4 {
     /// MOVNTI, CLFLUSH, CRC32, and POPCNT. The operating system or executive
     /// must explicitly set this flag.
     pub fn os_fxsr_support(self) -> bool {
-        self.0 >> 9 & 1 != 0
+        (self.0 >> 9) & 1 != 0
     }
 
     /// Checks if the CR4.OSXMMEXCPT flag is set.
@@ -133,7 +133,7 @@ impl Cr4 {
     /// exception (#UD) whenever it detects an unmasked SIMD floating-point
     /// exception.
     pub fn os_xmm_exception_support(self) -> bool {
-        self.0 >> 10 & 1 != 0
+        (self.0 >> 10) & 1 != 0
     }
 
     /// Checks if the CR4.UMIP flag is set.
@@ -142,7 +142,7 @@ impl Cr4 {
     /// executed if CPL > 0: SGDT, SIDT, SLDT, SMSW, and STR. An attempt at such
     /// execution causes a general-protection exception (#GP).
     pub fn usermode_instruction_prevention(self) -> bool {
-        self.0 >> 11 & 1 != 0
+        (self.0 >> 11) & 1 != 0
     }
 
     /// Checks if the CR4.LA57 flag is set.
@@ -152,21 +152,21 @@ impl Cr4 {
     /// uses 4-level paging to translate 48-bit linear addresses.
     /// This bit cannot be modified in IA-32e mode.
     pub fn linear_address_57_bit(self) -> bool {
-        self.0 >> 12 & 1 != 0
+        (self.0 >> 12) & 1 != 0
     }
 
     /// Checks if the CR4.VMXE flag is set.
     ///
     /// Enables VMX operation when set.
     pub fn vmx_enable(self) -> bool {
-        self.0 >> 13 & 1 != 0
+        (self.0 >> 13) & 1 != 0
     }
 
     /// Checks if the CR4.SMXE flag is set.
     ///
     /// Enables SMX operation when set.
     pub fn smx_enable(self) -> bool {
-        self.0 >> 14 & 1 != 0
+        (self.0 >> 14) & 1 != 0
     }
 
     /// Checks if the CR4.FSGSBASE flag is set.
@@ -174,7 +174,7 @@ impl Cr4 {
     /// Enables the instructions RDFSBASE, RDGSBASE, WRFSBASE,
     /// and WRGSBASE.
     pub fn fsgsbase_enable(self) -> bool {
-        self.0 >> 16 & 1 != 0
+        (self.0 >> 16) & 1 != 0
     }
 
     /// Checks if the CR4.PCIDE flag is set.
@@ -182,7 +182,7 @@ impl Cr4 {
     /// Enables process-context identifiers (PCIDs) when set.
     /// Can be set only in IA-32e mode (if IA32_EFER.LMA = 1).
     pub fn pcid_enable(self) -> bool {
-        self.0 >> 17 & 1 != 0
+        (self.0 >> 17) & 1 != 0
     }
 
     /// Checks if the CR4.OSXSAVE flag is set.
@@ -197,7 +197,7 @@ impl Cr4 {
     /// - enables the processor to execute XGETBV and XSETBV instructions in
     ///   order to read and write XCR0.
     pub fn os_xsave(self) -> bool {
-        self.0 >> 18 & 1 != 0
+        (self.0 >> 18) & 1 != 0
     }
 
     /// Checks if the CR4.KL flag is set.
@@ -209,21 +209,21 @@ impl Cr4 {
     /// CPUID.19H:EBX.AESKLE[bit 0] is enumerated as 0 and execution of any
     /// Key Locker instruction causes an invalid-opcode exception (#UD).
     pub fn key_locker_enable(self) -> bool {
-        self.0 >> 19 & 1 != 0
+        (self.0 >> 19) & 1 != 0
     }
 
     /// Checks if the CR4.SMEP flag is set.
     ///
     /// Enables supervisor-mode execution prevention (SMEP) when set.
     pub fn smep_enable(self) -> bool {
-        self.0 >> 20 & 1 != 0
+        (self.0 >> 20) & 1 != 0
     }
 
     /// Checks if the CR4.SMAP flag is set.
     ///
     /// Enables supervisor-mode access prevention (SMAP) when set.
     pub fn smap_enable(self) -> bool {
-        self.0 >> 21 & 1 != 0
+        (self.0 >> 21) & 1 != 0
     }
 
     /// Checks if the CR4.PKE flag is set.
@@ -236,7 +236,7 @@ impl Cr4 {
     /// be read or written. This bit also enables access to the PKRU register
     /// using the RDPKRU and WRPKRU instructions.
     pub fn protection_key_for_user_mode_enable(self) -> bool {
-        self.0 >> 22 & 1 != 0
+        (self.0 >> 22) & 1 != 0
     }
 
     /// Checks if the CR4.CET flag is set.
@@ -245,7 +245,7 @@ impl Cr4 {
     /// set only if CR0.WP is set, and it must be clear before CR0.WP can be
     /// cleared.
     pub fn control_flow_enforcement(self) -> bool {
-        self.0 >> 23 & 1 != 0
+        (self.0 >> 23) & 1 != 0
     }
 
     /// Checks if the CR4.PKS flag is set.
@@ -256,7 +256,7 @@ impl Cr4 {
     /// whether supervisor-mode linear addresses with that protection key can be
     /// read or written.
     pub fn protection_key_for_supervisor_mode_enable(self) -> bool {
-        self.0 >> 24 & 1 != 0
+        (self.0 >> 24) & 1 != 0
     }
 
     /// Checks if the CR4.UINTR flag is set.
@@ -265,14 +265,14 @@ impl Cr4 {
     /// delivery, user-interrupt notification identification, and the
     /// user-interrupt instructions.
     pub fn user_interrupts_enable(self) -> bool {
-        self.0 >> 25 & 1 != 0
+        (self.0 >> 25) & 1 != 0
     }
 
     /// Checks if the CR4.LAM_SUP flag is set.
     ///
     /// When set, enables LAM (linear-address masking) for supervisor pointers.
     pub fn supervisor_lam_enable(self) -> bool {
-        self.0 >> 28 & 1 != 0
+        (self.0 >> 28) & 1 != 0
     }
 }
 

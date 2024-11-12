@@ -54,9 +54,21 @@ impl AddressContext {
     }
 }
 
+//impl From<Va> for AddressContext {
+//    fn from(value: Va) -> Self {
+//        Self {
+//            va: value,
+//            root: None,
+//        }
+//    }
+//}
+
 impl From<(Va, Pa)> for AddressContext {
     fn from(value: (Va, Pa)) -> Self {
-        Self::new(value.0, value.1)
+        Self {
+            va: value.0,
+            root: value.1,
+        }
     }
 }
 

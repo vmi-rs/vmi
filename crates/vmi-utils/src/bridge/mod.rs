@@ -149,7 +149,7 @@ where
     Os: VmiOs<Driver>,
     B: BridgeDispatch<Driver, Os, T>,
 {
-    /// Create a new bridge.
+    /// Creates a new bridge.
     pub fn new(handlers: B) -> Self {
         Self {
             handlers,

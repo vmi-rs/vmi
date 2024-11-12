@@ -52,7 +52,7 @@ mod common;
 
 use vmi::{
     arch::amd64::Amd64,
-    os::windows::WindowsOs,
+    os::{windows::WindowsOs, VmiOsProcess as _},
     utils::injector::{recipe, InjectorHandler, Recipe, RecipeControlFlow},
     Hex, Va, VcpuId, VmiDriver,
 };
@@ -150,7 +150,7 @@ where
             const CREATE_ALWAYS: u64 = 2;
             const FILE_ATTRIBUTE_NORMAL: u64 = 0x80;
 
-            inj! {
+            inject! {
                 kernel32!CreateFileA(
                     &data![target_path],        // lpFileName
                     GENERIC_WRITE,              // dwDesiredAccess
@@ -197,7 +197,7 @@ where
             let chunk_size = usize::min(content.len(), data![chunk_size]);
             let chunk = content[..chunk_size].to_vec();
 
-            inj! {
+            inject! {
                 kernel32!WriteFile(
                     data![handle],              // hFile
                     chunk,                      // lpBuffer
@@ -246,7 +246,7 @@ where
             // Allocate a value on the stack to store the output parameter.
             data![bytes_written_ptr] = copy_to_stack!(0u64)?;
 
-            inj! {
+            inject! {
                 kernel32!WriteFile(
                     data![handle],              // hFile
                     chunk,                      // lpBuffer
@@ -285,7 +285,7 @@ where
                 "step 4: kernel32!CloseHandle()"
             );
 
-            inj! {
+            inject! {
                 kernel32!CloseHandle(
                     data![handle]               // hObject
                 )
@@ -295,36 +295,44 @@ where
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (vmi, profile) = common::create_vmi_session()?;
+    let (session, profile) = common::create_vmi_session()?;
 
-    let processes = {
-        let _pause_guard = vmi.pause_guard()?;
+    let explorer_pid = {
+        // This block is used to drop the pause guard after the PID is found.
+        // If the `session.handle()` would be called with the VM paused, no
+        // events would be triggered.
+        let _pause_guard = session.pause_guard()?;
 
-        let registers = vmi.registers(VcpuId(0))?;
-        vmi.os().processes(&registers)?
+        let registers = session.registers(VcpuId(0))?;
+        let vmi = session.with_registers(&registers);
+
+        let explorer = match common::find_process(&vmi, "explorer.exe")? {
+            Some(explorer) => explorer,
+            None => {
+                tracing::error!("explorer.exe not found");
+                return Ok(());
+            }
+        };
+
+        tracing::info!(
+            pid = %explorer.id()?,
+            object = %explorer.object()?,
+            "found explorer.exe"
+        );
+
+        explorer.id()?
     };
-
-    let explorer = processes
-        .iter()
-        .find(|process| process.name.to_lowercase() == "explorer.exe")
-        .expect("explorer.exe");
-
-    tracing::info!(
-        pid = %explorer.id,
-        object = %explorer.object,
-        "found explorer.exe"
-    );
 
     let mut content = Vec::new();
     for c in 'A'..='Z' {
         content.extend((0..2049).map(|_| c as u8).collect::<Vec<_>>());
     }
 
-    vmi.handle(|vmi| {
+    session.handle(|session| {
         InjectorHandler::new(
-            vmi,
+            session,
             &profile,
-            explorer.id,
+            explorer_pid,
             recipe_factory(GuestFile::new(
                 "C:\\Users\\John\\Desktop\\test.txt",
                 content,

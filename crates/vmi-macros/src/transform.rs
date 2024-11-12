@@ -1,55 +1,101 @@
-use syn::{GenericArgument, PathArguments, ReturnType, Type};
+use syn::{
+    AngleBracketedGenericArguments, GenericArgument, Ident, Path, PathArguments, ReturnType,
+    TraitBound, Type, TypeImplTrait, TypeParamBound, TypePath, TypeReference,
+};
 
-/// Transform the return type from `Result<T, VmiError>` to
-/// `Result<Option<T>, VmiError>`.
-///
-/// # Example
-///
-/// Before:
-///
-/// ```rust,ignore
-/// -> Result<T, VmiError>
-/// -> Result<impl Trait, VmiError>
-/// -> Result<impl Trait<T> + 'a, VmiError>
-/// ```
-///
-/// After:
-///
-/// ```rust,ignore
-/// -> Result<Option<T>, VmiError>
-/// -> Result<Option<impl Trait>, VmiError>
-/// -> Result<Option<impl Trait<T> + 'a>, VmiError>
-/// ```
-pub fn result_to_result_option(return_type: &ReturnType) -> Option<ReturnType> {
-    let ty = match &return_type {
-        ReturnType::Type(_, ty) => ty,
-        ReturnType::Default => return None,
-    };
+pub fn replace_self_with_os(return_type: &mut ReturnType) {
+    replace_in_return_type(return_type);
+}
 
-    let type_path = match &**ty {
-        Type::Path(type_path) => type_path,
-        _ => return None,
-    };
+fn replace_in_return_type(return_type: &mut ReturnType) {
+    match return_type {
+        ReturnType::Type(_, ty) => replace_in_type(ty),
+        ReturnType::Default => {}
+    }
+}
 
-    let segment = type_path.path.segments.last()?;
-
-    if segment.ident != "Result" {
-        return None;
+fn replace_in_path(path: &mut Path) {
+    for segment in &mut path.segments {
+        // TODO: Handle `PathArguments::Parenthesized`
+        if let PathArguments::AngleBracketed(args) = &mut segment.arguments {
+            replace_in_angle_bracketed_generic_arguments(args);
+        }
     }
 
-    let args = match &segment.arguments {
-        PathArguments::AngleBracketed(args) => args,
-        _ => return None,
+    let segment = match path.segments.first_mut() {
+        Some(segment) => segment,
+        None => return,
     };
 
-    if args.args.len() != 2 {
-        return None;
+    if segment.ident != "Self" {
+        return;
     }
 
-    let arg_type = match &args.args[0] {
-        GenericArgument::Type(arg_type) => arg_type,
-        _ => return None,
-    };
+    segment.ident = Ident::new("Os", segment.ident.span());
+}
 
-    Some(syn::parse_quote! { -> Result<Option<#arg_type>, VmiError> })
+fn replace_in_angle_bracketed_generic_arguments(args: &mut AngleBracketedGenericArguments) {
+    for arg in &mut args.args {
+        match arg {
+            GenericArgument::Lifetime(_) => {}
+            GenericArgument::Type(ty) => replace_in_type(ty),
+            GenericArgument::Const(_) => {}
+            GenericArgument::AssocType(assoc_type) => {
+                if let Some(generics) = &mut assoc_type.generics {
+                    replace_in_angle_bracketed_generic_arguments(generics);
+                }
+                replace_in_type(&mut assoc_type.ty);
+            }
+            GenericArgument::AssocConst(_) => {}
+            GenericArgument::Constraint(constraint) => {
+                if let Some(generics) = &mut constraint.generics {
+                    replace_in_angle_bracketed_generic_arguments(generics);
+                }
+
+                for bound in &mut constraint.bounds {
+                    replace_in_type_param_bound(bound);
+                }
+            }
+            _ => panic!("unexpected generic argument"),
+        }
+    }
+}
+
+fn replace_in_type(ty: &mut Type) {
+    match ty {
+        Type::Reference(ty_ref) => replace_in_type_reference(ty_ref),
+        Type::ImplTrait(impl_trait) => replace_in_type_impl_trait(impl_trait),
+        Type::Path(type_path) => replace_in_type_path(type_path),
+        _ => {}
+    };
+}
+
+fn replace_in_type_param_bound(bound: &mut TypeParamBound) {
+    match bound {
+        TypeParamBound::Trait(trait_bound) => replace_in_trait_bound(trait_bound),
+        TypeParamBound::Lifetime(_) => {}
+        _ => panic!("unexpected type parameter bound"),
+    }
+}
+
+fn replace_in_type_reference(ty_ref: &mut TypeReference) {
+    replace_in_type(&mut ty_ref.elem);
+}
+
+fn replace_in_type_path(type_path: &mut TypePath) {
+    replace_in_path(&mut type_path.path);
+}
+
+fn replace_in_trait_bound(trait_bound: &mut TraitBound) {
+    replace_in_path(&mut trait_bound.path);
+}
+
+fn replace_in_type_impl_trait(impl_trait: &mut TypeImplTrait) {
+    for bound in &mut impl_trait.bounds {
+        #[expect(clippy::single_match)]
+        match bound {
+            TypeParamBound::Trait(trait_bound) => replace_in_trait_bound(trait_bound),
+            _ => {}
+        }
+    }
 }

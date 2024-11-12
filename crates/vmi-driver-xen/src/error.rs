@@ -23,16 +23,16 @@ pub enum Error {
 }
 
 impl From<xen::XenError> for Error {
-    fn from(error: xen::XenError) -> Self {
-        Self::Xen(error)
+    fn from(value: xen::XenError) -> Self {
+        Self::Xen(value)
     }
 }
 
 impl From<Error> for vmi_core::VmiError {
-    fn from(error: Error) -> Self {
-        match error {
-            Error::Xen(error) => Self::Driver(Box::new(error)),
-            Error::Io(error) => Self::Io(error),
+    fn from(value: Error) -> Self {
+        match value {
+            Error::Xen(value) => Self::Driver(Box::new(value)),
+            Error::Io(value) => Self::Io(value),
             Error::InvalidTimeout => Self::InvalidTimeout,
             Error::NotSupported => Self::NotSupported,
             Error::OutOfBounds => Self::OutOfBounds,

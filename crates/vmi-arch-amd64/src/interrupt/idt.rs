@@ -16,12 +16,12 @@ impl IdtAccess {
 
     /// Returns the type of the interrupt gate.
     fn typ(self) -> u8 {
-        (self.0 >> 8 & 0b1111) as _
+        ((self.0 >> 8) & 0b1111) as _
     }
 
     /// Returns the descriptor type.
     fn descriptor_type(self) -> DescriptorType {
-        if self.0 >> 11 & 1 == 0 {
+        if (self.0 >> 11) & 1 == 0 {
             DescriptorType::System
         }
         else {
@@ -31,12 +31,12 @@ impl IdtAccess {
 
     /// Returns the descriptor privilege level.
     fn descriptor_privilege_level(self) -> u8 {
-        (self.0 >> 13 & 0b11) as _
+        ((self.0 >> 13) & 0b11) as _
     }
 
     /// Returns whether the interrupt gate is present.
     fn present(self) -> bool {
-        self.0 >> 15 & 1 != 0
+        (self.0 >> 15) & 1 != 0
     }
 }
 
