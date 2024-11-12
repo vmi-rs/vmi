@@ -120,3 +120,21 @@ jobs:
 
       - name: Run build
         run: cargo build
+
+  #
+  # It would be better to run `cargo build --examples` but since the Xen
+  # is not installed in the CI environment, the examples will not compile.
+  #
+  examples:
+    name: cargo check --examples
+    runs-on: ubuntu-latest
+    # needs: xen-install
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run check
+        run: cargo check --examples
