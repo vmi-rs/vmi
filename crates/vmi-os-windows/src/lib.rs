@@ -66,13 +66,15 @@ use vmi_core::{
         OsRegionKind, ProcessId, ProcessObject, StructReader, ThreadId, ThreadObject, VmiOs,
     },
     AccessContext, Architecture, Gfn, Hex, MemoryAccess, Pa, Registers as _, Va, VmiCore,
-    VmiDriver, VmiError,
+    VmiDriver, VmiError, VmiSession,
 };
 use vmi_macros::derive_trait_from_impl;
 use zerocopy::{FromBytes, IntoBytes};
 
 mod arch;
 use self::arch::ArchAdapter;
+
+mod iterators;
 
 mod pe;
 pub use self::pe::{CodeView, PeError, PeLite, PeLite32, PeLite64};
@@ -194,6 +196,7 @@ where
 
     kernel_image_base: RefCell<Option<Va>>,
     highest_user_address: RefCell<Option<Va>>,
+    object_root_directory: RefCell<Option<Va>>, // _OBJECT_DIRECTORY*
     object_header_cookie: RefCell<Option<u8>>,
     object_type_cache: RefCell<HashMap<Va, WindowsObjectType>>,
 
@@ -309,7 +312,7 @@ pub struct WindowsPeb {
 /// Each variant corresponds to a specific object type string used internally
 /// by the Windows kernel. For example, "Process" for process objects,
 /// "Thread" for thread objects, etc.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowsObjectType {
     /// ALPC Port object.
     ///
@@ -498,16 +501,45 @@ pub struct WindowsVad {
     pub right_child: Va,
 }
 
+/// Represents a `KLDR_DATA_TABLE_ENTRY` structure.
+#[derive(Debug)]
+pub struct WindowsModule {
+    /// The `DllBase` field of the module.
+    ///
+    /// The base address of the module.
+    pub base_address: Va,
+
+    /// The `EntryPoint` field of the module.
+    ///
+    /// The entry point of the module.
+    pub entry_point: Va,
+
+    /// The `SizeOfImage` field of the module.
+    ///
+    /// The size of the module image.
+    pub size: u64,
+
+    /// The `FullDllName` field of the module.
+    ///
+    /// The full name of the module.
+    pub full_name: String,
+
+    /// The `BaseDllName` field of the module.
+    ///
+    /// The base name of the module.
+    pub name: String,
+}
+
 //
 // Private types
 //
 
 /// The address space type in a WoW64 process.
 enum WindowsWow64Kind {
-    /// Native address space
+    /// Native address space.
     Native = 0,
 
-    /// x86 (32-bit) address space under WoW64
+    /// x86 (32-bit) address space under WoW64.
     X86 = 1,
     // Arm32 = 2,
     // Amd64 = 3,
@@ -571,6 +603,7 @@ where
             symbols: Symbols::new(profile)?,
             kernel_image_base: RefCell::new(None),
             highest_user_address: RefCell::new(None),
+            object_root_directory: RefCell::new(None),
             object_header_cookie: RefCell::new(None),
             object_type_cache: RefCell::new(HashMap::new()),
             ki_kva_shadow: RefCell::new(None),
@@ -1041,208 +1074,6 @@ where
             Some(object) => self.object_from_address(vmi, registers, object),
             None => Ok(None),
         }
-    }
-
-    /// Parses a Windows object from its memory address.
-    ///
-    /// Determines the object type and calls the appropriate parsing method.
-    /// Currently supports File and Section object types.
-    pub fn object_from_address(
-        &self,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-        object: Va,
-    ) -> Result<Option<WindowsObject>, VmiError> {
-        match self.object_type(vmi, registers, object)? {
-            Some(WindowsObjectType::File) => {
-                Ok(Some(self.parse_file_object(vmi, registers, object)?))
-            }
-            Some(WindowsObjectType::Section) => self.parse_section_object(vmi, registers, object),
-            _ => Ok(None),
-        }
-    }
-
-    /// Parses a `FILE_OBJECT` structure.
-    ///
-    /// Extracts the device object and filename from the `FILE_OBJECT`.
-    /// Returns a [`WindowsObject::File`] variant.
-    fn parse_file_object(
-        &self,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-        object: Va,
-    ) -> Result<WindowsObject, VmiError> {
-        let FILE_OBJECT = &self.offsets.common._FILE_OBJECT;
-
-        let device_object = vmi.read_va(
-            registers.address_context(object + FILE_OBJECT.DeviceObject.offset),
-            registers.address_width(),
-        )?;
-
-        let filename = self.file_object_to_filename(vmi, registers, object)?;
-        Ok(WindowsObject::File(WindowsFileObject {
-            device_object,
-            filename,
-        }))
-    }
-
-    /// Parses a Windows section object.
-    ///
-    /// Delegates to version-specific parsing methods based on the available
-    /// offsets. Currently supports `SECTION_OBJECT` and `SECTION` structures.
-    /// Returns a [`WindowsObject::Section`] variant.
-    fn parse_section_object(
-        &self,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-        object: Va,
-    ) -> Result<Option<WindowsObject>, VmiError> {
-        match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => Ok(Some(
-                self.parse_section_object_v1(vmi, registers, object, offsets)?,
-            )),
-            Some(OffsetsExt::V2(offsets)) => Ok(Some(
-                self.parse_section_object_v2(vmi, registers, object, offsets)?,
-            )),
-            None => panic!("OffsetsExt not set"),
-        }
-    }
-
-    fn parse_section_object_v1(
-        &self,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-        object: Va,
-        offsets: &v1::Offsets,
-    ) -> Result<WindowsObject, VmiError> {
-        let SECTION_OBJECT = &offsets._SECTION_OBJECT;
-        let SEGMENT_OBJECT = &offsets._SEGMENT_OBJECT;
-        let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
-
-        let section = StructReader::new(
-            vmi,
-            registers.address_context(object),
-            SECTION_OBJECT.effective_len(),
-        )?;
-        let starting_vpn = section.read(SECTION_OBJECT.StartingVa)?;
-        let ending_vpn = section.read(SECTION_OBJECT.EndingVa)?;
-        let segment = section.read(SECTION_OBJECT.Segment)?;
-
-        let segment = StructReader::new(
-            vmi,
-            registers.address_context(segment.into()),
-            SEGMENT_OBJECT.effective_len(),
-        )?;
-        let size = segment.read(SEGMENT_OBJECT.SizeOfSegment)?;
-        let flags = segment.read(SEGMENT_OBJECT.MmSectionFlags)?;
-        let flags = vmi.read_u32(registers.address_context(flags.into()))? as u64;
-
-        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
-        let _image = MMSECTION_FLAGS.Image.value_from(flags) != 0;
-
-        let kind = if file {
-            let control_area = vmi.read_va(
-                registers.address_context(object + SEGMENT_OBJECT.ControlArea.offset),
-                registers.address_width(),
-            )?;
-
-            let path = self.control_area_to_filename(vmi, registers, control_area);
-
-            OsRegionKind::Mapped(OsMapped {
-                path: path.map(Some),
-            })
-        }
-        else {
-            OsRegionKind::Private
-        };
-
-        Ok(WindowsObject::Section(WindowsSectionObject {
-            region: OsRegion {
-                start: Va(starting_vpn << 12),
-                end: Va((ending_vpn + 1) << 12),
-                protection: MemoryAccess::default(),
-                kind,
-            },
-            size,
-        }))
-    }
-
-    fn parse_section_object_v2(
-        &self,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-        object: Va,
-        offsets: &v2::Offsets,
-    ) -> Result<WindowsObject, VmiError> {
-        let SECTION = &offsets._SECTION;
-        let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
-
-        let section = StructReader::new(
-            vmi,
-            registers.address_context(object),
-            SECTION.effective_len(),
-        )?;
-        let starting_vpn = section.read(SECTION.StartingVpn)?;
-        let ending_vpn = section.read(SECTION.EndingVpn)?;
-        let size = section.read(SECTION.SizeOfSection)?;
-        let flags = section.read(SECTION.Flags)?;
-
-        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
-        let _image = MMSECTION_FLAGS.Image.value_from(flags) != 0;
-
-        //
-        // We have to distinguish between FileObject and ControlArea.
-        // Here's an excerpt from _SECTION:
-        //
-        //     union {
-        //       union {
-        //         PCONTROL_AREA ControlArea;
-        //         PFILE_OBJECT FileObject;
-        //         struct {
-        //           ULONG_PTR RemoteImageFileObject : 1;
-        //           ULONG_PTR RemoteDataFileObject : 1;
-        //         };
-        //       };
-        //     };
-        //
-        // Based on information from Geoff Chappell's website, we can determine whether
-        // ControlArea is in fact FileObject by checking the lowest 2 bits of the
-        // pointer.
-        //
-        // ref: https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/mi/section.htm
-        //
-
-        let kind = if file {
-            let control_area = vmi.read_va(
-                registers.address_context(object + SECTION.ControlArea.offset),
-                registers.address_width(),
-            )?;
-
-            let path = if u64::from(control_area) & 0x3 != 0 {
-                let file_object = control_area;
-                self.file_object_to_filename(vmi, registers, file_object)
-            }
-            else {
-                self.control_area_to_filename(vmi, registers, control_area)
-            };
-
-            OsRegionKind::Mapped(OsMapped {
-                path: path.map(Some),
-            })
-        }
-        else {
-            OsRegionKind::Private
-        };
-
-        Ok(WindowsObject::Section(WindowsSectionObject {
-            region: OsRegion {
-                start: Va(starting_vpn << 12),
-                end: Va((ending_vpn + 1) << 12),
-                protection: MemoryAccess::default(),
-                kind,
-            },
-            size,
-        }))
     }
 
     fn parse_handle_table_entry(
@@ -2140,6 +1971,89 @@ where
 
     // region: Object
 
+    /// Retrieves the name of a Windows kernel object.
+    pub fn object_lookup(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        directory: Va,
+        needle: impl AsRef<str>,
+    ) -> Result<Option<Va>, VmiError> {
+        let OBJECT_DIRECTORY = &self.offsets.common._OBJECT_DIRECTORY;
+        let OBJECT_DIRECTORY_ENTRY = &self.offsets.common._OBJECT_DIRECTORY_ENTRY;
+
+        let object_type = self.object_type(vmi, registers, directory)?;
+        assert_eq!(object_type, Some(WindowsObjectType::Directory));
+
+        let needle = needle.as_ref();
+
+        for i in 0..37 {
+            println!("i: {}", i);
+
+            let hash_bucket = vmi.read_va(
+                registers.address_context(directory + OBJECT_DIRECTORY.HashBuckets.offset + i * 8),
+                registers.address_width(),
+            )?;
+
+            let mut entry = hash_bucket;
+            while !entry.is_null() {
+                println!("  entry: {}", entry);
+
+                let object = vmi.read_va(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.Object.offset),
+                    registers.address_width(),
+                )?;
+                println!("    object: {}", object);
+
+                let hash_value = vmi.read_u32(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset),
+                )?;
+                println!("    hash_value: {}", hash_value);
+
+                if let Some(name) = self.object_name(vmi, registers, object)? {
+                    println!("    name: {}", name.name);
+
+                    if name.name == needle {
+                        return Ok(Some(object));
+                    }
+                }
+
+                entry = vmi.read_va(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset),
+                    registers.address_width(),
+                )?;
+            }
+        }
+
+        return Ok(None);
+    }
+
+    /// Retrieves the root directory object for the Windows kernel.
+    ///
+    /// # Implementation Details
+    ///
+    /// The root directory object is located by reading the `ObpRootDirectoryObject`
+    /// symbol from the kernel image.
+    pub fn object_root_directory(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Va, VmiError> {
+        if let Some(object_root_directory) = *self.object_root_directory.borrow() {
+            return Ok(object_root_directory);
+        }
+
+        let ObpRootDirectoryObject =
+            self.kernel_image_base(vmi, registers)? + self.symbols.ObpRootDirectoryObject;
+
+        let object_root_directory = vmi.read_va(
+            registers.address_context(ObpRootDirectoryObject),
+            registers.address_width(),
+        )?;
+        *self.object_root_directory.borrow_mut() = Some(object_root_directory);
+        Ok(object_root_directory)
+    }
+
     /// Retrieves the object header cookie used for obfuscating object types.
     /// Returns `None` if the cookie is not present in the kernel image.
     ///
@@ -2180,6 +2094,8 @@ where
     /// and returns its type (e.g., Process, Thread, File). It handles the
     /// obfuscation introduced by the object header cookie, ensuring accurate
     /// type identification even on systems with this security feature enabled.
+    ///
+    /// Returns `None` if the object type cannot be determined.
     pub fn object_type(
         &self,
         vmi: &VmiCore<Driver>,
@@ -2258,6 +2174,8 @@ where
     /// This method extracts the name of such an object, if present. It also
     /// provides information about the object's containing directory in the
     /// object namespace.
+    ///
+    /// Returns `None` if the object does not have a `OBJECT_HEADER_NAME_INFO`.
     pub fn object_name(
         &self,
         vmi: &VmiCore<Driver>,
@@ -2371,6 +2289,208 @@ where
             Some(root_name) => Ok(Some(format!("{root_name}\\{object_name}"))),
             None => Ok(Some(object_name)),
         }
+    }
+
+    /// Parses a Windows object from its memory address.
+    ///
+    /// Determines the object type and calls the appropriate parsing method.
+    /// Currently supports File and Section object types.
+    pub fn object_from_address(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        object: Va,
+    ) -> Result<Option<WindowsObject>, VmiError> {
+        match self.object_type(vmi, registers, object)? {
+            Some(WindowsObjectType::File) => {
+                Ok(Some(self.parse_file_object(vmi, registers, object)?))
+            }
+            Some(WindowsObjectType::Section) => self.parse_section_object(vmi, registers, object),
+            _ => Ok(None),
+        }
+    }
+
+    /// Parses a `FILE_OBJECT` structure.
+    ///
+    /// Extracts the device object and filename from the `FILE_OBJECT`.
+    /// Returns a [`WindowsObject::File`] variant.
+    fn parse_file_object(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        object: Va,
+    ) -> Result<WindowsObject, VmiError> {
+        let FILE_OBJECT = &self.offsets.common._FILE_OBJECT;
+
+        let device_object = vmi.read_va(
+            registers.address_context(object + FILE_OBJECT.DeviceObject.offset),
+            registers.address_width(),
+        )?;
+
+        let filename = self.file_object_to_filename(vmi, registers, object)?;
+        Ok(WindowsObject::File(WindowsFileObject {
+            device_object,
+            filename,
+        }))
+    }
+
+    /// Parses a Windows section object.
+    ///
+    /// Delegates to version-specific parsing methods based on the available
+    /// offsets. Currently supports `SECTION_OBJECT` and `SECTION` structures.
+    /// Returns a [`WindowsObject::Section`] variant.
+    fn parse_section_object(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        object: Va,
+    ) -> Result<Option<WindowsObject>, VmiError> {
+        match &self.offsets.ext {
+            Some(OffsetsExt::V1(offsets)) => Ok(Some(
+                self.parse_section_object_v1(vmi, registers, object, offsets)?,
+            )),
+            Some(OffsetsExt::V2(offsets)) => Ok(Some(
+                self.parse_section_object_v2(vmi, registers, object, offsets)?,
+            )),
+            None => panic!("OffsetsExt not set"),
+        }
+    }
+
+    fn parse_section_object_v1(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        object: Va,
+        offsets: &v1::Offsets,
+    ) -> Result<WindowsObject, VmiError> {
+        let SECTION_OBJECT = &offsets._SECTION_OBJECT;
+        let SEGMENT_OBJECT = &offsets._SEGMENT_OBJECT;
+        let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
+
+        let section = StructReader::new(
+            vmi,
+            registers.address_context(object),
+            SECTION_OBJECT.effective_len(),
+        )?;
+        let starting_vpn = section.read(SECTION_OBJECT.StartingVa)?;
+        let ending_vpn = section.read(SECTION_OBJECT.EndingVa)?;
+        let segment = section.read(SECTION_OBJECT.Segment)?;
+
+        let segment = StructReader::new(
+            vmi,
+            registers.address_context(segment.into()),
+            SEGMENT_OBJECT.effective_len(),
+        )?;
+        let size = segment.read(SEGMENT_OBJECT.SizeOfSegment)?;
+        let flags = segment.read(SEGMENT_OBJECT.MmSectionFlags)?;
+        let flags = vmi.read_u32(registers.address_context(flags.into()))? as u64;
+
+        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
+        let _image = MMSECTION_FLAGS.Image.value_from(flags) != 0;
+
+        let kind = if file {
+            let control_area = vmi.read_va(
+                registers.address_context(object + SEGMENT_OBJECT.ControlArea.offset),
+                registers.address_width(),
+            )?;
+
+            let path = self.control_area_to_filename(vmi, registers, control_area);
+
+            OsRegionKind::Mapped(OsMapped {
+                path: path.map(Some),
+            })
+        }
+        else {
+            OsRegionKind::Private
+        };
+
+        Ok(WindowsObject::Section(WindowsSectionObject {
+            region: OsRegion {
+                start: Va(starting_vpn << 12),
+                end: Va((ending_vpn + 1) << 12),
+                protection: MemoryAccess::default(),
+                kind,
+            },
+            size,
+        }))
+    }
+
+    fn parse_section_object_v2(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        object: Va,
+        offsets: &v2::Offsets,
+    ) -> Result<WindowsObject, VmiError> {
+        let SECTION = &offsets._SECTION;
+        let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
+
+        let section = StructReader::new(
+            vmi,
+            registers.address_context(object),
+            SECTION.effective_len(),
+        )?;
+        let starting_vpn = section.read(SECTION.StartingVpn)?;
+        let ending_vpn = section.read(SECTION.EndingVpn)?;
+        let size = section.read(SECTION.SizeOfSection)?;
+        let flags = section.read(SECTION.Flags)?;
+
+        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
+        let _image = MMSECTION_FLAGS.Image.value_from(flags) != 0;
+
+        //
+        // We have to distinguish between FileObject and ControlArea.
+        // Here's an excerpt from _SECTION:
+        //
+        //     union {
+        //       union {
+        //         PCONTROL_AREA ControlArea;
+        //         PFILE_OBJECT FileObject;
+        //         struct {
+        //           ULONG_PTR RemoteImageFileObject : 1;
+        //           ULONG_PTR RemoteDataFileObject : 1;
+        //         };
+        //       };
+        //     };
+        //
+        // Based on information from Geoff Chappell's website, we can determine whether
+        // ControlArea is in fact FileObject by checking the lowest 2 bits of the
+        // pointer.
+        //
+        // ref: https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/mi/section.htm
+        //
+
+        let kind = if file {
+            let control_area = vmi.read_va(
+                registers.address_context(object + SECTION.ControlArea.offset),
+                registers.address_width(),
+            )?;
+
+            let path = if u64::from(control_area) & 0x3 != 0 {
+                let file_object = control_area;
+                self.file_object_to_filename(vmi, registers, file_object)
+            }
+            else {
+                self.control_area_to_filename(vmi, registers, control_area)
+            };
+
+            OsRegionKind::Mapped(OsMapped {
+                path: path.map(Some),
+            })
+        }
+        else {
+            OsRegionKind::Private
+        };
+
+        Ok(WindowsObject::Section(WindowsSectionObject {
+            region: OsRegion {
+                start: Va(starting_vpn << 12),
+                end: Va((ending_vpn + 1) << 12),
+                protection: MemoryAccess::default(),
+                kind,
+            },
+            size,
+        }))
     }
 
     // endregion: Object
@@ -3139,6 +3259,106 @@ where
     }
 
     // endregion: User Address
+
+    /// xxx
+    pub fn linked_list<'a>(
+        &'a self,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        list_head: Va,
+        offset: u64,
+    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
+        Ok(iterators::LinkedListIterator::new(
+            VmiSession::new(vmi, self),
+            registers,
+            list_head,
+            offset,
+        ))
+    }
+
+    /// Returns the process object iterator.
+    pub fn process_iter<'a>(
+        &'a self,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+    ) -> Result<impl Iterator<Item = Result<OsProcess, VmiError>> + 'a, VmiError> {
+        let PsActiveProcessHead =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsActiveProcessHead;
+
+        let EPROCESS = &self.offsets.common._EPROCESS;
+
+        Ok(self
+            .linked_list(
+                vmi,
+                registers,
+                PsActiveProcessHead,
+                EPROCESS.ActiveProcessLinks.offset,
+            )?
+            .map(|result| {
+                result.and_then(|entry| {
+                    self.process_object_to_process(vmi, registers, ProcessObject(entry))
+                })
+            }))
+    }
+
+    /// associated with the specified VAD.
+    pub fn module(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        addr: Va,
+    ) -> Result<WindowsModule, VmiError> {
+        let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
+
+        let base_address = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset),
+            registers.address_width(),
+        )?;
+        let entry_point = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.EntryPoint.offset),
+            registers.address_width(),
+        )?;
+        let size = vmi
+            .read_u32(registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset))?
+            as u64;
+        let full_name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.FullDllName.offset),
+        )?;
+        let name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset),
+        )?;
+
+        Ok(WindowsModule {
+            base_address,
+            entry_point,
+            size,
+            full_name,
+            name,
+        })
+    }
+
+    /// Returns the process object iterator.
+    pub fn module_iter<'a>(
+        &'a self,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+    ) -> Result<impl Iterator<Item = Result<WindowsModule, VmiError>> + 'a, VmiError> {
+        let PsLoadedModuleList =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsLoadedModuleList;
+
+        let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
+
+        Ok(self
+            .linked_list(
+                vmi,
+                registers,
+                PsLoadedModuleList,
+                KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset,
+            )?
+            .map(|result| result.and_then(|entry| self.module(vmi, registers, entry))))
+    }
 }
 
 #[allow(non_snake_case)]
