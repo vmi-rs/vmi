@@ -64,6 +64,7 @@ symbols! {
         ExFreePoolWithTag: u64,
         MmGetSystemRoutineAddress: u64,
 
+        ObpRootDirectoryObject: u64,
         ObHeaderCookie: Option<u64>,
         ObTypeIndexTable: u64,
         ObpInfoMaskToOffset: u64,
@@ -141,6 +142,16 @@ offsets! {
             TypeIndex: Field,
             InfoMask: Field,
             Body: Field,
+        }
+
+        struct _OBJECT_DIRECTORY {
+            HashBuckets: Field, // struct _OBJECT_DIRECTORY_ENTRY * [37]
+        }
+
+        struct _OBJECT_DIRECTORY_ENTRY {
+            ChainLink: Field, // struct _OBJECT_DIRECTORY_ENTRY *
+            Object: Field, // PVOID
+            HashValue: Field, // ULONG
         }
 
         struct _OBJECT_HEADER_NAME_INFO {
