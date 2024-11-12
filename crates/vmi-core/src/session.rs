@@ -13,19 +13,19 @@ use crate::{
 /// The session combines a [`VmiCore`] with an OS-specific [`VmiOs`]
 /// implementation to provide unified access to both low-level VMI operations
 /// and higher-level OS abstractions.
-pub struct VmiSession<Driver, Os>
+pub struct VmiSession<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// The VMI core providing low-level VM introspection capabilities.
-    pub(crate) core: VmiCore<Driver>,
+    pub(crate) core: &'a VmiCore<Driver>,
 
     /// The OS-specific operations and abstractions.
-    pub(crate) os: Os,
+    pub(crate) os: &'a Os,
 }
 
-impl<Driver, Os> std::ops::Deref for VmiSession<Driver, Os>
+impl<Driver, Os> std::ops::Deref for VmiSession<'_, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
@@ -33,40 +33,40 @@ where
     type Target = VmiCore<Driver>;
 
     fn deref(&self) -> &Self::Target {
-        &self.core
+        self.core
     }
 }
 
-impl<Driver, Os> VmiSession<Driver, Os>
+impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// Creates a new VMI session.
-    pub fn new(core: VmiCore<Driver>, os: Os) -> Self {
+    pub fn new(core: &'a VmiCore<Driver>, os: &'a Os) -> Self {
         Self { core, os }
     }
 
     /// Returns the VMI core.
     pub fn core(&self) -> &VmiCore<Driver> {
-        &self.core
+        self.core
     }
 
     /// Returns the underlying OS-specific implementation.
     pub fn underlying_os(&self) -> &Os {
-        &self.os
+        self.os
     }
 
     /// Returns a wrapper providing access to the OS-specific operations.
     pub fn os(&self) -> VmiOsSession<Driver, Os> {
-        VmiOsSession(self)
+        VmiOsSession {
+            core: self.core,
+            os: self.os,
+        }
     }
 
     /// Creates a prober for safely handling page faults during memory access operations.
-    pub fn prober<'a>(
-        &'a self,
-        restricted: &IndexSet<PageFault>,
-    ) -> VmiSessionProber<'a, Driver, Os> {
+    pub fn prober(&'a self, restricted: &IndexSet<PageFault>) -> VmiSessionProber<'a, Driver, Os> {
         VmiSessionProber::new(self, restricted)
     }
 
@@ -130,24 +130,31 @@ where
 }
 
 /// Wrapper providing access to OS-specific operations.
-pub struct VmiOsSession<'a, Driver, Os>(pub(crate) &'a VmiSession<Driver, Os>)
+pub struct VmiOsSession<'a, Driver, Os>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>;
+    Os: VmiOs<Driver>,
+{
+    /// The VMI core providing low-level VM introspection capabilities.
+    pub(crate) core: &'a VmiCore<Driver>,
 
-impl<Driver, Os> VmiOsSession<'_, Driver, Os>
+    /// The OS-specific operations and abstractions.
+    pub(crate) os: &'a Os,
+}
+
+impl<'a, Driver, Os> VmiOsSession<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI session.
-    pub fn core(&self) -> &VmiSession<Driver, Os> {
-        self.0
+    pub fn core(&self) -> &'a VmiCore<Driver> {
+        self.core
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
-        self.0.underlying_os()
+    pub fn underlying_os(&self) -> &'a Os {
+        self.os
     }
 }
 
@@ -158,7 +165,7 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    pub(crate) session: &'a VmiSession<Driver, Os>,
+    pub(crate) session: &'a VmiSession<'a, Driver, Os>,
 
     /// The set of restricted page faults that are allowed to occur.
     pub(crate) restricted: Rc<IndexSet<PageFault>>,
@@ -167,12 +174,12 @@ where
     pub(crate) page_faults: Rc<RefCell<IndexSet<PageFault>>>,
 }
 
-impl<Driver, Os> std::ops::Deref for VmiSessionProber<'_, Driver, Os>
+impl<'a, Driver, Os> std::ops::Deref for VmiSessionProber<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
-    type Target = VmiSession<Driver, Os>;
+    type Target = VmiSession<'a, Driver, Os>;
 
     fn deref(&self) -> &Self::Target {
         self.session
@@ -207,7 +214,7 @@ where
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&'a self) -> VmiOsSessionProber<'a, Driver, Os> {
+    pub fn os(&self) -> VmiOsSessionProber<Driver, Os> {
         VmiOsSessionProber(self)
     }
 
@@ -428,19 +435,19 @@ where
     Driver: VmiDriver,
     Os: VmiOs<Driver>;
 
-impl<Driver, Os> VmiOsSessionProber<'_, Driver, Os>
+impl<'a, Driver, Os> VmiOsSessionProber<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI session prober.
-    pub fn core(&self) -> &VmiSessionProber<'_, Driver, Os> {
+    pub fn core(&self) -> &'a VmiSessionProber<'a, Driver, Os> {
         self.0
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
-        self.0.underlying_os()
+    pub fn underlying_os(&self) -> &'a Os {
+        self.0.os
     }
 
     /*

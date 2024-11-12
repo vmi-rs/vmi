@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the VMI session.
     tracing::info!("Creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-    let session = VmiSession::new(core, os);
+    let session = VmiSession::new(&core, &os);
 
     // Get the list of processes and print them.
     let _pause_guard = session.pause_guard()?;

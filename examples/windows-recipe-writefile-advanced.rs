@@ -48,7 +48,7 @@
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe finished result=0x0000000000000001
 //! ```
 
-mod _common;
+mod common;
 
 use vmi::{
     arch::amd64::Amd64,
@@ -295,7 +295,7 @@ where
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (vmi, profile) = _common::create_vmi_session()?;
+    let (vmi, profile) = common::create_vmi_session()?;
 
     let processes = {
         let _pause_guard = vmi.pause_guard()?;
