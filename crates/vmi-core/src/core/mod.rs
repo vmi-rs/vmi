@@ -8,7 +8,7 @@ mod vcpu_id;
 mod view;
 
 pub use self::{
-    access_context::{AccessContext, Gfn, Pa, TranslationMechanism, Va},
+    access_context::{AccessContext, Gfn, Pa, TranslationMechanism, Va, VmiVa},
     address_context::AddressContext,
     hex::Hex,
     info::VmiInfo,

@@ -1,13 +1,11 @@
-use object::{FileKind, LittleEndian as LE};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
-    os::ProcessObject, Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError,
+    os::{NoOS, VmiOsImage},
+    Architecture as _, Va, VmiCore, VmiDriver, VmiError, VmiSession, VmiState,
 };
 
 use super::ArchAdapter;
-use crate::{
-    pe::codeview::codeview_from_pe, PeLite32, PeLite64, WindowsKernelInformation, WindowsOs,
-};
+use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// An extension trait for [`PageTableEntry`] that provides access to
 /// Windows-specific fields.
@@ -21,11 +19,11 @@ trait WindowsPageTableEntry {
 
 impl WindowsPageTableEntry for PageTableEntry {
     fn windows_prototype(self) -> bool {
-        self.0 >> 10 & 1 != 0
+        (self.0 >> 10) & 1 != 0
     }
 
     fn windows_transition(self) -> bool {
-        self.0 >> 11 & 1 != 0
+        (self.0 >> 11) & 1 != 0
     }
 }
 
@@ -34,11 +32,11 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
-        _os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
+        vmi: VmiState<Driver, WindowsOs<Driver>>,
         index: u64,
     ) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
         match index {
             0 => Ok(registers.r10),
             1 => Ok(registers.rdx),
@@ -47,30 +45,28 @@ where
             _ => {
                 let index = index + 1;
                 let stack = registers.rsp + index * size_of::<u64>() as u64;
-                vmi.read_u64(registers.address_context(stack.into()))
+                vmi.read_u64(stack.into())
             }
         }
     }
 
     fn function_argument(
-        _os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
+        vmi: VmiState<Driver, WindowsOs<Driver>>,
         index: u64,
     ) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
         if registers.cs.access.long_mode() {
-            function_argument_x64(vmi, registers, index)
+            function_argument_x64(vmi, index)
         }
         else {
-            function_argument_x86(vmi, registers, index)
+            function_argument_x86(vmi, index)
         }
     }
 
-    fn function_return_value(
-        _os: &WindowsOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
-    ) -> Result<u64, VmiError> {
+    fn function_return_value(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
         Ok(registers.rax)
     }
 
@@ -80,6 +76,9 @@ where
     ) -> Result<Option<WindowsKernelInformation>, VmiError> {
         /// Maximum backward search distance for the kernel image base.
         const MAX_BACKWARD_SEARCH: u64 = 32 * 1024 * 1024;
+
+        let session = VmiSession::new(vmi, &NoOS);
+        let vmi = session.with_registers(registers);
 
         // Align MSR_LSTAR to 4KB.
         let lstar = registers.msr_lstar & Amd64::PAGE_MASK;
@@ -97,9 +96,9 @@ where
             // Ignore page faults.
             //
 
-            match vmi.read(registers.address_context(base_address), &mut data) {
+            match vmi.read(base_address, &mut data) {
                 Ok(()) => {}
-                Err(VmiError::PageFault(_)) => continue,
+                Err(VmiError::Translation(_)) => continue,
                 Err(err) => return Err(err),
             }
 
@@ -108,50 +107,13 @@ where
             }
 
             tracing::debug!(%base_address, "found MZ");
-            match FileKind::parse(&data[..]) {
-                Ok(FileKind::Pe32) => {
-                    let pe = PeLite32::parse(&data).map_err(|err| VmiError::Os(err.into()))?;
-                    if let Some(codeview) =
-                        codeview_from_pe(vmi, registers.address_context(base_address), &pe)?
-                    {
-                        let optional_header = &pe.nt_headers.optional_header;
 
-                        return Ok(Some(WindowsKernelInformation {
-                            base_address,
-                            version_major: optional_header.major_operating_system_version.get(LE),
-                            version_minor: optional_header.minor_operating_system_version.get(LE),
-                            codeview,
-                        }));
-                    }
-                    else {
-                        tracing::warn!("No codeview found");
-                    }
-                }
-                Ok(FileKind::Pe64) => {
-                    let pe = PeLite64::parse(&data).map_err(|err| VmiError::Os(err.into()))?;
-                    if let Some(codeview) =
-                        codeview_from_pe(vmi, registers.address_context(base_address), &pe)?
-                    {
-                        let optional_header = &pe.nt_headers.optional_header;
-
-                        return Ok(Some(WindowsKernelInformation {
-                            base_address,
-                            version_major: optional_header.major_operating_system_version.get(LE),
-                            version_minor: optional_header.minor_operating_system_version.get(LE),
-                            codeview,
-                        }));
-                    }
-                    else {
-                        tracing::warn!("No codeview found");
-                    }
-                }
-                Ok(kind) => {
-                    tracing::warn!(?kind, "Unsupported architecture");
-                }
-                Err(err) => {
-                    tracing::warn!(%err, "Error parsing PE");
-                }
-            }
+            let image = WindowsImage::new_without_os(vmi, base_address);
+            match image_codeview(&image) {
+                Ok(Some(result)) => return Ok(Some(result)),
+                Ok(None) => tracing::warn!("No codeview found"),
+                Err(err) => tracing::warn!(%err, "Error parsing PE"),
+            };
         }
 
         tracing::warn!(
@@ -162,56 +124,30 @@ where
         Ok(None)
     }
 
-    fn kernel_image_base(
-        os: &WindowsOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
-    ) -> Result<Va, VmiError> {
-        let KiSystemCall64 = os.symbols.KiSystemCall64;
+    fn kernel_image_base(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<Va, VmiError> {
+        vmi.underlying_os()
+            .kernel_image_base
+            .get_or_try_init(|| {
+                let KiSystemCall64 = vmi.underlying_os().symbols.KiSystemCall64;
 
-        if let Some(kernel_image_base) = *os.kernel_image_base.borrow() {
-            return Ok(kernel_image_base);
-        }
-
-        let kernel_image_base = Va::new(registers.msr_lstar - KiSystemCall64);
-        *os.kernel_image_base.borrow_mut() = Some(kernel_image_base);
-        Ok(kernel_image_base)
+                let registers = vmi.registers();
+                Ok(Va(registers.msr_lstar - KiSystemCall64))
+            })
+            .copied()
     }
 
-    fn process_address_is_valid(
-        os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
-        process: ProcessObject,
+    fn is_page_present_or_transition(
+        vmi: VmiState<Driver, WindowsOs<Driver>>,
         address: Va,
-    ) -> Result<Option<bool>, VmiError> {
-        //
-        // So, the logic is roughly as follows:
-        // - Translate the address and try to find the page table entry.
-        //   - If the page table entry is found:
-        //     - If the page is present, the address is valid.
-        //     - If the page is in transition AND not a prototype, the address is valid.
-        // - Find the VAD for the address.
-        //   - If the VAD is not found, the address is invalid.
-        // - If the VadType is VadImageMap, the address is valid.
-        //   - If the VadType is not VadImageMap, we don't care (VadAwe, physical
-        //     memory, ...).
-        // - If the PrivateMemory bit is not set, the address is invalid.
-        // - If the MemCommit bit is not set, the address is invalid.
-        //
-        // References:
-        // - MmAccessFault
-        // - MiDispatchFault
-        // - MiQueryAddressState
-        // - MiCheckVirtualAddress
-        //
+    ) -> Result<bool, VmiError> {
+        let registers = vmi.registers();
 
-        let translation = Amd64::translation(vmi, address, registers.cr3.into());
+        let translation = Amd64::translation(vmi.core(), address, registers.cr3.into());
         if let Some(entry) = translation.entries().last() {
             if entry.level == PageTableLevel::Pt {
                 if entry.entry.present() {
                     // The address is valid if the page is present.
-                    return Ok(Some(true));
+                    return Ok(true);
                 }
                 else if entry.entry.windows_transition() && !entry.entry.windows_prototype() {
                     // The Transition bit being 1 indicates that the page is in a transitional
@@ -225,51 +161,17 @@ where
                     // This state is part of Windows' memory management optimization.
                     // It allows the system to keep pages in memory that might be needed
                     // again soon, without consuming the working set quota of processes.
-                    return Ok(Some(true));
+                    return Ok(true);
                 }
             }
         }
 
-        //
-        // TODO: The code below should be moved to a separate architecture-independent
-        // function.
-        //
-
-        let vad_va = match os.find_process_vad(vmi, registers, process, address)? {
-            Some(vad_va) => vad_va,
-            None => return Ok(Some(false)),
-        };
-
-        const MM_ZERO_ACCESS: u8 = 0; // this value is not used.
-        const MM_DECOMMIT: u8 = 0x10; // NO_ACCESS, Guard page
-        const MM_NOACCESS: u8 = 0x18; // NO_ACCESS, Guard_page, nocache.
-
-        const VadImageMap: u8 = 2;
-
-        let vad = os.vad(vmi, registers, vad_va)?;
-
-        if matches!(vad.protection, MM_ZERO_ACCESS | MM_DECOMMIT | MM_NOACCESS) {
-            return Ok(Some(false));
-        }
-
-        Ok(Some(
-            // Private memory must be committed.
-            (vad.private_memory && vad.mem_commit) ||
-
-            // Non-private memory must be mapped from an image.
-            // Note that this isn't actually correct, because
-            // some parts of the image might not be committed,
-            // or they can have different protection than the VAD.
-            //
-            // However, figuring out the correct protection would
-            // be quite complex, so we just assume that the image
-            // is always committed and has the same protection as
-            // the VAD.
-            (!vad.private_memory && vad.vad_type == VadImageMap),
-        ))
+        Ok(false)
     }
 
-    fn current_kpcr(_os: &WindowsOs<Driver>, _vmi: &VmiCore<Driver>, registers: &Registers) -> Va {
+    fn current_kpcr(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Va {
+        let registers = vmi.registers();
+
         if registers.cs.selector.request_privilege_level() != 0
             || (registers.gs.base & (1 << 47)) == 0
         {
@@ -281,27 +183,97 @@ where
     }
 }
 
+/*
+
+fn find_kernel_slow<Driver>(
+    vmi: VmiState<Driver>,
+) -> Result<Option<WindowsKernelInformation>, VmiError>
+where
+    Driver: VmiDriver<Architecture = Amd64>,
+{
+    tracing::debug!("performing slow kernel search");
+
+    let info = vmi.info()?;
+
+    for gfn in 0..info.max_gfn.0 {
+        let gfn = Gfn(gfn);
+
+        let data = match vmi.read_page(gfn) {
+            Ok(page) => page,
+            Err(_) => continue,
+        };
+
+        if &data[..2] != b"MZ" {
+            continue;
+        }
+
+        let image = WindowsImage::new_from_pa(vmi, Amd64::pa_from_gfn(gfn));
+        let result = match image_codeview(&image) {
+            Ok(Some(result)) => result,
+            _ => continue,
+        };
+
+        if !result.codeview.path.starts_with("nt") {
+            continue;
+        }
+
+        return Ok(Some(result));
+    }
+
+    Ok(None)
+}
+
+*/
+
+fn image_codeview<Driver>(
+    image: &WindowsImage<Driver>,
+) -> Result<Option<WindowsKernelInformation>, VmiError>
+where
+    Driver: VmiDriver<Architecture = Amd64>,
+{
+    let debug_directory = match image.debug_directory()? {
+        Some(debug_directory) => debug_directory,
+        None => return Ok(None),
+    };
+
+    let codeview = match debug_directory.codeview()? {
+        Some(codeview) => codeview,
+        None => return Ok(None),
+    };
+
+    let optional_header = image.nt_headers()?.optional_header();
+
+    Ok(Some(WindowsKernelInformation {
+        base_address: image.base_address(),
+        version_major: optional_header.major_operating_system_version(),
+        version_minor: optional_header.minor_operating_system_version(),
+        codeview,
+    }))
+}
+
 fn function_argument_x86<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: VmiState<Driver, WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
+    let registers = vmi.registers();
+
     let index = index + 1;
     let stack = registers.rsp + index * size_of::<u32>() as u64;
-    Ok(vmi.read_u32(registers.address_context(stack.into()))? as u64)
+    Ok(vmi.read_u32(stack.into())? as u64)
 }
 
 fn function_argument_x64<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: VmiState<Driver, WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
+    let registers = vmi.registers();
+
     match index {
         0 => Ok(registers.rcx),
         1 => Ok(registers.rdx),
@@ -310,7 +282,7 @@ where
         _ => {
             let index = index + 1;
             let stack = registers.rsp + index * size_of::<u64>() as u64;
-            vmi.read_u64(registers.address_context(stack.into()))
+            vmi.read_u64(stack.into())
         }
     }
 }

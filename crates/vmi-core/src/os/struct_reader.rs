@@ -1,6 +1,7 @@
 use isr_macros::Field;
 
-use crate::{AccessContext, VmiCore, VmiDriver, VmiError};
+use super::VmiOs;
+use crate::{AccessContext, Registers, Va, VmiCore, VmiDriver, VmiError, VmiState};
 
 /// A handler for reading structured data from guest memory.
 ///
@@ -55,7 +56,22 @@ impl StructReader {
     /// [`read`] method with appropriate field descriptors.
     ///
     /// [`read`]: Self::read
-    pub fn new<Driver>(
+    pub fn new<Driver, Os>(vmi: &VmiState<Driver, Os>, va: Va, len: usize) -> Result<Self, VmiError>
+    where
+        Driver: VmiDriver,
+        Os: VmiOs<Driver>,
+    {
+        Self::new_in(vmi, vmi.registers().address_context(va), len)
+    }
+
+    /// Creates a new structure reader.
+    ///
+    /// Reads `len` bytes from the guest memory at the specified address into
+    /// a new `StructReader` instance. The data can then be accessed using the
+    /// [`read`] method with appropriate field descriptors.
+    ///
+    /// [`read`]: Self::read
+    pub fn new_in<Driver>(
         vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
         len: usize,
@@ -64,7 +80,7 @@ impl StructReader {
         Driver: VmiDriver,
     {
         let mut buffer = vec![0u8; len];
-        vmi.read(ctx, &mut buffer)?;
+        vmi.read(ctx.into(), &mut buffer)?;
         Ok(Self(buffer))
     }
 
@@ -73,15 +89,15 @@ impl StructReader {
     /// Extracts a value from the buffer using the provided field descriptor,
     /// which specifies the offset and size of the field.
     /// The value is interpreted as a little-endian integer of the appropriate
-    /// size and returned as a `u64`.
+    /// size and returned as a [`u64`].
     ///
     /// # Endianness
     ///
-    /// Values are always read as little-endian integers. The returned `u64`
+    /// Values are always read as little-endian integers. The returned [`u64`]
     /// will contain the zero-extended value.
     pub fn read(&self, field: Field) -> Result<u64, VmiError> {
-        let offset = field.offset as usize;
-        let size = field.size as usize;
+        let offset = field.offset() as usize;
+        let size = field.size() as usize;
 
         let offset_end = match offset.checked_add(size) {
             Some(offset_end) => offset_end,

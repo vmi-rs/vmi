@@ -2,7 +2,9 @@
 
 use std::fmt::Debug;
 
-use crate::{AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError};
+use crate::{
+    AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError,
+};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///
@@ -227,6 +229,9 @@ where
     ///
     /// - **AMD64**: 8 bytes if the `CS.L` bit is set, otherwise 4 bytes
     fn effective_address_width(&self) -> usize;
+
+    /// Creates an access context for a given virtual address.
+    fn access_context(&self, va: Va) -> AccessContext;
 
     /// Creates an address context for a given virtual address.
     fn address_context(&self, va: Va) -> AddressContext;

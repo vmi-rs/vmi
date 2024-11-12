@@ -1,4 +1,4 @@
-use crate::{Pa, Va};
+use crate::AddressContext;
 
 /// An error that can occur when working with the VMI.
 #[derive(thiserror::Error, Debug)]
@@ -19,9 +19,9 @@ pub enum VmiError {
     #[error(transparent)]
     Isr(#[from] isr_macros::Error),
 
-    /// A page fault occurred.
-    #[error("Page not present ({:?}, len: {})", .0[0], .0.len())]
-    PageFault(PageFaults),
+    /// A translation error occurred.
+    #[error("Translation error ({:?}, len: {})", .0[0], .0.len())]
+    Translation(PageFaults),
 
     /// The given address has invalid width.
     #[error("Invalid address width")]
@@ -56,33 +56,17 @@ pub enum VmiError {
     Other(&'static str),
 }
 
-/// A page fault.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PageFault {
-    /// The virtual address that caused the page fault.
-    pub address: Va,
-
-    /// The root of the page table hierarchy.
-    pub root: Pa,
-}
-
 /// A collection of page faults.
-pub type PageFaults = smallvec::SmallVec<[PageFault; 1]>;
-
-impl From<(Va, Pa)> for PageFault {
-    fn from((address, root): (Va, Pa)) -> Self {
-        Self { address, root }
-    }
-}
+pub type PageFaults = smallvec::SmallVec<[AddressContext; 1]>;
 
 impl VmiError {
     /// Creates a new page fault error.
-    pub fn page_fault(pf: impl Into<PageFault>) -> Self {
-        Self::PageFault(smallvec::smallvec![pf.into()])
+    pub fn page_fault(pf: impl Into<AddressContext>) -> Self {
+        Self::Translation(smallvec::smallvec![pf.into()])
     }
 
     /// Creates a new page fault error with multiple page faults.
-    pub fn page_faults(pfs: impl IntoIterator<Item = PageFault>) -> Self {
-        Self::PageFault(pfs.into_iter().collect())
+    pub fn page_faults(pfs: impl IntoIterator<Item = AddressContext>) -> Self {
+        Self::Translation(pfs.into_iter().collect())
     }
 }

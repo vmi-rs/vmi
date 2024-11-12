@@ -15,7 +15,6 @@ where
     type Impl: PageTableMonitorArchAdapter<Driver, Tag>;
 }
 
-#[allow(missing_docs)]
 /// Adapter implementation trait for architecture-specific page table monitor implementations.
 pub trait PageTableMonitorArchAdapter<Driver, Tag>
 where

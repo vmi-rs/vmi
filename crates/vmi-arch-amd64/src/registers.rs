@@ -4,7 +4,7 @@ use super::{
 };
 
 /// The state of the CPU registers.
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Registers {
     pub rax: u64,
@@ -66,7 +66,7 @@ pub struct Registers {
     // vmtrace_pos: u64,
 }
 
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 /// General-purpose registers.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct GpRegisters {

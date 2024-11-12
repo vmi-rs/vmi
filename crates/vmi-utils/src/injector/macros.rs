@@ -8,7 +8,10 @@ pub mod __private {
         pub use zerocopy::*;
     }
 
-    use vmi_core::{os::OsRegionKind, Va, VmiContext, VmiDriver, VmiError, VmiOs};
+    use vmi_core::{
+        os::{VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion, VmiOsRegionKind},
+        Va, VmiDriver, VmiError, VmiOs, VmiState,
+    };
 
     use super::super::RecipeContext;
     use crate::injector::recipe::SymbolCache;
@@ -66,12 +69,42 @@ pub mod __private {
     }
 
     /// Finds a first mapped region with the specified filename in the current
+    /// process. The filename is case-insensitive. Returns the region if found.
+    pub fn find_region<'a, Driver>(
+        process: &impl VmiOsProcess<'a, Driver>,
+        filename: &str,
+    ) -> Result<Option<impl VmiOsRegion<'a, Driver>>, VmiError>
+    where
+        Driver: VmiDriver,
+    {
+        for region in process.regions()? {
+            let region = region?;
+
+            let mapped = match region.kind()? {
+                VmiOsRegionKind::MappedImage(mapped) => mapped,
+                _ => continue,
+            };
+
+            let path = match mapped.path() {
+                Ok(Some(path)) => path,
+                _ => continue,
+            };
+
+            if path.to_ascii_lowercase().ends_with(filename) {
+                return Ok(Some(region));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Finds a first mapped region with the specified filename in the current
     /// process and retrieves the exported symbols from the image. The filename
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
     #[tracing::instrument(skip(vmi))]
     pub fn exported_symbols<Driver, Os>(
-        vmi: &VmiContext<'_, Driver, Os>,
+        vmi: &VmiState<'_, Driver, Os>,
         filename: &str,
     ) -> Result<Option<SymbolCache>, VmiError>
     where
@@ -79,30 +112,18 @@ pub mod __private {
         Os: VmiOs<Driver>,
     {
         let current_process = vmi.os().current_process()?;
-        let regions = vmi.os().process_regions(current_process)?;
 
-        let image = match regions.iter().find(|region| {
-            let mapped = match &region.kind {
-                OsRegionKind::Mapped(mapped) => mapped,
-                _ => return false,
-            };
-
-            let path = match &mapped.path {
-                Ok(Some(path)) => path,
-                _ => return false,
-            };
-
-            path.to_ascii_lowercase().ends_with(filename)
-        }) {
+        let region = match find_region(&current_process, filename)? {
             Some(image) => image,
             None => return Ok(None),
         };
 
-        let symbols = vmi.os().image_exported_symbols(image.start)?;
+        let image = vmi.os().image(region.start()?)?;
+        let symbols = image.exports()?;
 
         tracing::trace!(
-            va = %image.start,
-            kind = ?image.kind,
+            va = %region.start()?,
+            //kind = ?region.kind()?,
             symbols = symbols.len(),
             "image found"
         );
@@ -133,7 +154,7 @@ pub mod __private {
 /// - `vmi!()` - Access the VMI context
 /// - `registers!()` - Access the registers
 /// - `data!()` - Access recipe data
-/// - `inj!()` - Inject and call functions
+/// - `inject!()` - Inject and call functions
 /// - `copy_to_stack!()` - Copy data to the stack
 ///
 /// [`RecipeContext`]: super::RecipeContext
@@ -211,7 +232,7 @@ macro_rules! _private_recipe {
                     /// # Example
                     ///
                     /// ```compile_fail
-                    /// inj! {
+                    /// inject! {
                     ///     user32!MessageBoxA(
                     ///         0,                          // hWnd
                     ///         data![text],                // lpText
@@ -221,7 +242,7 @@ macro_rules! _private_recipe {
                     /// }
                     /// ```
                     #[expect(unused_macros)]
-                    macro_rules! inj {
+                    macro_rules! inject {
                         ($image:ident!$function:ident($d($d arg:expr),*)) => {
                             $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
                         };
@@ -244,7 +265,7 @@ macro_rules! _private_recipe {
                     /// // Allocate a value on the stack to store the output parameter.
                     /// data![bytes_written_ptr] = copy_to_stack!(0u64)?;
                     ///
-                    /// inj! {
+                    /// inject! {
                     ///     kernel32!WriteFile(
                     ///         data![handle],              // hFile
                     ///         data![content],             // lpBuffer
@@ -300,7 +321,7 @@ macro_rules! _private_recipe {
             //
             // The parent macro can be invoked as follows:
             // ```
-            // inj! {
+            // inject! {
             //     kernel32!VirtualAlloc(
             //         0,                          // lpAddress
             //         0x1000,                     // dwSize

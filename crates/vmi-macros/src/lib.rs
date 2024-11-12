@@ -1,8 +1,8 @@
 //! Procedural macros for the `vmi` crate.
 
+mod common;
 mod derive_os_impl;
 mod derive_os_trait;
-mod lifetime;
 mod method;
 mod transform;
 

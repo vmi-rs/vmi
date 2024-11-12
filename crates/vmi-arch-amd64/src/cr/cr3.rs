@@ -13,12 +13,12 @@ impl Cr3 {
 
     /// Returns the page table base physical address.
     pub fn page_frame_number(self) -> u64 {
-        self.0 >> 12 & 0x000f_ffff_ffff_ffff
+        (self.0 >> 12) & 0x000f_ffff_ffff_ffff
     }
 
     /// Returns true if the PCID should be invalidated.
     pub fn pcid_invalidate(self) -> bool {
-        self.0 >> 63 & 1 != 0
+        (self.0 >> 63) & 1 != 0
     }
 }
 

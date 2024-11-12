@@ -60,10 +60,13 @@ symbols! {
 
         NtClose: Option<u64>,
 
+        ExAllocatePool: u64,
         ExAllocatePoolWithTag: u64,
+        ExFreePool: u64,
         ExFreePoolWithTag: u64,
         MmGetSystemRoutineAddress: u64,
 
+        ObpRootDirectoryObject: u64,
         ObHeaderCookie: Option<u64>,
         ObTypeIndexTable: u64,
         ObpInfoMaskToOffset: u64,
@@ -84,6 +87,11 @@ offsets! {
     /// [`WindowsOs`]: crate::WindowsOs
     #[derive(Debug)]
     pub struct OffsetsCommon {
+        struct _LIST_ENTRY {
+            Flink: Field,                   // struct _LIST_ENTRY*
+            Blink: Field,                   // struct _LIST_ENTRY*
+        }
+
         struct _EX_FAST_REF {
             RefCnt: Bitfield,
             Value: Field,
@@ -105,12 +113,12 @@ offsets! {
 
         #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]
         struct _KLDR_DATA_TABLE_ENTRY {
-            InLoadOrderLinks: Field,    // _LIST_ENTRY
-            DllBase: Field,             // PVOID
-            EntryPoint: Field,          // PVOID
-            SizeOfImage: Field,         // ULONG
-            FullDllName: Field,         // _UNICODE_STRING
-            BaseDllName: Field,         // _UNICODE_STRING
+            InLoadOrderLinks: Field,        // _LIST_ENTRY
+            DllBase: Field,                 // PVOID
+            EntryPoint: Field,              // PVOID
+            SizeOfImage: Field,             // ULONG
+            FullDllName: Field,             // _UNICODE_STRING
+            BaseDllName: Field,             // _UNICODE_STRING
         }
 
         struct _CLIENT_ID {
@@ -128,7 +136,8 @@ offsets! {
         }
 
         struct _HANDLE_TABLE {
-            TableCode: Field,
+            NextHandleNeedingPool: Field,   // ULONG
+            TableCode: Field,               // ULONG_PTR
         }
 
         struct _OBJECT_ATTRIBUTES {
@@ -143,12 +152,40 @@ offsets! {
             Body: Field,
         }
 
+        struct _OBJECT_DIRECTORY {
+            HashBuckets: Field,             // struct _OBJECT_DIRECTORY_ENTRY* [37]
+        }
+
+        struct _OBJECT_DIRECTORY_ENTRY {
+            ChainLink: Field,               // struct _OBJECT_DIRECTORY_ENTRY*
+            Object: Field,                  // PVOID
+            HashValue: Field,               // ULONG
+        }
+
         struct _OBJECT_HEADER_NAME_INFO {
-            Directory: Field,
-            Name: Field,
+            Directory: Field,               // _OBJECT_DIRECTORY*
+            Name: Field,                    // _UNICODE_STRING
         }
 
         struct _OBJECT_TYPE {
+            Name: Field,
+        }
+
+        struct _CM_KEY_BODY {
+            KeyControlBlock: Field,
+        }
+
+        struct _CM_KEY_CONTROL_BLOCK {
+            ParentKcb: Field,               // _CM_KEY_CONTROL_BLOCK*
+            NameBlock: Field,               // _CM_NAME_CONTROL_BLOCK*
+
+            RealKeyName: Field,             // char*
+            FullKCBName: Field,             // _UNICODE_STRING*
+        }
+
+        struct _CM_NAME_CONTROL_BLOCK {
+            Compressed: Bitfield,
+            NameLength: Field,
             Name: Field,
         }
 
@@ -179,23 +216,28 @@ offsets! {
             ApcState: Field,
             Teb: Field,
             Process: Field,
+            ThreadListEntry: Field,         // _LIST_ENTRY
         }
 
         struct _ETHREAD {
             Cid: Field,
+            ThreadListEntry: Field,         // _LIST_ENTRY
         }
 
         struct _KPROCESS {
             DirectoryTableBase: Field,
             UserDirectoryTableBase: Option<Field>,
+            ThreadListHead: Field,          // _LIST_ENTRY
         }
 
         struct _EPROCESS {
             UniqueProcessId: Field,
-            ActiveProcessLinks: Field,
+            ActiveProcessLinks: Field,      // _LIST_ENTRY
+            SessionProcessLinks: Field,     // _LIST_ENTRY
             SectionBaseAddress: Field,
             InheritedFromUniqueProcessId: Field,
             Peb: Field,
+            Session: Field,                 // _MM_SESSION_SPACE*
             ObjectTable: Field,
             #[isr(alias = "Wow64Process")]
             WoW64Process: Field,
@@ -203,6 +245,7 @@ offsets! {
             VadRoot: Field,                 // _MM_AVL_TABLE (Windows 7, contains BalancedRoot at offset 0)
                                             // _RTL_AVL_TREE (Windows 10+)
             VadHint: Option<Field>,         // PVOID (Windows 10+, _MM_AVL_TABLE.NodeHint on Windows 7)
+            ThreadListHead: Field,          // _LIST_ENTRY
         }
 
         struct _PEB {
@@ -225,6 +268,11 @@ offsets! {
 
         struct _CURDIR {
             DosPath: Field,                 // _UNICODE_STRING
+        }
+
+        struct _MM_SESSION_SPACE {
+            SessionId: Field,               // ULONG
+            ProcessList: Field,             // _LIST_ENTRY
         }
 
         struct _MMPFN {
@@ -335,6 +383,14 @@ pub struct Offsets {
     pub ext: Option<OffsetsExt>,
 }
 
+impl std::ops::Deref for Offsets {
+    type Target = OffsetsCommon;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
 impl Offsets {
     /// Creates a new `Offsets` instance.
     pub fn new(profile: &Profile) -> Result<Self, Error> {
@@ -350,5 +406,10 @@ impl Offsets {
         };
 
         Ok(Self { common, ext })
+    }
+
+    /// Returns the extended offsets.
+    pub fn ext(&self) -> Option<&OffsetsExt> {
+        self.ext.as_ref()
     }
 }

@@ -13,9 +13,9 @@
 //! - [Kernel Documentation - Maple Tree](https://docs.kernel.org/core-api/maple_tree.html)
 
 #![allow(dead_code)]
-use vmi_core::{Architecture, Registers as _, Va, VmiCore, VmiDriver, VmiError};
+use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use crate::Offsets;
+use crate::{arch::ArchAdapter, LinuxOs, Offsets};
 
 /// Represents different node types in a Maple Tree.
 #[derive(Debug)]
@@ -159,28 +159,37 @@ const fn mte_is_leaf(entry: Va /* maple_enode */) -> bool {
 pub struct MapleTree<'a, Driver>
 where
     Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// The VMI core.
-    vmi: &'a VmiCore<Driver>,
+    /// The VMI state.
+    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
 
-    /// The CPU register state.
-    regs: &'a <Driver::Architecture as Architecture>::Registers,
+    /// The virtual address of the Maple Tree root.
+    root: Va,
+}
 
-    /// Offsets for the Maple Tree data structure.
-    offsets: &'a Offsets,
+impl<Driver> VmiVa for MapleTree<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn va(&self) -> Va {
+        self.root
+    }
 }
 
 impl<'a, Driver> MapleTree<'a, Driver>
 where
     Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new MapleTree instance.
-    pub fn new(
-        vmi: &'a VmiCore<Driver>,
-        regs: &'a <Driver::Architecture as Architecture>::Registers,
-        offsets: &'a Offsets,
-    ) -> Self {
-        Self { vmi, regs, offsets }
+    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, root: Va) -> Self {
+        Self { vmi, root }
+    }
+
+    fn offsets(&self) -> &Offsets {
+        &self.vmi.underlying_os().offsets
     }
 
     // region: Enumerate
@@ -188,20 +197,19 @@ where
     /// Enumerates all entries in the Maple Tree.
     ///
     /// Traverses the tree structure and calls the provided callback for each entry found.
-    pub fn enumerate(
-        &self,
-        root: Va,
-        mut callback: impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError> {
-        let __maple_tree = &self.offsets.maple_tree;
+    pub fn enumerate(&self, mut callback: impl FnMut(Va) -> bool) -> Result<(), VmiError> {
+        let offsets = self.offsets();
+        let __maple_tree = &offsets.maple_tree;
 
-        let entry = self.read_va(root + __maple_tree.ma_root.offset)?;
+        let entry = self
+            .vmi
+            .read_va_native(self.root + __maple_tree.ma_root.offset())?;
 
         if !xa_is_node(entry) {
             self.enumerate_entry(entry, &mut callback);
         }
         else if !entry.is_null() {
-            self.enumerate_node(root, entry, 0, u64::MAX, &mut callback)?;
+            self.enumerate_node(self.root, entry, 0, u64::MAX, &mut callback)?;
         }
 
         Ok(())
@@ -227,8 +235,9 @@ where
         max: u64,
         callback: &mut impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
-        let __maple_tree = &self.offsets.maple_tree;
-        let __maple_node = &self.offsets.maple_node;
+        let offsets = self.offsets();
+        let __maple_tree = &offsets.maple_tree;
+        let __maple_node = &offsets.maple_node;
 
         let node = mte_to_node(entry);
         let typ = mte_node_type(entry);
@@ -238,7 +247,9 @@ where
                 // const MAPLE_NODE_SLOTS: u64 = 63;   // 32 bit OS
                 const MAPLE_NODE_SLOTS: u64 = 31; // 64 bit OS
                 for i in 0..MAPLE_NODE_SLOTS {
-                    let slot = self.read_va(node + __maple_node.slot.offset + i * 8)?;
+                    let slot = self
+                        .vmi
+                        .read_va_native(node + __maple_node.slot.offset() + i * 8)?;
 
                     if !slot.is_null() {
                         self.enumerate_entry(slot, callback);
@@ -265,32 +276,35 @@ where
         max: u64,
         callback: &mut impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
-        let __maple_node = &self.offsets.maple_node;
-        let __maple_range_64 = &self.offsets.maple_range_64;
+        let offsets = self.offsets();
+        let __maple_node = &offsets.maple_node;
+        let __maple_range_64 = &offsets.maple_range_64;
 
-        let node = mte_to_node(entry) + __maple_node.mr64.offset;
+        let node = mte_to_node(entry) + __maple_node.mr64.offset();
         let leaf = mte_is_leaf(entry);
         let mut first = min;
 
         const MAPLE_RANGE64_SLOTS_32: u64 = 32; // 32 bit OS
         const MAPLE_RANGE64_SLOTS_64: u64 = 16; // 64 bit OS
 
-        #[allow(non_snake_case)]
-        let MAPLE_RANGE64_SLOTS = match self.regs.address_width() {
+        #[expect(non_snake_case)]
+        let MAPLE_RANGE64_SLOTS = match self.vmi.registers().address_width() {
             4 => MAPLE_RANGE64_SLOTS_32,
             8 => MAPLE_RANGE64_SLOTS_64,
             _ => 0,
         };
 
         let __pivot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_range_64.pivot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_range_64.pivot.offset() + offset)
                 .map(u64::from)
         };
 
         let __slot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_range_64.slot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_range_64.slot.offset() + offset)
         };
 
         for i in 0..MAPLE_RANGE64_SLOTS {
@@ -337,32 +351,35 @@ where
         max: u64,
         callback: &mut impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
-        let __maple_node = &self.offsets.maple_node;
-        let __maple_arange_64 = &self.offsets.maple_arange_64;
+        let offsets = self.offsets();
+        let __maple_node = &offsets.maple_node;
+        let __maple_arange_64 = &offsets.maple_arange_64;
 
-        let node = mte_to_node(entry) + __maple_node.ma64.offset;
+        let node = mte_to_node(entry) + __maple_node.ma64.offset();
         let leaf = mte_is_leaf(entry);
         let mut first = min;
 
         const MAPLE_ARANGE64_SLOTS_32: u64 = 21; // 32 bit OS
         const MAPLE_ARANGE64_SLOTS_64: u64 = 10; // 64 bit OS
 
-        #[allow(non_snake_case)]
-        let MAPLE_ARANGE64_SLOTS = match self.regs.address_width() {
+        #[expect(non_snake_case)]
+        let MAPLE_ARANGE64_SLOTS = match self.vmi.registers().address_width() {
             4 => MAPLE_ARANGE64_SLOTS_32,
             8 => MAPLE_ARANGE64_SLOTS_64,
             _ => 0,
         };
 
         let __pivot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_arange_64.pivot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_arange_64.pivot.offset() + offset)
                 .map(u64::from)
         };
 
         let __slot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_arange_64.slot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_arange_64.slot.offset() + offset)
         };
 
         for i in 0..MAPLE_ARANGE64_SLOTS {
@@ -406,15 +423,20 @@ where
     // region: Dump
 
     /// Dumps the entire Maple Tree structure for debugging.
-    pub fn dump(&self, mt: Va) -> Result<(), VmiError> {
-        let __maple_tree = &self.offsets.maple_tree;
+    pub fn dump(&self) -> Result<(), VmiError> {
+        let offsets = self.offsets();
+        let __maple_tree = &offsets.maple_tree;
 
-        let flags = self.read_u32(mt + __maple_tree.ma_flags.offset)?;
-        let entry = self.read_va(mt + __maple_tree.ma_root.offset)?;
+        let flags = self
+            .vmi
+            .read_u32(self.root + __maple_tree.ma_flags.offset())?;
+        let entry = self
+            .vmi
+            .read_va_native(self.root + __maple_tree.ma_root.offset())?;
 
         println!(
             "maple_tree({}) flags {:X}, height {} root {:X}",
-            mt,
+            self.root,
             flags,
             mt_flags_height(flags),
             entry
@@ -424,7 +446,7 @@ where
             self.dump_entry(entry, 0, 0, 0);
         }
         else if !entry.is_null() {
-            self.dump_node(mt, entry, 0, u64::MAX, 0)?;
+            self.dump_node(self.root, entry, 0, u64::MAX, 0)?;
         }
 
         Ok(())
@@ -459,43 +481,48 @@ where
         }
         else {
             println!("{:?}", entry);
-            /*
             if entry.is_null() {
                 return;
             }
 
-            let __vm_area_struct = &self.offsets.vm_area_struct;
-            let start = self.read_u64(entry + __vm_area_struct.vm_start.offset);
-            let end = self.read_u64(entry + __vm_area_struct.vm_end.offset);
-            let file = self.read_va(entry + __vm_area_struct.vm_file.offset);
+            let offsets = self.offsets();
+            let __vm_area_struct = &offsets.vm_area_struct;
+
+            let start = self
+                .vmi
+                .read_u64(entry + __vm_area_struct.vm_start.offset());
+            let end = self.vmi.read_u64(entry + __vm_area_struct.vm_end.offset());
+            let file = self
+                .vmi
+                .read_va_native(entry + __vm_area_struct.vm_file.offset());
             println!("Range: {:X?}-{:X?}", start, end);
 
             if let Ok(file) = file {
                 if !file.is_null() {
-                    let __dentry = &self.offsets.dentry;
-                    let __file = &self.offsets.file;
-                    let __path = &self.offsets.path;
-                    let __qstr = &self.offsets.qstr;
+                    let __dentry = &offsets.dentry;
+                    let __file = &offsets.file;
+                    let __path = &offsets.path;
+                    let __qstr = &offsets.qstr;
 
-                    let f_path = file + __file.f_path.offset;
+                    let f_path = file + __file.f_path.offset();
 
-                    if let Ok(dentry) = self.read_va(f_path + __path.dentry.offset) {
-                        if let Ok(d_name) =
-                            self.read_va(dentry + __dentry.d_name.offset + __qstr.name.offset)
-                        {
-                            let name = self.read_string(d_name);
+                    if let Ok(dentry) = self.vmi.read_va_native(f_path + __path.dentry.offset()) {
+                        if let Ok(d_name) = self.vmi.read_va_native(
+                            dentry + __dentry.d_name.offset() + __qstr.name.offset(),
+                        ) {
+                            let name = self.vmi.read_string(d_name);
                             println!("    File: {:?}", name);
                         }
                     }
                 }
             }
-            */
         }
     }
 
     fn dump_node(&self, mt: Va, entry: Va, min: u64, max: u64, depth: u64) -> Result<(), VmiError> {
-        let __maple_tree = &self.offsets.maple_tree;
-        let __maple_node = &self.offsets.maple_node;
+        let offsets = self.offsets();
+        let __maple_tree = &offsets.maple_tree;
+        let __maple_node = &offsets.maple_node;
 
         let node = mte_to_node(entry);
         let typ = mte_node_type(entry);
@@ -508,7 +535,7 @@ where
             depth,
             mte_node_type(entry),
             if !node.is_null() {
-                self.read_va(node + __maple_node.parent.offset)
+                self.vmi.read_va_native(node + __maple_node.parent.offset())
             }
             else {
                 Ok(Va::default())
@@ -520,7 +547,9 @@ where
                 // const MAPLE_NODE_SLOTS: u64 = 63;   // 32 bit OS
                 const MAPLE_NODE_SLOTS: u64 = 31; // 64 bit OS
                 for i in 0..MAPLE_NODE_SLOTS {
-                    let slot = self.read_va(node + __maple_node.slot.offset + i * 8)?;
+                    let slot = self
+                        .vmi
+                        .read_va_native(node + __maple_node.slot.offset() + i * 8)?;
 
                     if !slot.is_null() {
                         self.dump_entry(slot, min, max, depth);
@@ -547,10 +576,11 @@ where
         max: u64,
         depth: u64,
     ) -> Result<(), VmiError> {
-        let __maple_node = &self.offsets.maple_node;
-        let __maple_range_64 = &self.offsets.maple_range_64;
+        let offsets = self.offsets();
+        let __maple_node = &offsets.maple_node;
+        let __maple_range_64 = &offsets.maple_range_64;
 
-        let node = mte_to_node(entry) + __maple_node.mr64.offset;
+        let node = mte_to_node(entry) + __maple_node.mr64.offset();
         let leaf = mte_is_leaf(entry);
         let mut first = min;
 
@@ -559,12 +589,14 @@ where
 
         let __pivot = |i: u64| {
             let offset = i * size_of::<u64>() as u64;
-            self.read_u64(node + __maple_range_64.pivot.offset + offset)
+            self.vmi
+                .read_u64(node + __maple_range_64.pivot.offset() + offset)
         };
 
         let __slot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_range_64.slot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_range_64.slot.offset() + offset)
         };
 
         for i in 0..MAPLE_RANGE64_SLOTS - 1 {
@@ -616,10 +648,11 @@ where
         max: u64,
         depth: u64,
     ) -> Result<(), VmiError> {
-        let __maple_node = &self.offsets.maple_node;
-        let __maple_arange_64 = &self.offsets.maple_arange_64;
+        let offsets = self.offsets();
+        let __maple_node = &offsets.maple_node;
+        let __maple_arange_64 = &offsets.maple_arange_64;
 
-        let node = mte_to_node(entry) + __maple_node.ma64.offset;
+        let node = mte_to_node(entry) + __maple_node.ma64.offset();
         let leaf = mte_is_leaf(entry);
         let mut first = min;
 
@@ -628,12 +661,14 @@ where
 
         let __pivot = |i: u64| {
             let offset = i * size_of::<u64>() as u64;
-            self.read_u64(node + __maple_arange_64.pivot.offset + offset)
+            self.vmi
+                .read_u64(node + __maple_arange_64.pivot.offset() + offset)
         };
 
         let __slot = |i: u64| {
-            let offset = i * self.regs.address_width() as u64;
-            self.read_va(node + __maple_arange_64.slot.offset + offset)
+            let offset = i * self.vmi.registers().address_width() as u64;
+            self.vmi
+                .read_va_native(node + __maple_arange_64.slot.offset() + offset)
         };
 
         for i in 0..MAPLE_ARANGE64_SLOTS - 1 {
@@ -675,28 +710,6 @@ where
         }
 
         Ok(())
-    }
-
-    // endregion
-
-    // region: Helpers
-
-    /// Reads a 32-bit value from virtual memory.
-    fn read_u32(&self, va: Va) -> Result<u32, VmiError> {
-        self.vmi.read_u32((va, self.regs.translation_root(va)))
-    }
-
-    /// Reads a 64-bit value from virtual memory.
-    fn read_u64(&self, va: Va) -> Result<u64, VmiError> {
-        self.vmi.read_u64((va, self.regs.translation_root(va)))
-    }
-
-    /// Reads a virtual address from virtual memory.
-    fn read_va(&self, va: Va) -> Result<Va, VmiError> {
-        self.vmi.read_va(
-            (va, self.regs.translation_root(va)),
-            self.regs.address_width(),
-        )
     }
 
     // endregion

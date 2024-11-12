@@ -2,8 +2,9 @@ use isr_core::Profile;
 use isr_macros::{offsets, Field};
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt, Registers};
 use vmi_core::{
-    os::ProcessId, Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext,
-    VmiCore, VmiDriver, VmiError, VmiEventResponse, VmiHandler,
+    os::{ProcessId, VmiOsProcess, VmiOsThread},
+    Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiDriver,
+    VmiError, VmiEventResponse, VmiHandler, VmiVa as _,
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
@@ -12,7 +13,6 @@ use super::{
     OsAdapter,
 };
 use crate::bridge::{BridgeHandler, BridgePacket};
-
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
 const INVALID_VIEW: View = View(0xffff);
 // const INVALID_TID: ThreadId = ThreadId(0xffff_ffff);
@@ -182,7 +182,7 @@ where
     }
 }
 
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
@@ -389,7 +389,7 @@ where
         // Early exit if the current process is not the target process.
         //
 
-        let current_pid = vmi.os().current_process_id()?;
+        let current_pid = vmi.os().current_process()?.id()?;
         if current_pid != self.pid {
             return Ok(VmiEventResponse::default());
         }
@@ -400,14 +400,13 @@ where
         // trap frame of the current thread.
         //
 
-        let current_tid = vmi.os().current_thread_id()?;
-
-        let KTHREAD_TrapFrame = self.offsets._KTHREAD.TrapFrame.offset;
-        let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset;
-        let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset;
+        let KTHREAD_TrapFrame = self.offsets._KTHREAD.TrapFrame.offset();
+        let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset();
+        let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset();
 
         let current_thread = vmi.os().current_thread()?;
-        let current_thread = Va::from(current_thread);
+        let current_tid = current_thread.id()?;
+        let current_thread = current_thread.va();
 
         let trap_frame = vmi.read_va(current_thread + KTHREAD_TrapFrame)?;
         let sp_va = vmi.read_va(trap_frame + KTRAP_FRAME_Rsp)?;
@@ -512,7 +511,7 @@ where
         // Therefore this event might have been triggered by a different process.
         //
 
-        let current_pid = vmi.os().current_process_id()?;
+        let current_pid = vmi.os().current_process()?.id()?;
         if current_pid != self.pid {
             // Too noisy...
             // tracing::trace!(
@@ -527,7 +526,7 @@ where
         // Early exit if the current thread is not the target thread.
         //
 
-        let current_tid = vmi.os().current_thread_id()?;
+        let current_tid = vmi.os().current_thread()?.id()?;
         if Some(current_tid) != self.tid {
             // Too noisy...
             // tracing::trace!(
@@ -621,12 +620,12 @@ where
 
         match self.dispatch(&vmi) {
             Ok(response) => response,
-            Err(VmiError::PageFault(pfs)) => {
+            Err(VmiError::Translation(pfs)) => {
                 let pf = pfs[0];
 
                 tracing::debug!(?pf, "injecting page fault");
-                let _ = vmi
-                    .inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.address, 0));
+                let _ =
+                    vmi.inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.va, 0));
 
                 VmiEventResponse::default()
             }
