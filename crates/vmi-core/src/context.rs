@@ -25,18 +25,18 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    pub(crate) session: &'a VmiSession<Driver, Os>,
+    pub(crate) session: &'a VmiSession<'a, Driver, Os>,
 
     /// The VMI event.
     pub(crate) event: &'a VmiEvent<Driver::Architecture>,
 }
 
-impl<Driver, Os> std::ops::Deref for VmiContext<'_, Driver, Os>
+impl<'a, Driver, Os> std::ops::Deref for VmiContext<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
-    type Target = VmiSession<Driver, Os>;
+    type Target = VmiSession<'a, Driver, Os>;
 
     fn deref(&self) -> &Self::Target {
         self.session
@@ -72,8 +72,11 @@ where
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&'a self) -> VmiOsContext<'a, Driver, Os> {
-        VmiOsContext(self)
+    pub fn os(&self) -> VmiOsContext<Driver, Os> {
+        VmiOsContext {
+            session: self.session,
+            event: self.event,
+        }
     }
 
     /// Creates a prober for safely handling page faults during memory access operations.
@@ -220,24 +223,36 @@ where
 }
 
 /// Wrapper providing access to OS-specific operations.
-pub struct VmiOsContext<'a, Driver, Os>(pub(crate) &'a VmiContext<'a, Driver, Os>)
+pub struct VmiOsContext<'a, Driver, Os>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>;
+    Os: VmiOs<Driver>,
+{
+    /// The VMI session.
+    pub(crate) session: &'a VmiSession<'a, Driver, Os>,
 
-impl<Driver, Os> VmiOsContext<'_, Driver, Os>
+    /// The VMI event.
+    pub(crate) event: &'a VmiEvent<Driver::Architecture>,
+}
+
+impl<'a, Driver, Os> VmiOsContext<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI context.
-    pub fn core(&self) -> &VmiContext<'_, Driver, Os> {
-        self.0
+    pub fn core(&self) -> &'a VmiCore<Driver> {
+        self.session.core
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
-        self.0.underlying_os()
+    pub fn underlying_os(&self) -> &'a Os {
+        self.session.os
+    }
+
+    /// Returns the current VMI event.
+    pub fn event(&self) -> &'a VmiEvent<Driver::Architecture> {
+        self.event
     }
 
     /*
@@ -323,7 +338,7 @@ where
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&'a self) -> VmiOsContextProber<'a, Driver, Os> {
+    pub fn os(&self) -> VmiOsContextProber<Driver, Os> {
         VmiOsContextProber(self)
     }
 
@@ -443,19 +458,24 @@ where
     Driver: VmiDriver,
     Os: VmiOs<Driver>;
 
-impl<Driver, Os> VmiOsContextProber<'_, Driver, Os>
+impl<'a, Driver, Os> VmiOsContextProber<'a, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI context prober.
-    pub fn core(&self) -> &VmiContextProber<'_, Driver, Os> {
+    pub fn core(&self) -> &'a VmiContextProber<'a, Driver, Os> {
         self.0
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
+    pub fn underlying_os(&self) -> &'a Os {
         self.0.underlying_os()
+    }
+
+    /// Returns the current VMI event.
+    pub fn event(&self) -> &'a VmiEvent<Driver::Architecture> {
+        self.0.event
     }
 
     /// Retrieves a specific function argument according to the calling
@@ -466,7 +486,7 @@ where
         index: u64,
     ) -> Result<Option<u64>, VmiError> {
         self.0
-            .check_result(self.0.context.session().os().function_argument(regs, index))
+            .check_result(self.0.context.session.os().function_argument(regs, index))
     }
 
     /// Retrieves the return value of a function.

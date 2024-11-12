@@ -591,7 +591,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     signal_hook::flag::register(signal_hook::consts::SIGTERM, terminate_flag.clone())?;
 
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-    let session = VmiSession::new(core, os);
+    let session = VmiSession::new(&core, &os);
 
     session.handle(|session| Monitor::new(session, &profile, terminate_flag))?;
 

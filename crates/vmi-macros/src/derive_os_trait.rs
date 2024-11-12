@@ -137,6 +137,7 @@ fn transform_return_type(return_type: &ReturnType) -> TokenStream {
 fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
+    let generics = &sig.generics;
 
     let mut session_args = Vec::new();
     let mut session_arg_names = Vec::new();
@@ -178,8 +179,8 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_session_fn = quote! {
         #(#doc)*
-        pub fn #ident(&self, #(#session_args),*) #return_type {
-            self.0.os.#ident(&self.0.core, #(#session_arg_names),*)
+        pub fn #ident #generics(&self, #(#session_args),*) #return_type {
+            self.os.#ident(self.core, #(#session_arg_names),*)
         }
     };
 
@@ -187,10 +188,10 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        pub fn #ident(&self, #(#context_args),*) #return_type {
-            self.0.session.os.#ident(
-                &self.0.session,
-                self.0.event.registers(),
+        pub fn #ident #generics(&self, #(#context_args),*) #return_type {
+            self.session.os.#ident(
+                &self.session,
+                self.event.registers(),
                 #(#context_arg_names),*
             )
         }
@@ -200,7 +201,7 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_session_prober_fn = quote! {
         #(#doc)*
-        pub fn #ident(&self, #(#session_args),*) #prober_return_type {
+        pub fn #ident #generics(&self, #(#session_args),*) #prober_return_type {
             self.0.check_result(
                 self.0
                     .session
@@ -214,7 +215,7 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_context_prober_fn = quote! {
         #(#doc)*
-        pub fn #ident(&self, #(#context_args),*) #prober_return_type {
+        pub fn #ident #generics(&self, #(#context_args),*) #prober_return_type {
             self.0.check_result(
                 self.0
                     .context

@@ -2,11 +2,17 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Error, FnArg, GenericParam, Generics, Ident, ItemImpl, Pat, PatType, Path,
-    PathArguments, Result, ReturnType, Token, Type, Visibility,
+    parse_macro_input, Error, FnArg, GenericParam, Generics, Ident, ItemImpl, Lifetime, Pat,
+    PatType, Path, Receiver, Result, Token, Visibility,
 };
 
-use crate::method::{FnArgExt, ItemExt, ItemFnExt};
+use crate::{
+    lifetime,
+    method::{FnArgExt, ItemExt, ItemFnExt},
+    transform,
+};
+
+const VMI_LIFETIME: &str = "__vmi";
 
 struct Args {
     os_session_name: Path,
@@ -83,44 +89,18 @@ struct TraitFn {
     os_context_prober_fn: TokenStream,
 }
 
-/// Transform the return type from `Result<T, VmiError>` to
-/// `Result<Option<T>, VmiError>`.
-fn transform_return_type(return_type: &ReturnType) -> Option<TokenStream> {
-    let ty = match &return_type {
-        ReturnType::Type(_, ty) => ty,
-        ReturnType::Default => return None,
-    };
-
-    let type_path = match &**ty {
-        Type::Path(type_path) => type_path,
-        _ => return None,
-    };
-
-    let segment = match type_path.path.segments.last() {
-        Some(segment) => segment,
-        None => return None,
-    };
-
-    if segment.ident != "Result" {
-        return None;
-    }
-
-    let args = match &segment.arguments {
-        PathArguments::AngleBracketed(args) => args,
-        _ => return None,
-    };
-
-    if args.args.len() != 2 {
-        return None;
-    }
-
-    let t = &args.args[0];
-    Some(quote! { -> Result<Option<#t>, VmiError> })
-}
-
 fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
+    let lifetime_of_self = sig
+        .receiver()
+        .and_then(Receiver::lifetime)
+        .map(|lifetime| lifetime.ident.to_string());
+    let mut generics = sig.generics.clone();
+
+    if let Some(lifetime_of_self) = &lifetime_of_self {
+        lifetime::remove_in_generics(&mut generics, lifetime_of_self);
+    }
 
     let (maybe_core, maybe_registers) = match skip {
         // Skip the first argument (`self`).
@@ -131,7 +111,10 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
 
         // Skip the first three arguments (`self`, `&VmiCore<Driver>`, and
         // `&<Driver::Architecture as Architecture>::Registers`).
-        3 => (quote! { self.core(), }, quote! { self.core().registers(), }),
+        3 => (
+            quote! { self.core(), },
+            quote! { self.event().registers(), },
+        ),
 
         // This should never happen.
         _ => panic!("unexpected number of arguments to skip"),
@@ -140,7 +123,17 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
     let mut session_args = Vec::new();
     let mut session_arg_names = Vec::new();
 
-    for arg in sig.inputs.iter().skip(skip.min(2)) {
+    for arg in sig.inputs.clone().iter_mut().skip(skip.min(2)) {
+        // If a lifetime has been applied to `self`, and the argument
+        // is a reference type, then we need to check if the reference
+        // type has a lifetime that matches the lifetime applied to `self`.
+        //
+        // If it does, then we need to replace that lifetime with a `__vmi`
+        // lifetime instead.
+        if let Some(lifetime_of_self) = &lifetime_of_self {
+            lifetime::replace_in_fn_arg(arg, lifetime_of_self, VMI_LIFETIME);
+        }
+
         match arg {
             FnArg::Typed(PatType { pat, ty, .. }) => {
                 let pat_ident = match &**pat {
@@ -151,7 +144,7 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
                 session_args.push(quote! { #pat_ident: #ty });
                 session_arg_names.push(quote! { #pat_ident });
             }
-            _ => return None,
+            _ => panic!("`{ident}`: argument is not typed, skipping"),
         }
     }
 
@@ -160,20 +153,31 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
         _ => (&session_args[..], &session_arg_names[..]),
     };
 
-    let return_type = &sig.output;
-    let prober_return_type = transform_return_type(return_type);
+    let mut return_type = sig.output.clone();
+
+    // If a lifetime has been applied to `self`, and the return type
+    // is an `impl Trait` type, then we need to check if the `impl Trait`
+    // type has a lifetime that matches the lifetime applied to `self`.
+    //
+    // If it does, then we need to replace that lifetime with a `__vmi`
+    // lifetime instead.
+    if let Some(lifetime_of_self) = &lifetime_of_self {
+        lifetime::replace_in_return_type(&mut return_type, lifetime_of_self, VMI_LIFETIME);
+    }
+
+    let prober_return_type = transform::result_to_result_option(&return_type);
 
     // Generate the implementation for `VmiOsSession`.
     let doc = item_fn.doc();
     let os_session_sig = quote! {
         #(#doc)*
-        fn #ident(&self, #(#session_args),*) #return_type;
+        fn #ident #generics(&self, #(#session_args),*) #return_type;
     };
 
     let doc = item_fn.doc();
     let os_session_fn = quote! {
         #(#doc)*
-        fn #ident(&self, #(#session_args),*) #return_type {
+        fn #ident #generics(&self, #(#session_args),*) #return_type {
             self.underlying_os().#ident(
                 #maybe_core
                 #(#session_arg_names),*
@@ -185,13 +189,13 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_context_sig = quote! {
         #(#doc)*
-        fn #ident(&self, #(#context_args),*) #return_type;
+        fn #ident #generics(&self, #(#context_args),*) #return_type;
     };
 
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        fn #ident(&self, #(#context_args),*) #return_type {
+        fn #ident #generics(&self, #(#context_args),*) #return_type {
             self.underlying_os().#ident(
                 #maybe_core
                 #maybe_registers
@@ -206,19 +210,20 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
             let doc = item_fn.doc();
             let os_session_prober_sig = quote! {
                 #(#doc)*
-                fn #ident(&self, #(#session_args),*) #prober_return_type;
+                fn #ident #generics(&self, #(#session_args),*) #prober_return_type;
             };
 
             let doc = item_fn.doc();
             let os_session_prober_fn = quote! {
                 #(#doc)*
-                fn #ident(&self, #(#session_args),*) #prober_return_type {
-                    use ::std::ops::Deref;
+                fn #ident #generics(&self, #(#session_args),*) #prober_return_type {
                     self.core().check_result(
-                        self.core()     // -> VmiSessionProber
-                            .deref()    // -> VmiSession
-                            .os()       // -> VmiOsSession
-                            .#ident(#(#session_arg_names),*),
+                        self.core()             // -> &VmiSessionProber
+                            .underlying_os()    // -> &Os
+                            .#ident(
+                                #maybe_core
+                                #(#session_arg_names),*
+                            ),
                     )
                 }
             };
@@ -235,19 +240,21 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
             let doc = item_fn.doc();
             let os_context_prober_sig = quote! {
                 #(#doc)*
-                fn #ident(&self, #(#context_args),*) #prober_return_type;
+                fn #ident #generics(&self, #(#context_args),*) #prober_return_type;
             };
 
             let doc = item_fn.doc();
             let os_context_prober_fn = quote! {
                 #(#doc)*
-                fn #ident(&self, #(#context_args),*) #prober_return_type {
-                    use ::std::ops::Deref;
+                fn #ident #generics(&self, #(#context_args),*) #prober_return_type {
                     self.core().check_result(
-                        self.core()     // -> VmiContextProber
-                            .deref()    // -> VmiContext
-                            .os()       // -> VmiOsContext
-                            .#ident(#(#context_arg_names),*),
+                        self.core()             // -> &VmiContextProber
+                            .underlying_os()    // -> &Os
+                            .#ident(
+                                #maybe_core
+                                #maybe_registers
+                                #(#context_arg_names),*
+                            ),
                     )
                 }
             };
@@ -373,6 +380,8 @@ pub fn derive_trait_from_impl(
     let os_context_prober_sigs = fns.clone().map(|m| m.os_context_prober_sig);
     let os_context_prober_fns = fns.clone().map(|m| m.os_context_prober_fn);
 
+    let lt = syn::parse_str::<Lifetime>(&format!("'{VMI_LIFETIME}")).unwrap();
+
     let expanded = quote! {
         #input
 
@@ -383,13 +392,13 @@ pub fn derive_trait_from_impl(
         #[doc = concat!("[`", #struct_type_raw, "`] extensions for the [`VmiSession`].")]
         #[doc = ""]
         #[doc = "[`VmiSession`]: vmi_core::VmiSession"]
-        pub trait #os_session_name <Driver>
+        pub trait #os_session_name <#lt, Driver>
             #where_clause
         {
             #(#os_session_sigs)*
         }
 
-        impl<Driver> #os_session_name <Driver> for vmi_core::VmiOsSession<'_, Driver, #struct_type>
+        impl<#lt, Driver> #os_session_name <#lt, Driver> for vmi_core::VmiOsSession<#lt, Driver, #struct_type>
             #where_clause
         {
             #(#os_session_fns)*
@@ -402,13 +411,13 @@ pub fn derive_trait_from_impl(
         #[doc = concat!("[`", #struct_type_raw, "`] extensions for the [`VmiSessionProber`].")]
         #[doc = ""]
         #[doc = "[`VmiSessionProber`]: vmi_core::VmiSessionProber"]
-        pub trait #os_session_prober_name <Driver>
+        pub trait #os_session_prober_name <#lt, Driver>
             #where_clause
         {
             #(#os_session_prober_sigs)*
         }
 
-        impl<Driver> #os_session_prober_name <Driver> for vmi_core::VmiOsSessionProber<'_, Driver, #struct_type>
+        impl<#lt, Driver> #os_session_prober_name <#lt, Driver> for vmi_core::VmiOsSessionProber<#lt, Driver, #struct_type>
             #where_clause
         {
             #(#os_session_prober_fns)*
@@ -421,13 +430,13 @@ pub fn derive_trait_from_impl(
         #[doc = concat!("[`", #struct_type_raw, "`] extensions for the [`VmiContext`].")]
         #[doc = ""]
         #[doc = "[`VmiContext`]: vmi_core::VmiContext"]
-        pub trait #os_context_name <Driver>
+        pub trait #os_context_name <#lt, Driver>
             #where_clause
         {
             #(#os_context_sigs)*
         }
 
-        impl<Driver> #os_context_name <Driver> for vmi_core::VmiOsContext<'_, Driver, #struct_type>
+        impl<#lt, Driver> #os_context_name <#lt, Driver> for vmi_core::VmiOsContext<#lt, Driver, #struct_type>
             #where_clause
         {
             #(#os_context_fns)*
@@ -440,13 +449,13 @@ pub fn derive_trait_from_impl(
         #[doc = concat!("[`", #struct_type_raw, "`] extensions for the [`VmiContextProber`].")]
         #[doc = ""]
         #[doc = "[`VmiContextProber`]: vmi_core::VmiContextProber"]
-        pub trait #os_context_prober_name <Driver>
+        pub trait #os_context_prober_name <#lt, Driver>
             #where_clause
         {
             #(#os_context_prober_sigs)*
         }
 
-        impl<Driver> #os_context_prober_name <Driver> for vmi_core::VmiOsContextProber<'_, Driver, #struct_type>
+        impl<#lt, Driver> #os_context_prober_name <#lt, Driver> for vmi_core::VmiOsContextProber<#lt, Driver, #struct_type>
             #where_clause
         {
             #(#os_context_prober_fns)*

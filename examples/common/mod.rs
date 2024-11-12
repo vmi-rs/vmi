@@ -1,7 +1,5 @@
-use std::sync::OnceLock;
-
 use isr::{
-    cache::{Entry, IsrCache, JsonCodec},
+    cache::{IsrCache, JsonCodec},
     Profile,
 };
 use vmi::{
@@ -12,7 +10,7 @@ use xen::XenStore;
 
 pub fn create_vmi_session() -> Result<
     (
-        VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>>,
+        VmiSession<'static, VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>>,
         Profile<'static>,
     ),
     Box<dyn std::error::Error>,
@@ -49,17 +47,19 @@ pub fn create_vmi_session() -> Result<
 
     // Load the profile.
     // The profile contains offsets to kernel functions and data structures.
-    //
-    // The entry is loaded into a static variable to enable returning
-    // `Profile<'static>` to the caller.
-    static ENTRY: OnceLock<Entry<JsonCodec>> = OnceLock::new();
-
     let isr = IsrCache::<JsonCodec>::new("cache")?;
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
-    let profile = ENTRY.get_or_init(|| entry).profile()?;
+    let entry = Box::leak(Box::new(entry));
+    let profile = entry.profile()?;
 
     // Create the VMI session.
     tracing::info!("Creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
+
+    // Please don't do this in production code.
+    // This is only done for the sake of the example.
+    let core = Box::leak(Box::new(core));
+    let os = Box::leak(Box::new(os));
+
     Ok((VmiSession::new(core, os), profile))
 }
