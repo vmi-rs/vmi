@@ -271,7 +271,7 @@ pub struct WindowsHandleTableEntry {
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
     ///
     /// A pointer to an `_OBJECT_HEADER` structure.
-    pub object: Va, // OBJECT_HEADER
+    pub object: Va, // _OBJECT_HEADER*
 
     /// The `ObAttributes` (or `Attributes`) field of the handle table entry.
     pub attributes: u32,
@@ -1475,7 +1475,7 @@ where
     /// // For Windows 7:
     /// return Process->VadRoot->BalancedRoot;
     ///
-    /// // For Windows 8 and later:
+    /// // For Windows 8.1 and later:
     /// return Process->VadRoot->Root;
     /// ```
     pub fn vad_root(
@@ -1541,7 +1541,7 @@ where
     /// // For Windows 7:
     /// return Process->VadRoot->NodeHint;
     ///
-    /// // For Windows 8 and later:
+    /// // For Windows 8.1 and later:
     /// return Process->VadRoot->Hint;
     /// ```
     pub fn vad_hint(
