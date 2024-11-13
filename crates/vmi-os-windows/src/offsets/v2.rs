@@ -32,6 +32,7 @@ offsets! {
         struct _RTL_BALANCED_NODE {
             Left: Field,                    // _RTL_BALANCED_NODE*
             Right: Field,                   // _RTL_BALANCED_NODE*
+            ParentValue: Field,             // ULONG_PTR
         }
 
         struct _MMVAD_FLAGS1 {

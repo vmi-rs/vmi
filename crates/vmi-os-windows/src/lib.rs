@@ -3268,12 +3268,28 @@ where
         list_head: Va,
         offset: u64,
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
-        Ok(iterators::LinkedListIterator::new(
+        Ok(iterators::ListEntryIterator::new(
             VmiSession::new(vmi, self),
             registers,
             list_head,
             offset,
         ))
+    }
+
+    /// xxx
+    pub fn vad_iter<'a>(
+        &'a self,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        process: ProcessObject,
+    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
+        let root = self.vad_root(vmi, registers, process)?;
+
+        Ok(iterators::TreeNodeIterator::new(
+            VmiSession::new(vmi, self),
+            registers,
+            root,
+        )?)
     }
 
     /// Returns the process object iterator.
