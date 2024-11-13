@@ -610,19 +610,15 @@ where
 
         let left = Va(balanced_node.read(MMADDRESS_NODE.LeftChild)?);
         if !left.is_null() {
-            if !callback(left) {
-                return Ok(());
-            }
-
             self.enumerate_tree_node_v1(vmi, registers, left, callback, offsets)?;
+        }
+
+        if !callback(node) {
+            return Ok(());
         }
 
         let right = Va(balanced_node.read(MMADDRESS_NODE.RightChild)?);
         if !right.is_null() {
-            if !callback(right) {
-                return Ok(());
-            }
-
             self.enumerate_tree_node_v1(vmi, registers, right, callback, offsets)?;
         }
 
@@ -648,19 +644,15 @@ where
 
         let left = Va(balanced_node.read(RTL_BALANCED_NODE.Left)?);
         if !left.is_null() {
-            if !callback(left) {
-                return Ok(());
-            }
-
             self.enumerate_tree_node_v2(vmi, registers, left, callback, offsets)?;
+        }
+
+        if !callback(node) {
+            return Ok(());
         }
 
         let right = Va(balanced_node.read(RTL_BALANCED_NODE.Right)?);
         if !right.is_null() {
-            if !callback(right) {
-                return Ok(());
-            }
-
             self.enumerate_tree_node_v2(vmi, registers, right, callback, offsets)?;
         }
 
@@ -675,6 +667,29 @@ where
         mut callback: impl FnMut(Va) -> bool,
         offsets: &v1::Offsets,
     ) -> Result<(), VmiError> {
+        let MM_AVL_TABLE = &offsets._MM_AVL_TABLE;
+        let MMADDRESS_NODE = &offsets._MMADDRESS_NODE;
+
+        // NumberGenericTableElements is a ULONG_PTR, which is the same size
+        // as a pointer.
+        let count = vmi.read_va(
+            registers.address_context(root + MM_AVL_TABLE.NumberGenericTableElements.offset),
+            registers.address_width(),
+        )?;
+
+        let count = MM_AVL_TABLE.NumberGenericTableElements.value_from(count.0);
+        if count == 0 {
+            return Ok(());
+        }
+
+        // Table->BalancedRoot.RightChild
+        let root = vmi.read_va(
+            registers.address_context(
+                root + MM_AVL_TABLE.BalancedRoot.offset + MMADDRESS_NODE.RightChild.offset,
+            ),
+            registers.address_width(),
+        )?;
+
         self.enumerate_tree_node_v1(vmi, registers, root, &mut callback, offsets)
     }
 
@@ -686,7 +701,6 @@ where
         mut callback: impl FnMut(Va) -> bool,
         offsets: &v2::Offsets,
     ) -> Result<(), VmiError> {
-        callback(root);
         self.enumerate_tree_node_v2(vmi, registers, root, &mut callback, offsets)
     }
 

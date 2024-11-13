@@ -1,4 +1,4 @@
-use isr_macros::{offsets, Field};
+use isr_macros::{offsets, Bitfield, Field};
 
 offsets! {
     /// Windows 7 kernel offsets used by the [`WindowsOs`] implementation.
@@ -28,6 +28,7 @@ offsets! {
 
         struct _MM_AVL_TABLE {
             BalancedRoot: Field,            // _MMADDRESS_NODE
+            NumberGenericTableElements: Bitfield, // ULONG_PTR
             NodeHint: Field,                // PVOID
         }
 
