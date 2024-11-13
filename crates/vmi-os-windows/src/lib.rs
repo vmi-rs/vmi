@@ -74,7 +74,8 @@ use zerocopy::{FromBytes, IntoBytes};
 mod arch;
 use self::arch::ArchAdapter;
 
-mod iterators;
+mod iter;
+pub use self::iter::{ListEntryIterator, TreeNodeIterator};
 
 mod pe;
 pub use self::pe::{CodeView, PeError, PeLite, PeLite32, PeLite64};
@@ -3268,7 +3269,7 @@ where
         list_head: Va,
         offset: u64,
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
-        Ok(iterators::ListEntryIterator::new(
+        Ok(ListEntryIterator::new(
             VmiSession::new(vmi, self),
             registers,
             list_head,
@@ -3285,7 +3286,7 @@ where
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
         let root = self.vad_root(vmi, registers, process)?;
 
-        Ok(iterators::TreeNodeIterator::new(
+        Ok(TreeNodeIterator::new(
             VmiSession::new(vmi, self),
             registers,
             root,
