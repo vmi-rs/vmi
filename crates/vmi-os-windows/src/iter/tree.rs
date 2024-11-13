@@ -2,7 +2,6 @@ use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiSession
 
 use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
 
-
 /// An iterator for traversing tree nodes.
 ///
 /// Iterate over nodes in a tree-like structure, specifically `MMADDRESS_NODE`
