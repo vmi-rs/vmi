@@ -33,8 +33,9 @@ offsets! {
         }
 
         struct _MMADDRESS_NODE {
-            LeftChild: Field,
-            RightChild: Field,
+            Parent: Field,                  // _MMADDRESS_NODE*
+            LeftChild: Field,               // _MMADDRESS_NODE*
+            RightChild: Field,              // _MMADDRESS_NODE*
         }
 
     }
