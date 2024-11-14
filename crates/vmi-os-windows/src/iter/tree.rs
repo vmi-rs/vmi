@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiSession};
 
 use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
@@ -192,4 +194,11 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.__next().transpose()
     }
+}
+
+impl<Driver> FusedIterator for TreeNodeIterator<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
 }
