@@ -88,34 +88,7 @@ impl FromExt<XenX86EventType> for InterruptType {
 
 impl FromExt<ExceptionVector> for XenX86ExceptionVector {
     fn from_ext(value: ExceptionVector) -> Self {
-        use ExceptionVector::*;
-        match value {
-            DivideError => Self::DivideError,
-            DebugException => Self::DebugException,
-            Nmi => Self::Nmi,
-            Breakpoint => Self::Breakpoint,
-            Overflow => Self::Overflow,
-            BoundRange => Self::BoundRange,
-            InvalidOpcode => Self::InvalidOpcode,
-            DeviceNotAvailable => Self::DeviceNotAvailable,
-            DoubleFault => Self::DoubleFault,
-            CoprocessorSegmentOverrun => Self::CoprocessorSegmentOverrun,
-            InvalidTss => Self::InvalidTss,
-            SegmentNotPresent => Self::SegmentNotPresent,
-            StackSegmentFault => Self::StackSegmentFault,
-            GeneralProtectionFault => Self::GeneralProtectionFault,
-            PageFault => Self::PageFault,
-            PicSpuriousInterruptVector => Self::PicSpuriousInterruptVector,
-            MathsFault => Self::MathsFault,
-            AlignmentCheck => Self::AlignmentCheck,
-            MachineCheck => Self::MachineCheck,
-            SimdException => Self::SimdException,
-            VirtualisationException => Self::VirtualisationException,
-            ControlFlowProtection => Self::ControlFlowProtection,
-            //HypervisorInjection => Self::HypervisorInjection,
-            //VmmCommunication => Self::VmmCommunication,
-            //SecurityException => Self::SecurityException,
-        }
+        Self(value.0)
     }
 }
 
