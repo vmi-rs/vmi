@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiSession};
 
 use crate::{arch::ArchAdapter, WindowsOs};
@@ -12,6 +14,7 @@ where
 {
     vmi: VmiSession<'a, Driver, WindowsOs<Driver>>,
     registers: &'a <Driver::Architecture as Architecture>::Registers,
+    current: Option<Va>,
 
     /// Address of the list head.
     list_head: Va,
@@ -23,8 +26,11 @@ where
     /// kernel.
     offset: u64,
 
-    /// Current entry.
-    current: Option<Va>,
+    /// Offset to the forward link pointer (`LIST_ENTRY.Flink`).
+    offset_flink: u64,
+
+    /// Offset to the backward link pointer (`LIST_ENTRY.Blink`).
+    offset_blink: u64,
 }
 
 impl<'a, Driver> ListEntryIterator<'a, Driver>
@@ -39,18 +45,32 @@ where
         list_head: Va,
         offset: u64,
     ) -> Self {
+        let LIST_ENTRY = &vmi.underlying_os().offsets().common._LIST_ENTRY;
+        let (offset_flink, offset_blink) = (LIST_ENTRY.Flink.offset, LIST_ENTRY.Blink.offset);
+
         Self {
             vmi,
             registers,
+            current: None,
             list_head,
             offset,
-            current: None,
+            offset_flink,
+            offset_blink,
         }
     }
 
     fn __first(&mut self) -> Result<Va, VmiError> {
         self.vmi.read_va(
-            self.registers.address_context(self.list_head),
+            self.registers
+                .address_context(self.list_head + self.offset_flink),
+            self.registers.address_width(),
+        )
+    }
+
+    fn __last(&mut self) -> Result<Va, VmiError> {
+        self.vmi.read_va(
+            self.registers
+                .address_context(self.list_head + self.offset_blink),
             self.registers.address_width(),
         )
     }
@@ -70,7 +90,29 @@ where
         }
 
         self.current = Some(self.vmi.read_va(
-            self.registers.address_context(entry),
+            self.registers.address_context(entry + self.offset_flink),
+            self.registers.address_width(),
+        )?);
+
+        Ok(Some(entry - self.offset))
+    }
+
+    fn __next_back(&mut self) -> Result<Option<Va>, VmiError> {
+        let entry = match self.current {
+            Some(entry) => entry,
+            None => {
+                let blink = self.__last()?;
+                self.current = Some(blink);
+                blink
+            }
+        };
+
+        if entry == self.list_head {
+            return Ok(None);
+        }
+
+        self.current = Some(self.vmi.read_va(
+            self.registers.address_context(entry + self.offset_blink),
             self.registers.address_width(),
         )?);
 
@@ -88,4 +130,21 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.__next().transpose()
     }
+}
+
+impl<Driver> DoubleEndedIterator for ListEntryIterator<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.__next_back().transpose()
+    }
+}
+
+impl<Driver> FusedIterator for ListEntryIterator<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
 }

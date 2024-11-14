@@ -85,6 +85,11 @@ offsets! {
     /// [`WindowsOs`]: crate::WindowsOs
     #[derive(Debug)]
     pub struct OffsetsCommon {
+        struct _LIST_ENTRY {
+            Flink: Field,               // struct _LIST_ENTRY*
+            Blink: Field,               // struct _LIST_ENTRY*
+        }
+
         struct _EX_FAST_REF {
             RefCnt: Bitfield,
             Value: Field,
