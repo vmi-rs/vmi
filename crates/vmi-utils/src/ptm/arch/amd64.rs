@@ -287,9 +287,9 @@ where
         view: View,
     ) -> Result<(), VmiError> {
         let ctx = ctx.into();
-        let mut orphaned = HashSet::new();
-
         let gfn = Amd64::gfn_from_pa(ctx.root);
+
+        let mut orphaned = HashSet::new();
         self.unmonitor_entry(vmi, ctx, view, gfn, PageTableLevel::Pml4, &mut orphaned)?;
 
         for pa in orphaned {
@@ -526,6 +526,7 @@ where
     ) -> Result<(), VmiError> {
         let table = self.tables.entry((view, table_gfn)).or_default();
 
+        // Monitor the table if this is the first VA in it.
         if table.vas.is_empty() {
             self.controller.monitor(vmi, table_gfn, view)?;
         }
@@ -551,6 +552,8 @@ where
             None => true,
         });
 
+        // If the entry is not present, there is no need to monitor the next
+        // level.
         if !entry.value.present() {
             return Ok(());
         }
