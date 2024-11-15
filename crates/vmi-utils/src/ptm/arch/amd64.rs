@@ -362,6 +362,11 @@ where
     Driver: VmiDriver<Architecture = Amd64>,
     Tag: TagType,
 {
+    #[tracing::instrument(
+        skip_all,
+        target = "ptm",
+        fields(%entry_pa)
+    )]
     fn update_entry(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -436,6 +441,14 @@ where
         Ok(None)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        target = "ptm",
+        fields(
+            new_pfn = %new_value.pfn(),
+            vas_len = %entry_vas.len(),
+        )
+    )]
     fn page_in(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -470,12 +483,10 @@ where
                     let pa = Amd64::pa_from_gfn(new_value.pfn()) + Amd64::va_offset(ctx.va);
 
                     tracing::debug!(
-                        %view,
                         va = %ctx.va,
                         root = %ctx.root,
                         %pa,
                         ?tag,
-                        "page-in event"
                     );
 
                     debug_assert!(!self.paged_in.contains_key(&(view, ctx)));
@@ -490,6 +501,14 @@ where
         Ok(result)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        target = "ptm",
+        fields(
+            old_pfn = %old_value.pfn(),
+            vas_len = %entry_vas.len(),
+        )
+    )]
     fn page_out(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -509,12 +528,10 @@ where
                 let PagedInEntry { pa, tag } = paged_in_entry;
 
                 tracing::debug!(
-                    %view,
                     va = %ctx.va,
                     root = %ctx.root,
                     %pa,
                     ?tag,
-                    "page-out event"
                 );
 
                 let update = PageEntryUpdate { view, ctx, pa };
@@ -533,6 +550,14 @@ where
         Ok(result)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        target = "ptm",
+        fields(
+            old_pfn = %old_value.pfn(),
+            new_pfn = %new_value.pfn(),
+        )
+    )]
     fn page_change(
         &mut self,
         vmi: &VmiCore<Driver>,
