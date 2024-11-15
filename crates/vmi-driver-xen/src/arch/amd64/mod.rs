@@ -3,7 +3,7 @@ mod registers;
 
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, ExceptionVector};
 use vmi_core::{
-    Registers as _, VcpuId, View, VmiEvent, VmiEventCallback, VmiEventFlags, VmiEventResponseFlags,
+    Registers as _, VcpuId, View, VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags,
 };
 use xen::ctrl::{
     VmEvent, VmEventData, VmEventFastSinglestep, VmEventFlag, VmEventFlagOptions, VmEventRegs,
@@ -110,7 +110,7 @@ impl ArchAdapter for Amd64 {
     fn process_event(
         driver: &XenDriver<Self>,
         event: &mut VmEvent,
-        handler: &mut Box<VmiEventCallback<'_, Self>>,
+        mut handler: impl FnMut(&VmiEvent<Self>) -> VmiEventResponse<Self>,
     ) -> Result<(), Error> {
         // Convert the Xen event to a VMI event.
         let vmi_reason = match EventReason::try_from_ext(&event.reason) {

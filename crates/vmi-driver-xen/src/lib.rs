@@ -9,8 +9,8 @@ mod error;
 use std::time::Duration;
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiDriver, VmiError, VmiEventCallback, VmiInfo,
-    VmiMappedPage,
+    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiDriver, VmiError, VmiEvent, VmiEventResponse,
+    VmiInfo, VmiMappedPage,
 };
 use xen::XenDomainId;
 
@@ -140,10 +140,10 @@ where
         self.inner.event_processing_overhead()
     }
 
-    fn wait_for_event<'a>(
-        &'a self,
+    fn wait_for_event(
+        &self,
         timeout: Duration,
-        handler: Box<VmiEventCallback<'a, Arch>>,
+        handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
     ) -> Result<(), VmiError> {
         Ok(self.inner.wait_for_event(timeout, handler)?)
     }

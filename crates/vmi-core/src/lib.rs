@@ -56,13 +56,6 @@ impl Cache {
     }
 }
 
-/// A callback function type for handling VMI events.
-///
-/// This type represents a function or closure that is called when a VMI event
-/// occurs. The [`VmiEventResponse`] returned by the callback determines how the
-/// event is handled.
-pub type VmiEventCallback<'a, Arch> = dyn FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch> + 'a;
-
 /// The core functionality for Virtual Machine Introspection (VMI).
 pub struct VmiCore<Driver>
 where
@@ -625,10 +618,10 @@ where
     /// This method blocks until an event occurs or the specified timeout is
     /// reached. When an event occurs, it is passed to the provided callback
     /// function for processing.
-    pub fn wait_for_event<'a>(
-        &'a self,
+    pub fn wait_for_event(
+        &self,
         timeout: Duration,
-        handler: Box<VmiEventCallback<'a, Driver::Architecture>>,
+        handler: impl FnMut(&VmiEvent<Driver::Architecture>) -> VmiEventResponse<Driver::Architecture>,
     ) -> Result<(), VmiError> {
         self.driver.wait_for_event(timeout, handler)
     }

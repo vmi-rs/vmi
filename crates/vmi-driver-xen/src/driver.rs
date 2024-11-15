@@ -6,7 +6,8 @@ use std::{
 };
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiEventCallback, VmiInfo, VmiMappedPage,
+    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiEvent, VmiEventResponse, VmiInfo,
+    VmiMappedPage,
 };
 use xen::{
     ctrl::VmEventRing, XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain,
@@ -257,10 +258,10 @@ where
         *self.event_processing_overhead.borrow()
     }
 
-    pub fn wait_for_event<'a>(
-        &'a self,
+    pub fn wait_for_event(
+        &self,
         timeout: Duration,
-        mut handler: Box<VmiEventCallback<'a, Arch>>,
+        mut handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
     ) -> Result<(), Error> {
         let mut fds = [libc::pollfd {
             fd: self.evtchn.as_raw_fd(),
@@ -276,7 +277,7 @@ where
         #[rustfmt::skip]
         let poll_result = unsafe {
             libc::poll(
-                fds.as_mut_ptr().cast(),
+                fds.as_mut_ptr() as _,
                 fds.len() as _,
                 timeout
             )

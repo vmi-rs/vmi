@@ -1,8 +1,9 @@
 mod amd64;
 
+use vmi_core::{Architecture, VcpuId, VmiEvent, VmiEventResponse};
 use xen::{ctrl::VmEvent, Architecture as XenArchitecture};
 
-use crate::{Architecture, Error, VcpuId, VmiEventCallback, XenDriver};
+use crate::{Error, XenDriver};
 
 /// Architecture-specific adapter for Xen.
 pub trait ArchAdapter: Architecture + Sized {
@@ -29,7 +30,7 @@ pub trait ArchAdapter: Architecture + Sized {
     fn process_event(
         driver: &XenDriver<Self>,
         event: &mut VmEvent,
-        handler: &mut Box<VmiEventCallback<'_, Self>>,
+        handler: impl FnMut(&VmiEvent<Self>) -> VmiEventResponse<Self>,
     ) -> Result<(), Error>;
 
     fn reset_state(driver: &XenDriver<Self>) -> Result<(), Error>;

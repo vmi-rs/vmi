@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiError, VmiEventCallback, VmiInfo,
+    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiError, VmiEvent, VmiEventResponse, VmiInfo,
     VmiMappedPage,
 };
 
@@ -95,10 +95,10 @@ pub trait VmiDriver {
     fn event_processing_overhead(&self) -> Duration;
 
     /// Waits for an event to occur and processes it with the provided handler.
-    fn wait_for_event<'a>(
-        &'a self,
+    fn wait_for_event(
+        &self,
         timeout: Duration,
-        handler: Box<VmiEventCallback<'a, Self::Architecture>>,
+        handler: impl FnMut(&VmiEvent<Self::Architecture>) -> VmiEventResponse<Self::Architecture>,
     ) -> Result<(), VmiError>;
 
     /// Resets the state of the VMI system.

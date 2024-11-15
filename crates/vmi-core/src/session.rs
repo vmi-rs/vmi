@@ -82,7 +82,7 @@ where
     ) -> Result<(), VmiError> {
         self.core.wait_for_event(
             timeout,
-            Box::new(|event| handler.handle_event(VmiContext::new(self, event))),
+            |event| handler.handle_event(VmiContext::new(self, event)),
         )
     }
 
