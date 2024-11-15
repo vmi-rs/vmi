@@ -277,7 +277,9 @@ where
     ) -> Result<(), VmiError> {
         let ctx = ctx.into();
         let gfn = Amd64::gfn_from_pa(ctx.root);
-        self.monitor_entry(vmi, ctx, view, tag, gfn, PageTableLevel::Pml4)
+        self.monitor_entry(vmi, ctx, view, tag, gfn, PageTableLevel::Pml4)?;
+
+        Ok(())
     }
 
     fn unmonitor(
@@ -443,29 +445,40 @@ where
             let index = Amd64::va_index_for(ctx.va, level) * 8;
             debug_assert_eq!(index, Amd64::pa_offset(entry_pa));
 
-            if let Some(next_level) = level.next() {
-                self.monitor_entry(vmi, ctx, view, tag, new_value.pfn(), next_level)?;
-            }
-            else {
-                debug_assert_eq!(level, PageTableLevel::Pt);
+            match level.next() {
+                Some(next_level) => {
+                    // If this is a page-in at a higher level than the PT (e.g., PML4, PDPT, PD),
+                    // we need to monitor the next level. If the monitor_entry function returns
+                    // an update, it means that the whole chain of page tables has been resolved.
+                    // In that case, we add the update to the result.
+                    if let Some(pa) =
+                        self.monitor_entry(vmi, ctx, view, tag, new_value.pfn(), next_level)?
+                    {
+                        let update = PageEntryUpdate { view, ctx, pa };
+                        result.push(PageTableMonitorEvent::PageIn(update));
+                    }
+                }
 
-                let pa = Amd64::pa_from_gfn(new_value.pfn())
-                    + Amd64::va_offset_for(ctx.va, PageTableLevel::Pt);
+                None => {
+                    debug_assert_eq!(level, PageTableLevel::Pt);
 
-                tracing::debug!(
-                    %view,
-                    va = %ctx.va,
-                    root = %ctx.root,
-                    %pa,
-                    ?tag,
-                    "page-in event"
-                );
+                    let pa = Amd64::pa_from_gfn(new_value.pfn()) + Amd64::va_offset(ctx.va);
 
-                debug_assert!(!self.paged_in.contains_key(&(view, ctx)));
-                self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
+                    tracing::debug!(
+                        %view,
+                        va = %ctx.va,
+                        root = %ctx.root,
+                        %pa,
+                        ?tag,
+                        "page-in event"
+                    );
 
-                let update = PageEntryUpdate { view, ctx, pa };
-                result.push(PageTableMonitorEvent::PageIn(update));
+                    debug_assert!(!self.paged_in.contains_key(&(view, ctx)));
+                    self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
+
+                    let update = PageEntryUpdate { view, ctx, pa };
+                    result.push(PageTableMonitorEvent::PageIn(update));
+                }
             }
         }
 
@@ -515,6 +528,9 @@ where
         Ok(Some(result))
     }
 
+    /// Recursively monitor a page table entry.
+    ///
+    /// Returns the resolved PA if the entry is already paged-in.
     fn monitor_entry(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -523,7 +539,7 @@ where
         tag: Tag,
         table_gfn: Gfn,
         level: PageTableLevel,
-    ) -> Result<(), VmiError> {
+    ) -> Result<Option<Pa>, VmiError> {
         let table = self.tables.entry((view, table_gfn)).or_default();
 
         // Monitor the table if this is the first VA in it.
@@ -555,27 +571,27 @@ where
         // If the entry is not present, there is no need to monitor the next
         // level.
         if !entry.value.present() {
-            return Ok(());
+            return Ok(None);
         }
 
         let next_level = match level.next() {
             Some(next_level) => next_level,
             None => {
-                if level == PageTableLevel::Pt {
-                    let pa =
-                        Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset_for(ctx.va, level);
-                    self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
+                debug_assert_eq!(level, PageTableLevel::Pt);
 
-                    tracing::debug!(
-                        %view,
-                        va = %ctx.va,
-                        root = %ctx.root,
-                        %pa,
-                        "monitoring already paged-in entry"
-                    );
-                }
+                let pa = Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset(ctx.va);
 
-                return Ok(());
+                self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
+
+                tracing::debug!(
+                    %view,
+                    va = %ctx.va,
+                    root = %ctx.root,
+                    %pa,
+                    "monitoring already paged-in entry"
+                );
+
+                return Ok(Some(pa));
             }
         };
 
@@ -583,6 +599,9 @@ where
         self.monitor_entry(vmi, ctx, view, tag, next_table_gfn, next_level)
     }
 
+    /// Recursively unmonitor a page table entry.
+    ///
+    /// Returns the resolved PA if the entry is paged-in.
     fn unmonitor_entry(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -591,7 +610,7 @@ where
         table_gfn: Gfn,
         level: PageTableLevel,
         orphaned: &mut HashSet<Pa>,
-    ) -> Result<(), VmiError> {
+    ) -> Result<Option<Pa>, VmiError> {
         self.paged_in.remove(&(view, ctx));
 
         let table = match self.tables.get_mut(&(view, table_gfn)) {
@@ -602,7 +621,7 @@ where
                 //
 
                 if level == PageTableLevel::Pml4 {
-                    return Ok(());
+                    return Ok(None);
                 }
 
                 tracing::error!(%view, %table_gfn, "Table not found");
@@ -614,7 +633,7 @@ where
             Some(offset) => offset,
             None => {
                 if level == PageTableLevel::Pml4 {
-                    return Ok(());
+                    return Ok(None);
                 }
 
                 tracing::error!(%view, %table_gfn, va = %ctx.va, "VA not found in table");
@@ -636,14 +655,14 @@ where
             None => {
                 tracing::error!(%view, %entry_pa, "Child entry not found");
                 debug_assert!(false, "child entry not found");
-                return Ok(());
+                return Ok(None);
             }
         };
 
         if !entry.value.present() {
             tracing::debug!(%view, %entry_pa, "child entry is not present, unmonitoring");
             orphaned.insert(entry_pa);
-            return Ok(());
+            return Ok(None);
         }
 
         let MonitoredPageTableLevel { level: level2, .. } = match entry.vas.remove(&ctx) {
@@ -663,7 +682,21 @@ where
 
         let next_level = match level.next() {
             Some(next_level) => next_level,
-            None => return Ok(()),
+            None => {
+                debug_assert_eq!(level, PageTableLevel::Pt);
+
+                let pa = Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset(ctx.va);
+
+                tracing::debug!(
+                    %view,
+                    va = %ctx.va,
+                    root = %ctx.root,
+                    %pa,
+                    "unmonitoring paged-in entry"
+                );
+
+                return Ok(Some(pa));
+            }
         };
 
         let next_table_gfn = entry.value.pfn();
