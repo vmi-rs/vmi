@@ -401,11 +401,10 @@ where
         entry.value = new_value;
 
         if old_value.present() && new_value.present() && old_value.pfn() != new_value.pfn() {
-            self.dump();
-            unimplemented!(
-                "PFN change not implemented, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
-                entry_pa, old_value, old_value.pfn(), new_value, new_value.pfn()
-            );
+            let vas = entry.vas.clone();
+            return self
+                .page_change(vmi, entry_pa, vas, old_value, new_value, view)
+                .map(Some);
         }
         else if old_value.present() && !new_value.present() {
             if old_value.large() {
@@ -526,6 +525,25 @@ where
         }
 
         Ok(result)
+    }
+
+    fn page_change(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        entry_pa: Pa,
+        entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
+        old_value: PageTableEntry,
+        new_value: PageTableEntry,
+        view: View,
+    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
+        let vas = entry_vas.clone();
+        let page_out = self.page_out(vmi, entry_pa, vas, old_value, view)?;
+
+        let vas = entry_vas; // No need to clone here
+        let page_in = self.page_in(vmi, entry_pa, vas, new_value, view)?;
+
+        // Combine the results
+        Ok(page_out.into_iter().chain(page_in.into_iter()).collect())
     }
 
     /// Recursively monitor a page table entry.
