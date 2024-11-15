@@ -414,7 +414,7 @@ where
             }
             else {
                 let vas = entry.vas.clone();
-                return self.page_out(vmi, entry_pa, vas, old_value, view);
+                return self.page_out(vmi, entry_pa, vas, old_value, view).map(Some);
             }
         }
         else if !old_value.present() && new_value.present() {
@@ -424,7 +424,7 @@ where
             }
             else {
                 let vas = entry.vas.clone();
-                return self.page_in(vmi, entry_pa, vas, new_value, view);
+                return self.page_in(vmi, entry_pa, vas, new_value, view).map(Some);
             }
         }
 
@@ -438,7 +438,7 @@ where
         entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
         new_value: PageTableEntry,
         view: View,
-    ) -> Result<Option<Vec<PageTableMonitorEvent>>, VmiError> {
+    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
         let mut result = Vec::new();
 
         for (ctx, MonitoredPageTableLevel { level, tag }) in entry_vas {
@@ -482,7 +482,7 @@ where
             }
         }
 
-        Ok(Some(result))
+        Ok(result)
     }
 
     fn page_out(
@@ -492,7 +492,7 @@ where
         entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
         old_value: PageTableEntry,
         view: View,
-    ) -> Result<Option<Vec<PageTableMonitorEvent>>, VmiError> {
+    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
         let mut result = Vec::new();
         let mut orphaned = HashSet::new();
 
@@ -525,7 +525,7 @@ where
             self.entries.remove(&(view, pa));
         }
 
-        Ok(Some(result))
+        Ok(result)
     }
 
     /// Recursively monitor a page table entry.
