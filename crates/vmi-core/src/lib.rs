@@ -304,6 +304,11 @@ where
         self.created.elapsed()
     }
 
+    /// Returns the driver used by this `VmiCore` instance.
+    pub fn driver(&self) -> &Driver {
+        &self.driver
+    }
+
     /// Retrieves information about the virtual machine.
     pub fn info(&self) -> Result<VmiInfo, VmiError> {
         self.driver.info()
