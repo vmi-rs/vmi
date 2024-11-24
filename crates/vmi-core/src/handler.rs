@@ -1,4 +1,4 @@
-use crate::{VmiContext, VmiDriver, VmiEventResponse, VmiOs};
+use crate::{VmiContext, VmiDriver, VmiEventResponse, VmiOs, VmiSession};
 
 /// A trait for handling VMI events.
 ///
@@ -16,6 +16,12 @@ where
         &mut self,
         event: VmiContext<Driver, Os>,
     ) -> VmiEventResponse<Driver::Architecture>;
+
+    /// Handles a timeout event.
+    fn handle_timeout(&mut self, _session: &VmiSession<Driver, Os>) {}
+
+    /// Handles an interrupted event.
+    fn handle_interrupted(&mut self, _session: &VmiSession<Driver, Os>) {}
 
     /// Returns whether the handler has finished processing events.
     fn finished(&self) -> bool {

@@ -113,9 +113,11 @@ where
             match self.wait_for_event(timeout, &mut handler) {
                 Err(VmiError::Timeout) => {
                     tracing::trace!("timeout");
+                    handler.handle_timeout(self);
                 }
                 Err(VmiError::Io(err)) if err.kind() == ErrorKind::Interrupted => {
-                    tracing::info!("interrupted");
+                    tracing::trace!("interrupted");
+                    handler.handle_interrupted(self);
                     break;
                 }
                 Err(err) => return Err(err),
