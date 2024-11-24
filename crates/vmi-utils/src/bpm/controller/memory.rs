@@ -26,19 +26,13 @@ where
     }
 
     fn check_event(&self, event: &VmiEvent<Driver::Architecture>) -> Option<(View, Gfn)> {
-        let memory_access = match event.reason().as_memory_access() {
-            Some(memory_access) => memory_access,
-            _ => return None,
-        };
+        let memory_access = event.reason().as_memory_access()?;
 
         if !memory_access.access().contains(MemoryAccess::X) {
             return None;
         }
 
-        let view = match event.view() {
-            Some(view) => view,
-            None => return None,
-        };
+        let view = event.view()?;
 
         let gfn = Driver::Architecture::gfn_from_pa(memory_access.pa());
         Some((view, gfn))

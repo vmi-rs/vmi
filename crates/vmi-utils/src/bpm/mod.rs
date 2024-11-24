@@ -873,10 +873,7 @@ where
         ctx: AddressContext,
         view: View,
     ) -> Option<PendingBreakpoints<Key, Tag>> {
-        let breakpoints = match self.pending_breakpoints.remove(&(view, ctx)) {
-            Some(breakpoints) => breakpoints,
-            None => return None,
-        };
+        let breakpoints = self.pending_breakpoints.remove(&(view, ctx))?;
 
         match self.pending_ctx_by_view.entry(view) {
             Entry::Occupied(mut entry) => {

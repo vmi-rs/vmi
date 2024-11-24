@@ -59,15 +59,8 @@ where
     }
 
     fn check_event(&self, event: &VmiEvent<Driver::Architecture>) -> Option<(View, Gfn)> {
-        let interrupt = match event.reason().as_software_breakpoint() {
-            Some(interrupt) => interrupt,
-            None => return None,
-        };
-
-        let view = match event.view() {
-            Some(view) => view,
-            None => return None,
-        };
+        let interrupt = event.reason().as_software_breakpoint()?;
+        let view = event.view()?;
 
         Some((view, interrupt.gfn()))
     }

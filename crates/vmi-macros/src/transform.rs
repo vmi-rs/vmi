@@ -31,10 +31,7 @@ pub fn result_to_result_option(return_type: &ReturnType) -> Option<ReturnType> {
         _ => return None,
     };
 
-    let segment = match type_path.path.segments.last() {
-        Some(segment) => segment,
-        None => return None,
-    };
+    let segment = type_path.path.segments.last()?;
 
     if segment.ident != "Result" {
         return None;
