@@ -77,7 +77,7 @@ use self::arch::ArchAdapter;
 mod iter;
 pub use self::iter::{ListEntryIterator, TreeNodeIterator};
 
-mod pe;
+pub mod pe;
 pub use self::pe::{CodeView, PeError, PeLite, PeLite32, PeLite64};
 
 mod offsets;
