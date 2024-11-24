@@ -531,6 +531,8 @@ impl<Driver> VmiHandler<Driver, WindowsOs<Driver>> for Monitor<Driver>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
+    type Output = ();
+
     fn handle_event(
         &mut self,
         vmi: VmiContext<'_, Driver, WindowsOs<Driver>>,
@@ -541,8 +543,8 @@ where
         self.dispatch(&vmi).expect("dispatch")
     }
 
-    fn finished(&self) -> bool {
-        self.terminate_flag.load(Ordering::Relaxed)
+    fn check_completion(&self) -> Option<Self::Output> {
+        self.terminate_flag.load(Ordering::Relaxed).then_some(())
     }
 }
 

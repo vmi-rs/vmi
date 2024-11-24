@@ -564,6 +564,8 @@ impl<Driver, T> VmiHandler<Driver, WindowsOs<Driver>>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
+    type Output = ();
+
     fn handle_event(
         &mut self,
         vmi: VmiContext<Driver, WindowsOs<Driver>>,
@@ -585,7 +587,7 @@ where
         }
     }
 
-    fn finished(&self) -> bool {
-        self.finished
+    fn check_completion(&self) -> Option<Self::Output> {
+        self.finished.then_some(())
     }
 }

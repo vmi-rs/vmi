@@ -90,7 +90,7 @@ where
     pub fn handle<Handler>(
         &self,
         handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
-    ) -> Result<(), VmiError>
+    ) -> Result<Option<Handler::Output>, VmiError>
     where
         Handler: VmiHandler<Driver, Os>,
     {
@@ -103,13 +103,20 @@ where
         &self,
         timeout: Duration,
         handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
-    ) -> Result<(), VmiError>
+    ) -> Result<Option<Handler::Output>, VmiError>
     where
         Handler: VmiHandler<Driver, Os>,
     {
+        let mut result;
         let mut handler = handler_factory(self)?;
 
-        while !handler.finished() {
+        loop {
+            result = handler.check_completion();
+
+            if result.is_some() {
+                break;
+            }
+
             match self.wait_for_event(timeout, &mut handler) {
                 Err(VmiError::Timeout) => {
                     tracing::trace!("timeout");
@@ -140,7 +147,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(result)
     }
 }
 
