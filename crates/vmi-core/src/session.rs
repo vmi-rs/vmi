@@ -80,15 +80,28 @@ where
         timeout: Duration,
         handler: &mut impl VmiHandler<Driver, Os>,
     ) -> Result<(), VmiError> {
-        self.core.wait_for_event(
-            timeout,
-            |event| handler.handle_event(VmiContext::new(self, event)),
-        )
+        self.core.wait_for_event(timeout, |event| {
+            handler.handle_event(VmiContext::new(self, event))
+        })
     }
 
-    /// Main event handling loop that processes VMI events until finished.
+    /// Enters the main event handling loop that processes VMI events until
+    /// finished.
     pub fn handle<Handler>(
         &self,
+        handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
+    ) -> Result<(), VmiError>
+    where
+        Handler: VmiHandler<Driver, Os>,
+    {
+        self.handle_with_timeout(Duration::from_millis(5000), handler_factory)
+    }
+
+    /// Enters the main event handling loop that processes VMI events until
+    /// finished, with a timeout for each event.
+    pub fn handle_with_timeout<Handler>(
+        &self,
+        timeout: Duration,
         handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
     ) -> Result<(), VmiError>
     where
@@ -97,7 +110,7 @@ where
         let mut handler = handler_factory(self)?;
 
         while !handler.finished() {
-            match self.wait_for_event(Duration::from_millis(5000), &mut handler) {
+            match self.wait_for_event(timeout, &mut handler) {
                 Err(VmiError::Timeout) => {
                     tracing::trace!("timeout");
                 }
