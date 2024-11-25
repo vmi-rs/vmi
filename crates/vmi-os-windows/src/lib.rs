@@ -202,7 +202,7 @@ where
     object_type_cache: RefCell<HashMap<Va, WindowsObjectType>>,
 
     ki_kva_shadow: RefCell<Option<bool>>,
-    mm_pfn_database: RefCell<Option<Va>>,
+    mm_pfn_database: RefCell<Option<Va>>, // _MMPFN*
     nt_build_lab: RefCell<Option<String>>,
     nt_build_lab_ex: RefCell<Option<String>>,
 

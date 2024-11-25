@@ -21,7 +21,7 @@ struct CvInfoPdb70 {
     // pdb_file_name: [u8; ???],
 }
 
-pub fn codeview_from_pe<Driver, Pe>(
+pub(crate) fn codeview_from_pe<Driver, Pe>(
     vmi: &VmiCore<Driver>,
     ctx: impl Into<AddressContext>,
     pe: &PeLite<Pe>,
