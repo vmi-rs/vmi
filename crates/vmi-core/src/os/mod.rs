@@ -7,8 +7,8 @@ use vmi_macros::derive_os_wrapper;
 
 pub use self::{
     common::{
-        OsArchitecture, OsImageExportedSymbol, OsMapped, OsProcess, OsRegion, OsRegionKind,
-        ProcessId, ProcessObject, ThreadId, ThreadObject,
+        OsArchitecture, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
+        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
     },
     struct_reader::StructReader,
 };
@@ -75,6 +75,18 @@ where
         vmi: &VmiCore<Driver>,
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<bool, VmiError>;
+
+    /// Retrieves a list of loaded kernel modules.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: Retrieves information from the `PsLoadedModuleList`.
+    /// - **Linux**: Retrieves information from the `modules` list.
+    fn modules(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Vec<OsModule>, VmiError>;
 
     /// Retrieves the system process object.
     ///

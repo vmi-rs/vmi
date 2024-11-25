@@ -772,9 +772,9 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 
 [[package]]
 name = "isr"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c703f6eb087efe619c27ea587ad911580153c2b1bf6aa70cfc5b8d5ecc8ea8b"
+checksum = "4a7d72d55de0118f860db9f8e9d928289f8952e653571885f17452dd9124bc1f"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -862,9 +862,9 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0072c791fed80a86985a39839a158830c7fb58705311aed0170edc7ff178fe13"
+checksum = "27a16ac35394b3b5e59f4edd6f3f1e7338ad1d3b86b9725ab4f0334b9bf8b052"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",

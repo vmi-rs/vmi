@@ -62,8 +62,8 @@ use isr_core::Profile;
 use vmi_arch_amd64::{Amd64, Cr3};
 use vmi_core::{
     os::{
-        OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsProcess, OsRegion, OsRegionKind,
-        ProcessId, ProcessObject, StructReader, ThreadId, ThreadObject, VmiOs,
+        OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
+        OsRegionKind, ProcessId, ProcessObject, StructReader, ThreadId, ThreadObject, VmiOs,
     },
     AccessContext, Architecture, Gfn, Hex, MemoryAccess, Pa, Registers as _, Va, VmiCore,
     VmiDriver, VmiError,
@@ -1386,6 +1386,37 @@ where
         *self.nt_build_lab_ex.borrow_mut() = Some(nt_build_lab_ex.clone());
 
         Ok(Some(nt_build_lab_ex))
+    }
+
+    /// Retrieves information about a kernel module from a pointer to
+    /// `KLDR_DATA_TABLE_ENTRY`
+    pub fn kernel_module(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+        addr: Va, // _KLDR_DATA_TABLE_ENTRY*
+    ) -> Result<OsModule, VmiError> {
+        let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
+
+        let base_address = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset),
+            registers.address_width(),
+        )?;
+
+        let size = vmi
+            .read_u32(registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset))?
+            as u64;
+
+        let name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset),
+        )?;
+
+        Ok(OsModule {
+            base_address,
+            size,
+            name,
+        })
     }
 
     // endregion: Kernel
@@ -3166,6 +3197,31 @@ where
             vmi.read_u8(registers.address_context(kernel_image_base + KiKvaShadow))? != 0;
         *self.ki_kva_shadow.borrow_mut() = Some(ki_kva_shadow);
         Ok(ki_kva_shadow)
+    }
+
+    fn modules(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
+    ) -> Result<Vec<OsModule>, VmiError> {
+        let mut result = Vec::new();
+
+        let PsLoadedModuleList =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsLoadedModuleList;
+
+        let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
+
+        self.enumerate_list(vmi, registers, PsLoadedModuleList, |entry| {
+            let module_entry = entry - KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset;
+
+            if let Ok(module) = self.kernel_module(vmi, registers, module_entry) {
+                result.push(module)
+            }
+
+            true
+        })?;
+
+        Ok(result)
     }
 
     fn system_process(

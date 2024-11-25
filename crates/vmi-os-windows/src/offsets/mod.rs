@@ -12,6 +12,7 @@ symbols! {
     pub struct Symbols {
         PsActiveProcessHead: u64,
         PsInitialSystemProcess: u64,
+        PsLoadedModuleList: u64,
         KiDispatchException: Option<u64>,
         DbgkpSendErrorMessage: Option<u64>,
 
@@ -98,6 +99,16 @@ offsets! {
 
         struct _KPRCB {
             CurrentThread: Field,
+        }
+
+        #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]
+        struct _KLDR_DATA_TABLE_ENTRY {
+            InLoadOrderLinks: Field,    // _LIST_ENTRY
+            DllBase: Field,             // PVOID
+            EntryPoint: Field,          // PVOID
+            SizeOfImage: Field,         // ULONG
+            FullDllName: Field,         // _UNICODE_STRING
+            BaseDllName: Field,         // _UNICODE_STRING
         }
 
         struct _CLIENT_ID {

@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use isr_core::Profile;
 use vmi_core::{
     os::{
-        OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsProcess, OsRegion, OsRegionKind,
-        ProcessId, ProcessObject, ThreadId, ThreadObject,
+        OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
+        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
     },
     Architecture, MemoryAccess, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiOs,
 };
@@ -476,7 +476,7 @@ where
     fn kernel_information_string(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<String, VmiError> {
         unimplemented!()
     }
@@ -484,15 +484,23 @@ where
     fn kpti_enabled(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<bool, VmiError> {
+        unimplemented!()
+    }
+
+    fn modules(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
+    ) -> Result<Vec<OsModule>, VmiError> {
         unimplemented!()
     }
 
     fn system_process(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<ProcessObject, VmiError> {
         unimplemented!()
     }
@@ -627,7 +635,7 @@ where
     fn process_translation_root(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         unimplemented!()
@@ -636,7 +644,7 @@ where
     fn process_user_translation_root(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         unimplemented!()
@@ -697,7 +705,7 @@ where
     fn process_address_is_valid(
         &self,
         vmi: &VmiCore<Driver>,
-        registers: &<<Driver as VmiDriver>::Architecture as crate::Architecture>::Registers,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError> {

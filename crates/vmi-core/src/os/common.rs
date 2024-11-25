@@ -139,6 +139,38 @@ pub enum OsArchitecture {
     Amd64,
 }
 
+/// Represents information about a kernel module in the target system.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OsModule {
+    /// The base address of the module.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `KLDR_DATA_TABLE_ENTRY.DllBase`
+    /// - **Linux**:
+    ///   - since v6.4-rc1: `module::mem[0 /* MOD_TEXT */].base`
+    ///   - before v6.4-rc1: `module::core_layout.base`
+    pub base_address: Va,
+
+    /// The size of the module.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `KLDR_DATA_TABLE_ENTRY.SizeOfImage`
+    /// - **Linux**:
+    ///   - since v6.4-rc1: sum of `module::mem[MOD_*].size`
+    ///   - before v6.4-rc1: `module::init_layout.size + module::core_layout.size (+ module::data_layout.size)`
+    pub size: u64,
+
+    /// The short name of the module.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `KLDR_DATA_TABLE_ENTRY.BaseDllName`
+    /// - **Linux**: `module::name`
+    pub name: String,
+}
+
 /// Represents information about a process in the target system.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OsProcess {
