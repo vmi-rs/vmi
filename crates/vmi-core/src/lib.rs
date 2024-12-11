@@ -11,11 +11,7 @@ pub mod os;
 mod page;
 mod session;
 
-use std::{
-    cell::RefCell,
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, num::NonZeroUsize, time::Duration};
 
 use lru::LruCache;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -68,7 +64,6 @@ where
     translate_access_context_fn: fn(&Self, AccessContext) -> Result<Pa, VmiError>,
 
     read_string_length_limit: RefCell<Option<usize>>,
-    created: Instant,
 }
 
 impl<Driver> VmiCore<Driver>
@@ -86,7 +81,6 @@ where
             read_page_fn: Self::read_page_cache,
             translate_access_context_fn: Self::translate_access_context_cache,
             read_string_length_limit: RefCell::new(None),
-            created: Instant::now(),
         })
     }
 
@@ -297,11 +291,6 @@ where
     /// To remove the limit, call this method with `None`.
     pub fn set_read_string_length_limit(&self, limit: usize) {
         *self.read_string_length_limit.borrow_mut() = Some(limit);
-    }
-
-    /// Returns the duration since this `VmiCore` instance was created.
-    pub fn elapsed(&self) -> Duration {
-        self.created.elapsed()
     }
 
     /// Returns the driver used by this `VmiCore` instance.
