@@ -2026,7 +2026,7 @@ where
             }
         }
 
-        return Ok(None);
+        Ok(None)
     }
 
     /// Retrieves the root directory object for the Windows kernel.
@@ -3286,11 +3286,7 @@ where
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
         let root = self.vad_root(vmi, registers, process)?;
 
-        Ok(TreeNodeIterator::new(
-            VmiSession::new(vmi, self),
-            registers,
-            root,
-        )?)
+        TreeNodeIterator::new(VmiSession::new(vmi, self), registers, root)
     }
 
     /// Returns the process object iterator.
