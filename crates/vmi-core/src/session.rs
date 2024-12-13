@@ -399,7 +399,7 @@ where
 
         let pf_page = pf.address.0 >> Driver::Architecture::PAGE_SHIFT;
         let last_page = (ctx.address + length as u64 - 1) >> Driver::Architecture::PAGE_SHIFT;
-        let number_of_pages = last_page - pf_page + 1;
+        let number_of_pages = last_page.saturating_sub(pf_page) + 1;
 
         let pf_address_aligned = Va(pf_page << Driver::Architecture::PAGE_SHIFT);
         let last_address_aligned = Va(last_page << Driver::Architecture::PAGE_SHIFT);
