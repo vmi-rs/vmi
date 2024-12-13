@@ -70,6 +70,8 @@ symbols! {
         ObpKernelHandleTable: u64,
 
         PspInsertProcess: Option<u64>,
+        PspUserThreadStartup: Option<u64>,
+        PspExitThread: Option<u64>,
         MmCleanProcessAddressSpace: Option<u64>,
     }
 }
