@@ -11,6 +11,7 @@ use super::{
     super::{arch::ArchAdapter as _, CallBuilder, InjectorHandler, Recipe, RecipeExecutor},
     OsAdapter,
 };
+use crate::bridge::{BridgeHandler, BridgePacket};
 
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
 const INVALID_VIEW: View = View(0xffff);
@@ -166,8 +167,7 @@ where
     }
 }
 
-#[allow(non_snake_case)]
-impl<Driver, T> InjectorHandler<Driver, WindowsOs<Driver>, T>
+impl<Driver, T> InjectorHandler<Driver, WindowsOs<Driver>, T, ()>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
@@ -178,6 +178,24 @@ where
         pid: ProcessId,
         recipe: Recipe<Driver, WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
+        Self::with_bridge(vmi, profile, pid, (), recipe)
+    }
+}
+
+#[allow(non_snake_case)]
+impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
+where
+    Driver: VmiDriver<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>>,
+{
+    /// Creates a new injector handler.
+    pub fn with_bridge(
+        vmi: &VmiCore<Driver>,
+        profile: &Profile,
+        pid: ProcessId,
+        bridge: Bridge,
+        recipe: Recipe<Driver, WindowsOs<Driver>, T>,
+    ) -> Result<Self, VmiError> {
         let offsets = Offsets::new(profile)?;
 
         let view = vmi.create_view(MemoryAccess::RWX)?;
@@ -185,8 +203,7 @@ where
         vmi.monitor_enable(EventMonitor::Register(ControlRegister::Cr3))?;
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
-        let bridge = recipe.bridge;
-        if bridge {
+        if !Bridge::EMPTY {
             vmi.monitor_enable(EventMonitor::CpuId)?;
         }
 
@@ -232,18 +249,78 @@ where
         &mut self,
         vmi: &VmiContext<Driver, WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        const SYNC_MAGIC_LEAF: u32 = 0x406e7964; // '@nyd'
-        const SYNC_MAGIC_RESPONSE: u64 = 0x616e7964; // 'anyd'
+        let cpuid = vmi.event().reason().as_cpuid();
 
-        const SYNC_REQUEST_HELLO: u16 = 0x0000;
-        const SYNC_REQUEST_STATUS: u16 = 0x8000;
-        const SYNC_REQUEST_ERROR: u16 = 0xFFFF;
+        let mut registers = vmi.registers().gp_registers();
+        registers.rip += cpuid.instruction_length as u64;
 
-        const SYNC_LAST_PHASE: u16 = 0xFFFF;
+        tracing::trace!(
+            rip = %Va::from(registers.rip),
+            leaf = %Hex(cpuid.leaf),
+            subleaf = %Hex(cpuid.subleaf),
+        );
 
-        const SYNC_RESPONSE_WAIT: u64 = 0x00000000;
-        const SYNC_RESPONSE_CONTINUE: u64 = 0x00000001;
-        const SYNC_RESPONSE_ABORT: u64 = 0xFFFFFFFF;
+        if cpuid.leaf != Bridge::MAGIC {
+            return Ok(VmiEventResponse::set_registers(registers));
+        }
+
+        let magic = cpuid.leaf;
+        let request = (cpuid.subleaf & 0xFFFF) as u16;
+        let method = (cpuid.subleaf >> 16) as u16;
+
+        let packet = BridgePacket::new(magic, request, method)
+            .with_value1(registers.r8)
+            .with_value2(registers.r9)
+            .with_value3(registers.r10)
+            .with_value4(registers.r11);
+
+        let result = match self.bridge.dispatch(vmi, packet) {
+            Some(result) => result,
+            None => {
+                tracing::error!(request, method, "Empty bridge response");
+                return Ok(VmiEventResponse::set_registers(registers));
+            }
+        };
+
+        if let Some(value1) = result.value1() {
+            registers.rax = value1;
+        }
+        if let Some(value2) = result.value2() {
+            registers.rbx = value2;
+        }
+
+        if result.into_result().is_some() {
+            self.finished = true;
+            vmi.monitor_disable(EventMonitor::CpuId)?;
+        };
+
+        if let Some(verify) = Bridge::VERIFY_VALUE4 {
+            registers.rdx = verify;
+        }
+        if let Some(verify) = Bridge::VERIFY_VALUE3 {
+            registers.rcx = verify;
+        }
+        if let Some(verify) = Bridge::VERIFY_VALUE2 {
+            registers.rbx = verify;
+        }
+        if let Some(verify) = Bridge::VERIFY_VALUE1 {
+            registers.rax = verify;
+        }
+
+        Ok(VmiEventResponse::set_registers(registers))
+
+        /*
+        const BRIDGE_MAGIC: u32 = 0x406e7964; // '@nyd'
+        const BRIDGE_VERIFY: u64 = 0x616e7964; // 'anyd'
+
+        const BRIDGE_REQUEST: u16 = 0x0001;
+
+        // const BRIDGE_METHOD_DOWNLOAD: u16 = 0x0001;
+        const BRIDGE_METHOD_EXECUTE: u16 = 0x0002;
+
+        const BRIDGE_RESPONSE_CONTINUE: u64 = 0x00000000;
+        const BRIDGE_RESPONSE_WAIT: u64 = 0x00000001;
+        const BRIDGE_RESPONSE_ABORT: u64 = 0xFFFFFFFF;
 
         let cpuid = vmi.event().reason().as_cpuid();
 
@@ -256,40 +333,29 @@ where
             subleaf = %Hex(cpuid.subleaf),
         );
 
-        if cpuid.leaf != SYNC_MAGIC_LEAF {
+        if cpuid.leaf != BRIDGE_MAGIC {
             // tracing::trace!("not the right leaf");
             return Ok(VmiEventResponse::set_registers(registers));
         }
 
-        let request = (cpuid.subleaf >> 16) as u16;
-        let method = (cpuid.subleaf & 0xFFFF) as u16;
+        let request = (cpuid.subleaf & 0xFFFF) as u16;
+        let method = (cpuid.subleaf >> 16) as u16;
 
         match (request, method) {
-            (SYNC_REQUEST_HELLO, _) => {
-                tracing::debug!("hello request");
-                registers.rax = SYNC_MAGIC_RESPONSE;
-            }
-
-            (SYNC_REQUEST_STATUS, SYNC_LAST_PHASE) => {
+            (BRIDGE_REQUEST, BRIDGE_METHOD_EXECUTE) => {
                 tracing::debug!("last phase request");
-                registers.rax = SYNC_RESPONSE_WAIT;
+                registers.rax = BRIDGE_RESPONSE_WAIT;
                 self.finished = true;
             }
 
-            (SYNC_REQUEST_STATUS, phase) => {
+            (BRIDGE_REQUEST, phase) => {
                 tracing::debug!(phase, "status request");
-                registers.rax = SYNC_RESPONSE_CONTINUE;
-            }
-
-            (SYNC_REQUEST_ERROR, code) => {
-                tracing::error!(code, "error request");
-                registers.rax = SYNC_RESPONSE_ABORT;
-                self.finished = true;
+                registers.rax = BRIDGE_RESPONSE_CONTINUE;
             }
 
             _ => {
-                tracing::error!(request, method, "unknown request");
-                registers.rax = SYNC_RESPONSE_ABORT;
+                tracing::error!(request, method, "error request");
+                registers.rax = BRIDGE_RESPONSE_ABORT;
                 self.finished = true;
             }
         };
@@ -298,10 +364,11 @@ where
             vmi.monitor_disable(EventMonitor::CpuId)?;
         };
 
-        registers.rbx = SYNC_MAGIC_RESPONSE;
-        registers.rcx = SYNC_MAGIC_RESPONSE;
-        registers.rdx = SYNC_MAGIC_RESPONSE;
+        registers.rdx = BRIDGE_VERIFY;
+        registers.rcx = BRIDGE_VERIFY;
+
         Ok(VmiEventResponse::set_registers(registers))
+         */
     }
 
     #[tracing::instrument(name = "write_cr", skip_all)]
@@ -527,7 +594,7 @@ where
             vmi.destroy_view(self.view)?;
 
             // If the bridge was not enabled, we're done.
-            if !self.bridge {
+            if Bridge::EMPTY {
                 self.finished = true;
             }
         }
@@ -538,10 +605,11 @@ where
     }
 }
 
-impl<Driver, T> VmiHandler<Driver, WindowsOs<Driver>>
-    for InjectorHandler<Driver, WindowsOs<Driver>, T>
+impl<Driver, T, Bridge> VmiHandler<Driver, WindowsOs<Driver>>
+    for InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>>,
 {
     type Output = ();
 

@@ -3,6 +3,9 @@
 #[cfg(feature = "bpm")]
 pub mod bpm;
 
+#[cfg(feature = "bridge")]
+pub mod bridge;
+
 #[cfg(feature = "injector")]
 pub mod injector;
 

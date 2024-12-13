@@ -36,6 +36,7 @@ default = [
     "arch-amd64",
     "os-windows",
     "bpm",
+    "bridge",
     "injector",
     "interceptor",
     "ptm"
@@ -49,6 +50,7 @@ os-windows = [
 ]
 
 bpm = []
+bridge = []
 injector = []
 interceptor = []
 ptm = []

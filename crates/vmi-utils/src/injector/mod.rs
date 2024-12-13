@@ -100,6 +100,7 @@ pub use self::call::CallBuilder;
 pub mod macros;
 #[doc(inline)]
 pub use crate::_private_recipe as recipe;
+use crate::bridge::BridgeHandler;
 
 mod recipe;
 pub use self::recipe::{
@@ -111,10 +112,11 @@ pub use self::recipe::{
 /// The handler monitors CPU events to hijack threads, inject code, and track execution.
 /// It uses recipes to define the injection sequence and maintains state about the
 /// injection process.
-pub struct InjectorHandler<Driver, Os, T>
+pub struct InjectorHandler<Driver, Os, T, Bridge = ()>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver> + OsAdapter<Driver>,
+    Bridge: BridgeHandler<Driver, Os>,
 {
     /// Process ID being injected into.
     pub(super) pid: ProcessId,
@@ -140,8 +142,8 @@ where
     /// Memory view used for injection operations.
     pub(super) view: View,
 
-    /// Whether the bridge has been created.
-    pub(super) bridge: bool,
+    /// Bridge.
+    pub(super) bridge: Bridge,
 
     /// Whether the injection has completed.
     pub(super) finished: bool,
