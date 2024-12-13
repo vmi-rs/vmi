@@ -27,7 +27,7 @@ use vmi_core::{
 /// Stores the original content that was replaced by the breakpoint instruction
 /// and tracks the number of references to this breakpoint location.
 struct Breakpoint {
-    #[expect(dead_code)]
+    #[expect(unused)]
     offset: u16,
     original_content: Vec<u8>, // until [u8; Arch::BREAKPOINT.len()] is allowed
     references: u32,

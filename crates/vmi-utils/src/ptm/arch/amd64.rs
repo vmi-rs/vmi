@@ -18,7 +18,7 @@ where
     Tag: TagType,
 {
     offset: u16,
-    #[expect(dead_code)]
+    #[expect(unused)]
     tag: Tag,
 }
 
