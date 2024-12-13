@@ -31,7 +31,7 @@ where
     data: Vec<u8>,
 }
 
-impl<'pe, Driver, Pe> PeExportDirectory<'pe, Driver, Pe>
+impl<Driver, Pe> PeExportDirectory<'_, Driver, Pe>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -61,7 +61,7 @@ where
     data: Vec<u8>,
 }
 
-impl<'pe, Driver, Pe> PeDebugDirectory<'pe, Driver, Pe>
+impl<Driver, Pe> PeDebugDirectory<'_, Driver, Pe>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
