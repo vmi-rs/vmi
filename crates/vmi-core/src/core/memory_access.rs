@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 bitflags::bitflags! {
     /// Memory access permission flags.
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
     pub struct MemoryAccess: u8 {
         /// Read permission.
         const R = 0b00000001;
