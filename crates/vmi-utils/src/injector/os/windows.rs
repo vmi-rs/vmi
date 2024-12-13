@@ -194,7 +194,6 @@ where
             pid,
             tid: None,
             hijacked: false,
-            sp_va: None,
             ip_va: None,
             ip_pa: None,
             offsets,
@@ -414,7 +413,6 @@ where
         //
 
         self.tid = Some(current_tid);
-        self.sp_va = Some(sp_va);
         self.ip_va = Some(ip_va);
         self.ip_pa = Some(ip_pa);
 
@@ -500,37 +498,18 @@ where
             vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))?;
         }
 
-        let sp = Va(registers.rsp);
-        if let Some(sp_va) = self.sp_va {
-            if sp_va > sp {
-                tracing::trace!(
-                    sp = %sp_va,
-                    current_sp = %sp,
-                    "not the right stack pointer"
-                );
-
-                return Ok(
-                    VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                );
-            }
-        }
-
         //
         // Execute the next step in the recipe.
         //
 
-        //println!("BEFORE");
-        //println!("RIP: 0x{:016X}", registers.rip);
-        //println!("RSP: 0x{:016X}", registers.rsp);
-        //let _ = hexdump(vmi, (Va(registers.rsp - 0x200), registers.cr3.into()), 0x400, Representation::U64);
-
-        let new_registers = self.recipe.execute(vmi)?;
-        self.sp_va = Some(Va(new_registers.rsp));
-
-        //println!("AFTER");
-        //println!("RIP: 0x{:016X}", new_registers.rip);
-        //println!("RSP: 0x{:016X}", new_registers.rsp);
-        //let _ = hexdump(vmi, (Va(registers.rsp - 0x200), registers.cr3.into()), 0x400, Representation::U64);
+        let new_registers = match self.recipe.execute(vmi)? {
+            Some(registers) => registers,
+            None => {
+                return Ok(
+                    VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
+                )
+            }
+        };
 
         if self.recipe.done() {
             //

@@ -125,9 +125,6 @@ where
     /// Whether a thread has been successfully hijacked.
     pub(super) hijacked: bool,
 
-    /// Virtual address of the stack in the hijacked thread.
-    pub(super) sp_va: Option<Va>,
-
     /// Virtual address of the instruction pointer in the hijacked thread.
     pub(super) ip_va: Option<Va>,
 

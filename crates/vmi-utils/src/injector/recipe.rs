@@ -124,6 +124,9 @@ where
 
     /// Index of the current step being executed.
     index: Option<usize>,
+
+    /// The previous stack pointer value.
+    previous_stack_pointer: Option<Va>,
 }
 
 impl<Driver, Os, T> RecipeExecutor<Driver, Os, T>
@@ -138,14 +141,25 @@ where
             cache: ImageSymbolCache::new(),
             original_registers: None,
             index: None,
+            previous_stack_pointer: None,
         }
     }
 
     /// Executes the next step in the recipe.
+    ///
+    /// Returns the new CPU registers after executing the step.
+    /// If the recipe has finished executing, returns the original registers.
     pub fn execute(
         &mut self,
         vmi: &VmiContext<Driver, Os>,
-    ) -> Result<<<Driver as VmiDriver>::Architecture as Architecture>::Registers, VmiError> {
+    ) -> Result<Option<<<Driver as VmiDriver>::Architecture as Architecture>::Registers>, VmiError>
+    {
+        // If the stack pointer has decreased, we are likely in a recursive call or APC.
+        // In this case, we should not execute the recipe.
+        if self.has_stack_pointer_decreased(vmi) {
+            return Ok(None);
+        }
+
         let index = match &mut self.index {
             Some(index) => index,
             None => {
@@ -166,22 +180,25 @@ where
                 cache: &mut self.cache,
             })?;
 
+            // Update the stack pointer after executing the step.
+            self.previous_stack_pointer = Some(Va(registers.stack_pointer()));
+
             match next {
                 RecipeControlFlow::Continue => {
                     *index += 1;
-                    return Ok(registers);
+                    return Ok(Some(registers));
                 }
                 RecipeControlFlow::Break => {}
                 RecipeControlFlow::Repeat => {
-                    return Ok(registers);
+                    return Ok(Some(registers));
                 }
                 RecipeControlFlow::Skip => {
                     *index += 2;
-                    return Ok(registers);
+                    return Ok(Some(registers));
                 }
                 RecipeControlFlow::Goto(i) => {
                     *index = i;
-                    return Ok(registers);
+                    return Ok(Some(registers));
                 }
             }
         }
@@ -193,7 +210,31 @@ where
 
         self.index = None;
         let original_registers = self.original_registers.expect("original_registers");
-        Ok(original_registers)
+        Ok(Some(original_registers))
+    }
+
+    /// Returns whether the stack pointer has decreased since the last step.
+    ///
+    /// This is used to detect irrelevant reentrancy in the recipe,
+    /// such as recursive calls, interrupts, or APCs.
+    fn has_stack_pointer_decreased(&self, vmi: &VmiContext<Driver, Os>) -> bool {
+        let previous_stack_pointer = match self.previous_stack_pointer {
+            Some(previous_stack_pointer) => previous_stack_pointer,
+            None => return false,
+        };
+
+        let current_stack_pointer = Va(vmi.registers().stack_pointer());
+
+        let result = previous_stack_pointer > current_stack_pointer;
+        if result {
+            tracing::trace!(
+                %previous_stack_pointer,
+                %current_stack_pointer,
+                "stack pointer decreased"
+            );
+        }
+
+        result
     }
 
     /// Resets the executor to the initial state.
