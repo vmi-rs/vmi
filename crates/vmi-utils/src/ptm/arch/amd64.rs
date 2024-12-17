@@ -3,8 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, VcpuId, View, VmiCore, VmiDriver,
-    VmiError,
+    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View, VmiCore, VmiDriver, VmiError
 };
 
 use super::{
@@ -111,7 +110,7 @@ where
     /// Monitor a guest frame number for write access.
     fn monitor(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View) -> Result<(), VmiError> {
         self.monitored_gfns.insert((view, gfn));
-        vmi.set_memory_access(gfn, view, MemoryAccess::R)
+        vmi.set_memory_access_with_options(gfn, view, MemoryAccess::R, MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES)
     }
 
     /// Unmonitor a guest frame number.
