@@ -69,6 +69,36 @@ impl Architecture for Amd64 {
         pa.0 & !Self::PAGE_MASK
     }
 
+    fn va_align_down(va: Va) -> Va {
+        Self::va_align_down_for(va, PageTableLevel::Pt)
+    }
+
+    fn va_align_down_for(va: Va, level: Self::PageTableLevel) -> Va {
+        let mask = match level {
+            PageTableLevel::Pt => !0xfff,
+            PageTableLevel::Pd => !0x1fffff,
+            PageTableLevel::Pdpt => !0x3fffffff,
+            PageTableLevel::Pml4 => !0x7fffffffff,
+        };
+
+        va & mask
+    }
+
+    fn va_align_up(va: Va) -> Va {
+        Self::va_align_up_for(va, PageTableLevel::Pt)
+    }
+
+    fn va_align_up_for(va: Va, level: Self::PageTableLevel) -> Va {
+        let mask = match level {
+            PageTableLevel::Pt => 0xfff,
+            PageTableLevel::Pd => 0x1fffff,
+            PageTableLevel::Pdpt => 0x3fffffff,
+            PageTableLevel::Pml4 => 0x7fffffffff,
+        };
+
+        (va + mask) & !mask
+    }
+
     fn va_offset(va: Va) -> u64 {
         Self::va_offset_for(va, PageTableLevel::Pt)
     }
