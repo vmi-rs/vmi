@@ -12,7 +12,7 @@ pub use self::{
     address_context::AddressContext,
     hex::Hex,
     info::VmiInfo,
-    memory_access::MemoryAccess,
+    memory_access::{MemoryAccess, MemoryAccessOptions},
     vcpu_id::VcpuId,
     view::View,
 };

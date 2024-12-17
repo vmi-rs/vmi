@@ -20,8 +20,8 @@ pub use self::{
     arch::{Architecture, Registers},
     context::{VmiContext, VmiContextProber, VmiOsContext, VmiOsContextProber},
     core::{
-        AccessContext, AddressContext, Gfn, Hex, MemoryAccess, Pa, TranslationMechanism, Va,
-        VcpuId, View, VmiInfo,
+        AccessContext, AddressContext, Gfn, Hex, MemoryAccess, MemoryAccessOptions, Pa,
+        TranslationMechanism, Va, VcpuId, View, VmiInfo,
     },
     driver::VmiDriver,
     error::{PageFault, PageFaults, VmiError},
@@ -369,6 +369,22 @@ where
         access: MemoryAccess,
     ) -> Result<(), VmiError> {
         self.driver.set_memory_access(gfn, view, access)
+    }
+
+    /// Sets the memory access permissions for a specific guest frame number
+    /// (GFN) with additional options.
+    ///
+    /// In addition to the basic read, write, and execute permissions, this
+    /// method allows you to specify additional options for the memory access.
+    pub fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), VmiError> {
+        self.driver
+            .set_memory_access_with_options(gfn, view, access, options)
     }
 
     /// Allocates the next available guest frame number (GFN).

@@ -9,8 +9,8 @@ mod error;
 use std::time::Duration;
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiDriver, VmiError, VmiEvent, VmiEventResponse,
-    VmiInfo, VmiMappedPage,
+    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError,
+    VmiEvent, VmiEventResponse, VmiInfo, VmiMappedPage,
 };
 use xen::XenDomainId;
 
@@ -78,6 +78,18 @@ where
         access: MemoryAccess,
     ) -> Result<(), VmiError> {
         Ok(self.inner.set_memory_access(gfn, view, access)?)
+    }
+
+    fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), VmiError> {
+        Ok(self
+            .inner
+            .set_memory_access_with_options(gfn, view, access, options)?)
     }
 
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {

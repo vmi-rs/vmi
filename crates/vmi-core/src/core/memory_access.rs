@@ -27,6 +27,30 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    /// Options for controlling memory access monitoring.
+    ///
+    /// These options can be used to fine-tune the behavior of memory access
+    /// monitoring, allowing you to ignore certain types of memory accesses
+    /// and improve performance.
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+    pub struct MemoryAccessOptions: u8 {
+        /// Ignore page-walk updates caused by the CPU.
+        ///
+        /// When this flag is set, memory accesses that are solely the result of
+        /// CPU-initiated page-table walks will not trigger an [`EventMemoryAccess`].
+        /// This is useful for filtering out irrelevant events when monitoring
+        /// page-table modifications.
+        ///
+        /// # Notes
+        ///
+        /// This option is only effective when the [`MemoryAccess:W`] is not set.
+        ///
+        /// [`EventMemoryAccess`]: ../vmi_arch_amd64/struct.EventMemoryAccess.html
+        const IGNORE_PAGE_WALK_UPDATES = 0b00000001;
+    }
+}
+
 impl std::fmt::Display for MemoryAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut result = [b'-'; 3];
