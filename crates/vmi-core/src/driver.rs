@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiError, VmiEvent, VmiEventResponse, VmiInfo,
-    VmiMappedPage,
+    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiError, VmiEvent,
+    VmiEventResponse, VmiInfo, VmiMappedPage,
 };
 
 /// A trait for implementing a VMI driver.
@@ -38,6 +38,16 @@ pub trait VmiDriver {
     /// Sets the memory access permissions for a specific GFN.
     fn set_memory_access(&self, gfn: Gfn, view: View, access: MemoryAccess)
         -> Result<(), VmiError>;
+
+    /// Sets the memory access permissions for a specific GFN with additional
+    /// options.
+    fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), VmiError>;
 
     /// Reads a page of memory from the virtual machine.
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError>;

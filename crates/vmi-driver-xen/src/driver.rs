@@ -6,8 +6,8 @@ use std::{
 };
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, VcpuId, View, VmiEvent, VmiEventResponse, VmiInfo,
-    VmiMappedPage,
+    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiEvent, VmiEventResponse,
+    VmiInfo, VmiMappedPage,
 };
 use xen::{
     ctrl::VmEventRing, XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain,
@@ -132,6 +132,35 @@ where
 
         match self.views.borrow().get(&view.0) {
             Some(view) => Ok(view.set_mem_access(gfn.into(), access.into_ext())?),
+            None => Err(Error::ViewNotFound),
+        }
+    }
+
+    pub fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), Error> {
+        tracing::trace!(%gfn, %view, %access, "set memory access");
+
+        let mut xen_access = access.into_ext();
+
+        if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
+            if access != MemoryAccess::R {
+                return Err(Error::NotSupported);
+            }
+
+            xen_access = xen::MemoryAccess::R2PW;
+        }
+
+        if view.0 == 0 {
+            return Ok(self.domain.set_mem_access(gfn.into(), xen_access)?);
+        }
+
+        match self.views.borrow().get(&view.0) {
+            Some(view) => Ok(view.set_mem_access(gfn.into(), xen_access)?),
             None => Err(Error::ViewNotFound),
         }
     }
