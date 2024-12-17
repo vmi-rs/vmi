@@ -129,7 +129,7 @@ where
                 // The view was not found. This can happen if the view was
                 // destroyed before unmonitoring.
                 //
-                tracing::warn!(%gfn, %view, "view not found");
+                tracing::debug!(%gfn, %view, "view not found");
                 Ok(())
             }
             Err(err) => Err(err),

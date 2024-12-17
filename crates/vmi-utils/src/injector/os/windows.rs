@@ -624,7 +624,7 @@ where
             Err(VmiError::PageFault(pfs)) => {
                 let pf = pfs[0];
 
-                tracing::warn!(?pf, "injecting page fault");
+                tracing::debug!(?pf, "injecting page fault");
                 let _ = vmi
                     .inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.address, 0));
 
