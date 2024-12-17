@@ -212,7 +212,7 @@ where
 
         let current_stack_pointer = Va(vmi.registers().stack_pointer());
 
-        let result = previous_stack_pointer > current_stack_pointer;
+        let result = current_stack_pointer < previous_stack_pointer;
         if result {
             tracing::trace!(
                 %previous_stack_pointer,
