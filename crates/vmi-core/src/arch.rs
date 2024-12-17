@@ -94,6 +94,28 @@ pub trait Architecture {
     /// - **AMD64**: `offset = pa & 0xfff`
     fn pa_offset(pa: Pa) -> u64;
 
+    /// Aligns a virtual address down to the nearest page boundary.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `va & ~0xfff`
+    fn va_align_down(va: Va) -> Va;
+
+    /// Aligns a virtual address down to the nearest page boundary for a given
+    /// page table level.
+    fn va_align_down_for(va: Va, level: Self::PageTableLevel) -> Va;
+
+    /// Aligns a virtual address up to the nearest page boundary.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `(va + 0xfff) & ~0xfff`
+    fn va_align_up(va: Va) -> Va;
+
+    /// Aligns a virtual address up to the nearest page boundary for a given
+    /// page table level.
+    fn va_align_up_for(va: Va, level: Self::PageTableLevel) -> Va;
+
     /// Extracts the offset within a page from a virtual address.
     ///
     /// # Architecture-specific
