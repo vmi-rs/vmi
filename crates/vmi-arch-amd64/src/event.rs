@@ -118,6 +118,9 @@ pub enum EventReason {
     /// Singlestep event.
     Singlestep(EventSinglestep),
 
+    /// Guest request event (VMCALL).
+    GuestRequest,
+
     /// CPUID instruction event.
     CpuId(EventCpuId),
 
@@ -211,6 +214,12 @@ pub enum EventMonitor {
 
     /// Monitor singlestep execution of instructions.
     Singlestep,
+
+    /// Monitor execution of VMCALL instructions.
+    GuestRequest {
+        /// Allow userspace to handle the VMCALL.
+        allow_userspace: bool,
+    },
 
     /// Monitor execution of CPUID instructions.
     CpuId,

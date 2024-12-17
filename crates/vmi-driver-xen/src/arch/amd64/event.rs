@@ -155,6 +155,7 @@ impl TryFromExt<&VmEventReason> for EventReason {
                 (value, ExceptionVector::DebugException).into_ext(),
             )),
             Singlestep(value) => Ok(Self::Singlestep(value.into_ext())),
+            GuestRequest => Ok(Self::GuestRequest),
             Cpuid(value) => Ok(Self::CpuId(value.into_ext())),
             IoInstruction(value) => Ok(Self::Io(value.into_ext())),
             _ => Err(()),
