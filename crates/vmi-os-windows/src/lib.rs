@@ -576,8 +576,6 @@ impl WindowsWow64Va {
 #[derive_trait_from_impl(
     os_session_name = WindowsOsSessionExt,
     os_context_name = WindowsOsExt,
-    os_session_prober_name = WindowsOsSessionProberExt,
-    os_context_prober_name = WindowsOsProberExt
 )]
 #[allow(non_snake_case, non_upper_case_globals)]
 impl<Driver> WindowsOs<Driver>

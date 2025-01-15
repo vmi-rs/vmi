@@ -12,17 +12,12 @@ pub use self::{
     },
     struct_reader::StructReader,
 };
-use crate::{
-    Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiOsContext, VmiOsContextProber,
-    VmiOsSession, VmiOsSessionProber,
-};
+use crate::{Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiOsSession, VmiOsState};
 
 /// Operating system trait.
 #[derive_os_wrapper(
     os_session_name = VmiOsSession,
-    os_context_name = VmiOsContext,
-    os_session_prober_name = VmiOsSessionProber,
-    os_context_prober_name = VmiOsContextProber
+    os_context_name = VmiOsState,
 )]
 pub trait VmiOs<Driver>
 where

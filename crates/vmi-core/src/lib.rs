@@ -1,15 +1,14 @@
 //! Core VMI functionality.
 
 pub mod arch;
-mod context;
 mod core;
+mod ctx;
 mod driver;
 mod error;
 mod event;
 mod handler;
 pub mod os;
 mod page;
-mod session;
 
 use std::{cell::RefCell, num::NonZeroUsize, time::Duration};
 
@@ -18,18 +17,17 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub use self::{
     arch::{Architecture, Registers},
-    context::{VmiContext, VmiContextProber, VmiOsContext, VmiOsContextProber},
     core::{
         AccessContext, AddressContext, Gfn, Hex, MemoryAccess, MemoryAccessOptions, Pa,
         TranslationMechanism, Va, VcpuId, View, VmiInfo,
     },
+    ctx::{VmiContext, VmiOsContext, VmiOsSession, VmiOsState, VmiProber, VmiSession, VmiState},
     driver::VmiDriver,
     error::{PageFault, PageFaults, VmiError},
     event::{VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags},
     handler::VmiHandler,
     os::VmiOs,
     page::VmiMappedPage,
-    session::{VmiOsSession, VmiOsSessionProber, VmiSession, VmiSessionProber},
 };
 
 struct Cache {

@@ -1,11 +1,8 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input,
-    spanned::Spanned as _,
-    Error, FnArg, Ident, ItemTrait, Pat, PatType, Path, PathArguments, Result, ReturnType, Token,
-    Type,
+    parse_macro_input, Error, FnArg, Ident, ItemTrait, Pat, PatType, Path, Result, Token,
 };
 
 use crate::method::{FnArgExt, ItemExt, ItemFnExt};
@@ -13,16 +10,16 @@ use crate::method::{FnArgExt, ItemExt, ItemFnExt};
 struct Args {
     os_session_name: Path,
     os_context_name: Path,
-    os_session_prober_name: Path,
-    os_context_prober_name: Path,
+    //os_session_prober_name: Path,
+    //os_context_prober_name: Path,
 }
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut os_session_name = None;
         let mut os_context_name = None;
-        let mut os_session_prober_name = None;
-        let mut os_context_prober_name = None;
+        //let mut os_session_prober_name = None;
+        //let mut os_context_prober_name = None;
 
         while !input.is_empty() {
             let ident = input.parse::<Ident>()?;
@@ -32,8 +29,8 @@ impl Parse for Args {
             match ident.to_string().as_str() {
                 "os_session_name" => os_session_name = Some(value),
                 "os_context_name" => os_context_name = Some(value),
-                "os_session_prober_name" => os_session_prober_name = Some(value),
-                "os_context_prober_name" => os_context_prober_name = Some(value),
+                //"os_session_prober_name" => os_session_prober_name = Some(value),
+                //"os_context_prober_name" => os_context_prober_name = Some(value),
                 _ => return Err(Error::new(ident.span(), "unknown argument")),
             }
 
@@ -48,6 +45,7 @@ impl Parse for Args {
         let os_context_name = os_context_name
             .ok_or_else(|| Error::new(Span::call_site(), "missing `os_context_name` argument"))?;
 
+        /*
         let os_session_prober_name = os_session_prober_name.ok_or_else(|| {
             Error::new(
                 Span::call_site(),
@@ -61,12 +59,13 @@ impl Parse for Args {
                 "missing `os_context_prober_name` argument",
             )
         })?;
+        */
 
         Ok(Self {
             os_session_name,
             os_context_name,
-            os_session_prober_name,
-            os_context_prober_name,
+            //os_session_prober_name,
+            //os_context_prober_name,
         })
     }
 }
@@ -74,64 +73,8 @@ impl Parse for Args {
 struct TraitFn {
     os_session_fn: TokenStream,
     os_context_fn: TokenStream,
-    os_session_prober_fn: TokenStream,
-    os_context_prober_fn: TokenStream,
-}
-
-/// Transform the return type from `Result<T, VmiError>` to
-/// `Result<Option<T>, VmiError>`.
-fn transform_return_type(return_type: &ReturnType) -> TokenStream {
-    let ty = match &return_type {
-        ReturnType::Type(_, ty) => ty,
-        ReturnType::Default => {
-            return quote_spanned! {
-                return_type.span() =>
-                    compile_error!("expected return type `Result<T, VmiError>`")
-            }
-        }
-    };
-
-    let type_path = match &**ty {
-        Type::Path(type_path) => type_path,
-        _ => {
-            return quote_spanned! {
-                ty.span() => compile_error!("expected path type")
-            }
-        }
-    };
-
-    let segment = match type_path.path.segments.last() {
-        Some(segment) => segment,
-        None => {
-            return quote_spanned! {
-                ty.span() => compile_error!("expected path segment")
-            }
-        }
-    };
-
-    if segment.ident != "Result" {
-        return quote_spanned! {
-            ty.span() => compile_error!("expected `Result` type");
-        };
-    }
-
-    let args = match &segment.arguments {
-        PathArguments::AngleBracketed(args) => args,
-        _ => {
-            return quote_spanned! {
-                ty.span() => compile_error!("expected angle-bracketed arguments in `Result` type");
-            }
-        }
-    };
-
-    if args.args.len() != 2 {
-        return quote_spanned! {
-            args.span() => compile_error!("expected two arguments in `Result` type");
-        };
-    }
-
-    let t = &args.args[0];
-    quote! { -> Result<Option<#t>, VmiError> }
+    //os_session_prober_fn: TokenStream,
+    //os_context_prober_fn: TokenStream,
 }
 
 fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
@@ -173,14 +116,15 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     // Transform the return type from `Result<T, VmiError>` to
     // `Result<Option<T>, VmiError>`.
     let return_type = &sig.output;
-    let prober_return_type = transform_return_type(return_type);
+    //let prober_return_type = transform_return_type(return_type);
 
     // Generate the implementation for `VmiOsSession`.
     let doc = item_fn.doc();
     let os_session_fn = quote! {
         #(#doc)*
         pub fn #ident #generics(&self, #(#session_args),*) #return_type {
-            self.os.#ident(self.core, #(#session_arg_names),*)
+            self.underlying_os()
+                .#ident(self.core(), #(#session_arg_names),*)
         }
     };
 
@@ -189,24 +133,24 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let os_context_fn = quote! {
         #(#doc)*
         pub fn #ident #generics(&self, #(#context_args),*) #return_type {
-            self.session.os.#ident(
-                &self.session,
-                self.event.registers(),
-                #(#context_arg_names),*
-            )
+            self.underlying_os()
+                .#ident(
+                    self.core(),
+                    self.registers(),
+                    #(#context_arg_names),*
+                )
         }
     };
 
+    /*
     // Generate the implementation for `VmiOsSessionProber`.
     let doc = item_fn.doc();
     let os_session_prober_fn = quote! {
         #(#doc)*
         pub fn #ident #generics(&self, #(#session_args),*) #prober_return_type {
-            self.0.check_result(
-                self.0
-                    .session
-                    .os()
-                    .#ident(#(#session_arg_names),*),
+            self.check_result(
+                self.underlying_os()
+                    .#ident(self.core(), #(#session_arg_names),*),
             )
         }
     };
@@ -216,20 +160,23 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let os_context_prober_fn = quote! {
         #(#doc)*
         pub fn #ident #generics(&self, #(#context_args),*) #prober_return_type {
-            self.0.check_result(
-                self.0
-                    .context
-                    .os()
-                    .#ident(#(#context_arg_names),*),
+            self.check_result(
+                self.underlying_os()
+                    .#ident(
+                        self.core(),
+                        self.registers(),
+                        #(#context_arg_names),*
+                    )
             )
         }
     };
+    */
 
     Some(TraitFn {
         os_session_fn,
         os_context_fn,
-        os_session_prober_fn,
-        os_context_prober_fn,
+        //os_session_prober_fn,
+        //os_context_prober_fn,
     })
 }
 
@@ -261,8 +208,8 @@ pub fn derive_os_wrapper(
     let Args {
         os_session_name,
         os_context_name,
-        os_session_prober_name,
-        os_context_prober_name,
+        //os_session_prober_name,
+        //os_context_prober_name,
     } = parse_macro_input!(args as Args);
     let input = parse_macro_input!(item as ItemTrait);
     let trait_name = &input.ident;
@@ -274,8 +221,8 @@ pub fn derive_os_wrapper(
 
     let os_session_methods = trait_methods.clone().map(|m| m.os_session_fn);
     let os_context_methods = trait_methods.clone().map(|m| m.os_context_fn);
-    let os_session_prober_methods = trait_methods.clone().map(|m| m.os_session_prober_fn);
-    let os_context_prober_methods = trait_methods.clone().map(|m| m.os_context_prober_fn);
+    //let os_session_prober_methods = trait_methods.clone().map(|m| m.os_session_prober_fn);
+    //let os_context_prober_methods = trait_methods.clone().map(|m| m.os_context_prober_fn);
 
     // Generate the wrapper struct and its implementation
     let expanded = quote! {
@@ -296,7 +243,7 @@ pub fn derive_os_wrapper(
         //
         // OS Session Prober
         //
-
+        /*
         impl<Driver, Os> #os_session_prober_name<'_, Driver, Os>
         where
             Driver: crate::VmiDriver,
@@ -304,6 +251,7 @@ pub fn derive_os_wrapper(
         {
             #(#os_session_prober_methods)*
         }
+        */
 
         //
         // OS Context
@@ -320,7 +268,7 @@ pub fn derive_os_wrapper(
         //
         // OS Context Prober
         //
-
+        /*
         impl<Driver, Os> #os_context_prober_name<'_, Driver, Os>
         where
             Driver: crate::VmiDriver,
@@ -328,6 +276,7 @@ pub fn derive_os_wrapper(
         {
             #(#os_context_prober_methods)*
         }
+        */
     };
 
     proc_macro::TokenStream::from(expanded)

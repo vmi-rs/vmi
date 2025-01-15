@@ -1,12 +1,7 @@
-use std::{cell::RefCell, io::ErrorKind, rc::Rc, time::Duration};
+use std::{io::ErrorKind, time::Duration};
 
-use indexmap::IndexSet;
-use zerocopy::{FromBytes, IntoBytes};
-
-use crate::{
-    context::VmiContext, os::VmiOs, AccessContext, Architecture, PageFault, PageFaults,
-    TranslationMechanism, Va, VmiCore, VmiDriver, VmiError, VmiHandler,
-};
+use super::context::VmiContext;
+use crate::{os::VmiOs, VmiCore, VmiDriver, VmiError, VmiHandler};
 
 /// A VMI session.
 ///
@@ -48,26 +43,21 @@ where
     }
 
     /// Returns the VMI core.
-    pub fn core(&self) -> &VmiCore<Driver> {
+    pub fn core(&self) -> &'a VmiCore<Driver> {
         self.core
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
+    pub fn underlying_os(&self) -> &'a Os {
         self.os
     }
 
     /// Returns a wrapper providing access to the OS-specific operations.
-    pub fn os(&self) -> VmiOsSession<Driver, Os> {
+    pub fn os(&self) -> VmiOsSession<'a, Driver, Os> {
         VmiOsSession {
             core: self.core,
             os: self.os,
         }
-    }
-
-    /// Creates a prober for safely handling page faults during memory access operations.
-    pub fn prober(&'a self, restricted: &IndexSet<PageFault>) -> VmiSessionProber<'a, Driver, Os> {
-        VmiSessionProber::new(self, restricted)
     }
 
     /// Waits for an event to occur and processes it with the provided handler.
@@ -158,10 +148,10 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI core providing low-level VM introspection capabilities.
-    pub(crate) core: &'a VmiCore<Driver>,
+    core: &'a VmiCore<Driver>,
 
     /// The OS-specific operations and abstractions.
-    pub(crate) os: &'a Os,
+    os: &'a Os,
 }
 
 impl<'a, Driver, Os> VmiOsSession<'a, Driver, Os>
@@ -180,6 +170,7 @@ where
     }
 }
 
+/*
 /// Prober for safely handling page faults during memory access operations.
 pub struct VmiSessionProber<'a, Driver, Os>
 where
@@ -187,25 +178,13 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    pub(crate) session: &'a VmiSession<'a, Driver, Os>,
+    pub(super) session: &'a VmiSession<'a, Driver, Os>,
 
     /// The set of restricted page faults that are allowed to occur.
-    pub(crate) restricted: Rc<IndexSet<PageFault>>,
+    pub(super) restricted: Rc<IndexSet<PageFault>>,
 
     /// The set of page faults that have occurred.
-    pub(crate) page_faults: Rc<RefCell<IndexSet<PageFault>>>,
-}
-
-impl<'a, Driver, Os> std::ops::Deref for VmiSessionProber<'a, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    type Target = VmiSession<'a, Driver, Os>;
-
-    fn deref(&self) -> &Self::Target {
-        self.session
-    }
+    pub(super) page_faults: Rc<RefCell<IndexSet<PageFault>>>,
 }
 
 impl<'a, Driver, Os> VmiSessionProber<'a, Driver, Os>
@@ -222,121 +201,19 @@ where
         }
     }
 
-    /// Checks for any unexpected page faults that have occurred and returns an error if any are present.
-    #[tracing::instrument(skip_all)]
-    pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
-        let pfs = self.page_faults.borrow();
-        let new_pfs = &*pfs - &self.restricted;
-        if !new_pfs.is_empty() {
-            tracing::trace!(?new_pfs);
-            return Err(VmiError::page_faults(new_pfs));
-        }
+    /// Returns the VMI context prober.
+    pub fn core(&self) -> &'a VmiCore<Driver> {
+        self.session.core()
+    }
 
-        Ok(())
+    /// Returns the underlying OS-specific implementation.
+    pub fn underlying_os(&self) -> &'a Os {
+        self.session.underlying_os()
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
     pub fn os(&self) -> VmiOsSessionProber<Driver, Os> {
         VmiOsSessionProber(self)
-    }
-
-    /// Reads memory from the virtual machine.
-    pub fn read(
-        &self,
-        ctx: impl Into<AccessContext>,
-        buffer: &mut [u8],
-    ) -> Result<Option<()>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read(ctx, buffer), ctx, buffer.len())
-    }
-
-    /// Reads a single byte from the virtual machine.
-    pub fn read_u8(&self, ctx: impl Into<AccessContext>) -> Result<Option<u8>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_u8(ctx), ctx, size_of::<u8>())
-    }
-
-    /// Reads a 16-bit unsigned integer from the virtual machine.
-    pub fn read_u16(&self, ctx: impl Into<AccessContext>) -> Result<Option<u16>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_u16(ctx), ctx, size_of::<u16>())
-    }
-
-    /// Reads a 32-bit unsigned integer from the virtual machine.
-    pub fn read_u32(&self, ctx: impl Into<AccessContext>) -> Result<Option<u32>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_u32(ctx), ctx, size_of::<u32>())
-    }
-
-    /// Reads a 64-bit unsigned integer from the virtual machine.
-    pub fn read_u64(&self, ctx: impl Into<AccessContext>) -> Result<Option<u64>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_u64(ctx), ctx, size_of::<u64>())
-    }
-
-    /// Reads a virtual address from the virtual machine.
-    pub fn read_va(
-        &self,
-        ctx: impl Into<AccessContext>,
-        address_width: usize,
-    ) -> Result<Option<Va>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(
-            self.session.core().read_va(ctx, address_width),
-            ctx,
-            address_width,
-        )
-    }
-
-    /// Reads a 32-bit virtual address from the virtual machine.
-    pub fn read_va32(&self, ctx: impl Into<AccessContext>) -> Result<Option<Va>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_va32(ctx), ctx, size_of::<u32>())
-    }
-
-    /// Reads a 64-bit virtual address from the virtual machine.
-    pub fn read_va64(&self, ctx: impl Into<AccessContext>) -> Result<Option<Va>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_va64(ctx), ctx, size_of::<u64>())
-    }
-
-    /// Reads a null-terminated string of bytes from the virtual machine.
-    pub fn read_string_bytes(
-        &self,
-        ctx: impl Into<AccessContext>,
-    ) -> Result<Option<Vec<u8>>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_string_bytes(ctx), ctx, 1)
-    }
-
-    /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring_bytes(
-        &self,
-        ctx: impl Into<AccessContext>,
-    ) -> Result<Option<Vec<u16>>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_wstring_bytes(ctx), ctx, 2)
-    }
-
-    /// Reads a null-terminated string from the virtual machine.
-    pub fn read_string(&self, ctx: impl Into<AccessContext>) -> Result<Option<String>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_string(ctx), ctx, 1)
-    }
-
-    /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring(&self, ctx: impl Into<AccessContext>) -> Result<Option<String>, VmiError> {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_wstring(ctx), ctx, 2)
-    }
-
-    /// Reads a struct from the virtual machine.
-    pub fn read_struct<T>(&self, ctx: impl Into<AccessContext>) -> Result<Option<T>, VmiError>
-    where
-        T: IntoBytes + FromBytes,
-    {
-        let ctx = ctx.into();
-        self.check_result_range(self.session.core().read_struct(ctx), ctx, size_of::<T>())
     }
 
     /// Handles a result that may contain page faults, returning the value if successful.
@@ -351,6 +228,7 @@ where
         }
     }
 
+    /*
     /// Handles a result that may contain page faults over a memory range, returning the value if successful.
     fn check_result_range<T>(
         &self,
@@ -368,6 +246,7 @@ where
             Err(err) => Err(err),
         }
     }
+    */
 
     /// Records any page faults that are not in the restricted set.
     fn check_restricted(&self, pfs: PageFaults) {
@@ -383,6 +262,7 @@ where
         }
     }
 
+    /*
     /// Records any page faults that are not in the restricted set over a memory range.
     fn check_restricted_range(&self, pf: PageFault, ctx: AccessContext, mut length: usize) {
         let mut page_faults = self.page_faults.borrow_mut();
@@ -449,10 +329,121 @@ where
             }
         }
     }
+    */
+
+    /// Checks for any unexpected page faults that have occurred and returns an error if any are present.
+    #[tracing::instrument(skip_all)]
+    pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
+        let pfs = self.page_faults.borrow();
+        let new_pfs = &*pfs - &self.restricted;
+        if !new_pfs.is_empty() {
+            tracing::trace!(?new_pfs);
+            return Err(VmiError::page_faults(new_pfs));
+        }
+
+        Ok(())
+    }
+
+    /*
+    /// Reads memory from the virtual machine.
+    pub fn read(
+        &self,
+        ctx: impl Into<AccessContext>,
+        buffer: &mut [u8],
+    ) -> Result<Option<()>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read(ctx, buffer), ctx, buffer.len())
+    }
+
+    /// Reads a single byte from the virtual machine.
+    pub fn read_u8(&self, ctx: impl Into<AccessContext>) -> Result<Option<u8>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_u8(ctx), ctx, size_of::<u8>())
+    }
+
+    /// Reads a 16-bit unsigned integer from the virtual machine.
+    pub fn read_u16(&self, ctx: impl Into<AccessContext>) -> Result<Option<u16>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_u16(ctx), ctx, size_of::<u16>())
+    }
+
+    /// Reads a 32-bit unsigned integer from the virtual machine.
+    pub fn read_u32(&self, ctx: impl Into<AccessContext>) -> Result<Option<u32>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_u32(ctx), ctx, size_of::<u32>())
+    }
+
+    /// Reads a 64-bit unsigned integer from the virtual machine.
+    pub fn read_u64(&self, ctx: impl Into<AccessContext>) -> Result<Option<u64>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_u64(ctx), ctx, size_of::<u64>())
+    }
+
+    /// Reads a virtual address from the virtual machine.
+    pub fn read_va(
+        &self,
+        ctx: impl Into<AccessContext>,
+        address_width: usize,
+    ) -> Result<Option<Va>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_va(ctx, address_width), ctx, address_width)
+    }
+
+    /// Reads a 32-bit virtual address from the virtual machine.
+    pub fn read_va32(&self, ctx: impl Into<AccessContext>) -> Result<Option<Va>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_va32(ctx), ctx, size_of::<u32>())
+    }
+
+    /// Reads a 64-bit virtual address from the virtual machine.
+    pub fn read_va64(&self, ctx: impl Into<AccessContext>) -> Result<Option<Va>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_va64(ctx), ctx, size_of::<u64>())
+    }
+
+    /// Reads a null-terminated string of bytes from the virtual machine.
+    pub fn read_string_bytes(
+        &self,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Option<Vec<u8>>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_string_bytes(ctx), ctx, 1)
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
+    pub fn read_wstring_bytes(
+        &self,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Option<Vec<u16>>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_wstring_bytes(ctx), ctx, 2)
+    }
+
+    /// Reads a null-terminated string from the virtual machine.
+    pub fn read_string(&self, ctx: impl Into<AccessContext>) -> Result<Option<String>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_string(ctx), ctx, 1)
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
+    pub fn read_wstring(&self, ctx: impl Into<AccessContext>) -> Result<Option<String>, VmiError> {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_wstring(ctx), ctx, 2)
+    }
+
+    /// Reads a struct from the virtual machine.
+    pub fn read_struct<T>(&self, ctx: impl Into<AccessContext>) -> Result<Option<T>, VmiError>
+    where
+        T: IntoBytes + FromBytes,
+    {
+        let ctx = ctx.into();
+        self.check_result_range(self.core().read_struct(ctx), ctx, size_of::<T>())
+    }
+    */
 }
 
 /// Wrapper providing access to OS-specific operations with page fault handling.
-pub struct VmiOsSessionProber<'a, Driver, Os>(pub(crate) &'a VmiSessionProber<'a, Driver, Os>)
+pub struct VmiOsSessionProber<'a, Driver, Os>(&'a VmiSessionProber<'a, Driver, Os>)
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>;
@@ -463,31 +454,18 @@ where
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI session prober.
-    pub fn core(&self) -> &'a VmiSessionProber<'a, Driver, Os> {
-        self.0
+    pub fn core(&self) -> &'a VmiCore<Driver> {
+        self.0.core()
     }
 
     /// Returns the underlying OS-specific implementation.
     pub fn underlying_os(&self) -> &'a Os {
-        self.0.os
+        self.0.underlying_os()
     }
 
-    /*
-    pub fn function_argument_for_registers(
-        &self,
-        regs: &<Driver::Architecture as Architecture>::Registers,
-        index: u64,
-    ) -> Result<Option<u64>, VmiError> {
-        self.0
-            .check_result(self.0.context.session().os().function_argument(regs, index))
+    /// Handles a result that may contain page faults, returning the value if successful.
+    pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
+        self.0.check_result(result)
     }
-
-    pub fn function_return_value_for_registers(
-        &self,
-        regs: &<Driver::Architecture as Architecture>::Registers,
-    ) -> Result<Option<u64>, VmiError> {
-        self.0
-            .check_result(self.0.context.session.os().function_return_value(regs))
-    }
-     */
 }
+*/
