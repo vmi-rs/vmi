@@ -1,5 +1,5 @@
-use vmi_arch_amd64::{Amd64, Registers};
-use vmi_core::{Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError};
+use vmi_arch_amd64::Amd64;
+use vmi_core::{Architecture, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiState};
 
 use super::ArchAdapter;
 use crate::LinuxOs;
@@ -10,49 +10,46 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
+        vmi: &VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
         match index {
-            0 => Ok(registers.r10),
-            1 => Ok(registers.rdx),
-            2 => Ok(registers.r8),
-            3 => Ok(registers.r9),
+            0 => Ok(vmi.registers().r10),
+            1 => Ok(vmi.registers().rdx),
+            2 => Ok(vmi.registers().r8),
+            3 => Ok(vmi.registers().r9),
             _ => {
                 let index = index + 1;
-                let stack = registers.rsp + index * size_of::<u64>() as u64;
-                vmi.read_u64(registers.address_context(stack.into()))
+                let stack = vmi.registers().rsp + index * size_of::<u64>() as u64;
+                vmi.read_u64(stack.into())
             }
         }
     }
 
     fn function_argument(
+        vmi: &VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
-        if registers.cs.access.long_mode() {
-            function_argument_x64(vmi, registers, index)
+        if vmi.registers().cs.access.long_mode() {
+            function_argument_x64(vmi, index)
         }
         else {
-            function_argument_x86(vmi, registers, index)
+            function_argument_x86(vmi, index)
         }
     }
 
     fn function_return_value(
+        vmi: &VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
     ) -> Result<u64, VmiError> {
-        Ok(registers.rax)
+        Ok(vmi.registers().rax)
     }
 
     fn find_banner(
         vmi: &VmiCore<Driver>,
-        registers: &Registers,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<String>, VmiError> {
         /// Maximum backward search distance for the kernel image base.
         const MAX_FORWARD_SEARCH: u64 = 16 * 1024 * 1024;
@@ -112,9 +109,8 @@ where
     }
 
     fn kernel_image_base(
+        vmi: &VmiState<Driver, LinuxOs<Driver>>,
         os: &LinuxOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
     ) -> Result<Va, VmiError> {
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
         let _text = os.symbols._text;
@@ -123,7 +119,7 @@ where
             return Ok(kernel_image_base);
         }
 
-        let kaslr_offset = registers.msr_lstar - entry_SYSCALL_64;
+        let kaslr_offset = vmi.registers().msr_lstar - entry_SYSCALL_64;
         *os.kaslr_offset.borrow_mut() = Some(kaslr_offset);
 
         let kernel_image_base = Va::new(_text + kaslr_offset);
@@ -132,9 +128,8 @@ where
     }
 
     fn kaslr_offset(
+        vmi: &VmiState<Driver, LinuxOs<Driver>>,
         os: &LinuxOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
     ) -> Result<u64, VmiError> {
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
 
@@ -142,55 +137,53 @@ where
             return Ok(kaslr_offset);
         }
 
-        let kaslr_offset = registers.msr_lstar - entry_SYSCALL_64;
+        let kaslr_offset = vmi.registers().msr_lstar - entry_SYSCALL_64;
         *os.kaslr_offset.borrow_mut() = Some(kaslr_offset);
         Ok(kaslr_offset)
     }
 
-    fn per_cpu(_os: &LinuxOs<Driver>, _vmi: &VmiCore<Driver>, registers: &Registers) -> Va {
-        if registers.cs.selector.request_privilege_level() != 0
-            || (registers.gs.base & (1 << 47)) == 0
+    fn per_cpu(vmi: &VmiState<Driver, LinuxOs<Driver>>, _os: &LinuxOs<Driver>) -> Va {
+        if vmi.registers().cs.selector.request_privilege_level() != 0
+            || (vmi.registers().gs.base & (1 << 47)) == 0
         {
-            registers.shadow_gs.into()
+            vmi.registers().shadow_gs.into()
         }
         else {
-            registers.gs.base.into()
+            vmi.registers().gs.base.into()
         }
     }
 }
 
 fn function_argument_x86<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: &VmiState<Driver, LinuxOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
     let index = index + 1;
-    let stack = registers.rsp + index * size_of::<u32>() as u64;
-    Ok(vmi.read_u32(registers.address_context(stack.into()))? as u64)
+    let stack = vmi.registers().rsp + index * size_of::<u32>() as u64;
+    Ok(vmi.read_u32(stack.into())? as u64)
 }
 
 fn function_argument_x64<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: &VmiState<Driver, LinuxOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
     match index {
-        0 => Ok(registers.rdi),
-        1 => Ok(registers.rsi),
-        2 => Ok(registers.rdx),
-        3 => Ok(registers.rcx),
-        4 => Ok(registers.r8),
-        5 => Ok(registers.r9),
+        0 => Ok(vmi.registers().rdi),
+        1 => Ok(vmi.registers().rsi),
+        2 => Ok(vmi.registers().rdx),
+        3 => Ok(vmi.registers().rcx),
+        4 => Ok(vmi.registers().r8),
+        5 => Ok(vmi.registers().r9),
         _ => {
             let index = index - 6 + 1;
-            let stack = registers.rsp + index * size_of::<u64>() as u64;
-            vmi.read_u64(registers.address_context(stack.into()))
+            let stack = vmi.registers().rsp + index * size_of::<u64>() as u64;
+            vmi.read_u64(stack.into())
         }
     }
 }

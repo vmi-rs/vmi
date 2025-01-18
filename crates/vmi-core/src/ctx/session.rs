@@ -1,7 +1,7 @@
 use std::{io::ErrorKind, time::Duration};
 
-use super::{context::VmiContext, cow::VmiCow};
-use crate::{os::VmiOs, VmiCore, VmiDriver, VmiError, VmiHandler};
+use super::{context::VmiContext, cow::VmiCow, VmiState};
+use crate::{os::VmiOs, Architecture, VmiCore, VmiDriver, VmiError, VmiHandler};
 
 /// A VMI session.
 ///
@@ -40,6 +40,14 @@ where
     /// Creates a new VMI session.
     pub fn new(core: &'a VmiCore<Driver>, os: &'a Os) -> Self {
         Self { core, os }
+    }
+
+    /// Creates a new VMI context with the specified registers.
+    pub fn with_registers(
+        &'a self,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+    ) -> VmiState<'a, Driver, Os> {
+        VmiState::new(self, registers)
     }
 
     /// Returns the VMI core.

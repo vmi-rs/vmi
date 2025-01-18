@@ -1,6 +1,7 @@
 use isr_macros::Field;
 
-use crate::{AccessContext, Registers, Va, VmiDriver, VmiError, VmiWithCore, VmiWithRegisters};
+use super::VmiOs;
+use crate::{AccessContext, Registers, Va, VmiCore, VmiDriver, VmiError, VmiState};
 
 /// A handler for reading structured data from guest memory.
 ///
@@ -55,13 +56,10 @@ impl StructReader {
     /// [`read`] method with appropriate field descriptors.
     ///
     /// [`read`]: Self::read
-    pub fn new<Driver>(
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-        len: usize,
-    ) -> Result<Self, VmiError>
+    pub fn new<Driver, Os>(vmi: &VmiState<Driver, Os>, va: Va, len: usize) -> Result<Self, VmiError>
     where
         Driver: VmiDriver,
+        Os: VmiOs<Driver>,
     {
         Self::new_in(vmi, vmi.registers().address_context(va), len)
     }
@@ -74,7 +72,7 @@ impl StructReader {
     ///
     /// [`read`]: Self::read
     pub fn new_in<Driver>(
-        vmi: &impl VmiWithCore<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
         len: usize,
     ) -> Result<Self, VmiError>
@@ -82,7 +80,7 @@ impl StructReader {
         Driver: VmiDriver,
     {
         let mut buffer = vec![0u8; len];
-        vmi.core().read(ctx.into(), &mut buffer)?;
+        vmi.read(ctx.into(), &mut buffer)?;
         Ok(Self(buffer))
     }
 

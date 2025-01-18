@@ -14,7 +14,8 @@ mod segment;
 mod translation;
 
 use vmi_core::{
-    AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError,
+    AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver,
+    VmiError,
 };
 use zerocopy::FromBytes;
 
@@ -515,6 +516,10 @@ impl vmi_core::arch::Registers for Registers {
             Some(paging_mode) => paging_mode.address_width(),
             _ => 0,
         }
+    }
+
+    fn access_context(&self, va: Va) -> AccessContext {
+        self.address_context(va).into()
     }
 
     fn address_context(&self, va: Va) -> AddressContext {

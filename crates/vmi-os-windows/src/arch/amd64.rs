@@ -2,7 +2,7 @@ use object::{FileKind, LittleEndian as LE};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
     os::ProcessObject, Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError,
-    VmiWithRegisters,
+    VmiState,
 };
 
 use super::ArchAdapter;
@@ -35,7 +35,7 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiState<Driver, WindowsOs<Driver>>,
         _os: &WindowsOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
@@ -53,7 +53,7 @@ where
     }
 
     fn function_argument(
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiState<Driver, WindowsOs<Driver>>,
         _os: &WindowsOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
@@ -66,7 +66,7 @@ where
     }
 
     fn function_return_value(
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiState<Driver, WindowsOs<Driver>>,
         _os: &WindowsOs<Driver>,
     ) -> Result<u64, VmiError> {
         Ok(vmi.registers().rax)
@@ -161,7 +161,7 @@ where
     }
 
     fn kernel_image_base(
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiState<Driver, WindowsOs<Driver>>,
         os: &WindowsOs<Driver>,
     ) -> Result<Va, VmiError> {
         let KiSystemCall64 = os.symbols.KiSystemCall64;
@@ -176,7 +176,7 @@ where
     }
 
     fn process_address_is_valid(
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiState<Driver, WindowsOs<Driver>>,
         os: &WindowsOs<Driver>,
         process: ProcessObject,
         address: Va,
@@ -265,7 +265,7 @@ where
         ))
     }
 
-    fn current_kpcr(vmi: &impl VmiWithRegisters<Driver>, _os: &WindowsOs<Driver>) -> Va {
+    fn current_kpcr(vmi: &VmiState<Driver, WindowsOs<Driver>>, _os: &WindowsOs<Driver>) -> Va {
         if vmi.registers().cs.selector.request_privilege_level() != 0
             || (vmi.registers().gs.base & (1 << 47)) == 0
         {
@@ -278,7 +278,7 @@ where
 }
 
 fn function_argument_x86<Driver>(
-    vmi: &impl VmiWithRegisters<Driver>,
+    vmi: &VmiState<Driver, WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
@@ -290,7 +290,7 @@ where
 }
 
 fn function_argument_x64<Driver>(
-    vmi: &impl VmiWithRegisters<Driver>,
+    vmi: &VmiState<Driver, WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where

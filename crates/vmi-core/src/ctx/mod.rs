@@ -4,19 +4,14 @@ mod prober;
 mod session;
 mod state;
 
-use zerocopy::{FromBytes, Immutable, IntoBytes};
-
 pub use self::{
     context::{VmiContext, VmiOsContext},
     prober::VmiProber,
     session::VmiSession,
     state::{VmiOsState, VmiState},
 };
-use crate::{
-    AccessContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiEvent,
-    VmiOs,
-};
 
+/*
 pub trait VmiWithCore<Driver>
 where
     Driver: VmiDriver,
@@ -469,3 +464,4 @@ where
 {
 }
 */
+ */

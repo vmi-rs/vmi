@@ -80,7 +80,7 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
         #(#doc)*
         pub fn #ident #generics(&self, #(#context_args),*) #return_type {
             self.underlying_os()
-                .#ident(self, #(#context_arg_names),*)
+                .#ident(self.state(), #(#context_arg_names),*)
         }
     };
 
