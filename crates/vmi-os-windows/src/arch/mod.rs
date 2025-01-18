@@ -1,6 +1,6 @@
 mod amd64;
 
-use vmi_core::{os::ProcessObject, Architecture, Va, VmiCore, VmiDriver, VmiError};
+use vmi_core::{os::ProcessObject, Architecture, Va, VmiCore, VmiDriver, VmiError, VmiWithRegisters};
 
 use crate::{WindowsKernelInformation, WindowsOs};
 
@@ -10,23 +10,20 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError>;
 
     fn function_argument(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError>;
 
     fn function_return_value(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<u64, VmiError>;
 
     fn find_kernel(
@@ -35,22 +32,16 @@ where
     ) -> Result<Option<WindowsKernelInformation>, VmiError>;
 
     fn kernel_image_base(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Va, VmiError>;
 
     fn process_address_is_valid(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError>;
 
-    fn current_kpcr(
-        os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-    ) -> Va;
+    fn current_kpcr(vmi: &impl VmiWithRegisters<Driver>, os: &WindowsOs<Driver>) -> Va;
 }

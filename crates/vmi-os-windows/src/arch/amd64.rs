@@ -2,6 +2,7 @@ use object::{FileKind, LittleEndian as LE};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
     os::ProcessObject, Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError,
+    VmiWithRegisters,
 };
 
 use super::ArchAdapter;
@@ -34,44 +35,41 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
+        vmi: &impl VmiWithRegisters<Driver>,
         _os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
         match index {
-            0 => Ok(registers.r10),
-            1 => Ok(registers.rdx),
-            2 => Ok(registers.r8),
-            3 => Ok(registers.r9),
+            0 => Ok(vmi.registers().r10),
+            1 => Ok(vmi.registers().rdx),
+            2 => Ok(vmi.registers().r8),
+            3 => Ok(vmi.registers().r9),
             _ => {
                 let index = index + 1;
-                let stack = registers.rsp + index * size_of::<u64>() as u64;
-                vmi.read_u64(registers.address_context(stack.into()))
+                let stack = vmi.registers().rsp + index * size_of::<u64>() as u64;
+                vmi.read_u64(stack.into())
             }
         }
     }
 
     fn function_argument(
+        vmi: &impl VmiWithRegisters<Driver>,
         _os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
-        if registers.cs.access.long_mode() {
-            function_argument_x64(vmi, registers, index)
+        if vmi.registers().cs.access.long_mode() {
+            function_argument_x64(vmi, index)
         }
         else {
-            function_argument_x86(vmi, registers, index)
+            function_argument_x86(vmi, index)
         }
     }
 
     fn function_return_value(
+        vmi: &impl VmiWithRegisters<Driver>,
         _os: &WindowsOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
     ) -> Result<u64, VmiError> {
-        Ok(registers.rax)
+        Ok(vmi.registers().rax)
     }
 
     fn find_kernel(
@@ -163,9 +161,8 @@ where
     }
 
     fn kernel_image_base(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        _vmi: &VmiCore<Driver>,
-        registers: &Registers,
     ) -> Result<Va, VmiError> {
         let KiSystemCall64 = os.symbols.KiSystemCall64;
 
@@ -173,15 +170,14 @@ where
             return Ok(kernel_image_base);
         }
 
-        let kernel_image_base = Va::new(registers.msr_lstar - KiSystemCall64);
+        let kernel_image_base = Va::new(vmi.registers().msr_lstar - KiSystemCall64);
         *os.kernel_image_base.borrow_mut() = Some(kernel_image_base);
         Ok(kernel_image_base)
     }
 
     fn process_address_is_valid(
+        vmi: &impl VmiWithRegisters<Driver>,
         os: &WindowsOs<Driver>,
-        vmi: &VmiCore<Driver>,
-        registers: &Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError> {
@@ -206,7 +202,7 @@ where
         // - MiCheckVirtualAddress
         //
 
-        let translation = Amd64::translation(vmi, address, registers.cr3.into());
+        let translation = Amd64::translation(vmi.core(), address, vmi.registers().cr3.into());
         if let Some(entry) = translation.entries().last() {
             if entry.level == PageTableLevel::Pt {
                 if entry.entry.present() {
@@ -235,7 +231,7 @@ where
         // function.
         //
 
-        let vad_va = match os.find_process_vad(vmi, registers, process, address)? {
+        let vad_va = match os.find_process_vad(vmi, process, address)? {
             Some(vad_va) => vad_va,
             None => return Ok(Some(false)),
         };
@@ -246,7 +242,7 @@ where
 
         const VadImageMap: u8 = 2;
 
-        let vad = os.vad(vmi, registers, vad_va)?;
+        let vad = os.vad(vmi, vad_va)?;
 
         if matches!(vad.protection, MM_ZERO_ACCESS | MM_DECOMMIT | MM_NOACCESS) {
             return Ok(Some(false));
@@ -269,48 +265,46 @@ where
         ))
     }
 
-    fn current_kpcr(_os: &WindowsOs<Driver>, _vmi: &VmiCore<Driver>, registers: &Registers) -> Va {
-        if registers.cs.selector.request_privilege_level() != 0
-            || (registers.gs.base & (1 << 47)) == 0
+    fn current_kpcr(vmi: &impl VmiWithRegisters<Driver>, _os: &WindowsOs<Driver>) -> Va {
+        if vmi.registers().cs.selector.request_privilege_level() != 0
+            || (vmi.registers().gs.base & (1 << 47)) == 0
         {
-            registers.shadow_gs.into()
+            vmi.registers().shadow_gs.into()
         }
         else {
-            registers.gs.base.into()
+            vmi.registers().gs.base.into()
         }
     }
 }
 
 fn function_argument_x86<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: &impl VmiWithRegisters<Driver>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
     let index = index + 1;
-    let stack = registers.rsp + index * size_of::<u32>() as u64;
-    Ok(vmi.read_u32(registers.address_context(stack.into()))? as u64)
+    let stack = vmi.registers().rsp + index * size_of::<u32>() as u64;
+    Ok(vmi.read_u32(stack.into())? as u64)
 }
 
 fn function_argument_x64<Driver>(
-    vmi: &VmiCore<Driver>,
-    registers: &Registers,
+    vmi: &impl VmiWithRegisters<Driver>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
     match index {
-        0 => Ok(registers.rcx),
-        1 => Ok(registers.rdx),
-        2 => Ok(registers.r8),
-        3 => Ok(registers.r9),
+        0 => Ok(vmi.registers().rcx),
+        1 => Ok(vmi.registers().rdx),
+        2 => Ok(vmi.registers().r8),
+        3 => Ok(vmi.registers().r9),
         _ => {
             let index = index + 1;
-            let stack = registers.rsp + index * size_of::<u64>() as u64;
-            vmi.read_u64(registers.address_context(stack.into()))
+            let stack = vmi.registers().rsp + index * size_of::<u64>() as u64;
+            vmi.read_u64(stack.into())
         }
     }
 }

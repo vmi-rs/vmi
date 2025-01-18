@@ -21,7 +21,10 @@ pub use self::{
         AccessContext, AddressContext, Gfn, Hex, MemoryAccess, MemoryAccessOptions, Pa,
         TranslationMechanism, Va, VcpuId, View, VmiInfo,
     },
-    ctx::{VmiContext, VmiOsContext, VmiOsSession, VmiOsState, VmiProber, VmiSession, VmiState},
+    ctx::{
+        VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiState, VmiWithCore,
+        VmiWithEvent, VmiWithOs, VmiWithRegisters,
+    },
     driver::VmiDriver,
     error::{PageFault, PageFaults, VmiError},
     event::{VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags},

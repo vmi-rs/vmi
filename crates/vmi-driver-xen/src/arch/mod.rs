@@ -6,7 +6,7 @@ use xen::{ctrl::VmEvent, Architecture as XenArchitecture};
 use crate::{Error, XenDriver};
 
 /// Architecture-specific adapter for Xen.
-pub trait ArchAdapter: Architecture + Sized {
+pub trait ArchAdapter: Architecture + Sized + 'static {
     type XenArch: XenArchitecture;
 
     fn registers(driver: &XenDriver<Self>, vcpu: VcpuId) -> Result<Self::Registers, Error>;

@@ -67,7 +67,7 @@ use vmi_core::{
         OsRegionKind, ProcessId, ProcessObject, StructReader, ThreadId, ThreadObject, VmiOs,
     },
     AccessContext, Architecture, Gfn, Hex, MemoryAccess, Pa, Registers as _, Va, VmiCore,
-    VmiDriver, VmiError, VmiSession, VmiState, VmiWithRegisters,
+    VmiDriver, VmiError, VmiSession,
 };
 use vmi_macros::derive_trait_from_impl;
 use zerocopy::{FromBytes, IntoBytes};
@@ -577,6 +577,7 @@ impl WindowsWow64Va {
 }
 
 #[derive_trait_from_impl(
+    os_session_name = WindowsOsSessionExt,
     os_context_name = WindowsOsExt,
 )]
 #[allow(non_snake_case, non_upper_case_globals)]
@@ -628,18 +629,23 @@ where
     #[expect(clippy::only_used_in_recursion)]
     fn enumerate_tree_node_v1(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         node: Va,
         callback: &mut impl FnMut(Va) -> bool,
         offsets: &v1::Offsets,
     ) -> Result<(), VmiError> {
         let MMADDRESS_NODE = &offsets._MMADDRESS_NODE;
 
-        let balanced_node = StructReader::new(vmi, node, MMADDRESS_NODE.effective_len())?;
+        let balanced_node = StructReader::new(
+            vmi,
+            registers.address_context(node),
+            MMADDRESS_NODE.effective_len(),
+        )?;
 
         let left = Va(balanced_node.read(MMADDRESS_NODE.LeftChild)?);
         if !left.is_null() {
-            self.enumerate_tree_node_v1(vmi, left, callback, offsets)?;
+            self.enumerate_tree_node_v1(vmi, registers, left, callback, offsets)?;
         }
 
         if !callback(node) {
@@ -648,7 +654,7 @@ where
 
         let right = Va(balanced_node.read(MMADDRESS_NODE.RightChild)?);
         if !right.is_null() {
-            self.enumerate_tree_node_v1(vmi, right, callback, offsets)?;
+            self.enumerate_tree_node_v1(vmi, registers, right, callback, offsets)?;
         }
 
         Ok(())
@@ -657,18 +663,23 @@ where
     #[expect(clippy::only_used_in_recursion)]
     fn enumerate_tree_node_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         node: Va,
         callback: &mut impl FnMut(Va) -> bool,
         offsets: &v2::Offsets,
     ) -> Result<(), VmiError> {
         let RTL_BALANCED_NODE = &offsets._RTL_BALANCED_NODE;
 
-        let balanced_node = StructReader::new(vmi, node, RTL_BALANCED_NODE.effective_len())?;
+        let balanced_node = StructReader::new(
+            vmi,
+            registers.address_context(node),
+            RTL_BALANCED_NODE.effective_len(),
+        )?;
 
         let left = Va(balanced_node.read(RTL_BALANCED_NODE.Left)?);
         if !left.is_null() {
-            self.enumerate_tree_node_v2(vmi, left, callback, offsets)?;
+            self.enumerate_tree_node_v2(vmi, registers, left, callback, offsets)?;
         }
 
         if !callback(node) {
@@ -677,7 +688,7 @@ where
 
         let right = Va(balanced_node.read(RTL_BALANCED_NODE.Right)?);
         if !right.is_null() {
-            self.enumerate_tree_node_v2(vmi, right, callback, offsets)?;
+            self.enumerate_tree_node_v2(vmi, registers, right, callback, offsets)?;
         }
 
         Ok(())
@@ -685,7 +696,8 @@ where
 
     fn enumerate_tree_v1(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         root: Va,
         mut callback: impl FnMut(Va) -> bool,
         offsets: &v1::Offsets,
@@ -695,7 +707,10 @@ where
 
         // NumberGenericTableElements is a ULONG_PTR, which is the same size
         // as a pointer.
-        let count = vmi.read_va_native(root + MM_AVL_TABLE.NumberGenericTableElements.offset)?;
+        let count = vmi.read_va(
+            registers.address_context(root + MM_AVL_TABLE.NumberGenericTableElements.offset),
+            registers.address_width(),
+        )?;
 
         let count = MM_AVL_TABLE.NumberGenericTableElements.value_from(count.0);
         if count == 0 {
@@ -703,39 +718,47 @@ where
         }
 
         // Table->BalancedRoot.RightChild
-        let root = vmi.read_va_native(
-            root + MM_AVL_TABLE.BalancedRoot.offset + MMADDRESS_NODE.RightChild.offset,
+        let root = vmi.read_va(
+            registers.address_context(
+                root + MM_AVL_TABLE.BalancedRoot.offset + MMADDRESS_NODE.RightChild.offset,
+            ),
+            registers.address_width(),
         )?;
 
-        self.enumerate_tree_node_v1(vmi, root, &mut callback, offsets)
+        self.enumerate_tree_node_v1(vmi, registers, root, &mut callback, offsets)
     }
 
     fn enumerate_tree_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         root: Va,
         mut callback: impl FnMut(Va) -> bool,
         offsets: &v2::Offsets,
     ) -> Result<(), VmiError> {
-        self.enumerate_tree_node_v2(vmi, root, &mut callback, offsets)
+        self.enumerate_tree_node_v2(vmi, registers, root, &mut callback, offsets)
     }
 
     fn image_exported_symbols_generic<Pe>(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         image_base: Va,
     ) -> Result<Vec<OsImageExportedSymbol>, VmiError>
     where
         Pe: ImageNtHeaders,
     {
         let mut data = [0u8; Amd64::PAGE_SIZE as usize];
-        vmi.read(image_base, &mut data)?;
+        vmi.read(registers.address_context(image_base), &mut data)?;
 
         let pe = PeLite::<Pe>::parse(&data).map_err(|err| VmiError::Os(err.into()))?;
         let entry = pe.data_directories[IMAGE_DIRECTORY_ENTRY_EXPORT];
 
         let mut data = vec![0u8; entry.size.get(LE) as usize];
-        vmi.read(image_base + entry.virtual_address.get(LE) as u64, &mut data)?;
+        vmi.read(
+            registers.address_context(image_base + entry.virtual_address.get(LE) as u64),
+            &mut data,
+        )?;
 
         let exports = pe.exports(&data).map_err(|err| VmiError::Os(err.into()))?;
         Ok(exports
@@ -766,14 +789,18 @@ where
     /// This operation might fail as the filename is allocated from paged pool.
     pub fn file_object_to_filename(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         file_object: Va,
     ) -> Result<String, VmiError> {
         let FILE_OBJECT = &self.offsets.common._FILE_OBJECT;
 
         // Note that filename is allocated from paged pool,
         // so this read might fail.
-        self.read_unicode_string(vmi, file_object + FILE_OBJECT.FileName.offset)
+        self.read_unicode_string(
+            vmi,
+            registers.address_context(file_object + FILE_OBJECT.FileName.offset),
+        )
     }
 
     /// Constructs the full path of a file from its `FILE_OBJECT`.
@@ -810,17 +837,18 @@ where
     /// Panics if the provided object is not a file object.
     pub fn file_object_to_full_path(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         file_object: Va,
     ) -> Result<String, VmiError> {
-        let file = match self.parse_file_object(vmi, file_object)? {
+        let file = match self.parse_file_object(vmi, registers, file_object)? {
             WindowsObject::File(file) => file,
             _ => panic!("Not a file object"),
         };
 
-        let device = self.object_name(vmi, file.device_object)?;
+        let device = self.object_name(vmi, registers, file.device_object)?;
         let directory = match &device {
-            Some(device) => self.object_name(vmi, device.directory)?,
+            Some(device) => self.object_name(vmi, registers, device.directory)?,
             None => None,
         };
 
@@ -855,13 +883,17 @@ where
     /// ```
     pub fn control_area_to_filename(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         control_area: Va,
     ) -> Result<String, VmiError> {
         let EX_FAST_REF = &self.offsets.common._EX_FAST_REF;
         let CONTROL_AREA = &self.offsets.common._CONTROL_AREA;
 
-        let file_pointer = vmi.read_va_native(control_area + CONTROL_AREA.FilePointer.offset)?;
+        let file_pointer = vmi.read_va(
+            registers.address_context(control_area + CONTROL_AREA.FilePointer.offset),
+            registers.address_width(),
+        )?;
 
         // The file pointer is in fact an `_EX_FAST_REF` structure,
         // where the low bits are used to store the reference count.
@@ -870,7 +902,7 @@ where
         let file_pointer = file_pointer & !((1 << EX_FAST_REF.RefCnt.bit_length) - 1);
         //let file_pointer = file_pointer & !0xf;
 
-        self.file_object_to_filename(vmi, file_pointer)
+        self.file_object_to_filename(vmi, registers, file_pointer)
     }
 
     // endregion: File
@@ -880,13 +912,14 @@ where
     /// Checks if the given handle is a kernel handle.
     pub fn is_kernel_handle(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        _vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         handle: u64,
     ) -> Result<bool, VmiError> {
         const KERNEL_HANDLE_MASK32: u64 = 0x8000_0000;
         const KERNEL_HANDLE_MASK64: u64 = 0xffff_ffff_8000_0000;
 
-        match vmi.registers().address_width() {
+        match registers.effective_address_width() {
             4 => Ok(handle & KERNEL_HANDLE_MASK32 == KERNEL_HANDLE_MASK32),
             8 => Ok(handle & KERNEL_HANDLE_MASK64 == KERNEL_HANDLE_MASK64),
             _ => panic!("Unsupported address width"),
@@ -896,14 +929,22 @@ where
     /// Retrieves the handle table for a given process.
     pub fn handle_table(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<WindowsHandleTable, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
         let HANDLE_TABLE = &self.offsets.common._HANDLE_TABLE;
 
-        let handle_table = vmi.read_va_native(process.0 + EPROCESS.ObjectTable.offset)?;
-        let table_code = vmi.read_address_native(handle_table + HANDLE_TABLE.TableCode.offset)?;
+        let handle_table = vmi.read_va(
+            registers.address_context(process.0 + EPROCESS.ObjectTable.offset),
+            registers.address_width(),
+        )?;
+
+        let table_code = vmi.read_address(
+            registers.address_context(handle_table + HANDLE_TABLE.TableCode.offset),
+            registers.address_width(),
+        )?;
 
         Ok(WindowsHandleTable { table_code })
     }
@@ -911,21 +952,23 @@ where
     /// Looks up a specific handle table entry for a given process and handle.
     pub fn handle_table_entry(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         handle: u64,
     ) -> Result<Option<WindowsHandleTableEntry>, VmiError> {
         let mut process = process;
         let mut handle = handle;
 
-        if self.is_kernel_handle(vmi, handle)? {
-            process = self.system_process(vmi)?;
+        if self.is_kernel_handle(vmi, registers, handle)? {
+            process = self.system_process(vmi, registers)?;
             handle &= 0x7fff_ffff;
         }
 
-        let handle_table = self.handle_table(vmi, process)?;
-        let entry_address = self.handle_table_entry_lookup(vmi, &handle_table, handle)?;
-        self.parse_handle_table_entry(vmi, entry_address)
+        let handle_table = self.handle_table(vmi, registers, process)?;
+        let entry_address =
+            self.handle_table_entry_lookup(vmi, registers, &handle_table, handle)?;
+        self.parse_handle_table_entry(vmi, registers, entry_address)
     }
 
     /// Performs a lookup in the handle table to find the address of a handle
@@ -935,7 +978,8 @@ where
     /// Windows. Returns the virtual address of the handle table entry.
     pub fn handle_table_entry_lookup(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         handle_table: &WindowsHandleTable,
         handle: u64,
     ) -> Result<Va, VmiError> {
@@ -968,7 +1012,10 @@ where
                 index -= i;
                 let j = index / (LOWLEVEL_COUNT * HANDLE_VALUE_INC);
 
-                let table1 = vmi.read_va_native(table2 + j * SIZEOF_POINTER)?;
+                let table1 = vmi.read_va(
+                    registers.address_context(table2 + j * SIZEOF_POINTER),
+                    registers.address_width(),
+                )?;
 
                 Ok(table1 + i * (SIZEOF_HANDLE_TABLE_ENTRY / HANDLE_VALUE_INC))
             }
@@ -984,8 +1031,14 @@ where
                 k -= j;
                 k /= MIDLEVEL_COUNT;
 
-                let table2 = vmi.read_va_native(table3 + k * SIZEOF_POINTER)?;
-                let table1 = vmi.read_va_native(table2 + j * SIZEOF_POINTER)?;
+                let table2 = vmi.read_va(
+                    registers.address_context(table3 + k * SIZEOF_POINTER),
+                    registers.address_width(),
+                )?;
+                let table1 = vmi.read_va(
+                    registers.address_context(table2 + j * SIZEOF_POINTER),
+                    registers.address_width(),
+                )?;
 
                 Ok(table1 + i * (SIZEOF_HANDLE_TABLE_ENTRY / HANDLE_VALUE_INC))
             }
@@ -1000,12 +1053,13 @@ where
     /// given handle.
     pub fn handle_to_object_address(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         handle: u64,
     ) -> Result<Option<Va>, VmiError> {
         Ok(self
-            .handle_table_entry(vmi, process, handle)?
+            .handle_table_entry(vmi, registers, process, handle)?
             .map(|entry| entry.object))
     }
 
@@ -1013,31 +1067,38 @@ where
     /// process.
     pub fn handle_to_object(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         handle: u64,
     ) -> Result<Option<WindowsObject>, VmiError> {
-        match self.handle_to_object_address(vmi, process, handle)? {
-            Some(object) => self.object_from_address(vmi, object),
+        match self.handle_to_object_address(vmi, registers, process, handle)? {
+            Some(object) => self.object_from_address(vmi, registers, object),
             None => Ok(None),
         }
     }
 
     fn parse_handle_table_entry(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         entry: Va,
     ) -> Result<Option<WindowsHandleTableEntry>, VmiError> {
         match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => self.parse_handle_table_entry_v1(vmi, entry, offsets),
-            Some(OffsetsExt::V2(offsets)) => self.parse_handle_table_entry_v2(vmi, entry, offsets),
+            Some(OffsetsExt::V1(offsets)) => {
+                self.parse_handle_table_entry_v1(vmi, registers, entry, offsets)
+            }
+            Some(OffsetsExt::V2(offsets)) => {
+                self.parse_handle_table_entry_v2(vmi, registers, entry, offsets)
+            }
             None => panic!("OffsetsExt not set"),
         }
     }
 
     fn parse_handle_table_entry_v1(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         entry: Va,
         offsets: &v1::Offsets,
     ) -> Result<Option<WindowsHandleTableEntry>, VmiError> {
@@ -1049,7 +1110,11 @@ where
         let HANDLE_TABLE_ENTRY = &offsets._HANDLE_TABLE_ENTRY;
         let OBJECT_HEADER = &self.offsets.common._OBJECT_HEADER;
 
-        let handle_table_entry = StructReader::new(vmi, entry, HANDLE_TABLE_ENTRY.effective_len())?;
+        let handle_table_entry = StructReader::new(
+            vmi,
+            registers.address_context(entry),
+            HANDLE_TABLE_ENTRY.effective_len(),
+        )?;
         let object = handle_table_entry.read(HANDLE_TABLE_ENTRY.Object)?;
         let attributes = handle_table_entry.read(HANDLE_TABLE_ENTRY.ObAttributes)?;
         let granted_access = handle_table_entry.read(HANDLE_TABLE_ENTRY.GrantedAccess)? as u32;
@@ -1068,7 +1133,8 @@ where
 
     fn parse_handle_table_entry_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         entry: Va,
         offsets: &v2::Offsets,
     ) -> Result<Option<WindowsHandleTableEntry>, VmiError> {
@@ -1084,7 +1150,8 @@ where
         }
 
         // Fetch the handle table entry
-        let handle_table_entry = vmi.read_struct::<_HANDLE_TABLE_ENTRY>(entry)?;
+        let handle_table_entry =
+            vmi.read_struct::<_HANDLE_TABLE_ENTRY>(registers.address_context(entry))?;
 
         // Parse the handle table entry
         let object_pointer_bits = HANDLE_TABLE_ENTRY
@@ -1134,7 +1201,8 @@ where
     /// symbol from the kernel image.
     pub fn kernel_information_string_ex(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<Option<String>, VmiError> {
         let NtBuildLabEx = match self.symbols.NtBuildLabEx {
             Some(offset) => offset,
@@ -1145,8 +1213,9 @@ where
             return Ok(Some(nt_build_lab_ex.clone()));
         }
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let nt_build_lab_ex = vmi.read_string(kernel_image_base + NtBuildLabEx)?;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let nt_build_lab_ex =
+            vmi.read_string(registers.address_context(kernel_image_base + NtBuildLabEx))?;
         *self.nt_build_lab_ex.borrow_mut() = Some(nt_build_lab_ex.clone());
 
         Ok(Some(nt_build_lab_ex))
@@ -1156,15 +1225,25 @@ where
     /// `KLDR_DATA_TABLE_ENTRY`
     pub fn kernel_module(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         addr: Va, // _KLDR_DATA_TABLE_ENTRY*
     ) -> Result<OsModule, VmiError> {
         let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
 
-        let base_address = vmi.read_va_native(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset)?;
-        let size = vmi.read_u32(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset)? as u64;
-        let name =
-            self.read_unicode_string(vmi, addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset)?;
+        let base_address = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset),
+            registers.address_width(),
+        )?;
+
+        let size = vmi
+            .read_u32(registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset))?
+            as u64;
+
+        let name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset),
+        )?;
 
         Ok(OsModule {
             base_address,
@@ -1185,13 +1264,18 @@ where
     /// associated with the specified VAD.
     pub fn vad(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         vad: Va,
     ) -> Result<WindowsVad, VmiError> {
         let MMVAD_FLAGS = &self.offsets.common._MMVAD_FLAGS;
         let MMVAD_SHORT = &self.offsets.common._MMVAD_SHORT;
 
-        let mmvad = StructReader::new(vmi, vad, MMVAD_SHORT.effective_len())?;
+        let mmvad = StructReader::new(
+            vmi,
+            registers.address_context(vad),
+            MMVAD_SHORT.effective_len(),
+        )?;
         let starting_vpn_low = mmvad.read(MMVAD_SHORT.StartingVpn)?;
         let ending_vpn_low = mmvad.read(MMVAD_SHORT.EndingVpn)?;
         let starting_vpn_high = match MMVAD_SHORT.StartingVpnHigh {
@@ -1260,19 +1344,21 @@ where
     /// ```
     pub fn vad_root(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(vmi, process, offsets),
-            Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(vmi, process, offsets),
+            Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(vmi, registers, process, offsets),
+            Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(vmi, registers, process, offsets),
             None => panic!("OffsetsExt not set"),
         }
     }
 
     fn vad_root_v1(
         &self,
-        _vmi: &impl VmiWithRegisters<Driver>,
+        _vmi: &VmiCore<Driver>,
+        _registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         offsets: &v1::Offsets,
     ) -> Result<Va, VmiError> {
@@ -1288,7 +1374,8 @@ where
 
     fn vad_root_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         offsets: &v2::Offsets,
     ) -> Result<Va, VmiError> {
@@ -1297,8 +1384,11 @@ where
 
         // The `RTL_AVL_TREE::Root` field is of pointer type (`_RTL_BALANCED_NODE*`),
         // thus we need to dereference it to get the actual node.
-        let vad_root =
-            vmi.read_va_native(process.0 + EPROCESS.VadRoot.offset + RTL_AVL_TREE.Root.offset)?;
+        let vad_root = vmi.read_va(
+            registers
+                .address_context(process.0 + EPROCESS.VadRoot.offset + RTL_AVL_TREE.Root.offset),
+            registers.address_width(),
+        )?;
 
         Ok(vad_root)
     }
@@ -1320,31 +1410,41 @@ where
     /// ```
     pub fn vad_hint(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => self.vad_hint_v1(vmi, process, offsets),
-            Some(OffsetsExt::V2(offsets)) => self.vad_hint_v2(vmi, process, offsets),
+            Some(OffsetsExt::V1(offsets)) => self.vad_hint_v1(vmi, registers, process, offsets),
+            Some(OffsetsExt::V2(offsets)) => self.vad_hint_v2(vmi, registers, process, offsets),
             None => panic!("OffsetsExt not set"),
         }
     }
 
     fn vad_hint_v1(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         offsets: &v1::Offsets,
     ) -> Result<Va, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
         let MM_AVL_TABLE = &offsets._MM_AVL_TABLE;
 
-        vmi.read_va_native(process.0 + EPROCESS.VadRoot.offset + MM_AVL_TABLE.NodeHint.offset)
+        let vad_hint = vmi.read_va(
+            registers.address_context(
+                process.0 + EPROCESS.VadRoot.offset + MM_AVL_TABLE.NodeHint.offset,
+            ),
+            registers.address_width(),
+        )?;
+
+        Ok(vad_hint)
     }
 
     fn vad_hint_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         _offsets: &v2::Offsets,
     ) -> Result<Va, VmiError> {
@@ -1354,7 +1454,12 @@ where
             .VadHint
             .expect("VadHint is not present in common offsets");
 
-        vmi.read_va_native(process.0 + VadHint.offset)
+        let vad_hint = vmi.read_va(
+            registers.address_context(process.0 + VadHint.offset),
+            registers.address_width(),
+        )?;
+
+        Ok(vad_hint)
     }
 
     /// Converts a VAD (Virtual Address Descriptor) to an [`OsRegion`] structure.
@@ -1364,13 +1469,14 @@ where
     /// protection, and mapping type.
     pub fn vad_to_region(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         vad: Va,
     ) -> Result<OsRegion, VmiError> {
         let MMVAD = &self.offsets.common._MMVAD;
         let SUBSECTION = &self.offsets.common._SUBSECTION;
 
-        let mmvad = self.vad(vmi, vad)?;
+        let mmvad = self.vad(vmi, registers, vad)?;
         let start = Va(mmvad.starting_vpn << 12);
         let end = Va((mmvad.ending_vpn + 1) << 12);
 
@@ -1406,12 +1512,19 @@ where
             });
         }
 
-        let subsection = vmi.read_va_native(vad + MMVAD.Subsection.offset)?;
-        let control_area = vmi.read_va_native(subsection + SUBSECTION.ControlArea.offset)?;
+        let subsection = vmi.read_va(
+            registers.address_context(vad + MMVAD.Subsection.offset),
+            registers.address_width(),
+        )?;
+
+        let control_area = vmi.read_va(
+            registers.address_context(subsection + SUBSECTION.ControlArea.offset),
+            registers.address_width(),
+        )?;
 
         // Note that filename is allocated from paged pool,
         // so this read might fail.
-        let path = self.control_area_to_filename(vmi, control_area);
+        let path = self.control_area_to_filename(vmi, registers, control_area);
 
         Ok(OsRegion {
             start,
@@ -1430,13 +1543,14 @@ where
     /// process's virtual address space.
     pub fn vad_root_to_regions(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         vad_root: Va,
     ) -> Result<Vec<OsRegion>, VmiError> {
         let mut result = Vec::new();
 
-        self.enumerate_tree(vmi, vad_root, |vad| {
-            match self.vad_to_region(vmi, vad) {
+        self.enumerate_tree(vmi, registers, vad_root, |vad| {
+            match self.vad_to_region(vmi, registers, vad) {
                 Ok(region) => result.push(region),
                 Err(err) => tracing::warn!(?err, ?vad, "Failed to convert VAD to region"),
             }
@@ -1459,11 +1573,12 @@ where
     ///
     pub fn find_process_vad(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<Va>, VmiError> {
-        let mut vad_va = self.vad_hint(vmi, process)?;
+        let mut vad_va = self.vad_hint(vmi, registers, process)?;
 
         if vad_va.is_null() {
             return Ok(None);
@@ -1471,15 +1586,15 @@ where
 
         let vpn = address.0 >> 12;
 
-        let vad = self.vad(vmi, vad_va)?;
+        let vad = self.vad(vmi, registers, vad_va)?;
         if vpn >= vad.starting_vpn && vpn <= vad.ending_vpn {
             return Ok(Some(vad_va));
         }
 
-        vad_va = self.vad_root(vmi, process)?;
+        vad_va = self.vad_root(vmi, registers, process)?;
 
         while !vad_va.is_null() {
-            let vad = self.vad(vmi, vad_va)?;
+            let vad = self.vad(vmi, registers, vad_va)?;
 
             if vpn < vad.starting_vpn {
                 vad_va = vad.left_child;
@@ -1504,22 +1619,30 @@ where
     ///
     /// The PFN database is located by reading the `MmPfnDatabase` symbol from
     /// the kernel image.
-    fn pfn_database(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<Va, VmiError> {
+    fn pfn_database(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Va, VmiError> {
         let MmPfnDatabase = self.symbols.MmPfnDatabase;
 
         if let Some(mm_pfn_database) = self.mm_pfn_database.borrow().as_ref() {
             return Ok(*mm_pfn_database);
         }
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let mm_pfn_database = vmi.read_va_native(kernel_image_base + MmPfnDatabase)?;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let mm_pfn_database = vmi.read_va(
+            registers.address_context(kernel_image_base + MmPfnDatabase),
+            registers.address_width(),
+        )?;
         *self.mm_pfn_database.borrow_mut() = Some(mm_pfn_database);
         Ok(mm_pfn_database)
     }
 
     fn modify_pfn_reference_count(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         pfn: Gfn,
         increment: i16,
     ) -> Result<Option<u16>, VmiError> {
@@ -1534,7 +1657,7 @@ where
         const ActiveAndValid: u16 = 6;
         // const TransitionPage: u16 = 7;
 
-        let pfn = self.pfn_database(vmi)? + u64::from(pfn) * MMPFN.len() as u64;
+        let pfn = self.pfn_database(vmi, registers)? + u64::from(pfn) * MMPFN.len() as u64;
 
         //
         // In the _MMPFN structure, the fields are like this:
@@ -1565,7 +1688,8 @@ where
         debug_assert_eq!(MMPFN.PageLocation.bit_position, 0);
         debug_assert_eq!(MMPFN.PageLocation.bit_length, 3);
 
-        let pfn_value = vmi.read_u32(pfn + MMPFN.ReferenceCount.offset)?;
+        let pfn_value =
+            vmi.read_u32(registers.address_context(pfn + MMPFN.ReferenceCount.offset))?;
         let flags = (pfn_value >> 16) as u16;
         let ref_count = (pfn_value & 0xFFFF) as u16;
 
@@ -1627,7 +1751,10 @@ where
             }
         };
 
-        vmi.write_u16(pfn + MMPFN.ReferenceCount.offset, new_ref_count)?;
+        vmi.write_u16(
+            registers.address_context(pfn + MMPFN.ReferenceCount.offset),
+            new_ref_count,
+        )?;
 
         Ok(Some(new_ref_count))
     }
@@ -1674,17 +1801,18 @@ where
     /// #   Driver: VmiDriver<Architecture = Amd64>,
     /// # {
     /// let _pause_guard = vmi.pause_guard()?;
-    /// os.lock_pfn(pfn)?;
+    /// os.lock_pfn(vmi, registers, pfn)?;
     /// // The VM will automatically resume when `_guard` goes out of scope
     /// # Ok(())
     /// # }
     /// ```
     pub fn lock_pfn(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         pfn: Gfn,
     ) -> Result<Option<u16>, VmiError> {
-        self.modify_pfn_reference_count(vmi, pfn, 1)
+        self.modify_pfn_reference_count(vmi, registers, pfn, 1)
     }
 
     /// Decrements the reference count of a Page Frame Number (PFN).
@@ -1728,17 +1856,18 @@ where
     /// #     Driver: VmiDriver<Architecture = Amd64>,
     /// # {
     /// let _pause_guard = vmi.pause_guard()?;
-    /// os.unlock_pfn(pfn)?;
+    /// os.unlock_pfn(vmi, registers, pfn)?;
     /// // The VM will automatically resume when `_guard` goes out of scope
     /// # Ok(())
     /// # }
     /// ```
     pub fn unlock_pfn(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         pfn: Gfn,
     ) -> Result<Option<u16>, VmiError> {
-        self.modify_pfn_reference_count(vmi, pfn, -1)
+        self.modify_pfn_reference_count(vmi, registers, pfn, -1)
     }
 
     // endregion: Memory
@@ -1751,8 +1880,12 @@ where
     /// The KPCR is a per-processor data structure in Windows that contains
     /// critical information about the current processor state. This method
     /// returns the virtual address of the KPCR for the current processor.
-    pub fn current_kpcr(&self, vmi: &impl VmiWithRegisters<Driver>) -> Va {
-        Driver::Architecture::current_kpcr(vmi, self)
+    pub fn current_kpcr(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Va {
+        Driver::Architecture::current_kpcr(self, vmi, registers)
     }
 
     /// Extracts information from an exception record at the specified address.
@@ -1764,7 +1897,8 @@ where
     /// addresses.
     pub fn exception_record(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         address: Va,
     ) -> Result<WindowsExceptionRecord, VmiError> {
         #[repr(C)]
@@ -1779,7 +1913,7 @@ where
             ExceptionInformation: [u64; 15],
         }
 
-        let record = vmi.read_struct::<_EXCEPTION_RECORD>(address)?;
+        let record = vmi.read_struct::<_EXCEPTION_RECORD>(registers.address_context(address))?;
 
         Ok(WindowsExceptionRecord {
             code: record.ExceptionCode,
@@ -1815,19 +1949,23 @@ where
     /// ```
     pub fn last_status(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<u32>, VmiError> {
         let KTHREAD = &self.offsets.common._KTHREAD;
         let TEB = &self.offsets.common._TEB;
 
-        let current_thread = self.current_thread(vmi)?;
-        let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
+        let current_thread = self.current_thread(vmi, registers)?;
+        let teb = vmi.read_va(
+            registers.address_context(current_thread.0 + KTHREAD.Teb.offset),
+            registers.address_width(),
+        )?;
 
         if teb.is_null() {
             return Ok(None);
         }
 
-        let result = vmi.read_u32(teb + TEB.LastStatusValue.offset)?;
+        let result = vmi.read_u32(registers.address_context(teb + TEB.LastStatusValue.offset))?;
         Ok(Some(result))
     }
 
@@ -1838,14 +1976,15 @@ where
     /// Retrieves the name of a Windows kernel object.
     pub fn object_lookup(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         directory: Va,
         needle: impl AsRef<str>,
     ) -> Result<Option<Va>, VmiError> {
         let OBJECT_DIRECTORY = &self.offsets.common._OBJECT_DIRECTORY;
         let OBJECT_DIRECTORY_ENTRY = &self.offsets.common._OBJECT_DIRECTORY_ENTRY;
 
-        let object_type = self.object_type(vmi, directory)?;
+        let object_type = self.object_type(vmi, registers, directory)?;
         assert_eq!(object_type, Some(WindowsObjectType::Directory));
 
         let needle = needle.as_ref();
@@ -1853,20 +1992,27 @@ where
         for i in 0..37 {
             println!("i: {}", i);
 
-            let hash_bucket =
-                vmi.read_va_native(directory + OBJECT_DIRECTORY.HashBuckets.offset + i * 8)?;
+            let hash_bucket = vmi.read_va(
+                registers.address_context(directory + OBJECT_DIRECTORY.HashBuckets.offset + i * 8),
+                registers.address_width(),
+            )?;
 
             let mut entry = hash_bucket;
             while !entry.is_null() {
                 println!("  entry: {}", entry);
 
-                let object = vmi.read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset)?;
+                let object = vmi.read_va(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.Object.offset),
+                    registers.address_width(),
+                )?;
                 println!("    object: {}", object);
 
-                let hash_value = vmi.read_u32(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset)?;
+                let hash_value = vmi.read_u32(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset),
+                )?;
                 println!("    hash_value: {}", hash_value);
 
-                if let Some(name) = self.object_name(vmi, object)? {
+                if let Some(name) = self.object_name(vmi, registers, object)? {
                     println!("    name: {}", name.name);
 
                     if name.name == needle {
@@ -1874,7 +2020,10 @@ where
                     }
                 }
 
-                entry = vmi.read_va_native(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset)?;
+                entry = vmi.read_va(
+                    registers.address_context(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset),
+                    registers.address_width(),
+                )?;
             }
         }
 
@@ -1889,16 +2038,20 @@ where
     /// symbol from the kernel image.
     pub fn object_root_directory(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Va, VmiError> {
         if let Some(object_root_directory) = *self.object_root_directory.borrow() {
             return Ok(object_root_directory);
         }
 
         let ObpRootDirectoryObject =
-            self.kernel_image_base(vmi)? + self.symbols.ObpRootDirectoryObject;
+            self.kernel_image_base(vmi, registers)? + self.symbols.ObpRootDirectoryObject;
 
-        let object_root_directory = vmi.read_va_native(ObpRootDirectoryObject)?;
+        let object_root_directory = vmi.read_va(
+            registers.address_context(ObpRootDirectoryObject),
+            registers.address_width(),
+        )?;
         *self.object_root_directory.borrow_mut() = Some(object_root_directory);
         Ok(object_root_directory)
     }
@@ -1919,7 +2072,8 @@ where
     /// symbol from the kernel image.
     pub fn object_header_cookie(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<u8>, VmiError> {
         if let Some(cookie) = *self.object_header_cookie.borrow() {
             return Ok(Some(cookie));
@@ -1930,8 +2084,8 @@ where
             None => return Ok(None),
         };
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let cookie = vmi.read_u8(kernel_image_base + ObHeaderCookie)?;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let cookie = vmi.read_u8(registers.address_context(kernel_image_base + ObHeaderCookie))?;
         *self.object_header_cookie.borrow_mut() = Some(cookie);
         Ok(Some(cookie))
     }
@@ -1946,16 +2100,18 @@ where
     /// Returns `None` if the object type cannot be determined.
     pub fn object_type(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
     ) -> Result<Option<WindowsObjectType>, VmiError> {
         let ObTypeIndexTable = self.symbols.ObTypeIndexTable;
         let OBJECT_HEADER = &self.offsets.common._OBJECT_HEADER;
 
         let object_header = object - OBJECT_HEADER.Body.offset;
-        let type_index = vmi.read_u8(object_header + OBJECT_HEADER.TypeIndex.offset)?;
+        let type_index =
+            vmi.read_u8(registers.address_context(object_header + OBJECT_HEADER.TypeIndex.offset))?;
 
-        let index = match self.object_header_cookie(vmi)? {
+        let index = match self.object_header_cookie(vmi, registers)? {
             Some(cookie) => {
                 //
                 // TypeIndex ^ 2nd least significate byte of OBJECT_HEADER address ^
@@ -1970,9 +2126,12 @@ where
 
         let index = index as u64;
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let object_type = vmi.read_va_native(
-            kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let object_type = vmi.read_va(
+            registers.address_context(
+                kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
+            ),
+            registers.address_width(),
         )?;
 
         if let Some(typ) = self.object_type_cache.borrow().get(&object_type) {
@@ -1981,7 +2140,7 @@ where
 
         let object_name = self.read_unicode_string(
             vmi,
-            object_type + self.offsets.common._OBJECT_TYPE.Name.offset,
+            registers.address_context(object_type + self.offsets.common._OBJECT_TYPE.Name.offset),
         )?;
 
         let typ = match object_name.as_str() {
@@ -2021,7 +2180,8 @@ where
     /// Returns `None` if the object does not have a `OBJECT_HEADER_NAME_INFO`.
     pub fn object_name(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
     ) -> Result<Option<WindowsObjectName>, VmiError> {
         let ObpInfoMaskToOffset = self.symbols.ObpInfoMaskToOffset;
@@ -2029,7 +2189,8 @@ where
         let OBJECT_HEADER_NAME_INFO = &self.offsets.common._OBJECT_HEADER_NAME_INFO;
 
         let object_header = object - OBJECT_HEADER.Body.offset;
-        let info_mask = vmi.read_u8(object_header + OBJECT_HEADER.InfoMask.offset)?;
+        let info_mask =
+            vmi.read_u8(registers.address_context(object_header + OBJECT_HEADER.InfoMask.offset))?;
 
         bitflags::bitflags! {
             struct InfoFlags: u8 {
@@ -2051,17 +2212,24 @@ where
         let mask = info_mask & (InfoFlags::NAME_INFO.bits() | (InfoFlags::NAME_INFO.bits() - 1));
         let mask = mask as u64;
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let offset = vmi.read_u8(kernel_image_base + ObpInfoMaskToOffset + mask)? as u64;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let offset = vmi
+            .read_u8(registers.address_context(kernel_image_base + ObpInfoMaskToOffset + mask))?
+            as u64;
 
         let object_header_name_info = object_header - offset;
 
-        let directory =
-            vmi.read_va_native(object_header_name_info + OBJECT_HEADER_NAME_INFO.Directory.offset)?;
+        let directory = vmi.read_va(
+            registers.address_context(
+                object_header_name_info + OBJECT_HEADER_NAME_INFO.Directory.offset,
+            ),
+            registers.address_width(),
+        )?;
 
         let name = self.read_unicode_string(
             vmi,
-            object_header_name_info + OBJECT_HEADER_NAME_INFO.Name.offset,
+            registers
+                .address_context(object_header_name_info + OBJECT_HEADER_NAME_INFO.Name.offset),
         )?;
 
         Ok(Some(WindowsObjectName { directory, name }))
@@ -2077,32 +2245,39 @@ where
     /// Returns `None` if the `_OBJECT_ATTRIBUTES::ObjectName` field is `NULL`.
     pub fn object_attributes_to_object_name(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         object_attributes: Va,
     ) -> Result<Option<String>, VmiError> {
         let OBJECT_ATTRIBUTES = &self.offsets.common._OBJECT_ATTRIBUTES;
 
-        let object_name_address =
-            vmi.read_va_native(object_attributes + OBJECT_ATTRIBUTES.ObjectName.offset)?;
+        let object_name_address = vmi.read_va(
+            registers.address_context(object_attributes + OBJECT_ATTRIBUTES.ObjectName.offset),
+            registers.address_width(),
+        )?;
 
         if object_name_address.is_null() {
             return Ok(None);
         }
 
-        let object_name = self.read_unicode_string(vmi, object_name_address)?;
+        let object_name =
+            self.read_unicode_string(vmi, registers.address_context(object_name_address))?;
 
-        let root_directory =
-            vmi.read_va_native(object_attributes + OBJECT_ATTRIBUTES.RootDirectory.offset)?;
+        let root_directory = vmi.read_va(
+            registers.address_context(object_attributes + OBJECT_ATTRIBUTES.RootDirectory.offset),
+            registers.address_width(),
+        )?;
 
         if root_directory.is_null() {
             return Ok(Some(object_name));
         }
 
-        let object = match self.handle_to_object(vmi, process, u64::from(root_directory))? {
-            Some(object) => object,
-            None => return Ok(Some(object_name)),
-        };
+        let object =
+            match self.handle_to_object(vmi, registers, process, u64::from(root_directory))? {
+                Some(object) => object,
+                None => return Ok(Some(object_name)),
+            };
 
         let root_name = match object {
             WindowsObject::File(file) => Some(file.filename),
@@ -2124,12 +2299,15 @@ where
     /// Currently supports File and Section object types.
     pub fn object_from_address(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
     ) -> Result<Option<WindowsObject>, VmiError> {
-        match self.object_type(vmi, object)? {
-            Some(WindowsObjectType::File) => Ok(Some(self.parse_file_object(vmi, object)?)),
-            Some(WindowsObjectType::Section) => self.parse_section_object(vmi, object),
+        match self.object_type(vmi, registers, object)? {
+            Some(WindowsObjectType::File) => {
+                Ok(Some(self.parse_file_object(vmi, registers, object)?))
+            }
+            Some(WindowsObjectType::Section) => self.parse_section_object(vmi, registers, object),
             _ => Ok(None),
         }
     }
@@ -2140,14 +2318,18 @@ where
     /// Returns a [`WindowsObject::File`] variant.
     fn parse_file_object(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
     ) -> Result<WindowsObject, VmiError> {
         let FILE_OBJECT = &self.offsets.common._FILE_OBJECT;
 
-        let device_object = vmi.read_va_native(object + FILE_OBJECT.DeviceObject.offset)?;
+        let device_object = vmi.read_va(
+            registers.address_context(object + FILE_OBJECT.DeviceObject.offset),
+            registers.address_width(),
+        )?;
 
-        let filename = self.file_object_to_filename(vmi, object)?;
+        let filename = self.file_object_to_filename(vmi, registers, object)?;
         Ok(WindowsObject::File(WindowsFileObject {
             device_object,
             filename,
@@ -2161,23 +2343,25 @@ where
     /// Returns a [`WindowsObject::Section`] variant.
     fn parse_section_object(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
     ) -> Result<Option<WindowsObject>, VmiError> {
         match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => {
-                Ok(Some(self.parse_section_object_v1(vmi, object, offsets)?))
-            }
-            Some(OffsetsExt::V2(offsets)) => {
-                Ok(Some(self.parse_section_object_v2(vmi, object, offsets)?))
-            }
+            Some(OffsetsExt::V1(offsets)) => Ok(Some(
+                self.parse_section_object_v1(vmi, registers, object, offsets)?,
+            )),
+            Some(OffsetsExt::V2(offsets)) => Ok(Some(
+                self.parse_section_object_v2(vmi, registers, object, offsets)?,
+            )),
             None => panic!("OffsetsExt not set"),
         }
     }
 
     fn parse_section_object_v1(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
         offsets: &v1::Offsets,
     ) -> Result<WindowsObject, VmiError> {
@@ -2185,22 +2369,34 @@ where
         let SEGMENT_OBJECT = &offsets._SEGMENT_OBJECT;
         let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
 
-        let section = StructReader::new(vmi, object, SECTION_OBJECT.effective_len())?;
+        let section = StructReader::new(
+            vmi,
+            registers.address_context(object),
+            SECTION_OBJECT.effective_len(),
+        )?;
         let starting_vpn = section.read(SECTION_OBJECT.StartingVa)?;
         let ending_vpn = section.read(SECTION_OBJECT.EndingVa)?;
         let segment = section.read(SECTION_OBJECT.Segment)?;
 
-        let segment = StructReader::new(vmi, Va(segment), SEGMENT_OBJECT.effective_len())?;
+        let segment = StructReader::new(
+            vmi,
+            registers.address_context(segment.into()),
+            SEGMENT_OBJECT.effective_len(),
+        )?;
         let size = segment.read(SEGMENT_OBJECT.SizeOfSegment)?;
         let flags = segment.read(SEGMENT_OBJECT.MmSectionFlags)?;
-        let flags = vmi.read_u32(Va(flags))? as u64;
+        let flags = vmi.read_u32(registers.address_context(flags.into()))? as u64;
 
         let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
         let _image = MMSECTION_FLAGS.Image.value_from(flags) != 0;
 
         let kind = if file {
-            let control_area = vmi.read_va_native(object + SEGMENT_OBJECT.ControlArea.offset)?;
-            let path = self.control_area_to_filename(vmi, control_area);
+            let control_area = vmi.read_va(
+                registers.address_context(object + SEGMENT_OBJECT.ControlArea.offset),
+                registers.address_width(),
+            )?;
+
+            let path = self.control_area_to_filename(vmi, registers, control_area);
 
             OsRegionKind::Mapped(OsMapped {
                 path: path.map(Some),
@@ -2223,14 +2419,19 @@ where
 
     fn parse_section_object_v2(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         object: Va,
         offsets: &v2::Offsets,
     ) -> Result<WindowsObject, VmiError> {
         let SECTION = &offsets._SECTION;
         let MMSECTION_FLAGS = &self.offsets.common._MMSECTION_FLAGS;
 
-        let section = StructReader::new(vmi, object, SECTION.effective_len())?;
+        let section = StructReader::new(
+            vmi,
+            registers.address_context(object),
+            SECTION.effective_len(),
+        )?;
         let starting_vpn = section.read(SECTION.StartingVpn)?;
         let ending_vpn = section.read(SECTION.EndingVpn)?;
         let size = section.read(SECTION.SizeOfSection)?;
@@ -2262,14 +2463,17 @@ where
         //
 
         let kind = if file {
-            let control_area = vmi.read_va_native(object + SECTION.ControlArea.offset)?;
+            let control_area = vmi.read_va(
+                registers.address_context(object + SECTION.ControlArea.offset),
+                registers.address_width(),
+            )?;
 
             let path = if u64::from(control_area) & 0x3 != 0 {
                 let file_object = control_area;
-                self.file_object_to_filename(vmi, file_object)
+                self.file_object_to_filename(vmi, registers, file_object)
             }
             else {
-                self.control_area_to_filename(vmi, control_area)
+                self.control_area_to_filename(vmi, registers, control_area)
             };
 
             OsRegionKind::Mapped(OsMapped {
@@ -2301,16 +2505,17 @@ where
     /// loaded modules, environment variables, and command line arguments.
     pub fn process_peb(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<WindowsPeb, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
+        let root = self.process_translation_root(vmi, registers, process)?;
 
-        let address = self.__process_peb_address(vmi, process, root)?;
-        let current_directory = self.__process_current_directory(vmi, process, root)?;
-        let dll_path = self.__process_dll_path(vmi, process, root)?;
-        let image_path_name = self.__process_image_path_name(vmi, process, root)?;
-        let command_line = self.__process_command_line(vmi, process, root)?;
+        let address = self.__process_peb_address(vmi, registers, process, root)?;
+        let current_directory = self.__process_current_directory(vmi, registers, process, root)?;
+        let dll_path = self.__process_dll_path(vmi, registers, process, root)?;
+        let image_path_name = self.__process_image_path_name(vmi, registers, process, root)?;
+        let command_line = self.__process_command_line(vmi, registers, process, root)?;
 
         Ok(WindowsPeb {
             address: address.va,
@@ -2328,25 +2533,33 @@ where
     /// process architecture.
     fn __process_peb_address(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<WindowsWow64Va, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        let wow64 = vmi.read_va_native_in((process.0 + EPROCESS.WoW64Process.offset, root))?;
+        let wow64 = vmi.read_va(
+            (process.0 + EPROCESS.WoW64Process.offset, root),
+            registers.address_width(),
+        )?;
 
         if wow64.is_null() {
-            let peb64 = vmi.read_va_native_in((process.0 + EPROCESS.Peb.offset, root))?;
+            let peb64 = vmi.read_va(
+                (process.0 + EPROCESS.Peb.offset, root),
+                registers.address_width(),
+            )?;
 
             Ok(WindowsWow64Va::native(peb64))
         }
         else {
             let peb32 = match &self.offsets.ext {
                 Some(OffsetsExt::V1(_)) => wow64,
-                Some(OffsetsExt::V2(v2)) => {
-                    vmi.read_va_native_in((wow64 + v2._EWOW64PROCESS.Peb.offset, root))?
-                }
+                Some(OffsetsExt::V2(v2)) => vmi.read_va(
+                    (wow64 + v2._EWOW64PROCESS.Peb.offset, root),
+                    registers.address_width(),
+                )?,
                 None => panic!("OffsetsExt not set"),
             };
 
@@ -2361,26 +2574,31 @@ where
     /// the command line, current directory, and DLL search path.
     fn __process_rtl_process_parameters(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<WindowsWow64Va, VmiError> {
-        let address = self.__process_peb_address(vmi, process, root)?;
+        let address = self.__process_peb_address(vmi, registers, process, root)?;
 
         match address.kind {
             WindowsWow64Kind::Native => {
                 let PEB = &self.offsets.common._PEB;
 
-                let va =
-                    vmi.read_va_native_in((address.va + PEB.ProcessParameters.offset, root))?;
+                let va = vmi.read_va(
+                    (address.va + PEB.ProcessParameters.offset, root),
+                    registers.address_width(),
+                )?;
 
                 Ok(WindowsWow64Va::native(va))
             }
             WindowsWow64Kind::X86 => {
                 const PEB32_ProcessParameters_offset: u64 = 0x10;
 
-                let va =
-                    vmi.read_va_native_in((address.va + PEB32_ProcessParameters_offset, root))?;
+                let va = vmi.read_va(
+                    (address.va + PEB32_ProcessParameters_offset, root),
+                    registers.address_width(),
+                )?;
 
                 Ok(WindowsWow64Va::x86(va))
             }
@@ -2401,22 +2619,24 @@ where
     /// ```
     pub fn process_current_directory(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_current_directory(vmi, process, root)
+        let root = self.process_translation_root(vmi, registers, process)?;
+        self.__process_current_directory(vmi, registers, process, root)
     }
 
     /// Internal method to get the current directory, handling both 32-bit and
     /// 64-bit processes.
     fn __process_current_directory(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
+        let address = self.__process_rtl_process_parameters(vmi, registers, process, root)?;
 
         match address.kind {
             WindowsWow64Kind::Native => {
@@ -2429,14 +2649,14 @@ where
     /// Retrieves the current directory for a native (non-WoW64) process.
     fn process_current_directory_native(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         let CURDIR = &self.offsets.common._CURDIR;
         let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
 
-        self.read_unicode_string_in(
+        self.read_unicode_string(
             vmi,
             (
                 rtl_process_parameters
@@ -2451,13 +2671,13 @@ where
     /// WoW64.
     fn process_current_directory_32bit(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset: u64 = 0x24;
 
-        self.read_unicode_string32_in(
+        self.read_unicode_string32(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset,
@@ -2480,22 +2700,24 @@ where
     /// ```
     pub fn process_dll_path(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_dll_path(vmi, process, root)
+        let root = self.process_translation_root(vmi, registers, process)?;
+        self.__process_dll_path(vmi, registers, process, root)
     }
 
     /// Internal method to get the DLL path, handling both 32-bit and 64-bit
     /// processes.
     fn __process_dll_path(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
+        let address = self.__process_rtl_process_parameters(vmi, registers, process, root)?;
 
         match address.kind {
             WindowsWow64Kind::Native => self.process_dll_path_native(vmi, root, address.va),
@@ -2506,13 +2728,13 @@ where
     /// Retrieves the DLL search path for a native (non-WoW64) process.
     fn process_dll_path_native(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
 
-        self.read_unicode_string_in(
+        self.read_unicode_string(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.DllPath.offset,
@@ -2524,13 +2746,13 @@ where
     /// Retrieves the DLL search path for a 32-bit process running under WoW64.
     fn process_dll_path_32bit(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_DllPath_offset: u64 = 0x30;
 
-        self.read_unicode_string32_in(
+        self.read_unicode_string32(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_DllPath_offset,
@@ -2553,22 +2775,24 @@ where
     /// ```
     pub fn process_image_path_name(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_image_path_name(vmi, process, root)
+        let root = self.process_translation_root(vmi, registers, process)?;
+        self.__process_image_path_name(vmi, registers, process, root)
     }
 
     /// Internal method to get the image path name, handling both 32-bit and
     /// 64-bit processes.
     fn __process_image_path_name(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
+        let address = self.__process_rtl_process_parameters(vmi, registers, process, root)?;
 
         match address.kind {
             WindowsWow64Kind::Native => self.process_image_path_name_native(vmi, root, address.va),
@@ -2579,13 +2803,13 @@ where
     /// Retrieves the image path name for a native (non-WoW64) process.
     fn process_image_path_name_native(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
 
-        self.read_unicode_string_in(
+        self.read_unicode_string(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.ImagePathName.offset,
@@ -2597,13 +2821,13 @@ where
     /// Retrieves the image path name for a 32-bit process running under WoW64.
     fn process_image_path_name_32bit(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset: u64 = 0x38;
 
-        self.read_unicode_string32_in(
+        self.read_unicode_string32(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset,
@@ -2626,22 +2850,24 @@ where
     /// ```
     pub fn process_command_line(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_command_line(vmi, process, root)
+        let root = self.process_translation_root(vmi, registers, process)?;
+        self.__process_command_line(vmi, registers, process, root)
     }
 
     /// Internal method to get the command line, handling both 32-bit and 64-bit
     /// processes.
     fn __process_command_line(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         root: Pa,
     ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
+        let address = self.__process_rtl_process_parameters(vmi, registers, process, root)?;
 
         match address.kind {
             WindowsWow64Kind::Native => self.process_command_line_native(vmi, root, address.va),
@@ -2652,13 +2878,13 @@ where
     /// Retrieves the command line for a native (non-WoW64) process.
     fn process_command_line_native(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
 
-        self.read_unicode_string_in(
+        self.read_unicode_string(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.CommandLine.offset,
@@ -2670,13 +2896,13 @@ where
     /// Retrieves the command line for a 32-bit process running under WoW64.
     fn process_command_line_32bit(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         root: Pa,
         rtl_process_parameters: Va,
     ) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset: u64 = 0x40;
 
-        self.read_unicode_string32_in(
+        self.read_unicode_string32(
             vmi,
             (
                 rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset,
@@ -2698,12 +2924,16 @@ where
     /// ```
     pub fn process_from_thread(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         thread: ThreadObject,
     ) -> Result<ProcessObject, VmiError> {
         let KTHREAD = &self.offsets.common._KTHREAD;
 
-        let process = vmi.read_va_native(thread.0 + KTHREAD.Process.offset)?;
+        let process = vmi.read_va(
+            registers.address_context(thread.0 + KTHREAD.Process.offset),
+            registers.address_width(),
+        )?;
 
         Ok(ProcessObject(process))
     }
@@ -2717,14 +2947,18 @@ where
     /// ```
     pub fn process_from_thread_apc_state(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         thread: ThreadObject,
     ) -> Result<ProcessObject, VmiError> {
         let KTHREAD = &self.offsets.common._KTHREAD;
         let KAPC_STATE = &self.offsets.common._KAPC_STATE;
 
-        let process =
-            vmi.read_va_native(thread.0 + KTHREAD.ApcState.offset + KAPC_STATE.Process.offset)?;
+        let process = vmi.read_va(
+            registers
+                .address_context(thread.0 + KTHREAD.ApcState.offset + KAPC_STATE.Process.offset),
+            registers.address_width(),
+        )?;
 
         Ok(ProcessObject(process))
     }
@@ -2732,16 +2966,23 @@ where
     /// Constructs an [`OsProcess`] from an `_EPROCESS`.
     pub fn process_object_to_process(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<OsProcess, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
         let KPROCESS = &self.offsets.common._KPROCESS;
 
-        let id = vmi.read_u32(process.0 + EPROCESS.UniqueProcessId.offset)?;
-        let name = vmi.read_string(process.0 + EPROCESS.ImageFileName.offset)?;
-        let translation_root =
-            vmi.read_address_native(process.0 + KPROCESS.DirectoryTableBase.offset)?;
+        let id =
+            vmi.read_u32(registers.address_context(process.0 + EPROCESS.UniqueProcessId.offset))?;
+
+        let name =
+            vmi.read_string(registers.address_context(process.0 + EPROCESS.ImageFileName.offset))?;
+
+        let translation_root = vmi.read_address(
+            registers.address_context(process.0 + KPROCESS.DirectoryTableBase.offset),
+            registers.address_width(),
+        )?;
 
         Ok(OsProcess {
             id: id.into(),
@@ -2762,81 +3003,7 @@ where
     /// OS's architecture (32-bit or 64-bit).
     pub fn read_ansi_string(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_ansi_string_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from a 32-bit version of `_ANSI_STRING` structure.
-    ///
-    /// This method is specifically for reading `_ANSI_STRING` structures in
-    /// 32-bit processes or WoW64 processes where pointers are 32 bits.
-    pub fn read_ansi_string32(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_ansi_string32_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from a 64-bit version of `_ANSI_STRING` structure.
-    ///
-    /// This method is specifically for reading `_ANSI_STRING` structures in
-    /// 64-bit processes where pointers are 64 bits.
-    pub fn read_ansi_string64(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_ansi_string64_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from a `_UNICODE_STRING` structure.
-    ///
-    /// This method reads a native `_UNICODE_STRING` structure which contains
-    /// a UTF-16 string. The structure is read according to the current OS's
-    /// architecture (32-bit or 64-bit).
-    pub fn read_unicode_string(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_unicode_string_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from a 32-bit version of `_UNICODE_STRING` structure.
-    ///
-    /// This method is specifically for reading `_UNICODE_STRING` structures
-    /// in 32-bit processes or WoW64 processes where pointers are 32 bits.
-    pub fn read_unicode_string32(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_unicode_string32_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from a 64-bit version of `_UNICODE_STRING` structure.
-    ///
-    /// This method is specifically for reading `_UNICODE_STRING` structures
-    /// in 64-bit processes where pointers are 64 bits.
-    pub fn read_unicode_string64(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
-        va: Va,
-    ) -> Result<String, VmiError> {
-        self.read_unicode_string64_in(vmi, vmi.access_context(va))
-    }
-
-    /// Reads string from an `_ANSI_STRING` structure.
-    ///
-    /// This method reads a native `_ANSI_STRING` structure which contains
-    /// an ASCII/ANSI string. The structure is read according to the current
-    /// OS's architecture (32-bit or 64-bit).
-    pub fn read_ansi_string_in(
-        &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
@@ -2848,14 +3015,14 @@ where
 
         let ANSI_STRING = &self.offsets.common._UNICODE_STRING;
 
-        let string = StructReader::new_in(vmi, ctx, ANSI_STRING.effective_len())?;
+        let string = StructReader::new(vmi, ctx, ANSI_STRING.effective_len())?;
         let string_length = string.read(ANSI_STRING.Length)?;
         let string_buffer = string.read(ANSI_STRING.Buffer)?;
 
         ctx.address = string_buffer;
 
         let mut buffer = vec![0u8; string_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf8_lossy(&buffer).into())
     }
@@ -2864,15 +3031,15 @@ where
     ///
     /// This method is specifically for reading `_ANSI_STRING` structures in
     /// 32-bit processes or WoW64 processes where pointers are 32 bits.
-    pub fn read_ansi_string32_in(
+    pub fn read_ansi_string32(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
         let mut buffer = [0u8; 8];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         let string_length = u16::from_le_bytes([buffer[0], buffer[1]]);
         // let string_maximum_length = u16::from_le_bytes([buffer[2], buffer[3]]);
@@ -2881,7 +3048,7 @@ where
         ctx.address = string_buffer as u64;
 
         let mut buffer = vec![0u8; string_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf8_lossy(&buffer).into())
     }
@@ -2890,15 +3057,15 @@ where
     ///
     /// This method is specifically for reading `_ANSI_STRING` structures in
     /// 64-bit processes where pointers are 64 bits.
-    pub fn read_ansi_string64_in(
+    pub fn read_ansi_string64(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
         let mut buffer = [0u8; 16];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         let string_length = u16::from_le_bytes([buffer[0], buffer[1]]);
         // let string_maximum_length = u16::from_le_bytes([buffer[2], buffer[3]]);
@@ -2910,7 +3077,7 @@ where
         ctx.address = string_buffer;
 
         let mut buffer = vec![0u8; string_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf8_lossy(&buffer).into())
     }
@@ -2920,23 +3087,23 @@ where
     /// This method reads a native `_UNICODE_STRING` structure which contains
     /// a UTF-16 string. The structure is read according to the current OS's
     /// architecture (32-bit or 64-bit).
-    pub fn read_unicode_string_in(
+    pub fn read_unicode_string(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
         let UNICODE_STRING = &self.offsets.common._UNICODE_STRING;
 
-        let string = StructReader::new_in(vmi, ctx, UNICODE_STRING.effective_len())?;
+        let string = StructReader::new(vmi, ctx, UNICODE_STRING.effective_len())?;
         let string_length = string.read(UNICODE_STRING.Length)?;
         let string_buffer = string.read(UNICODE_STRING.Buffer)?;
 
         ctx.address = string_buffer;
 
         let mut buffer = vec![0u8; string_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf16_lossy(
             &buffer
@@ -2950,15 +3117,15 @@ where
     ///
     /// This method is specifically for reading `_UNICODE_STRING` structures
     /// in 32-bit processes or WoW64 processes where pointers are 32 bits.
-    pub fn read_unicode_string32_in(
+    pub fn read_unicode_string32(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
         let mut buffer = [0u8; 8];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         let string_length = u16::from_le_bytes([buffer[0], buffer[1]]);
         // let string_maximum_length = u16::from_le_bytes([buffer[2], buffer[3]]);
@@ -2967,7 +3134,7 @@ where
         ctx.address = string_buffer as u64;
 
         let mut buffer = vec![0u8; string_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf16_lossy(
             &buffer
@@ -2981,15 +3148,15 @@ where
     ///
     /// This method is specifically for reading `_UNICODE_STRING` structures
     /// in 64-bit processes where pointers are 64 bits.
-    pub fn read_unicode_string64_in(
+    pub fn read_unicode_string64(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
         let mut buffer = [0u8; 16];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         let us_length = u16::from_le_bytes([buffer[0], buffer[1]]);
         // let us_maximum_length = u16::from_le_bytes([buffer[2], buffer[3]]);
@@ -3001,7 +3168,7 @@ where
         ctx.address = us_buffer;
 
         let mut buffer = vec![0u8; us_length as usize];
-        vmi.core().read(ctx, &mut buffer)?;
+        vmi.read(ctx, &mut buffer)?;
 
         Ok(String::from_utf16_lossy(
             &buffer
@@ -3047,7 +3214,8 @@ where
     ///   for flexible parameter usage without ambiguity.
     pub fn lowest_user_address(
         &self,
-        _vmi: &impl VmiWithRegisters<Driver>,
+        _vmi: &VmiCore<Driver>,
+        _registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Va, VmiError> {
         Ok(Va(0x10000))
     }
@@ -3058,15 +3226,20 @@ where
     /// The value is cached after the first read for performance.
     pub fn highest_user_address(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Va, VmiError> {
         if let Some(highest_user_address) = *self.highest_user_address.borrow() {
             return Ok(highest_user_address);
         }
 
-        let MmHighestUserAddress = self.kernel_image_base(vmi)? + self.symbols.MmHighestUserAddress;
+        let MmHighestUserAddress =
+            self.kernel_image_base(vmi, registers)? + self.symbols.MmHighestUserAddress;
 
-        let highest_user_address = vmi.read_va_native(MmHighestUserAddress)?;
+        let highest_user_address = vmi.read_va(
+            registers.address_context(MmHighestUserAddress),
+            registers.address_width(),
+        )?;
         *self.highest_user_address.borrow_mut() = Some(highest_user_address);
         Ok(highest_user_address)
     }
@@ -3077,11 +3250,12 @@ where
     /// the range of valid user-mode addresses in Windows.
     pub fn is_valid_user_address(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         address: Va,
     ) -> Result<bool, VmiError> {
-        let lowest_user_address = self.lowest_user_address(vmi)?;
-        let highest_user_address = self.highest_user_address(vmi)?;
+        let lowest_user_address = self.lowest_user_address(vmi, registers)?;
+        let highest_user_address = self.highest_user_address(vmi, registers)?;
 
         Ok(address >= lowest_user_address && address <= highest_user_address)
     }
@@ -3091,13 +3265,14 @@ where
     /// xxx
     pub fn linked_list<'a>(
         &'a self,
-        vmi: &'a impl VmiWithRegisters<Driver>,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
         list_head: Va,
         offset: u64,
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
         Ok(ListEntryIterator::new(
-            VmiSession::new(vmi.core(), self),
-            vmi.registers(),
+            VmiSession::new(vmi, self),
+            registers,
             list_head,
             offset,
         ))
@@ -3106,46 +3281,63 @@ where
     /// xxx
     pub fn vad_iter<'a>(
         &'a self,
-        vmi: &'a impl VmiWithRegisters<Driver>,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
-        let root = self.vad_root(vmi, process)?;
+        let root = self.vad_root(vmi, registers, process)?;
 
-        TreeNodeIterator::new(VmiSession::new(vmi.core(), self), vmi.registers(), root)
+        TreeNodeIterator::new(VmiSession::new(vmi, self), registers, root)
     }
 
     /// Returns the process object iterator.
     pub fn process_iter<'a>(
         &'a self,
-        vmi: &'a impl VmiWithRegisters<Driver>,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Result<impl Iterator<Item = Result<OsProcess, VmiError>> + 'a, VmiError> {
-        let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
+        let PsActiveProcessHead =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsActiveProcessHead;
 
         let EPROCESS = &self.offsets.common._EPROCESS;
 
         Ok(self
-            .linked_list(vmi, PsActiveProcessHead, EPROCESS.ActiveProcessLinks.offset)?
+            .linked_list(
+                vmi,
+                registers,
+                PsActiveProcessHead,
+                EPROCESS.ActiveProcessLinks.offset,
+            )?
             .map(|result| {
-                result.and_then(|entry| self.process_object_to_process(vmi, ProcessObject(entry)))
+                result.and_then(|entry| {
+                    self.process_object_to_process(vmi, registers, ProcessObject(entry))
+                })
             }))
     }
 
     /// Returns the process object iterator.
     pub fn process_iter2<'a>(
         &'a self,
-        vmi: &'a impl VmiWithRegisters<Driver>,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsProcess<'a, Driver>, VmiError>> + 'a, VmiError>
-    {
-        let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
+    ) -> Result<impl Iterator<Item = Result<WindowsOsProcess<'a, Driver>, VmiError>> + 'a, VmiError> {
+        let PsActiveProcessHead =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsActiveProcessHead;
 
         let EPROCESS = &self.offsets.common._EPROCESS;
 
         Ok(self
-            .linked_list(vmi, PsActiveProcessHead, EPROCESS.ActiveProcessLinks.offset)?
+            .linked_list(
+                vmi,
+                registers,
+                PsActiveProcessHead,
+                EPROCESS.ActiveProcessLinks.offset,
+            )?
             .map(|result| {
                 result.map(|entry| {
                     WindowsOsProcess::new(
-                        VmiState::new(VmiSession::new(vmi.core(), self), vmi.registers()),
+                        VmiSession::new(vmi, self),
+                        registers,
                         ProcessObject(entry),
                     )
                 })
@@ -3155,18 +3347,31 @@ where
     /// associated with the specified VAD.
     pub fn module(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         addr: Va,
     ) -> Result<WindowsModule, VmiError> {
         let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
 
-        let base_address = vmi.read_va_native(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset)?;
-        let entry_point = vmi.read_va_native(addr + KLDR_DATA_TABLE_ENTRY.EntryPoint.offset)?;
-        let size = vmi.read_u32(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset)? as u64;
-        let full_name =
-            self.read_unicode_string(vmi, addr + KLDR_DATA_TABLE_ENTRY.FullDllName.offset)?;
-        let name =
-            self.read_unicode_string(vmi, addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset)?;
+        let base_address = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.DllBase.offset),
+            registers.address_width(),
+        )?;
+        let entry_point = vmi.read_va(
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.EntryPoint.offset),
+            registers.address_width(),
+        )?;
+        let size = vmi
+            .read_u32(registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.SizeOfImage.offset))?
+            as u64;
+        let full_name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.FullDllName.offset),
+        )?;
+        let name = self.read_unicode_string(
+            vmi,
+            registers.address_context(addr + KLDR_DATA_TABLE_ENTRY.BaseDllName.offset),
+        )?;
 
         Ok(WindowsModule {
             base_address,
@@ -3180,19 +3385,22 @@ where
     /// Returns the process object iterator.
     pub fn module_iter<'a>(
         &'a self,
-        vmi: &'a impl VmiWithRegisters<Driver>,
+        vmi: &'a VmiCore<Driver>,
+        registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Result<impl Iterator<Item = Result<WindowsModule, VmiError>> + 'a, VmiError> {
-        let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
+        let PsLoadedModuleList =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsLoadedModuleList;
 
         let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
 
         Ok(self
             .linked_list(
                 vmi,
+                registers,
                 PsLoadedModuleList,
                 KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset,
             )?
-            .map(|result| result.and_then(|entry| self.module(vmi, entry))))
+            .map(|result| result.and_then(|entry| self.module(vmi, registers, entry))))
     }
 }
 
@@ -3202,13 +3410,18 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn kernel_image_base(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<Va, VmiError> {
-        Driver::Architecture::kernel_image_base(vmi, self)
+    fn kernel_image_base(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Va, VmiError> {
+        Driver::Architecture::kernel_image_base(self, vmi, registers)
     }
 
     fn kernel_information_string(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<String, VmiError> {
         let NtBuildLab = self.symbols.NtBuildLab;
 
@@ -3216,13 +3429,18 @@ where
             return Ok(nt_build_lab.clone());
         }
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let nt_build_lab = vmi.read_string(kernel_image_base + NtBuildLab)?;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let nt_build_lab =
+            vmi.read_string(registers.address_context(kernel_image_base + NtBuildLab))?;
         *self.nt_build_lab.borrow_mut() = Some(nt_build_lab.clone());
         Ok(nt_build_lab)
     }
 
-    fn kpti_enabled(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<bool, VmiError> {
+    fn kpti_enabled(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
+    ) -> Result<bool, VmiError> {
         let KiKvaShadow = self.symbols.KiKvaShadow;
 
         if let Some(ki_kva_shadow) = self.ki_kva_shadow.borrow().as_ref() {
@@ -3237,23 +3455,29 @@ where
             }
         };
 
-        let kernel_image_base = self.kernel_image_base(vmi)?;
-        let ki_kva_shadow = vmi.read_u8(kernel_image_base + KiKvaShadow)? != 0;
+        let kernel_image_base = self.kernel_image_base(vmi, registers)?;
+        let ki_kva_shadow =
+            vmi.read_u8(registers.address_context(kernel_image_base + KiKvaShadow))? != 0;
         *self.ki_kva_shadow.borrow_mut() = Some(ki_kva_shadow);
         Ok(ki_kva_shadow)
     }
 
-    fn modules(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<Vec<OsModule>, VmiError> {
+    fn modules(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
+    ) -> Result<Vec<OsModule>, VmiError> {
         let mut result = Vec::new();
 
-        let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
+        let PsLoadedModuleList =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsLoadedModuleList;
 
         let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
 
-        self.enumerate_list(vmi, PsLoadedModuleList, |entry| {
+        self.enumerate_list(vmi, registers, PsLoadedModuleList, |entry| {
             let module_entry = entry - KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset;
 
-            if let Ok(module) = self.kernel_module(vmi, module_entry) {
+            if let Ok(module) = self.kernel_module(vmi, registers, module_entry) {
                 result.push(module)
             }
 
@@ -3265,106 +3489,130 @@ where
 
     fn system_process(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<<Driver as VmiDriver>::Architecture as Architecture>::Registers,
     ) -> Result<ProcessObject, VmiError> {
         let PsInitialSystemProcess =
-            self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsInitialSystemProcess;
 
-        let process = vmi.read_va_native(PsInitialSystemProcess)?;
+        let process = vmi.read_va(
+            registers.address_context(PsInitialSystemProcess),
+            registers.address_width(),
+        )?;
 
         Ok(ProcessObject(process))
     }
 
     fn thread_id(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         thread: ThreadObject,
     ) -> Result<ThreadId, VmiError> {
         let ETHREAD = &self.offsets.common._ETHREAD;
         let CLIENT_ID = &self.offsets.common._CLIENT_ID;
 
-        let result = vmi.read_u32(thread.0 + ETHREAD.Cid.offset + CLIENT_ID.UniqueThread.offset)?;
+        let result = vmi.read_u32(
+            registers
+                .address_context(thread.0 + ETHREAD.Cid.offset + CLIENT_ID.UniqueThread.offset),
+        )?;
 
         Ok(ThreadId(result))
     }
 
     fn process_id(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<ProcessId, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        let result = vmi.read_u32(process.0 + EPROCESS.UniqueProcessId.offset)?;
+        let result =
+            vmi.read_u32(registers.address_context(process.0 + EPROCESS.UniqueProcessId.offset))?;
 
         Ok(ProcessId(result))
     }
 
     fn current_thread(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<ThreadObject, VmiError> {
         let KPCR = &self.offsets.common._KPCR;
         let KPRCB = &self.offsets.common._KPRCB;
 
-        let kpcr = self.current_kpcr(vmi);
+        let kpcr = self.current_kpcr(vmi, registers);
 
         if kpcr.is_null() {
             return Err(VmiError::Other("Invalid KPCR"));
         }
 
         let addr = kpcr + KPCR.Prcb.offset + KPRCB.CurrentThread.offset;
-        let result = vmi.read_va_native(addr)?;
+        let result = vmi.read_va(registers.address_context(addr), registers.address_width())?;
 
         Ok(ThreadObject(result))
     }
 
-    fn current_thread_id(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<ThreadId, VmiError> {
-        let thread = self.current_thread(vmi)?;
+    fn current_thread_id(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<ThreadId, VmiError> {
+        let thread = self.current_thread(vmi, registers)?;
 
         if thread.is_null() {
             return Err(VmiError::Other("Invalid thread"));
         }
 
-        self.thread_id(vmi, thread)
+        self.thread_id(vmi, registers, thread)
     }
 
     fn current_process(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<ProcessObject, VmiError> {
-        let thread = self.current_thread(vmi)?;
+        let thread = self.current_thread(vmi, registers)?;
 
         if thread.is_null() {
             return Err(VmiError::Other("Invalid thread"));
         }
 
-        self.process_from_thread_apc_state(vmi, thread)
+        self.process_from_thread_apc_state(vmi, registers, thread)
     }
 
     fn current_process_id(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<ProcessId, VmiError> {
-        let process = self.current_process(vmi)?;
+        let process = self.current_process(vmi, registers)?;
 
         if process.is_null() {
             return Err(VmiError::Other("Invalid process"));
         }
 
-        self.process_id(vmi, process)
+        self.process_id(vmi, registers, process)
     }
 
-    fn processes(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<Vec<OsProcess>, VmiError> {
+    fn processes(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Vec<OsProcess>, VmiError> {
         let mut result = Vec::new();
 
-        let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
+        let PsActiveProcessHead =
+            self.kernel_image_base(vmi, registers)? + self.symbols.PsActiveProcessHead;
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        self.enumerate_list(vmi, PsActiveProcessHead, |entry| {
+        self.enumerate_list(vmi, registers, PsActiveProcessHead, |entry| {
             let process_object = entry - EPROCESS.ActiveProcessLinks.offset;
 
-            if let Ok(process) = self.process_object_to_process(vmi, process_object.into()) {
+            if let Ok(process) =
+                self.process_object_to_process(vmi, registers, process_object.into())
+            {
                 result.push(process)
             }
 
@@ -3376,24 +3624,31 @@ where
 
     fn process_parent_process_id(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<ProcessId, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        let result = vmi.read_u32(process.0 + EPROCESS.InheritedFromUniqueProcessId.offset)?;
+        let result = vmi.read_u32(
+            registers.address_context(process.0 + EPROCESS.InheritedFromUniqueProcessId.offset),
+        )?;
 
         Ok(ProcessId(result))
     }
 
     fn process_architecture(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<OsArchitecture, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        let wow64process = vmi.read_va_native(process.0 + EPROCESS.WoW64Process.offset)?;
+        let wow64process = vmi.read_va(
+            registers.address_context(process.0 + EPROCESS.WoW64Process.offset),
+            registers.address_width(),
+        )?;
 
         if wow64process.is_null() {
             Ok(OsArchitecture::Amd64)
@@ -3405,39 +3660,45 @@ where
 
     fn process_translation_root(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         let KPROCESS = &self.offsets.common._KPROCESS;
 
-        let current_process = self.current_process(vmi)?;
+        let current_process = self.current_process(vmi, registers)?;
 
         if process == current_process {
-            return Ok(vmi.translation_root(process.0));
+            return Ok(registers.translation_root(process.0));
         }
 
-        let root = Cr3::from(u64::from(
-            vmi.read_va_native(process.0 + KPROCESS.DirectoryTableBase.offset)?,
-        ));
+        let root = Cr3::from(u64::from(vmi.read_va(
+            registers.address_context(process.0 + KPROCESS.DirectoryTableBase.offset),
+            registers.address_width(),
+        )?));
 
         Ok(Pa::from(root))
     }
 
     fn process_user_translation_root(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         let KPROCESS = &self.offsets.common._KPROCESS;
         let UserDirectoryTableBase = match &KPROCESS.UserDirectoryTableBase {
             Some(UserDirectoryTableBase) => UserDirectoryTableBase,
-            None => return self.process_translation_root(vmi, process),
+            None => return self.process_translation_root(vmi, registers, process),
         };
 
-        let root = u64::from(vmi.read_va_native(process.0 + UserDirectoryTableBase.offset)?);
+        let root = u64::from(vmi.read_va(
+            registers.address_context(process.0 + UserDirectoryTableBase.offset),
+            registers.address_width(),
+        )?);
 
         if root < Driver::Architecture::PAGE_SIZE {
-            return self.process_translation_root(vmi, process);
+            return self.process_translation_root(vmi, registers, process);
         }
 
         Ok(Pa::from(Cr3::from(root)))
@@ -3445,63 +3706,72 @@ where
 
     fn process_filename(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        vmi.read_string(process.0 + EPROCESS.ImageFileName.offset)
+        vmi.read_string(registers.address_context(process.0 + EPROCESS.ImageFileName.offset))
     }
 
     fn process_image_base(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         let EPROCESS = &self.offsets.common._EPROCESS;
 
-        vmi.read_va_native(process.0 + EPROCESS.SectionBaseAddress.offset)
+        vmi.read_va(
+            registers.address_context(process.0 + EPROCESS.SectionBaseAddress.offset),
+            registers.address_width(),
+        )
     }
 
     fn process_regions(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
     ) -> Result<Vec<OsRegion>, VmiError> {
-        let vad_root = self.vad_root(vmi, process)?;
-        self.vad_root_to_regions(vmi, vad_root)
+        let vad_root = self.vad_root(vmi, registers, process)?;
+        self.vad_root_to_regions(vmi, registers, vad_root)
     }
 
     fn process_address_is_valid(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError> {
-        Driver::Architecture::process_address_is_valid(vmi, self, process, address)
+        Driver::Architecture::process_address_is_valid(self, vmi, registers, process, address)
     }
 
     fn find_process_region(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<OsRegion>, VmiError> {
-        let vad = match self.find_process_vad(vmi, process, address)? {
+        let vad = match self.find_process_vad(vmi, registers, process, address)? {
             Some(vad) => vad,
             None => return Ok(None),
         };
 
-        Ok(Some(self.vad_to_region(vmi, vad)?))
+        Ok(Some(self.vad_to_region(vmi, registers, vad)?))
     }
 
     fn image_architecture(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         image_base: Va,
     ) -> Result<OsArchitecture, VmiError> {
         let mut data = [0u8; Amd64::PAGE_SIZE as usize];
-        vmi.read(image_base, &mut data)?;
+        vmi.read(registers.address_context(image_base), &mut data)?;
 
         let pe_magic = optional_header_magic(data.as_ref())
             .map_err(|_| VmiError::Os(PeError::InvalidPeMagic.into()))?;
@@ -3515,54 +3785,68 @@ where
 
     fn image_exported_symbols(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         image_base: Va,
     ) -> Result<Vec<OsImageExportedSymbol>, VmiError> {
-        match self.image_architecture(vmi, image_base)? {
+        match self.image_architecture(vmi, registers, image_base)? {
             OsArchitecture::Unknown => Err(VmiError::Os(PeError::InvalidPeMagic.into())),
             OsArchitecture::X86 => {
                 tracing::trace!(?image_base, "32-bit PE");
-                self.image_exported_symbols_generic::<ImageNtHeaders32>(vmi, image_base)
+                self.image_exported_symbols_generic::<ImageNtHeaders32>(vmi, registers, image_base)
             }
             OsArchitecture::Amd64 => {
                 tracing::trace!(?image_base, "64-bit PE");
-                self.image_exported_symbols_generic::<ImageNtHeaders64>(vmi, image_base)
+                self.image_exported_symbols_generic::<ImageNtHeaders64>(vmi, registers, image_base)
             }
         }
     }
 
     fn syscall_argument(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
-        Driver::Architecture::syscall_argument(vmi, self, index)
+        Driver::Architecture::syscall_argument(self, vmi, registers, index)
     }
 
     fn function_argument(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
-        Driver::Architecture::function_argument(vmi, self, index)
+        Driver::Architecture::function_argument(self, vmi, registers, index)
     }
 
-    fn function_return_value(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<u64, VmiError> {
-        Driver::Architecture::function_return_value(vmi, self)
+    fn function_return_value(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<u64, VmiError> {
+        Driver::Architecture::function_return_value(self, vmi, registers)
     }
 
-    fn last_error(&self, vmi: &impl VmiWithRegisters<Driver>) -> Result<Option<u32>, VmiError> {
+    fn last_error(
+        &self,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Option<u32>, VmiError> {
         let KTHREAD = &self.offsets.common._KTHREAD;
         let TEB = &self.offsets.common._TEB;
 
-        let current_thread = self.current_thread(vmi)?;
-        let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
+        let current_thread = self.current_thread(vmi, registers)?;
+        let teb = vmi.read_va(
+            registers.address_context(current_thread.0 + KTHREAD.Teb.offset),
+            registers.address_width(),
+        )?;
 
         if teb.is_null() {
             return Ok(None);
         }
 
-        let result = vmi.read_u32(teb + TEB.LastErrorValue.offset)?;
+        let result = vmi.read_u32(registers.address_context(teb + TEB.LastErrorValue.offset))?;
 
         Ok(Some(result))
     }
@@ -3575,18 +3859,22 @@ where
 {
     fn enumerate_list(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         list_head: Va,
         mut callback: impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
-        let mut entry = vmi.read_va_native(list_head)?;
+        let mut entry = vmi.read_va(
+            registers.address_context(list_head),
+            registers.address_width(),
+        )?;
 
         while entry != list_head {
             if !callback(entry) {
                 break;
             }
 
-            entry = vmi.read_va_native(entry)?;
+            entry = vmi.read_va(registers.address_context(entry), registers.address_width())?;
         }
 
         Ok(())
@@ -3594,13 +3882,18 @@ where
 
     fn enumerate_tree(
         &self,
-        vmi: &impl VmiWithRegisters<Driver>,
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
         root: Va,
         callback: impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
         match &self.offsets.ext {
-            Some(OffsetsExt::V1(offsets)) => self.enumerate_tree_v1(vmi, root, callback, offsets),
-            Some(OffsetsExt::V2(offsets)) => self.enumerate_tree_v2(vmi, root, callback, offsets),
+            Some(OffsetsExt::V1(offsets)) => {
+                self.enumerate_tree_v1(vmi, registers, root, callback, offsets)
+            }
+            Some(OffsetsExt::V2(offsets)) => {
+                self.enumerate_tree_v2(vmi, registers, root, callback, offsets)
+            }
             None => panic!("OffsetsExt not set"),
         }
     }

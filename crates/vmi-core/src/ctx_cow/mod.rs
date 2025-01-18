@@ -1,8 +1,8 @@
 mod context;
-mod cow;
 mod prober;
 mod session;
 mod state;
+mod state2;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -11,6 +11,7 @@ pub use self::{
     prober::VmiProber,
     session::VmiSession,
     state::{VmiOsState, VmiState},
+    state2::VmiState2,
 };
 use crate::{
     AccessContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiEvent,

@@ -1,5 +1,6 @@
 //! Linux OS-specific VMI operations.
 
+/*
 use std::cell::RefCell;
 
 use isr_core::Profile;
@@ -813,3 +814,4 @@ where
         unimplemented!()
     }
 }
+ */

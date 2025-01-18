@@ -1,7 +1,7 @@
 use syn::{
     AngleBracketedGenericArguments, FnArg, GenericArgument, GenericParam, Generics, Ident,
-    Lifetime, PathArguments, ReturnType, Type, TypeImplTrait, TypeParamBound, TypePath,
-    TypeReference,
+    Lifetime, Path, PathArguments, Receiver, ReturnType, TraitBound, Type, TypeImplTrait,
+    TypeParamBound, TypePath, TypeReference,
 };
 
 pub fn remove_in_generics(generics: &mut Generics, lifetime: &str) {
@@ -37,6 +37,59 @@ pub fn replace_in_lifetime(lifetime: &mut Lifetime, from: &str, to: &str) {
     }
 
     lifetime.ident = Ident::new(to, lifetime.ident.span());
+}
+
+/// Replace the lifetime `'from` with `'to` in the given trait bound.
+///
+/// # Example
+///
+/// Before:
+///
+/// ```rust,ignore
+/// 'from: 'a
+/// 'a: 'from
+/// T: 'from
+/// ```
+///
+/// After:
+///
+/// ```rust,ignore
+/// 'to: 'a
+/// 'a: 'to
+/// T: 'to
+/// ```
+pub fn replace_in_trait_bound(trait_bound: &mut TraitBound, from: &str, to: &str) {
+    if let Some(lifetimes) = &mut trait_bound.lifetimes {
+        for param in lifetimes.lifetimes.iter_mut() {
+            replace_in_generic_param(param, from, to);
+        }
+    }
+
+    replace_in_path(&mut trait_bound.path, from, to);
+}
+
+/// Replace the lifetime `'from` with `'to` in the given path.
+///
+/// # Example
+///
+/// Before:
+///
+/// ```rust,ignore
+/// Foo<'from, T>
+/// ```
+///
+/// After:
+///
+/// ```rust,ignore
+/// Foo<'to, T>
+/// ```
+pub fn replace_in_path(path: &mut Path, from: &str, to: &str) {
+    for segment in &mut path.segments {
+        // TODO: Handle `PathArguments::Parenthesized`
+        if let PathArguments::AngleBracketed(args) = &mut segment.arguments {
+            replace_in_angle_bracketed_generic_arguments(args, from, to);
+        }
+    }
 }
 
 /// Replace the lifetime `'from` with `'to` in the given angle-bracketed generic arguments.
@@ -168,17 +221,7 @@ pub fn replace_in_type_param_bound(bound: &mut TypeParamBound, from: &str, to: &
 /// Foo<'to, T>
 /// ```
 pub fn replace_in_type_path(type_path: &mut TypePath, from: &str, to: &str) {
-    let segment = match type_path.path.segments.last_mut() {
-        Some(segment) => segment,
-        None => return,
-    };
-
-    let args = match &mut segment.arguments {
-        PathArguments::AngleBracketed(args) => args,
-        _ => return,
-    };
-
-    replace_in_angle_bracketed_generic_arguments(args, from, to);
+    replace_in_path(&mut type_path.path, from, to);
 }
 
 /// Replace the lifetime `'from` with `'to` in the given type reference.
@@ -220,16 +263,10 @@ pub fn replace_in_type_reference(ty_ref: &mut TypeReference, from: &str, to: &st
 /// arg: &'to T
 /// ```
 pub fn replace_in_fn_arg(arg: &mut FnArg, from: &str, to: &str) {
-    let pat_type = match arg {
-        FnArg::Typed(pat_type) => pat_type,
-        _ => return,
+    match arg {
+        FnArg::Receiver(receiver) => replace_in_receiver(receiver, from, to),
+        FnArg::Typed(pat_type) => replace_in_type(&mut pat_type.ty, from, to),
     };
-
-    #[allow(clippy::single_match, clippy::needless_return)]
-    match pat_type.ty.as_mut() {
-        Type::Reference(ty_ref) => replace_in_type_reference(ty_ref, from, to),
-        _ => return,
-    }
 }
 
 /// Replace the lifetime `'from` with `'to` in the given type impl trait.
@@ -251,8 +288,32 @@ pub fn replace_in_fn_arg(arg: &mut FnArg, from: &str, to: &str) {
 /// ```
 pub fn replace_in_type_impl_trait(impl_trait: &mut TypeImplTrait, from: &str, to: &str) {
     for bound in &mut impl_trait.bounds {
-        // TODO: Handle `TypeParamBound::TraitBound`
-        if let TypeParamBound::Lifetime(lifetime) = bound {
+        match bound {
+            TypeParamBound::Lifetime(lifetime) => replace_in_lifetime(lifetime, from, to),
+            TypeParamBound::Trait(trait_bound) => replace_in_trait_bound(trait_bound, from, to),
+            _ => {}
+        }
+    }
+}
+
+/// Replace the lifetime `'from` with `'to` in the given receiver (self).
+///
+/// # Example
+///
+/// Before:
+///
+/// ```rust,ignore
+/// &'from self
+/// ```
+///
+/// After:
+///
+/// ```rust,ignore
+/// &'to self
+/// ```
+pub fn replace_in_receiver(receiver: &mut Receiver, from: &str, to: &str) {
+    if let Some(reference) = &mut receiver.reference {
+        if let Some(lifetime) = &mut reference.1 {
             replace_in_lifetime(lifetime, from, to);
         }
     }
@@ -279,6 +340,7 @@ pub fn replace_in_type_impl_trait(impl_trait: &mut TypeImplTrait, from: &str, to
 /// ```
 pub fn replace_in_type(ty: &mut Type, from: &str, to: &str) {
     match ty {
+        Type::Reference(ty_ref) => replace_in_type_reference(ty_ref, from, to),
         Type::ImplTrait(impl_trait) => replace_in_type_impl_trait(impl_trait, from, to),
         Type::Path(type_path) => replace_in_type_path(type_path, from, to),
         _ => {}

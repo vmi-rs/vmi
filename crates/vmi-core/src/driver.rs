@@ -6,7 +6,10 @@ use crate::{
 };
 
 /// A trait for implementing a VMI driver.
-pub trait VmiDriver {
+///
+// The 'static lifetime is required in order to use the driver with the VmiOs
+// enumerators.
+pub trait VmiDriver: 'static {
     /// The architecture supported by the driver.
     type Architecture: Architecture + ?Sized;
 

@@ -1,6 +1,6 @@
 use isr_macros::Field;
 
-use crate::{AccessContext, VmiCore, VmiDriver, VmiError};
+use crate::{AccessContext, Registers, Va, VmiDriver, VmiError, VmiWithCore, VmiWithRegisters};
 
 /// A handler for reading structured data from guest memory.
 ///
@@ -56,7 +56,25 @@ impl StructReader {
     ///
     /// [`read`]: Self::read
     pub fn new<Driver>(
-        vmi: &VmiCore<Driver>,
+        vmi: &impl VmiWithRegisters<Driver>,
+        va: Va,
+        len: usize,
+    ) -> Result<Self, VmiError>
+    where
+        Driver: VmiDriver,
+    {
+        Self::new_in(vmi, vmi.registers().address_context(va), len)
+    }
+
+    /// Creates a new structure reader.
+    ///
+    /// Reads `len` bytes from the guest memory at the specified address into
+    /// a new `StructReader` instance. The data can then be accessed using the
+    /// [`read`] method with appropriate field descriptors.
+    ///
+    /// [`read`]: Self::read
+    pub fn new_in<Driver>(
+        vmi: &impl VmiWithCore<Driver>,
         ctx: impl Into<AccessContext>,
         len: usize,
     ) -> Result<Self, VmiError>
@@ -64,7 +82,7 @@ impl StructReader {
         Driver: VmiDriver,
     {
         let mut buffer = vec![0u8; len];
-        vmi.read(ctx, &mut buffer)?;
+        vmi.core().read(ctx.into(), &mut buffer)?;
         Ok(Self(buffer))
     }
 

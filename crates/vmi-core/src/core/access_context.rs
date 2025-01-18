@@ -101,7 +101,12 @@ impl From<(Va, Pa)> for AccessContext {
 
 impl From<AddressContext> for AccessContext {
     fn from(value: AddressContext) -> Self {
-        Self::paging(value.va, value.root)
+        Self {
+            address: value.va.0,
+            mechanism: TranslationMechanism::Paging {
+                root: Some(value.root),
+            },
+        }
     }
 }
 

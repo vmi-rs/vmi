@@ -1,6 +1,6 @@
-use std::{io::ErrorKind, time::Duration};
+use std::{borrow::Cow, io::ErrorKind, time::Duration};
 
-use super::{context::VmiContext, cow::VmiCow};
+use super::context::VmiContext;
 use crate::{os::VmiOs, VmiCore, VmiDriver, VmiError, VmiHandler};
 
 /// A VMI session.
@@ -18,6 +18,46 @@ where
 
     /// The OS-specific operations and abstractions.
     os: &'a Os,
+}
+
+impl<'a, Driver, Os> Copy for VmiSession<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+}
+
+impl<'a, Driver, Os> Clone for VmiSession<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            core: self.core,
+            os: self.os,
+        }
+    }
+}
+
+impl<'a, Driver, Os> From<VmiSession<'a, Driver, Os>> for Cow<'a, VmiSession<'a, Driver, Os>>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn from(value: VmiSession<'a, Driver, Os>) -> Self {
+        Cow::Owned(value)
+    }
+}
+
+impl<'a, Driver, Os> From<&'a VmiSession<'a, Driver, Os>> for Cow<'a, VmiSession<'a, Driver, Os>>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn from(value: &'a VmiSession<'a, Driver, Os>) -> Self {
+        Cow::Borrowed(value)
+    }
 }
 
 impl<Driver, Os> std::ops::Deref for VmiSession<'_, Driver, Os>
@@ -130,27 +170,5 @@ where
         }
 
         Ok(result)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-impl<'a, Driver, Os> From<VmiSession<'a, Driver, Os>> for VmiCow<'a, VmiSession<'a, Driver, Os>>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    fn from(value: VmiSession<'a, Driver, Os>) -> Self {
-        VmiCow::Owned(value)
-    }
-}
-
-impl<'a, Driver, Os> From<&'a VmiSession<'a, Driver, Os>> for VmiCow<'a, VmiSession<'a, Driver, Os>>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    fn from(value: &'a VmiSession<'a, Driver, Os>) -> Self {
-        VmiCow::Borrowed(value)
     }
 }

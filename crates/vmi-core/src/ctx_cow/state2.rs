@@ -1,7 +1,6 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use super::{cow::VmiCow, session::VmiSession};
-use crate::{os::VmiOs, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError};
+use crate::{AccessContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError};
 
 /// A VMI context.
 ///
@@ -12,64 +11,64 @@ use crate::{os::VmiOs, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver,
 /// passed to the [`VmiHandler::handle_event`] method to handle VMI events.
 ///
 /// [`VmiHandler::handle_event`]: crate::VmiHandler::handle_event
-pub struct VmiState<'a, Driver, Os>
+pub struct VmiState2<'a, Driver>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    session: VmiCow<'a, VmiSession<'a, Driver, Os>>,
+    core: &'a VmiCore<Driver>,
 
     /// The VMI event.
     registers: &'a <Driver::Architecture as Architecture>::Registers,
 }
 
-impl<'a, Driver, Os> std::ops::Deref for VmiState<'a, Driver, Os>
+impl<'a, Driver> Copy for VmiState2<'a, Driver> where Driver: VmiDriver {}
+
+impl<'a, Driver> Clone for VmiState2<'a, Driver>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>,
 {
-    type Target = VmiSession<'a, Driver, Os>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.session
+    fn clone(&self) -> Self {
+        Self {
+            core: self.core,
+            registers: self.registers,
+        }
     }
 }
 
-impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+impl<'a, Driver> std::ops::Deref for VmiState2<'a, Driver>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+{
+    type Target = VmiCore<Driver>;
+
+    fn deref(&self) -> &Self::Target {
+        self.core
+    }
+}
+
+impl<'a, Driver> VmiState2<'a, Driver>
+where
+    Driver: VmiDriver,
 {
     /// Creates a new VMI context.
     pub fn new(
-        session: impl Into<VmiCow<'a, VmiSession<'a, Driver, Os>>>,
+        core: &'a VmiCore<Driver>,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Self {
-        Self {
-            session: session.into(),
-            registers,
-        }
+        Self { core, registers }
     }
 
     // Note that `core()` and `underlying_os()` are delegated to the `VmiSession`.
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<Driver, Os> {
-        &self.session
+    pub fn core(&self) -> &'a VmiCore<Driver> {
+        self.core
     }
 
     /// Returns the CPU registers associated with the current event.
-    pub fn registers(&self) -> &<Driver::Architecture as Architecture>::Registers {
+    pub fn registers(&self) -> &'a <Driver::Architecture as Architecture>::Registers {
         self.registers
-    }
-
-    /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&self) -> VmiOsState<Driver, Os> {
-        VmiOsState {
-            session: &self.session,
-            registers: self.registers,
-        }
     }
 
     /// Returns the return address from the current stack frame.
@@ -107,11 +106,45 @@ where
         self.core().read_u64(self.access_context(address))
     }
 
+    /// Reads an address-sized unsigned integer from the virtual machine.
+    pub fn read_address(&self, address: Va) -> Result<u64, VmiError> {
+        self.core().read_address(
+            self.access_context(address),
+            self.registers().effective_address_width(),
+        )
+    }
+
+    /// Reads an address-sized unsigned integer from the virtual machine.
+    pub fn read_address_native(&self, address: Va) -> Result<u64, VmiError> {
+        self.core().read_address(
+            self.access_context(address),
+            self.registers().address_width(),
+        )
+    }
+
+    /// Reads a 32-bit address from the virtual machine.
+    pub fn read_address32(&self, address: Va) -> Result<u64, VmiError> {
+        self.core().read_address32(self.access_context(address))
+    }
+
+    /// Reads a 64-bit address from the virtual machine.
+    pub fn read_address64(&self, address: Va) -> Result<u64, VmiError> {
+        self.core().read_address64(self.access_context(address))
+    }
+
     /// Reads a virtual address from the virtual machine.
     pub fn read_va(&self, address: Va) -> Result<Va, VmiError> {
         self.core().read_va(
             self.access_context(address),
             self.registers().effective_address_width(),
+        )
+    }
+
+    /// Reads a virtual address from the virtual machine.
+    pub fn read_va_native(&self, address: Va) -> Result<Va, VmiError> {
+        self.core().read_va(
+            self.access_context(address),
+            self.registers().address_width(),
         )
     }
 
@@ -195,66 +228,7 @@ where
     }
 
     /// Creates an address context for a given virtual address.
-    fn access_context(&self, address: Va) -> (Va, Pa) {
-        (address, self.translation_root(address))
+    pub fn access_context(&self, address: Va) -> AccessContext {
+        AccessContext::paging(address, self.translation_root(address))
     }
-}
-
-/// Wrapper providing access to OS-specific operations.
-pub struct VmiOsState<'a, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    /// The VMI session.
-    session: &'a VmiSession<'a, Driver, Os>,
-
-    /// The VMI event.
-    registers: &'a <Driver::Architecture as Architecture>::Registers,
-}
-
-impl<'a, Driver, Os> VmiOsState<'a, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    /// Returns the VMI core.
-    pub fn core(&self) -> &VmiCore<Driver> {
-        self.session.core()
-    }
-
-    /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
-        self.session.underlying_os()
-    }
-
-    /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<Driver, Os> {
-        self.session
-    }
-
-    /// Returns the CPU registers associated with the current event.
-    pub fn registers(&self) -> &<Driver::Architecture as Architecture>::Registers {
-        self.registers
-    }
-
-    //    /// Retrieves a specific function argument according to the calling
-    //    /// convention of the operating system.
-    //    pub fn function_argument_for_registers(
-    //        &self,
-    //        registers: &<Driver::Architecture as Architecture>::Registers,
-    //        index: u64,
-    //    ) -> Result<u64, VmiError> {
-    //        self.underlying_os()
-    //            .function_argument(self.core(), registers, index)
-    //    }
-    //
-    //    /// Retrieves the return value of a function.
-    //    pub fn function_return_value_for_registers(
-    //        &self,
-    //        registers: &<Driver::Architecture as Architecture>::Registers,
-    //    ) -> Result<u64, VmiError> {
-    //        self.underlying_os()
-    //            .function_return_value(self.core(), registers)
-    //    }
 }
