@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiSession};
+use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
 use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
 
@@ -13,8 +13,7 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    vmi: VmiSession<'a, Driver, WindowsOs<Driver>>,
-    registers: &'a <Driver::Architecture as Architecture>::Registers,
+    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
     current: Option<Va>,
 
     /// Offset to the left child pointer.
@@ -40,8 +39,7 @@ where
 {
     /// Create a new tree node iterator.
     pub fn new(
-        vmi: VmiSession<'a, Driver, WindowsOs<Driver>>,
-        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
         root: Va,
     ) -> Result<Self, VmiError> {
         let offsets = vmi.underlying_os().offsets();
@@ -51,10 +49,7 @@ where
                 let MMADDRESS_NODE = &offsets._MMADDRESS_NODE;
 
                 (
-                    vmi.read_va(
-                        registers.address_context(root + MMADDRESS_NODE.RightChild.offset),
-                        registers.address_width(),
-                    )?,
+                    vmi.read_va_native(root + MMADDRESS_NODE.RightChild.offset)?,
                     MMADDRESS_NODE.LeftChild.offset,
                     MMADDRESS_NODE.RightChild.offset,
                     MMADDRESS_NODE.Parent.offset,
@@ -74,10 +69,7 @@ where
         };
 
         loop {
-            let left = vmi.read_va(
-                registers.address_context(current + offset_left),
-                registers.address_width(),
-            )?;
+            let left = vmi.read_va_native(current + offset_left)?;
 
             if left.is_null() {
                 break;
@@ -88,7 +80,6 @@ where
 
         Ok(Self {
             vmi,
-            registers,
             current: Some(current),
             offset_left,
             offset_right,
@@ -97,24 +88,15 @@ where
     }
 
     fn left(&self, node: Va) -> Result<Va, VmiError> {
-        self.vmi.read_va(
-            self.registers.address_context(node + self.offset_left),
-            self.registers.address_width(),
-        )
+        self.vmi.read_va_native(node + self.offset_left)
     }
 
     fn right(&self, node: Va) -> Result<Va, VmiError> {
-        self.vmi.read_va(
-            self.registers.address_context(node + self.offset_right),
-            self.registers.address_width(),
-        )
+        self.vmi.read_va_native(node + self.offset_right)
     }
 
     fn parent(&self, node: Va) -> Result<Va, VmiError> {
-        let result = self.vmi.read_va(
-            self.registers.address_context(node + self.offset_parent),
-            self.registers.address_width(),
-        )?;
+        let result = self.vmi.read_va_native(node + self.offset_parent)?;
 
         //
         // We need to clear the Balance bits from the Parent pointer:

@@ -100,12 +100,10 @@ impl FnArgExt for FnArg {
             None => return false,
         };
 
-        let ty_ref = match ty.reference() {
-            Some(ty_ref) => ty_ref,
-            None => return false,
-        };
-
-        ty_ref.elem.contains(needle)
+        match ty.reference() {
+            Some(ty_ref) => ty_ref.elem.contains(needle),
+            None => ty.contains(needle),
+        }
     }
 }
 

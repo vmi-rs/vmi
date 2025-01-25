@@ -51,12 +51,12 @@ where
     }
 
     /// Returns the VMI core.
-    pub fn core(&self) -> &VmiCore<Driver> {
+    pub fn core(&self) -> &'a VmiCore<Driver> {
         self.core
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
+    pub fn underlying_os(&self) -> &'a Os {
         self.os
     }
 

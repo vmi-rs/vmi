@@ -353,6 +353,14 @@ pub struct Offsets {
     pub ext: Option<OffsetsExt>,
 }
 
+impl std::ops::Deref for Offsets {
+    type Target = OffsetsCommon;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
 impl Offsets {
     /// Creates a new `Offsets` instance.
     pub fn new(profile: &Profile) -> Result<Self, Error> {
@@ -368,5 +376,9 @@ impl Offsets {
         };
 
         Ok(Self { common, ext })
+    }
+
+    pub fn ext(&self) -> Option<&OffsetsExt> {
+        self.ext.as_ref()
     }
 }

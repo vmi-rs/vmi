@@ -68,7 +68,7 @@ where
     ///
     /// This value represents the randomized offset applied to the kernel's base address
     /// when KASLR is enabled.
-    pub fn kaslr_offset(&self, vmi: &VmiState<Driver, Self>) -> Result<u64, VmiError> {
+    pub fn kaslr_offset(&self, vmi: VmiState<Driver, Self>) -> Result<u64, VmiError> {
         Driver::Architecture::kaslr_offset(vmi, self)
     }
 
@@ -76,7 +76,7 @@ where
     ///
     /// Linux maintains per-CPU data structures, and this method returns the base
     /// address for accessing such data on the current processor.
-    pub fn per_cpu(&self, vmi: &VmiState<Driver, Self>) -> Va {
+    pub fn per_cpu(&self, vmi: VmiState<Driver, Self>) -> Va {
         Driver::Architecture::per_cpu(vmi, self)
     }
 
@@ -89,7 +89,7 @@ where
     /// could not be resolved (e.g., if the root is null).
     pub fn d_path(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
         path: Va, // struct path*
     ) -> Result<Option<String>, VmiError> {
@@ -108,7 +108,7 @@ where
     /// and `root` arguments should be pointers to `struct path` objects.
     pub fn construct_path(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         path: Va, // struct path*
         root: Va, // struct path*
     ) -> Result<String, VmiError> {
@@ -153,7 +153,7 @@ where
     /// Constructs an [`OsProcess`] from a `task_struct`.
     pub fn task_struct_to_process(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<OsProcess, VmiError> {
         let __task_struct = &self.offsets.task_struct;
@@ -185,7 +185,7 @@ where
     /// ```
     pub fn process_flags(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<u32, VmiError> {
         let __task_struct = &self.offsets.task_struct;
@@ -205,7 +205,7 @@ where
     /// ```
     pub fn process_mm(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         let __task_struct = &self.offsets.task_struct;
@@ -225,7 +225,7 @@ where
     /// ```
     pub fn process_active_mm(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         let __task_struct = &self.offsets.task_struct;
@@ -245,7 +245,7 @@ where
     /// ```
     pub fn process_fs_root(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         // struct path*
@@ -267,7 +267,7 @@ where
     /// with no borrowed `mm_struct`).
     pub fn process_pgd(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Option<Pa>, VmiError> {
         let __mm_struct = &self.offsets.mm_struct;
@@ -308,7 +308,7 @@ where
     /// ```
     pub fn process_image_path(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Option<String>, VmiError> {
         let __mm_struct = &self.offsets.mm_struct;
@@ -342,7 +342,7 @@ where
     /// region's address range, permissions, and backing (file or anonymous).
     pub fn process_vm_area_to_region(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
         entry: Va,
     ) -> Result<OsRegion, VmiError> {
@@ -398,29 +398,29 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn kernel_image_base(&self, vmi: &VmiState<Driver, Self>) -> Result<Va, VmiError> {
+    fn kernel_image_base(&self, vmi: VmiState<Driver, Self>) -> Result<Va, VmiError> {
         Driver::Architecture::kernel_image_base(vmi, self)
     }
 
-    fn kernel_information_string(&self, vmi: &VmiState<Driver, Self>) -> Result<String, VmiError> {
+    fn kernel_information_string(&self, vmi: VmiState<Driver, Self>) -> Result<String, VmiError> {
         unimplemented!()
     }
 
-    fn kpti_enabled(&self, vmi: &VmiState<Driver, Self>) -> Result<bool, VmiError> {
+    fn kpti_enabled(&self, vmi: VmiState<Driver, Self>) -> Result<bool, VmiError> {
         unimplemented!()
     }
 
-    fn modules(&self, vmi: &VmiState<Driver, Self>) -> Result<Vec<OsModule>, VmiError> {
+    fn modules(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsModule>, VmiError> {
         unimplemented!()
     }
 
-    fn system_process(&self, vmi: &VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
+    fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
         unimplemented!()
     }
 
     fn thread_id(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         thread: ThreadObject,
     ) -> Result<ThreadId, VmiError> {
         unimplemented!()
@@ -428,7 +428,7 @@ where
 
     fn process_id(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<ProcessId, VmiError> {
         let task_struct = &self.offsets.task_struct;
@@ -438,11 +438,11 @@ where
         Ok(ProcessId(result))
     }
 
-    fn current_thread(&self, vmi: &VmiState<Driver, Self>) -> Result<ThreadObject, VmiError> {
+    fn current_thread(&self, vmi: VmiState<Driver, Self>) -> Result<ThreadObject, VmiError> {
         unimplemented!()
     }
 
-    fn current_thread_id(&self, vmi: &VmiState<Driver, Self>) -> Result<ThreadId, VmiError> {
+    fn current_thread_id(&self, vmi: VmiState<Driver, Self>) -> Result<ThreadId, VmiError> {
         let task_struct = &self.offsets.task_struct;
 
         let process = self.current_process(vmi)?;
@@ -456,7 +456,7 @@ where
         Ok(ThreadId(result))
     }
 
-    fn current_process(&self, vmi: &VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
+    fn current_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
         let pcpu_hot_offset = self.symbols.pcpu_hot;
         let pcpu_hot = &self.offsets.pcpu_hot;
 
@@ -471,7 +471,7 @@ where
         Ok(ProcessObject(result))
     }
 
-    fn current_process_id(&self, vmi: &VmiState<Driver, Self>) -> Result<ProcessId, VmiError> {
+    fn current_process_id(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessId, VmiError> {
         let process = self.current_process(vmi)?;
 
         if process.is_null() {
@@ -481,7 +481,7 @@ where
         self.process_id(vmi, process)
     }
 
-    fn processes(&self, vmi: &VmiState<Driver, Self>) -> Result<Vec<OsProcess>, VmiError> {
+    fn processes(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsProcess>, VmiError> {
         let init_task_address = self.symbols.init_task;
         let task_struct = &self.offsets.task_struct;
 
@@ -505,7 +505,7 @@ where
 
     fn process_parent_process_id(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<ProcessId, VmiError> {
         unimplemented!()
@@ -513,7 +513,7 @@ where
 
     fn process_architecture(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<OsArchitecture, VmiError> {
         unimplemented!()
@@ -521,7 +521,7 @@ where
 
     fn process_translation_root(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         unimplemented!()
@@ -529,7 +529,7 @@ where
 
     fn process_user_translation_root(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Pa, VmiError> {
         unimplemented!()
@@ -537,7 +537,7 @@ where
 
     fn process_filename(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<String, VmiError> {
         let task_struct_comm_offset = 0xBC0;
@@ -547,7 +547,7 @@ where
 
     fn process_image_base(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Va, VmiError> {
         unimplemented!()
@@ -555,7 +555,7 @@ where
 
     fn process_regions(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
     ) -> Result<Vec<OsRegion>, VmiError> {
         let __mm_struct = &self.offsets.mm_struct;
@@ -567,7 +567,7 @@ where
 
         let mut result = Vec::new();
 
-        let mt = MapleTree::new(vmi, &self.offsets);
+        let mt = MapleTree::new(&vmi, &self.offsets);
         mt.enumerate(mm + __mm_struct.mm_mt.offset, |entry| {
             if entry.is_null() {
                 return true;
@@ -586,7 +586,7 @@ where
 
     fn process_address_is_valid(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError> {
@@ -595,7 +595,7 @@ where
 
     fn find_process_region(
         &self,
-        _vmi: &VmiState<Driver, Self>,
+        _vmi: VmiState<Driver, Self>,
         _process: ProcessObject,
         _address: Va,
     ) -> Result<Option<OsRegion>, VmiError> {
@@ -604,7 +604,7 @@ where
 
     fn image_architecture(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         image_base: Va,
     ) -> Result<OsArchitecture, VmiError> {
         unimplemented!()
@@ -612,25 +612,25 @@ where
 
     fn image_exported_symbols(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         image_base: Va,
     ) -> Result<Vec<OsImageExportedSymbol>, VmiError> {
         unimplemented!()
     }
 
-    fn syscall_argument(&self, vmi: &VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
+    fn syscall_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
         Driver::Architecture::syscall_argument(vmi, self, index)
     }
 
-    fn function_argument(&self, vmi: &VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
+    fn function_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
         Driver::Architecture::function_argument(vmi, self, index)
     }
 
-    fn function_return_value(&self, vmi: &VmiState<Driver, Self>) -> Result<u64, VmiError> {
+    fn function_return_value(&self, vmi: VmiState<Driver, Self>) -> Result<u64, VmiError> {
         Driver::Architecture::function_return_value(vmi, self)
     }
 
-    fn last_error(&self, vmi: &VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
+    fn last_error(&self, vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
         unimplemented!()
     }
 }
@@ -642,7 +642,7 @@ where
 {
     fn enumerate_list(
         &self,
-        vmi: &VmiState<Driver, Self>,
+        vmi: VmiState<Driver, Self>,
         list_head: Va,
         mut callback: impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {
@@ -661,7 +661,7 @@ where
 
     fn enumerate_tree(
         &self,
-        _vmi: &VmiState<Driver, Self>,
+        _vmi: VmiState<Driver, Self>,
         _root: Va,
         _callback: impl FnMut(Va) -> bool,
     ) -> Result<(), VmiError> {

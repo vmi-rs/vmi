@@ -12,6 +12,7 @@ mod page;
 
 use std::{cell::RefCell, num::NonZeroUsize, time::Duration};
 
+use isr_macros::Field;
 use lru::LruCache;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -720,6 +721,31 @@ where
         let mut buffer = [0u8; 8];
         self.read(ctx, &mut buffer)?;
         Ok(u64::from_le_bytes(buffer))
+    }
+
+    /// Reads an unsigned integer of the specified size from the virtual machine.
+    ///
+    /// This method reads an unsigned integer of the specified size (in bytes)
+    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
+    /// The result is returned as a `u64` to accommodate the widest possible
+    /// integer size.
+    pub fn read_uint(&self, ctx: impl Into<AccessContext>, size: usize) -> Result<u64, VmiError> {
+        match size {
+            1 => self.read_u8(ctx).map(u64::from),
+            2 => self.read_u16(ctx).map(u64::from),
+            4 => self.read_u32(ctx).map(u64::from),
+            8 => self.read_u64(ctx),
+            _ => Err(VmiError::InvalidAddressWidth),
+        }
+    }
+
+    /// TODO: xxx
+    pub fn read_field(
+        &self,
+        ctx: impl Into<AccessContext>,
+        field: &Field,
+    ) -> Result<u64, VmiError> {
+        self.read_uint(ctx.into() + field.offset, field.size as usize)
     }
 
     /// Reads an address-sized unsigned integer from the virtual machine.

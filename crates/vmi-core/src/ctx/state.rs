@@ -1,3 +1,4 @@
+use isr_macros::Field;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::{cow::VmiCow, session::VmiSession};
@@ -21,10 +22,30 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    session: VmiCow<'a, VmiSession<'a, Driver, Os>>,
+    session: &'a VmiSession<'a, Driver, Os>,
 
     /// The VMI event.
     registers: &'a <Driver::Architecture as Architecture>::Registers,
+}
+
+impl<'a, Driver, Os> Clone for VmiState<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            session: self.session,
+            registers: self.registers,
+        }
+    }
+}
+
+impl<'a, Driver, Os> Copy for VmiState<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
 }
 
 impl<'a, Driver, Os> std::ops::Deref for VmiState<'a, Driver, Os>
@@ -46,13 +67,10 @@ where
 {
     /// Creates a new VMI context.
     pub fn new(
-        session: impl Into<VmiCow<'a, VmiSession<'a, Driver, Os>>>,
+        session: &'a VmiSession<'a, Driver, Os>,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Self {
-        Self {
-            session: session.into(),
-            registers,
-        }
+        Self { session, registers }
     }
 
     /// Creates a new VMI context with the specified registers.
@@ -61,7 +79,7 @@ where
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Self {
         Self {
-            session: VmiCow::Borrowed(&self.session),
+            session: self.session,
             registers,
         }
     }
@@ -69,18 +87,18 @@ where
     // Note that `core()` and `underlying_os()` are delegated to the `VmiSession`.
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<Driver, Os> {
+    pub fn session(&self) -> &'a VmiSession<'a, Driver, Os> {
         &self.session
     }
 
     /// Returns the CPU registers associated with the current event.
-    pub fn registers(&self) -> &<Driver::Architecture as Architecture>::Registers {
+    pub fn registers(&self) -> &'a <Driver::Architecture as Architecture>::Registers {
         self.registers
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
     pub fn os(&self) -> VmiOsState<Driver, Os> {
-        VmiOsState(self)
+        VmiOsState(*self)
     }
 
     /// Creates an address context for a given virtual address.
@@ -141,6 +159,21 @@ where
         self.read_u64_in(self.access_context(address))
     }
 
+    /// Reads an unsigned integer of the specified size from the virtual machine.
+    ///
+    /// This method reads an unsigned integer of the specified size (in bytes)
+    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
+    /// The result is returned as a `u64` to accommodate the widest possible
+    /// integer size.
+    pub fn read_uint(&self, address: Va, size: usize) -> Result<u64, VmiError> {
+        self.read_uint_in(self.access_context(address), size)
+    }
+
+    /// TODO: xxx
+    pub fn read_field(&self, base_address: Va, field: &Field) -> Result<u64, VmiError> {
+        self.read_field_in(self.access_context(base_address), field)
+    }
+
     /// Reads an address-sized unsigned integer from the virtual machine.
     pub fn read_address(&self, address: Va) -> Result<u64, VmiError> {
         self.read_address_in(self.access_context(address))
@@ -181,9 +214,29 @@ where
         self.read_va64_in(self.access_context(address))
     }
 
+    /// Reads a null-terminated string of bytes from the virtual machine with a
+    /// specified limit.
+    pub fn read_string_bytes_limited(
+        &self,
+        address: Va,
+        limit: usize,
+    ) -> Result<Vec<u8>, VmiError> {
+        self.read_string_bytes_limited_in(self.access_context(address), limit)
+    }
+
     /// Reads a null-terminated string of bytes from the virtual machine.
     pub fn read_string_bytes(&self, address: Va) -> Result<Vec<u8>, VmiError> {
         self.read_string_bytes_in(self.access_context(address))
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine
+    /// with a specified limit.
+    pub fn read_wstring_bytes_limited(
+        &self,
+        address: Va,
+        limit: usize,
+    ) -> Result<Vec<u16>, VmiError> {
+        self.read_wstring_bytes_limited_in(self.access_context(address), limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
@@ -191,9 +244,21 @@ where
         self.read_wstring_bytes_in(self.access_context(address))
     }
 
+    /// Reads a null-terminated string from the virtual machine with a specified
+    /// limit.
+    pub fn read_string_limited(&self, address: Va, limit: usize) -> Result<String, VmiError> {
+        self.read_string_limited_in(self.access_context(address), limit)
+    }
+
     /// Reads a null-terminated string from the virtual machine.
     pub fn read_string(&self, address: Va) -> Result<String, VmiError> {
         self.read_string_in(self.access_context(address))
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine
+    /// with a specified limit.
+    pub fn read_wstring_limited(&self, address: Va, limit: usize) -> Result<String, VmiError> {
+        self.read_wstring_limited_in(self.access_context(address), limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
@@ -247,6 +312,29 @@ where
         self.core().read_u64(ctx)
     }
 
+    /// Reads an unsigned integer of the specified size from the virtual machine.
+    ///
+    /// This method reads an unsigned integer of the specified size (in bytes)
+    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
+    /// The result is returned as a `u64` to accommodate the widest possible
+    /// integer size.
+    pub fn read_uint_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        size: usize,
+    ) -> Result<u64, VmiError> {
+        self.core().read_uint(ctx, size)
+    }
+
+    /// TODO: xxx
+    pub fn read_field_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        field: &Field,
+    ) -> Result<u64, VmiError> {
+        self.core().read_field(ctx, field)
+    }
+
     /// Reads an address-sized unsigned integer from the virtual machine.
     pub fn read_address_in(&self, ctx: impl Into<AccessContext>) -> Result<u64, VmiError> {
         self.core()
@@ -290,9 +378,29 @@ where
         self.core().read_va64(ctx)
     }
 
+    /// Reads a null-terminated string of bytes from the virtual machine with a
+    /// specified limit.
+    pub fn read_string_bytes_limited_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        limit: usize,
+    ) -> Result<Vec<u8>, VmiError> {
+        self.core().read_string_bytes_limited(ctx, limit)
+    }
+
     /// Reads a null-terminated string of bytes from the virtual machine.
     pub fn read_string_bytes_in(&self, ctx: impl Into<AccessContext>) -> Result<Vec<u8>, VmiError> {
         self.core().read_string_bytes(ctx)
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine
+    /// with a specified limit.
+    pub fn read_wstring_bytes_limited_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        limit: usize,
+    ) -> Result<Vec<u16>, VmiError> {
+        self.core().read_wstring_bytes_limited(ctx, limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
@@ -303,9 +411,29 @@ where
         self.core().read_wstring_bytes(ctx)
     }
 
+    /// Reads a null-terminated string from the virtual machine with a specified
+    /// limit.
+    pub fn read_string_limited_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        limit: usize,
+    ) -> Result<String, VmiError> {
+        self.core().read_string_limited(ctx, limit)
+    }
+
     /// Reads a null-terminated string from the virtual machine.
     pub fn read_string_in(&self, ctx: impl Into<AccessContext>) -> Result<String, VmiError> {
         self.core().read_string(ctx)
+    }
+
+    /// Reads a null-terminated wide string (UTF-16) from the virtual machine
+    /// with a specified limit.
+    pub fn read_wstring_limited_in(
+        &self,
+        ctx: impl Into<AccessContext>,
+        limit: usize,
+    ) -> Result<String, VmiError> {
+        self.core().read_wstring_limited(ctx, limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
@@ -354,7 +482,7 @@ where
 }
 
 /// Wrapper providing access to OS-specific operations.
-pub struct VmiOsState<'a, Driver, Os>(&'a VmiState<'a, Driver, Os>)
+pub struct VmiOsState<'a, Driver, Os>(VmiState<'a, Driver, Os>)
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>;
@@ -380,7 +508,7 @@ where
     }
 
     /// Returns the VMI state.
-    pub fn state(&self) -> &VmiState<Driver, Os> {
+    pub fn state(&self) -> VmiState<'a, Driver, Os> {
         self.0
     }
 
@@ -397,7 +525,7 @@ where
         index: u64,
     ) -> Result<u64, VmiError> {
         self.underlying_os()
-            .function_argument(&self.0.with_registers(registers), index)
+            .function_argument(self.0.with_registers(registers), index)
     }
 
     /// Retrieves the return value of a function.
@@ -406,6 +534,6 @@ where
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<u64, VmiError> {
         self.underlying_os()
-            .function_return_value(&self.0.with_registers(registers))
+            .function_return_value(self.0.with_registers(registers))
     }
 }

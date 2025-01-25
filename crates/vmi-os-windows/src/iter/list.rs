@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiSession};
+use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
 use crate::{arch::ArchAdapter, WindowsOs};
 
@@ -12,8 +12,7 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    vmi: VmiSession<'a, Driver, WindowsOs<Driver>>,
-    registers: &'a <Driver::Architecture as Architecture>::Registers,
+    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
     current: Option<Va>,
 
     /// Address of the list head.
@@ -40,17 +39,15 @@ where
 {
     /// Create a new list entry iterator.
     pub fn new(
-        vmi: VmiSession<'a, Driver, WindowsOs<Driver>>,
-        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
         list_head: Va,
         offset: u64,
     ) -> Self {
-        let LIST_ENTRY = &vmi.underlying_os().offsets().common._LIST_ENTRY;
+        let LIST_ENTRY = &vmi.underlying_os().offsets()._LIST_ENTRY;
         let (offset_flink, offset_blink) = (LIST_ENTRY.Flink.offset, LIST_ENTRY.Blink.offset);
 
         Self {
             vmi,
-            registers,
             current: None,
             list_head,
             offset,
@@ -60,19 +57,11 @@ where
     }
 
     fn __first(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va(
-            self.registers
-                .address_context(self.list_head + self.offset_flink),
-            self.registers.address_width(),
-        )
+        self.vmi.read_va_native(self.list_head + self.offset_flink)
     }
 
     fn __last(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va(
-            self.registers
-                .address_context(self.list_head + self.offset_blink),
-            self.registers.address_width(),
-        )
+        self.vmi.read_va_native(self.list_head + self.offset_blink)
     }
 
     fn __next(&mut self) -> Result<Option<Va>, VmiError> {
@@ -89,10 +78,7 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va(
-            self.registers.address_context(entry + self.offset_flink),
-            self.registers.address_width(),
-        )?);
+        self.current = Some(self.vmi.read_va_native(entry + self.offset_flink)?);
 
         Ok(Some(entry - self.offset))
     }
@@ -111,10 +97,7 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va(
-            self.registers.address_context(entry + self.offset_blink),
-            self.registers.address_width(),
-        )?);
+        self.current = Some(self.vmi.read_va_native(entry + self.offset_blink)?);
 
         Ok(Some(entry - self.offset))
     }

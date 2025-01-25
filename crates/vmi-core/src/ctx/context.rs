@@ -41,7 +41,7 @@ where
 {
     /// Creates a new VMI context.
     pub fn new(
-        session: impl Into<VmiCow<'a, VmiSession<'a, Driver, Os>>>,
+        session: &'a VmiSession<'a, Driver, Os>,
         event: &'a VmiEvent<Driver::Architecture>,
     ) -> Self {
         Self {
@@ -53,8 +53,8 @@ where
     // Note that `core()` and `underlying_os()` are delegated to the `VmiState`.
 
     /// Returns the VMI session.
-    pub fn state(&self) -> &VmiState<Driver, Os> {
-        &self.state
+    pub fn state(&self) -> VmiState<'a, Driver, Os> {
+        *self.state
     }
 
     /// Returns the current VMI event.

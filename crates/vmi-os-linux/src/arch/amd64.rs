@@ -10,7 +10,7 @@ where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
-        vmi: &VmiState<Driver, LinuxOs<Driver>>,
+        vmi: VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
@@ -28,7 +28,7 @@ where
     }
 
     fn function_argument(
-        vmi: &VmiState<Driver, LinuxOs<Driver>>,
+        vmi: VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
@@ -41,7 +41,7 @@ where
     }
 
     fn function_return_value(
-        vmi: &VmiState<Driver, LinuxOs<Driver>>,
+        vmi: VmiState<Driver, LinuxOs<Driver>>,
         _os: &LinuxOs<Driver>,
     ) -> Result<u64, VmiError> {
         Ok(vmi.registers().rax)
@@ -109,7 +109,7 @@ where
     }
 
     fn kernel_image_base(
-        vmi: &VmiState<Driver, LinuxOs<Driver>>,
+        vmi: VmiState<Driver, LinuxOs<Driver>>,
         os: &LinuxOs<Driver>,
     ) -> Result<Va, VmiError> {
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
@@ -128,7 +128,7 @@ where
     }
 
     fn kaslr_offset(
-        vmi: &VmiState<Driver, LinuxOs<Driver>>,
+        vmi: VmiState<Driver, LinuxOs<Driver>>,
         os: &LinuxOs<Driver>,
     ) -> Result<u64, VmiError> {
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
@@ -142,7 +142,7 @@ where
         Ok(kaslr_offset)
     }
 
-    fn per_cpu(vmi: &VmiState<Driver, LinuxOs<Driver>>, _os: &LinuxOs<Driver>) -> Va {
+    fn per_cpu(vmi: VmiState<Driver, LinuxOs<Driver>>, _os: &LinuxOs<Driver>) -> Va {
         if vmi.registers().cs.selector.request_privilege_level() != 0
             || (vmi.registers().gs.base & (1 << 47)) == 0
         {
@@ -155,7 +155,7 @@ where
 }
 
 fn function_argument_x86<Driver>(
-    vmi: &VmiState<Driver, LinuxOs<Driver>>,
+    vmi: VmiState<Driver, LinuxOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
@@ -167,7 +167,7 @@ where
 }
 
 fn function_argument_x64<Driver>(
-    vmi: &VmiState<Driver, LinuxOs<Driver>>,
+    vmi: VmiState<Driver, LinuxOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where

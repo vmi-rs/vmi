@@ -13,6 +13,10 @@ use crate::{
 
 const VMI_LIFETIME: &str = "__vmi";
 
+fn __vmi_lifetime() -> Lifetime {
+    syn::parse_str::<Lifetime>(&format!("'{VMI_LIFETIME}")).unwrap()
+}
+
 struct Args {
     os_context_name: Path,
 }
@@ -105,17 +109,42 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
         lifetime::replace_in_return_type(&mut return_type, lifetime_of_self, VMI_LIFETIME);
     }
 
+    // For remaining generics, we need to ensure that VMI_LIFETIME
+    // outlives them.
+    let mut lifetime_params = Vec::new();
+    let vmi_lifetime = __vmi_lifetime();
+
+    for param in &generics.params {
+        let lifetime = match param {
+            GenericParam::Lifetime(lifetime) => lifetime,
+            _ => continue,
+        };
+
+        let lifetime = &lifetime.lifetime;
+        lifetime_params.push(quote! { #vmi_lifetime: #lifetime });
+    }
+
+    let where_clause = if lifetime_params.is_empty() {
+        quote! {}
+    }
+    else {
+        quote! { where #(#lifetime_params),* }
+    };
+
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
     let os_context_sig = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#context_args),*) #return_type;
+        fn #ident #generics(#receiver, #(#context_args),*) #return_type
+            #where_clause;
     };
 
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#context_args),*) #return_type {
+        fn #ident #generics(#receiver, #(#context_args),*) #return_type
+            #where_clause
+        {
             self.underlying_os()
                 .#ident(
                     #maybe_vmi
@@ -212,7 +241,7 @@ pub fn derive_trait_from_impl(
     let os_context_sigs = fns.clone().map(|m| m.os_context_sig);
     let os_context_fns = fns.clone().map(|m| m.os_context_fn);
 
-    let lt = syn::parse_str::<Lifetime>(&format!("'{VMI_LIFETIME}")).unwrap();
+    let vmi_lifetime = __vmi_lifetime();
 
     let expanded = quote! {
         #input
@@ -224,13 +253,14 @@ pub fn derive_trait_from_impl(
         #[doc = concat!("[`", #struct_type_raw, "`] extensions for the [`VmiContext`].")]
         #[doc = ""]
         #[doc = "[`VmiContext`]: vmi_core::VmiContext"]
-        pub trait #os_context_name <#lt, Driver>
+        pub trait #os_context_name <#vmi_lifetime, Driver>
             #where_clause
         {
             #(#os_context_sigs)*
         }
 
-        impl<#lt, Driver> #os_context_name <#lt, Driver> for vmi_core::VmiOsState<#lt, Driver, #struct_type>
+        impl<#vmi_lifetime, Driver> #os_context_name <#vmi_lifetime, Driver>
+            for vmi_core::VmiOsState<#vmi_lifetime, Driver, #struct_type>
             #where_clause
         {
             #(#os_context_fns)*
