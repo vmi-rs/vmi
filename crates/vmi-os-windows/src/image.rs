@@ -24,8 +24,13 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     pub(crate) vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The base address of the image.
     va: Va,
+
+    /// Cached PE parser.
     pe: OnceCell<Pe>,
 }
 
@@ -43,11 +48,6 @@ where
             va,
             pe: OnceCell::new(),
         }
-    }
-
-    /// Returns the base address of the image.
-    pub fn base_address(&self) -> Va {
-        self.va
     }
 
     /// Returns the DOS header.
@@ -124,6 +124,11 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// Returns the base address of the image.
+    fn base_address(&self) -> Va {
+        self.va
+    }
+
     fn architecture(&self) -> Result<OsArchitecture, VmiError> {
         match self.pe()?.nt_headers().optional_header() {
             ImageOptionalHeader::ImageOptionalHeader32(_) => Ok(OsArchitecture::X86),

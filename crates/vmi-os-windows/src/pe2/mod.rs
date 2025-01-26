@@ -1,5 +1,4 @@
 mod error;
-
 pub use object::pe::{ImageDataDirectory, ImageDebugDirectory, ImageDosHeader, ImageFileHeader};
 use object::{
     endian::LittleEndian as LE,
@@ -19,7 +18,7 @@ use object::{
     },
     slice_from_all_bytes,
 };
-use vmi_core::{Architecture, VmiDriver, VmiError};
+use vmi_core::{os::VmiOsImage, Architecture, VmiDriver, VmiError};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use crate::{

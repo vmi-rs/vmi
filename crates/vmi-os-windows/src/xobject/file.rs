@@ -9,7 +9,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_FILE_OBJECT` structure.
     va: Va,
 }
 
@@ -35,18 +38,16 @@ where
         Self { vmi, va }
     }
 
+    /// Returns the virtual address of the `_FILE_OBJECT` structure.
     pub fn va(&self) -> Va {
         self.va
     }
 
-    /// Extracts the `DeviceObject` from a `FILE_OBJECT` structure.
+    /// Returns the device object associated with the file object.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// PDEVICE_OBJECT DeviceObject = FileObject->DeviceObject;
-    /// return DeviceObject;
-    /// ```
+    /// Corresponds to `_FILE_OBJECT.DeviceObject`.
     pub fn device_object(&self) -> Result<Va, VmiError> {
         let offsets = self.offsets();
         let FILE_OBJECT = &offsets._FILE_OBJECT;
@@ -55,14 +56,11 @@ where
             .read_va_native(self.va + FILE_OBJECT.DeviceObject.offset)
     }
 
-    /// Extracts the `FileName` from a `FILE_OBJECT` structure.
+    /// Returns the filename associated with the file object.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// UNICODE_STRING FileName = FileObject->FileName;
-    /// return FileName;
-    /// ```
+    /// Corresponds to `_FILE_OBJECT.FileName`.
     ///
     /// # Notes
     ///

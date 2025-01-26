@@ -3,13 +3,16 @@ use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 use super::WindowsOsObject;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs};
 
-/// A Windows section object.
+/// A Windows directory object.
 pub struct WindowsOsDirectoryObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_OBJECT_DIRECTORY` structure.
     va: Va,
 }
 
@@ -30,15 +33,17 @@ where
 {
     impl_offsets!();
 
-    /// Create a new Windows section object.
+    /// Create a new Windows directory object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
+    /// Returns the virtual address of the `_OBJECT_DIRECTORY` structure.
     pub fn va(&self) -> Va {
         self.va
     }
 
+    /// Enumerates the objects in the directory.
     pub fn enumerate(
         &self,
     ) -> Result<impl Iterator<Item = Result<WindowsOsObject<'a, Driver>, VmiError>>, VmiError> {
@@ -72,7 +77,7 @@ where
         Ok(entries.into_iter())
     }
 
-    /// Extracts the `FileObject` from a `CONTROL_AREA` structure.
+    /// Performs a lookup in the directory.
     pub fn lookup(
         &self,
         needle: impl AsRef<str>,

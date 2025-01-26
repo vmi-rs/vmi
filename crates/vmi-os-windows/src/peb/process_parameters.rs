@@ -1,7 +1,7 @@
 use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState};
 
 use super::WindowsWow64Kind;
-use crate::{arch::ArchAdapter, Offsets, WindowsOs, WindowsOsExt as _};
+use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsExt as _};
 
 /// A Windows process parameters object.
 pub struct WindowsOsProcessParameters<'a, Driver>
@@ -34,18 +34,14 @@ where
         Self { inner }
     }
 
-    /// Gets the current working directory of a process.
+    /// Returns the current directory.
     ///
-    /// This method retrieves the full path of the current working directory
-    /// for the specified process.
+    /// This method returns the full path of the current directory
+    /// for the process.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING CurrentDirectory = ProcessParameters->CurrentDirectory;
-    /// return CurrentDirectory;
-    /// ```
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CurrentDirectory`.
     pub fn current_directory(&self) -> Result<String, VmiError> {
         match &self.inner {
             Inner::Native(inner) => inner.current_directory(),
@@ -53,18 +49,14 @@ where
         }
     }
 
-    /// Gets the DLL search path for a process.
+    /// Returns the DLL search path.
     ///
-    /// This method retrieves the list of directories that the system searches
-    /// when loading DLLs for the specified process.
+    /// This method returns the list of directories that the system searches
+    /// when loading DLLs for the process.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING DllPath = ProcessParameters->DllPath;
-    /// return DllPath;
-    /// ```
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.DllPath`.
     pub fn dll_path(&self) -> Result<String, VmiError> {
         match &self.inner {
             Inner::Native(inner) => inner.dll_path(),
@@ -72,18 +64,14 @@ where
         }
     }
 
-    /// Gets the full path of the executable image for a process.
+    /// Returns the full path of the executable image.
     ///
     /// This method retrieves the full file system path of the main executable
-    /// that was used to create the specified process.
+    /// that was used to create the process.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING ImagePathName = ProcessParameters->ImagePathName;
-    /// return ImagePathName;
-    /// ```
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.ImagePathName`.
     pub fn image_path_name(&self) -> Result<String, VmiError> {
         match &self.inner {
             Inner::Native(inner) => inner.image_path_name(),
@@ -91,18 +79,14 @@ where
         }
     }
 
-    /// Gets the command line used to launch a process.
+    /// Returns the command line used to launch the process.
     ///
     /// This method retrieves the full command line string, including the
-    /// executable path and any arguments, used to start the specified process.
+    /// executable path and any arguments, used to start the process.
     ///
-    /// # Equivalent C pseudo-code
+    /// # Implementation Details
     ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING CommandLine = ProcessParameters->CommandLine;
-    /// return CommandLine;
-    /// ```
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CommandLine`.
     pub fn command_line(&self) -> Result<String, VmiError> {
         match &self.inner {
             Inner::Native(inner) => inner.command_line(),
@@ -111,12 +95,16 @@ where
     }
 }
 
+/// The inner representation of a Windows process parameters object.
 enum Inner<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// A native (non-WoW64) process.
     Native(WindowsOsProcessParametersNative<'a, Driver>),
+
+    /// An x86 process running under WoW64.
     X86(WindowsOsProcessParameters32<'a, Driver>),
 }
 
@@ -125,8 +113,13 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
     va: Va,
+
+    /// The translation root.
     root: Pa,
 }
 
@@ -135,15 +128,18 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    impl_offsets!();
+
+    /// Creates a new process parameters object.
     fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }
     }
 
-    fn offsets(&self) -> &Offsets {
-        self.vmi.underlying_os().offsets()
-    }
-
-    /// Retrieves the current directory for a native (non-WoW64) process.
+    /// Returns the current directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CurrentDirectory`.
     fn current_directory(&self) -> Result<String, VmiError> {
         let offsets = self.offsets();
         let CURDIR = &offsets._CURDIR;
@@ -155,7 +151,11 @@ where
         ))
     }
 
-    /// Retrieves the DLL search path for a native (non-WoW64) process.
+    /// Returns the DLL search path.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.DllPath`.
     fn dll_path(&self) -> Result<String, VmiError> {
         let offsets = self.offsets();
         let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
@@ -166,7 +166,11 @@ where
         ))
     }
 
-    /// Retrieves the image path name for a native (non-WoW64) process.
+    /// Returns the image path name.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.ImagePathName`.
     fn image_path_name(&self) -> Result<String, VmiError> {
         let offsets = self.offsets();
         let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
@@ -177,7 +181,11 @@ where
         ))
     }
 
-    /// Retrieves the command line for a native (non-WoW64) process.
+    /// Returns the command line.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CommandLine`.
     fn command_line(&self) -> Result<String, VmiError> {
         let offsets = self.offsets();
         let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
@@ -194,8 +202,13 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS32` structure.
     va: Va,
+
+    /// The translation root.
     root: Pa,
 }
 
@@ -204,12 +217,16 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// Creates a new process parameters object.
     fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }
     }
 
-    /// Retrieves the current directory for a 32-bit process running under
-    /// WoW64.
+    /// Returns the current directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS32.CurrentDirectory`.
     fn current_directory(&self) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset: u64 = 0x24;
 
@@ -219,7 +236,11 @@ where
         ))
     }
 
-    /// Retrieves the DLL search path for a 32-bit process running under WoW64.
+    /// Returns the DLL search path.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS32.DllPath`.
     fn dll_path(&self) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_DllPath_offset: u64 = 0x30;
 
@@ -229,7 +250,11 @@ where
         ))
     }
 
-    /// Retrieves the image path name for a 32-bit process running under WoW64.
+    /// Returns the image path name.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS32.ImagePathName`.
     fn image_path_name(&self) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset: u64 = 0x38;
 
@@ -239,7 +264,11 @@ where
         ))
     }
 
-    /// Retrieves the command line for a 32-bit process running under WoW64.
+    /// Returns the command line.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS32.CommandLine`.
     fn command_line(&self) -> Result<String, VmiError> {
         const RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset: u64 = 0x40;
 

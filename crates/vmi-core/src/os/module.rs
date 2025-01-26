@@ -2,6 +2,9 @@ use crate::{Va, VmiError};
 
 /// Represents information about a process in the target system.
 pub trait VmiOsModule {
+    /// Returns the virtual address of the module object.
+    fn va(&self) -> Va;
+
     /// The base address of the module.
     ///
     /// # Platform-specific

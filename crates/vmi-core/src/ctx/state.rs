@@ -1,7 +1,7 @@
 use isr_macros::Field;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use super::{cow::VmiCow, session::VmiSession};
+use super::session::VmiSession;
 use crate::{
     os::VmiOs, AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore,
     VmiDriver, VmiError,
@@ -88,7 +88,7 @@ where
 
     /// Returns the VMI session.
     pub fn session(&self) -> &'a VmiSession<'a, Driver, Os> {
-        &self.session
+        self.session
     }
 
     /// Returns the CPU registers associated with the current event.
@@ -97,7 +97,7 @@ where
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&self) -> VmiOsState<Driver, Os> {
+    pub fn os(&self) -> VmiOsState<'a, Driver, Os> {
         VmiOsState(*self)
     }
 
@@ -493,17 +493,17 @@ where
     Os: VmiOs<Driver>,
 {
     /// Returns the VMI core.
-    pub fn core(&self) -> &VmiCore<Driver> {
+    pub fn core(&self) -> &'a VmiCore<Driver> {
         self.0.core()
     }
 
     /// Returns the underlying OS-specific implementation.
-    pub fn underlying_os(&self) -> &Os {
+    pub fn underlying_os(&self) -> &'a Os {
         self.0.underlying_os()
     }
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<Driver, Os> {
+    pub fn session(&self) -> &'a VmiSession<'a, Driver, Os> {
         self.0.session()
     }
 

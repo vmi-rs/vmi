@@ -1,51 +1,11 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{
-    parse::{Parse, ParseStream},
-    parse_macro_input, Error, FnArg, GenericParam, Generics, Ident, ItemImpl, Lifetime, Pat,
-    PatType, Path, Result, Token, Visibility,
-};
+use syn::{parse_macro_input, Error, GenericParam, Generics, Ident, ItemImpl, Result, Visibility};
 
 use crate::{
-    lifetime,
+    common::{self, __vmi_lifetime},
     method::{FnArgExt, ItemExt, ItemFnExt},
 };
-
-const VMI_LIFETIME: &str = "__vmi";
-
-fn __vmi_lifetime() -> Lifetime {
-    syn::parse_str::<Lifetime>(&format!("'{VMI_LIFETIME}")).unwrap()
-}
-
-struct Args {
-    os_context_name: Path,
-}
-
-impl Parse for Args {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut os_context_name = None;
-
-        while !input.is_empty() {
-            let ident = input.parse::<Ident>()?;
-            let _ = input.parse::<syn::Token![=]>()?;
-            let value = input.parse::<Path>()?;
-
-            match ident.to_string().as_str() {
-                "os_context_name" => os_context_name = Some(value),
-                _ => return Err(Error::new(ident.span(), "unknown argument")),
-            }
-
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        let os_context_name = os_context_name
-            .ok_or_else(|| Error::new(Span::call_site(), "missing `os_context_name` argument"))?;
-
-        Ok(Self { os_context_name })
-    }
-}
 
 struct TraitFn {
     os_context_sig: TokenStream,
@@ -55,13 +15,9 @@ struct TraitFn {
 fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
-    let mut generics = sig.generics.clone();
-    let mut return_type = sig.output.clone();
-    let mut receiver = sig.receiver()?.clone();
-
-    let lifetime_of_self = receiver
-        .lifetime()
-        .map(|lifetime| lifetime.ident.to_string());
+    let generics = &sig.generics;
+    let return_type = &sig.output;
+    let receiver = sig.receiver()?;
 
     let maybe_vmi = match skip {
         // Skip the first argument (`self`).
@@ -74,81 +30,27 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
         _ => panic!("unexpected number of arguments to skip"),
     };
 
-    let mut context_args = Vec::new();
-    let mut context_arg_names = Vec::new();
-
-    // Skip the first two arguments (`self` and `&impl Vmi*`).
-    for arg in sig.inputs.clone().iter_mut().skip(2) {
-        // If a lifetime has been applied to `self`, then we need to
-        // replace that lifetime in the arguments.
-        if let Some(lifetime_of_self) = &lifetime_of_self {
-            lifetime::replace_in_fn_arg(arg, lifetime_of_self, VMI_LIFETIME);
-        }
-
-        let PatType { pat, ty, .. } = match arg {
-            FnArg::Typed(pat_type) => pat_type,
-            _ => panic!("`{ident}`: argument is not typed, skipping"),
-        };
-
-        let pat_ident = match &**pat {
-            Pat::Ident(pat_ident) => pat_ident,
-            _ => return None,
-        };
-
-        context_args.push(quote! { #pat_ident: #ty });
-        context_arg_names.push(quote! { #pat_ident });
-    }
-
-    // If a lifetime has been applied to `self`, then we need to:
-    //   1. remove the lifetime from the generics,
-    //   2. replace the lifetime in the receiver (`self`), and
-    //   3. replace the lifetime in the return type.
-    if let Some(lifetime_of_self) = &lifetime_of_self {
-        lifetime::remove_in_generics(&mut generics, lifetime_of_self);
-        lifetime::replace_in_receiver(&mut receiver, lifetime_of_self, VMI_LIFETIME);
-        lifetime::replace_in_return_type(&mut return_type, lifetime_of_self, VMI_LIFETIME);
-    }
-
-    // For remaining generics, we need to ensure that VMI_LIFETIME
-    // outlives them.
-    let mut lifetime_params = Vec::new();
-    let vmi_lifetime = __vmi_lifetime();
-
-    for param in &generics.params {
-        let lifetime = match param {
-            GenericParam::Lifetime(lifetime) => lifetime,
-            _ => continue,
-        };
-
-        let lifetime = &lifetime.lifetime;
-        lifetime_params.push(quote! { #vmi_lifetime: #lifetime });
-    }
-
-    let where_clause = if lifetime_params.is_empty() {
-        quote! {}
-    }
-    else {
-        quote! { where #(#lifetime_params),* }
-    };
+    let (args, arg_names) = common::build_args(&sig)?;
+    let where_clause = common::build_where_clause(&sig);
 
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
     let os_context_sig = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#context_args),*) #return_type
+        fn #ident #generics(#receiver, #(#args),*) #return_type
             #where_clause;
     };
 
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#context_args),*) #return_type
+        fn #ident #generics(#receiver, #(#args),*) #return_type
             #where_clause
         {
             self.underlying_os()
                 .#ident(
                     #maybe_vmi
-                    #(#context_arg_names),*
+                    #(#arg_names),*
                 )
         }
     };
@@ -216,7 +118,7 @@ pub fn derive_trait_from_impl(
     args: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let Args { os_context_name } = parse_macro_input!(args as Args);
+    let os_context_name = parse_macro_input!(args as Ident);
     let input = parse_macro_input!(item as ItemImpl);
 
     match verify_generics(&input.generics) {

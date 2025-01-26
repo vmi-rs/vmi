@@ -88,8 +88,8 @@ offsets! {
     #[derive(Debug)]
     pub struct OffsetsCommon {
         struct _LIST_ENTRY {
-            Flink: Field,               // struct _LIST_ENTRY*
-            Blink: Field,               // struct _LIST_ENTRY*
+            Flink: Field,                   // struct _LIST_ENTRY*
+            Blink: Field,                   // struct _LIST_ENTRY*
         }
 
         struct _EX_FAST_REF {
@@ -113,12 +113,12 @@ offsets! {
 
         #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]
         struct _KLDR_DATA_TABLE_ENTRY {
-            InLoadOrderLinks: Field,    // _LIST_ENTRY
-            DllBase: Field,             // PVOID
-            EntryPoint: Field,          // PVOID
-            SizeOfImage: Field,         // ULONG
-            FullDllName: Field,         // _UNICODE_STRING
-            BaseDllName: Field,         // _UNICODE_STRING
+            InLoadOrderLinks: Field,        // _LIST_ENTRY
+            DllBase: Field,                 // PVOID
+            EntryPoint: Field,              // PVOID
+            SizeOfImage: Field,             // ULONG
+            FullDllName: Field,             // _UNICODE_STRING
+            BaseDllName: Field,             // _UNICODE_STRING
         }
 
         struct _CLIENT_ID {
@@ -152,13 +152,13 @@ offsets! {
         }
 
         struct _OBJECT_DIRECTORY {
-            HashBuckets: Field, // struct _OBJECT_DIRECTORY_ENTRY * [37]
+            HashBuckets: Field,             // struct _OBJECT_DIRECTORY_ENTRY* [37]
         }
 
         struct _OBJECT_DIRECTORY_ENTRY {
-            ChainLink: Field, // struct _OBJECT_DIRECTORY_ENTRY *
-            Object: Field, // PVOID
-            HashValue: Field, // ULONG
+            ChainLink: Field,               // struct _OBJECT_DIRECTORY_ENTRY*
+            Object: Field,                  // PVOID
+            HashValue: Field,               // ULONG
         }
 
         struct _OBJECT_HEADER_NAME_INFO {
@@ -378,6 +378,7 @@ impl Offsets {
         Ok(Self { common, ext })
     }
 
+    /// Returns the extended offsets.
     pub fn ext(&self) -> Option<&OffsetsExt> {
         self.ext.as_ref()
     }

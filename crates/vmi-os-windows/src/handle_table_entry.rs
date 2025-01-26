@@ -21,7 +21,7 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Create a new Windows section object.
+    /// Creates a new Windows section object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         let inner = match vmi.underlying_os().offsets().ext() {
             Some(OffsetsExt::V1(_)) => Inner::V1(WindowsOsHandleTableEntryV1::new(vmi, va)),
@@ -30,6 +30,14 @@ where
         };
 
         Self { inner }
+    }
+
+    /// Returns the virtual address of the section.
+    pub fn va(&self) -> Va {
+        match &self.inner {
+            Inner::V1(inner) => inner.va,
+            Inner::V2(inner) => inner.va,
+        }
     }
 
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
@@ -165,18 +173,12 @@ where
     impl_offsets!();
     impl_offsets_ext_v2!();
 
-    /// Create a new Windows module object.
+    /// Creates a new Windows module object.
     fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
-    pub fn va(&self) -> Va {
-        self.va
-    }
-
-    /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
-    ///
-    /// A pointer to an `_OBJECT_HEADER` structure.
+    /// Returns the virtual address of the object.
     fn object(&self) -> Result<Va, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();

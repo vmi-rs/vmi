@@ -1,7 +1,7 @@
 use super::{OsArchitecture, ProcessId, ProcessObject, VmiOsRegion};
 use crate::{Pa, Va, VmiError};
 
-/// Represents information about a process in the target system.
+/// A process object.
 pub trait VmiOsProcess {
     /// The PID of the process.
     fn id(&self) -> Result<ProcessId, VmiError>;
@@ -39,6 +39,9 @@ pub trait VmiOsProcess {
     /// Retrieves a list of memory regions for a given process.
     fn regions(&self)
         -> Result<impl Iterator<Item = Result<impl VmiOsRegion, VmiError>>, VmiError>;
+
+    /// Finds a specific memory region in a process given an address.
+    fn find_region(&self, address: Va) -> Result<Option<impl VmiOsRegion>, VmiError>;
 
     /// Checks if a given virtual address is valid in a given process.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError>;

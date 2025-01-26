@@ -2,16 +2,24 @@ mod process_parameters;
 use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState};
 
 pub use self::process_parameters::WindowsOsProcessParameters;
-use crate::{arch::ArchAdapter, Offsets, WindowsOs, WindowsWow64Kind};
+use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsWow64Kind};
 
+/// A Windows PEB structure.
 pub struct WindowsOsPeb<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_PEB` structure.
     va: Va,
+
+    /// The translation root.
     root: Pa,
+
+    /// The kind of the process.
     kind: WindowsWow64Kind,
 }
 
@@ -20,7 +28,9 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Create a new Windows PEB object.
+    impl_offsets!();
+
+    /// Creates a new Windows PEB object.
     pub(super) fn new(
         vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
         va: Va,
@@ -33,10 +43,6 @@ where
             root,
             kind,
         }
-    }
-
-    fn offsets(&self) -> &Offsets {
-        self.vmi.underlying_os().offsets()
     }
 
     /// The address of this `_PEB` structure.

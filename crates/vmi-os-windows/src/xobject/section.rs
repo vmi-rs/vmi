@@ -48,6 +48,7 @@ where
         Self { inner }
     }
 
+    /// Returns the virtual address of the section.
     pub fn va(&self) -> Va {
         match &self.inner {
             Inner::V1(inner) => inner.va,
@@ -111,8 +112,13 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_SECTION_OBJECT` structure.
     va: Va,
+
+    /// Cached virtual address of the `_SEGMENT_OBJECT` structure.
     segment: OnceCell<Va>,
 }
 
@@ -214,7 +220,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_SECTION` structure.
     va: Va,
 }
 

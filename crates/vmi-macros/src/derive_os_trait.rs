@@ -1,43 +1,11 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{
-    parse::{Parse, ParseStream},
-    parse_macro_input, Error, FnArg, Ident, ItemTrait, Pat, PatType, Path, Result, Token,
+use syn::{parse_macro_input, Ident, ItemTrait};
+
+use crate::{
+    common::{self, __vmi_lifetime},
+    method::{FnArgExt, ItemExt, ItemFnExt},
 };
-
-use crate::method::{FnArgExt, ItemExt, ItemFnExt};
-
-struct Args {
-    os_context_name: Path,
-}
-
-impl Parse for Args {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut os_context_name = None;
-
-        while !input.is_empty() {
-            let ident = input.parse::<Ident>()?;
-            let _ = input.parse::<syn::Token![=]>()?;
-            let value = input.parse::<Path>()?;
-
-            match ident.to_string().as_str() {
-                "os_context_name" => os_context_name = Some(value),
-                _ => return Err(Error::new(ident.span(), "unknown argument")),
-            }
-
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        let os_context_name = os_context_name
-            .ok_or_else(|| Error::new(Span::call_site(), "missing `os_context_name` argument"))?;
-
-        Ok(Self {
-            os_context_name,
-        })
-    }
-}
 
 struct TraitFn {
     os_context_fn: TokenStream,
@@ -48,45 +16,24 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let ident = &sig.ident;
     let generics = &sig.generics;
     let return_type = &sig.output;
+    let receiver = sig.receiver()?;
 
-    let mut context_args = Vec::new();
-    let mut context_arg_names = Vec::new();
-
-    // Skip the first two arguments (`self` and `&impl Vmi*`).
-    for arg in sig.inputs.iter().skip(2) {
-        match arg {
-            FnArg::Typed(PatType { pat, ty, .. }) => {
-                let pat_ident = match &**pat {
-                    Pat::Ident(pat_ident) => pat_ident,
-                    _ => {
-                        eprintln!("`{ident}`: argument is not an identifier, skipping");
-                        return None;
-                    }
-                };
-
-                context_args.push(quote! { #pat_ident: #ty });
-                context_arg_names.push(quote! { #pat_ident });
-            }
-            _ => {
-                eprintln!("`{ident}`: argument is not typed, skipping");
-                return None;
-            }
-        }
-    }
+    let (args, arg_names) = common::build_args(&sig)?;
+    let where_clause = common::build_where_clause(&sig);
 
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        pub fn #ident #generics(&self, #(#context_args),*) #return_type {
+        pub fn #ident #generics(#receiver, #(#args),*) #return_type
+            #where_clause
+        {
             self.underlying_os()
-                .#ident(self.state(), #(#context_arg_names),*)
+                .#ident(self.state(), #(#arg_names),*)
         }
     };
 
-    Some(TraitFn {
-        os_context_fn,
-    })
+    Some(TraitFn { os_context_fn })
 }
 
 fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
@@ -109,9 +56,7 @@ pub fn derive_os_wrapper(
     args: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let Args {
-        os_context_name,
-    } = parse_macro_input!(args as Args);
+    let os_context_name = parse_macro_input!(args as Ident);
     let input = parse_macro_input!(item as ItemTrait);
     let trait_name = &input.ident;
     let trait_methods = input
@@ -122,6 +67,8 @@ pub fn derive_os_wrapper(
 
     let os_context_methods = trait_methods.clone().map(|m| m.os_context_fn);
 
+    let vmi_lifetime = __vmi_lifetime();
+
     // Generate the wrapper struct and its implementation
     let expanded = quote! {
         #input
@@ -130,7 +77,7 @@ pub fn derive_os_wrapper(
         // OS Context
         //
 
-        impl<Driver, Os> #os_context_name<'_, Driver, Os>
+        impl<#vmi_lifetime, Driver, Os> #os_context_name<#vmi_lifetime, Driver, Os>
         where
             Driver: crate::VmiDriver,
             Os: #trait_name<Driver>,

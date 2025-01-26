@@ -6,7 +6,7 @@ use isr_core::Profile;
 use vmi_core::{
     os::{
         OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
-        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
+        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsModule, VmiOsProcess,
     },
     Architecture, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError, VmiOs, VmiState,
 };
@@ -414,8 +414,84 @@ where
         unimplemented!()
     }
 
+    fn __modules<'a>(
+        &'a self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl Iterator<Item = Result<impl VmiOsModule + 'a, VmiError>> + 'a, VmiError> {
+        struct Dummy;
+        impl VmiOsModule for Dummy {
+            fn va(&self) -> Va {
+                unimplemented!()
+            }
+
+            fn base_address(&self) -> Result<Va, VmiError> {
+                unimplemented!()
+            }
+
+            fn size(&self) -> Result<u64, VmiError> {
+                unimplemented!()
+            }
+
+            fn name(&self) -> Result<String, VmiError> {
+                unimplemented!()
+            }
+        }
+
+        Ok(std::iter::empty::<Result<Dummy, VmiError>>())
+    }
+
     fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
         unimplemented!()
+    }
+
+    fn __system_process<'a>(
+        &'a self,
+        vmi: VmiState<Driver, Self>,
+    ) -> Result<impl VmiOsProcess + 'a, VmiError> {
+        struct Dummy;
+        impl VmiOsProcess for Dummy {
+            fn id(&self) -> Result<ProcessId, VmiError> {
+                unimplemented!()
+            }
+
+            fn object(&self) -> Result<ProcessObject, VmiError> {
+                unimplemented!()
+            }
+
+            fn name(&self) -> Result<String, VmiError> {
+                unimplemented!()
+            }
+
+            fn parent_id(&self) -> Result<ProcessId, VmiError> {
+                unimplemented!()
+            }
+
+            fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+                unimplemented!()
+            }
+
+            fn translation_root(&self) -> Result<Pa, VmiError> {
+                unimplemented!()
+            }
+
+            fn user_translation_root(&self) -> Result<Pa, VmiError> {
+                unimplemented!()
+            }
+
+            fn image_base(&self) -> Result<Va, VmiError> {
+                unimplemented!()
+            }
+
+            fn regions(&self) -> Result<Vec<OsRegion>, VmiError> {
+                unimplemented!()
+            }
+
+            fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError> {
+                unimplemented!()
+            }
+        }
+
+        Ok(std::iter::empty::<Result<Dummy, VmiError>>())
     }
 
     fn thread_id(

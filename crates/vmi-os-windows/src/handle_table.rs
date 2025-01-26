@@ -17,7 +17,7 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Create a new Windows module object.
+    /// Creates a new Windows module object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, table_code: u64) -> Self {
         Self { vmi, table_code }
     }

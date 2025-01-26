@@ -1,20 +1,27 @@
 use vmi_core::{
-    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess},
+    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess, VmiOsRegion},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState,
 };
 
 use crate::{
-    arch::ArchAdapter, macros::impl_offsets, peb::WindowsOsPeb, region::WindowsOsRegion,
-    OffsetsExt, TreeNodeIterator, WindowsOs, WindowsOsExt as _, WindowsWow64Kind,
+    arch::ArchAdapter,
+    macros::impl_offsets,
+    offsets::{v1, v2},
+    peb::WindowsOsPeb,
+    region::WindowsOsRegion,
+    OffsetsExt, TreeNodeIterator, WindowsOs, WindowsWow64Kind,
 };
 
-/// A Windows OS process.
+/// A Windows OS process (`_EPROCESS`).
 pub struct WindowsOsProcess<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_EPROCESS` structure.
     va: Va,
 }
 
@@ -30,6 +37,14 @@ where
         Self { vmi, va: process.0 }
     }
 
+    /// Returns the `_PEB` structure of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// The function first reads the `_EPROCESS.WoW64Process` field to determine
+    /// if the process is a 32-bit process. If the field is `NULL`, the process
+    /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
+    /// to get the 32-bit PEB.
     pub fn peb(&self) -> Result<WindowsOsPeb<Driver>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -67,6 +82,91 @@ where
             ))
         }
     }
+
+    /// Returns the address of the root node in the VAD tree.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.VadRoot->BalancedRoot` for Windows 7 and
+    /// `_EPROCESS.VadRoot->Root` for Windows 8.1 and later.
+    pub fn vad_root(&self) -> Result<WindowsOsRegion<'a, Driver>, VmiError> {
+        let node = match &self.offsets().ext() {
+            Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(offsets)?,
+            Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(offsets)?,
+            None => panic!("OffsetsExt not set"),
+        };
+
+        Ok(WindowsOsRegion::new(self.vmi, node))
+    }
+
+    fn vad_root_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+        let MM_AVL_TABLE = &offsets_ext._MM_AVL_TABLE;
+
+        // The `_MM_AVL_TABLE::BalancedRoot` field is of `_MMADDRESS_NODE` type,
+        // which represents the root.
+        let vad_root = self.va + EPROCESS.VadRoot.offset + MM_AVL_TABLE.BalancedRoot.offset;
+
+        Ok(vad_root)
+    }
+
+    fn vad_root_v2(&self, offsets_ext: &v2::Offsets) -> Result<Va, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+        let RTL_AVL_TREE = &offsets_ext._RTL_AVL_TREE;
+
+        // The `RTL_AVL_TREE::Root` field is of pointer type (`_RTL_BALANCED_NODE*`),
+        // thus we need to dereference it to get the actual node.
+        let vad_root = self
+            .vmi
+            .read_va_native(self.va + EPROCESS.VadRoot.offset + RTL_AVL_TREE.Root.offset)?;
+
+        Ok(vad_root)
+    }
+
+    /// Returns the address of the hint node in the VAD tree.
+    ///
+    /// The VAD hint is an optimization used by Windows to speed up VAD lookups.
+    /// This method returns the address of the hint node in the VAD tree.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.VadRoot->NodeHint` for Windows 7 and
+    /// `_EPROCESS.VadRoot->Hint` for Windows 8.1 and later.
+    pub fn vad_hint(&self) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+        let node = match &self.offsets().ext() {
+            Some(OffsetsExt::V1(offsets)) => self.vad_hint_v1(offsets)?,
+            Some(OffsetsExt::V2(offsets)) => self.vad_hint_v2(offsets)?,
+            None => panic!("OffsetsExt not set"),
+        };
+
+        if node.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsOsRegion::new(self.vmi, node)))
+    }
+
+    fn vad_hint_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+        let MM_AVL_TABLE = &offsets_ext._MM_AVL_TABLE;
+
+        self.vmi
+            .read_va_native(self.va + EPROCESS.VadRoot.offset + MM_AVL_TABLE.NodeHint.offset)
+    }
+
+    fn vad_hint_v2(&self, _offsets_ext: &v2::Offsets) -> Result<Va, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let VadHint = EPROCESS
+            .VadHint
+            .expect("VadHint is not present in common offsets");
+
+        self.vmi.read_va_native(self.va + VadHint.offset)
+    }
 }
 
 impl<'a, Driver> VmiOsProcess for WindowsOsProcess<'a, Driver>
@@ -74,6 +174,11 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// Returns the process ID.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.UniqueProcessId`.
     fn id(&self) -> Result<ProcessId, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -85,10 +190,16 @@ where
         Ok(ProcessId(result))
     }
 
+    /// Returns the process object.
     fn object(&self) -> Result<ProcessObject, VmiError> {
         Ok(ProcessObject(self.va))
     }
 
+    /// Returns the filename of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.ImageFileName`.
     fn name(&self) -> Result<String, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -97,6 +208,11 @@ where
             .read_string(self.va + EPROCESS.ImageFileName.offset)
     }
 
+    /// Returns the parent process ID.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.InheritedFromUniqueProcessId`.
     fn parent_id(&self) -> Result<ProcessId, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -108,6 +224,13 @@ where
         Ok(ProcessId(result))
     }
 
+    /// Returns the architecture of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// The function reads the `_EPROCESS.WoW64Process` field to determine if the
+    /// process is a 32-bit process. If the field is `NULL`, the process is 64-bit.
+    /// Otherwise, the process is 32-bit.
     fn architecture(&self) -> Result<OsArchitecture, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -124,14 +247,32 @@ where
         }
     }
 
+    /// Returns the translation root of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KPROCESS.DirectoryTableBase`.
     fn translation_root(&self) -> Result<Pa, VmiError> {
         self.vmi.os().process_translation_root(self.object()?)
     }
 
+    /// Retrieves the base address of the user translation root.
+    ///
+    /// If KPTI is disabled, this function will return the same value as
+    /// [`translation_root`](Self::translation_root).
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KPROCESS.UserDirectoryTableBase`.
     fn user_translation_root(&self) -> Result<Pa, VmiError> {
         self.vmi.os().process_user_translation_root(self.object()?)
     }
 
+    /// Returns the base address of the process image.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.SectionBaseAddress`.
     fn image_base(&self) -> Result<Va, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
@@ -140,16 +281,58 @@ where
             .read_va_native(self.va + EPROCESS.SectionBaseAddress.offset)
     }
 
+    /// Returns the regions of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// The function iterates over the VAD tree of the process.
     #[expect(refining_impl_trait)]
     fn regions(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsRegion<Driver>, VmiError>>, VmiError> {
-        let root = self.vmi.os().vad_root(self.object()?)?;
-
-        Ok(TreeNodeIterator::new(self.vmi, root)?
+    ) -> Result<impl Iterator<Item = Result<WindowsOsRegion<'a, Driver>, VmiError>>, VmiError> {
+        Ok(TreeNodeIterator::new(self.vmi, self.vad_root()?.va())?
             .map(|result| result.map(|vad| WindowsOsRegion::new(self.vmi, vad))))
     }
 
+    /// Locates the VAD that encompasses a specific virtual address in the process.
+    ///
+    /// This method efficiently searches the VAD tree to find the VAD node that
+    /// corresponds to the given virtual address within the process's address
+    /// space. Its functionality is similar to the Windows kernel's internal
+    /// `MiLocateAddress()` function.
+    ///
+    /// Returns the matching VAD if found, or `None` if the address is not
+    /// within any VAD.
+    #[expect(refining_impl_trait)]
+    fn find_region(&self, address: Va) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+        let vad = match self.vad_hint()? {
+            Some(vad) => vad,
+            None => return Ok(None),
+        };
+
+        let vpn = address.0 >> 12;
+
+        if vpn >= vad.starting_vpn()? && vpn <= vad.ending_vpn()? {
+            return Ok(Some(vad));
+        }
+
+        let mut next = Some(self.vad_root()?);
+        while let Some(vad) = next {
+            if vpn < vad.starting_vpn()? {
+                next = vad.left_child()?;
+            }
+            else if vpn > vad.ending_vpn()? {
+                next = vad.right_child()?;
+            }
+            else {
+                return Ok(Some(vad));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Checks if a given virtual address is valid in the process.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError> {
         self.vmi
             .os()

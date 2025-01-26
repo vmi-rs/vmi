@@ -59,6 +59,7 @@ use ::object::{
     LittleEndian as LE,
 };
 use isr_core::Profile;
+use module::WindowsOsModule;
 use once_cell::unsync::OnceCell;
 use vmi_arch_amd64::{Amd64, Cr3};
 use vmi_core::{
@@ -95,10 +96,11 @@ mod pe2;
 pub mod peb;
 mod process;
 mod region;
+mod thread;
 pub mod xobject;
 pub use self::{
     image::WindowsOsImage, process::WindowsOsProcess, region::WindowsOsRegion,
-    xobject::WindowsOsDirectoryObject,
+    thread::WindowsOsThread, xobject::WindowsOsDirectoryObject,
 };
 
 /// VMI operations for the Windows operating system.
@@ -591,9 +593,7 @@ impl WindowsWow64Va {
     }
 }
 
-#[derive_trait_from_impl(
-    os_context_name = WindowsOsExt,
-)]
+#[derive_trait_from_impl(WindowsOsExt)]
 #[allow(non_snake_case, non_upper_case_globals)]
 impl<Driver> WindowsOs<Driver>
 where
@@ -2845,11 +2845,8 @@ where
     ) -> Result<String, VmiError> {
         let mut ctx = ctx.into();
 
-        //
         // `_ANSI_STRING` is unfortunately missing in the PDB symbols.
         // However, its layout is same as `_UNICODE_STRING`.
-        //
-
         let ANSI_STRING = &self.offsets.common._UNICODE_STRING;
 
         let string = StructReader::new_in(&vmi, ctx, ANSI_STRING.effective_len())?;
@@ -3115,49 +3112,6 @@ where
         TreeNodeIterator::new(vmi, root)
     }
 
-    /// xxx
-    pub fn __current_process<'a>(
-        &self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
-        let thread = self.current_thread(vmi)?;
-
-        if thread.is_null() {
-            return Err(VmiError::Other("Invalid thread"));
-        }
-
-        let process = self.process_from_thread_apc_state(vmi, thread)?;
-        Ok(WindowsOsProcess::new(vmi, process))
-    }
-
-    pub fn __system_process<'a>(
-        &self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
-        let PsInitialSystemProcess =
-            self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
-
-        let process = vmi.read_va_native(PsInitialSystemProcess)?;
-        Ok(WindowsOsProcess::new(vmi, ProcessObject(process)))
-    }
-
-    /// Returns the process object iterator.
-    pub fn __processes<'a>(
-        &'a self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsProcess<'a, Driver>, VmiError>> + 'a, VmiError>
-    {
-        let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
-
-        let EPROCESS = &self.offsets.common._EPROCESS;
-
-        Ok(self
-            .linked_list(vmi, PsActiveProcessHead, EPROCESS.ActiveProcessLinks.offset)?
-            .map(move |result| {
-                result.map(|entry| WindowsOsProcess::new(vmi, ProcessObject(entry)))
-            }))
-    }
-
     /// associated with the specified VAD.
     pub fn module(&self, vmi: VmiState<Driver, Self>, addr: Va) -> Result<WindowsModule, VmiError> {
         let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
@@ -3177,24 +3131,6 @@ where
             full_name,
             name,
         })
-    }
-
-    /// Returns the process object iterator.
-    pub fn __modules<'a>(
-        &'a self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<WindowsModule, VmiError>> + 'a, VmiError> {
-        let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
-
-        let KLDR_DATA_TABLE_ENTRY = &self.offsets.common._KLDR_DATA_TABLE_ENTRY;
-
-        Ok(self
-            .linked_list(
-                vmi,
-                PsLoadedModuleList,
-                KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset,
-            )?
-            .map(move |result| result.and_then(|entry| self.module(vmi, entry))))
     }
 }
 
@@ -3255,6 +3191,25 @@ where
         Ok(result)
     }
 
+    #[expect(refining_impl_trait)]
+    fn __modules<'a>(
+        &'a self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl Iterator<Item = Result<WindowsOsModule<'a, Driver>, VmiError>> + 'a, VmiError>
+    {
+        let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
+
+        let KLDR_DATA_TABLE_ENTRY = &self.offsets._KLDR_DATA_TABLE_ENTRY;
+
+        Ok(self
+            .linked_list(
+                vmi,
+                PsLoadedModuleList,
+                KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset,
+            )?
+            .map(move |result| result.map(|entry| WindowsOsModule::new(vmi, entry))))
+    }
+
     fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
         let PsInitialSystemProcess =
             self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
@@ -3262,6 +3217,88 @@ where
         let process = vmi.read_va_native(PsInitialSystemProcess)?;
 
         Ok(ProcessObject(process))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __processes<'a>(
+        &'a self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl Iterator<Item = Result<WindowsOsProcess<'a, Driver>, VmiError>> + 'a, VmiError>
+    {
+        let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
+
+        let EPROCESS = &self.offsets.common._EPROCESS;
+
+        Ok(self
+            .linked_list(vmi, PsActiveProcessHead, EPROCESS.ActiveProcessLinks.offset)?
+            .map(move |result| {
+                result.map(|entry| WindowsOsProcess::new(vmi, ProcessObject(entry)))
+            }))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        process: ProcessObject,
+    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+        Ok(WindowsOsProcess::new(vmi, process))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __current_process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+        let thread = self.current_thread(vmi)?;
+
+        if thread.is_null() {
+            return Err(VmiError::Other("Invalid thread"));
+        }
+
+        let process = self.process_from_thread_apc_state(vmi, thread)?;
+        Ok(WindowsOsProcess::new(vmi, process))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __system_process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+        let PsInitialSystemProcess =
+            self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
+
+        let process = vmi.read_va_native(PsInitialSystemProcess)?;
+        Ok(WindowsOsProcess::new(vmi, ProcessObject(process)))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __thread<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        thread: ThreadObject,
+    ) -> Result<WindowsOsThread<'a, Driver>, VmiError> {
+        Ok(WindowsOsThread::new(vmi, thread))
+    }
+
+    #[expect(refining_impl_trait)]
+    fn __current_thread<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<WindowsOsThread<'a, Driver>, VmiError> {
+        let KPCR = &self.offsets._KPCR;
+        let KPRCB = &self.offsets._KPRCB;
+
+        let kpcr = self.current_kpcr(vmi);
+
+        if kpcr.is_null() {
+            return Err(VmiError::Other("Invalid KPCR"));
+        }
+
+        let addr = kpcr + KPCR.Prcb.offset + KPRCB.CurrentThread.offset;
+        let result = vmi.read_va_native(addr)?;
+
+        Ok(WindowsOsThread::new(vmi, ThreadObject(result)))
     }
 
     fn thread_id(

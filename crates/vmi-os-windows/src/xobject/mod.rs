@@ -23,7 +23,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the object.
     va: Va,
 }
 
@@ -35,15 +38,21 @@ where
     impl_symbols!();
     impl_offsets!();
 
-    /// Create a new Windows section object.
+    /// Create a new Windows object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
+    /// Returns the virtual address of the object.
     pub fn va(&self) -> Va {
         self.va
     }
 
+    /// Returns the virtual address of the `_OBJECT_HEADER` structure.
+    ///
+    /// # Implementation Details
+    ///
+    /// `_OBJECT_HEADER` is always at the beginning of the object.
     pub fn header(&self) -> Va {
         let offsets = self.offsets();
         let OBJECT_HEADER = &offsets._OBJECT_HEADER;
@@ -51,6 +60,7 @@ where
         self.va - OBJECT_HEADER.Body.offset
     }
 
+    /// Returns the name information of the object.
     pub fn name_info(&self) -> Result<Option<WindowsOsObjectHeaderNameInfo<'a, Driver>>, VmiError> {
         let symbols = self.symbols();
         let offsets = self.offsets();
@@ -92,10 +102,12 @@ where
         )))
     }
 
+    /// Returns the type of the object.
     pub fn typ(&self) -> Result<Option<WindowsObjectType>, VmiError> {
         self.vmi.os().object_type(self.va)
     }
 
+    /// Returns the kind of the object.
     pub fn kind(&self) -> Result<Option<WindowsOsObjectKind<'a, Driver>>, VmiError> {
         let result = match self.typ()? {
             Some(WindowsObjectType::Directory) => {
@@ -113,6 +125,7 @@ where
         Ok(Some(result))
     }
 
+    /// Returns the object as a directory (`_OBJECT_DIRECTORY`).
     pub fn as_directory(&self) -> Option<WindowsOsDirectoryObject<'a, Driver>> {
         match self.kind() {
             Ok(Some(WindowsOsObjectKind::Directory(directory))) => Some(directory),
@@ -120,6 +133,7 @@ where
         }
     }
 
+    /// Returns the object as a file (`_FILE_OBJECT`).
     pub fn as_file(&self) -> Option<WindowsOsFileObject<'a, Driver>> {
         match self.kind() {
             Ok(Some(WindowsOsObjectKind::File(file))) => Some(file),
@@ -127,6 +141,7 @@ where
         }
     }
 
+    /// Returns the object as a section (`_SECTION_OBJECT`).
     pub fn as_section(&self) -> Option<WindowsOsSectionObject<'a, Driver>> {
         match self.kind() {
             Ok(Some(WindowsOsObjectKind::Section(section))) => Some(section),
@@ -141,12 +156,12 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Directory object.
+    /// Directory object (`_OBJECT_DIRECTORY`).
     Directory(WindowsOsDirectoryObject<'a, Driver>),
 
-    /// File object.
+    /// File object (`_FILE_OBJECT`).
     File(WindowsOsFileObject<'a, Driver>),
 
-    /// Section object.
+    /// Section object (`_SECTION_OBJECT`).
     Section(WindowsOsSectionObject<'a, Driver>),
 }

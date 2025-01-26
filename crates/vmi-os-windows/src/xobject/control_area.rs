@@ -9,7 +9,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// The VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_CONTROL_AREA` structure.
     va: Va,
 }
 
@@ -20,16 +23,21 @@ where
 {
     impl_offsets!();
 
-    /// Create a new Windows section object.
+    /// Creates a new Windows section object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
+    /// Returns the virtual address of the `_CONTROL_AREA` structure.
     pub fn va(&self) -> Va {
         self.va
     }
 
-    /// Extracts the `FileObject` from a `CONTROL_AREA` structure.
+    /// Returns the file object associated with the control area.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CONTROL_AREA.FilePointer`.
     pub fn file_object(&self) -> Result<WindowsOsFileObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let EX_FAST_REF = &offsets._EX_FAST_REF;

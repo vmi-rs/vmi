@@ -6,6 +6,7 @@ mod module;
 mod process;
 mod region;
 mod struct_reader;
+mod thread;
 
 use vmi_macros::derive_os_wrapper;
 
@@ -19,13 +20,12 @@ pub use self::{
     process::VmiOsProcess,
     region::VmiOsRegion,
     struct_reader::StructReader,
+    thread::VmiOsThread,
 };
 use crate::{Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
-#[derive_os_wrapper(
-    os_context_name = VmiOsState,
-)]
+#[derive_os_wrapper(VmiOsState)]
 pub trait VmiOs<Driver>: Sized
 where
     Driver: VmiDriver,
@@ -74,6 +74,17 @@ where
     /// - **Linux**: Retrieves information from the `modules` list.
     fn modules(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsModule>, VmiError>;
 
+    /// Returns an iterator over the loaded kernel modules.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: Retrieves information from the `PsLoadedModuleList`.
+    /// - **Linux**: Retrieves information from the `modules` list.
+    fn __modules<'a>(
+        &'a self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl Iterator<Item = Result<impl VmiOsModule + 'a, VmiError>> + 'a, VmiError>;
+
     /// Retrieves the system process object.
     ///
     /// The system process is the first process created by the kernel.
@@ -83,6 +94,46 @@ where
     /// - **Windows**: Retrieves the `PsInitialSystemProcess` global variable.
     /// - **Linux**: Retrieves the `init_task` global variable.
     fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError>;
+
+    fn __processes<'a>(
+        &'a self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl Iterator<Item = Result<impl VmiOsProcess + 'a, VmiError>> + 'a, VmiError>;
+
+    fn __process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        process: ProcessObject,
+    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+
+    fn __current_process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+
+    /// Returns the system process object.
+    ///
+    /// The system process is the first process created by the kernel.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: Retrieves the `PsInitialSystemProcess` global variable.
+    /// - **Linux**: Retrieves the `init_task` global variable.
+    fn __system_process<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+
+    fn __thread<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        thread: ThreadObject,
+    ) -> Result<impl VmiOsThread + 'a, VmiError>;
+
+    fn __current_thread<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+    ) -> Result<impl VmiOsThread + 'a, VmiError>;
 
     /// Retrieves the thread ID for a given thread object.
     fn thread_id(
