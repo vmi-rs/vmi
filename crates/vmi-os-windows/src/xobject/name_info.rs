@@ -1,10 +1,10 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use super::WindowsOsObject;
+use super::WindowsObject;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsExt as _};
 
 /// A Windows object header name info.
-pub struct WindowsOsObjectHeaderNameInfo<'a, Driver>
+pub struct WindowsObjectHeaderNameInfo<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -16,17 +16,17 @@ where
     va: Va,
 }
 
-impl<Driver> From<WindowsOsObjectHeaderNameInfo<'_, Driver>> for Va
+impl<Driver> From<WindowsObjectHeaderNameInfo<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsObjectHeaderNameInfo<Driver>) -> Self {
+    fn from(value: WindowsObjectHeaderNameInfo<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsObjectHeaderNameInfo<'a, Driver>
+impl<'a, Driver> WindowsObjectHeaderNameInfo<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -43,7 +43,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_OBJECT_HEADER_NAME_INFO.Directory`.
-    pub fn directory(&self) -> Result<Option<WindowsOsObject<'a, Driver>>, VmiError> {
+    pub fn directory(&self) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let OBJECT_HEADER_NAME_INFO = &offsets._OBJECT_HEADER_NAME_INFO;
 
@@ -55,7 +55,7 @@ where
             return Ok(None);
         }
 
-        Ok(Some(WindowsOsObject::new(self.vmi, directory)))
+        Ok(Some(WindowsObject::new(self.vmi, directory)))
     }
 
     /// Returns the name of the object.

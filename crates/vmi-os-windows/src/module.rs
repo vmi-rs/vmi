@@ -3,7 +3,7 @@ use vmi_core::{os::VmiOsModule, Architecture, Va, VmiDriver, VmiError, VmiState}
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsExt as _};
 
 /// A Windows OS module.
-pub struct WindowsOsModule<'a, Driver>
+pub struct WindowsModule<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -15,7 +15,7 @@ where
     va: Va,
 }
 
-impl<Driver> Clone for WindowsOsModule<'_, Driver>
+impl<Driver> Clone for WindowsModule<'_, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -28,24 +28,24 @@ where
     }
 }
 
-impl<Driver> Copy for WindowsOsModule<'_, Driver>
+impl<Driver> Copy for WindowsModule<'_, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
 }
 
-impl<Driver> From<WindowsOsModule<'_, Driver>> for Va
+impl<Driver> From<WindowsModule<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsModule<Driver>) -> Self {
+    fn from(value: WindowsModule<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsModule<'a, Driver>
+impl<'a, Driver> WindowsModule<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -85,7 +85,7 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsModule<'a, Driver> for WindowsOsModule<'a, Driver>
+impl<'a, Driver> VmiOsModule<'a, Driver> for WindowsModule<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,

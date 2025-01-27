@@ -3,10 +3,10 @@ use vmi_core::{
     Architecture, Va, VmiDriver, VmiError, VmiState,
 };
 
-use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsProcess};
+use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsProcess};
 
 /// A Windows OS thread (`_ETHREAD`).
-pub struct WindowsOsThread<'a, Driver>
+pub struct WindowsThread<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -40,17 +40,17 @@ where
 }
 */
 
-impl<Driver> From<WindowsOsThread<'_, Driver>> for Va
+impl<Driver> From<WindowsThread<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsThread<Driver>) -> Self {
+    fn from(value: WindowsThread<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsThread<'a, Driver>
+impl<'a, Driver> WindowsThread<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -67,16 +67,13 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KTHREAD.Process`.
-    pub fn process(&self) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+    pub fn process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let KTHREAD = &offsets._KTHREAD;
 
         let process = self.vmi.read_va_native(self.va + KTHREAD.Process.offset)?;
 
-        Ok(WindowsOsProcess::new(
-            self.vmi.clone(),
-            ProcessObject(process),
-        ))
+        Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
     }
 
     /// Returns the process attached to the thread.
@@ -84,7 +81,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KTHREAD.ApcState.Process`.
-    pub fn attached_process(&self) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+    pub fn attached_process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let KTHREAD = &offsets._KTHREAD;
         let KAPC_STATE = &offsets._KAPC_STATE;
@@ -93,14 +90,11 @@ where
             .vmi
             .read_va_native(self.va + KTHREAD.ApcState.offset + KAPC_STATE.Process.offset)?;
 
-        Ok(WindowsOsProcess::new(
-            self.vmi.clone(),
-            ProcessObject(process),
-        ))
+        Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
     }
 }
 
-impl<'a, Driver> VmiOsThread<'a, Driver> for WindowsOsThread<'a, Driver>
+impl<'a, Driver> VmiOsThread<'a, Driver> for WindowsThread<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,

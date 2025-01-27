@@ -4,12 +4,12 @@ use zerocopy::{FromBytes, IntoBytes};
 use crate::{
     arch::ArchAdapter,
     macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
-    xobject::WindowsOsObject,
+    xobject::WindowsObject,
     OffsetsExt, WindowsOs,
 };
 
 /// A Windows section object.
-pub struct WindowsOsHandleTableEntry<'a, Driver>
+pub struct WindowsHandleTableEntry<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -17,12 +17,12 @@ where
     inner: Inner<'a, Driver>,
 }
 
-impl<Driver> From<WindowsOsHandleTableEntry<'_, Driver>> for Va
+impl<Driver> From<WindowsHandleTableEntry<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsHandleTableEntry<Driver>) -> Self {
+    fn from(value: WindowsHandleTableEntry<Driver>) -> Self {
         match &value.inner {
             Inner::V1(inner) => inner.va,
             Inner::V2(inner) => inner.va,
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<'a, Driver> WindowsOsHandleTableEntry<'a, Driver>
+impl<'a, Driver> WindowsHandleTableEntry<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -38,8 +38,8 @@ where
     /// Creates a new Windows section object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         let inner = match vmi.underlying_os().offsets().ext() {
-            Some(OffsetsExt::V1(_)) => Inner::V1(WindowsOsHandleTableEntryV1::new(vmi, va)),
-            Some(OffsetsExt::V2(_)) => Inner::V2(WindowsOsHandleTableEntryV2::new(vmi, va)),
+            Some(OffsetsExt::V1(_)) => Inner::V1(WindowsHandleTableEntryV1::new(vmi, va)),
+            Some(OffsetsExt::V2(_)) => Inner::V2(WindowsHandleTableEntryV2::new(vmi, va)),
             None => unimplemented!(),
         };
 
@@ -49,7 +49,7 @@ where
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
     ///
     /// A pointer to an `_OBJECT_HEADER` structure.
-    pub fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
+    pub fn object(&self) -> Result<WindowsObject<'a, Driver>, VmiError> {
         match &self.inner {
             Inner::V1(inner) => inner.object(),
             Inner::V2(inner) => inner.object(),
@@ -82,8 +82,8 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    V1(WindowsOsHandleTableEntryV1<'a, Driver>),
-    V2(WindowsOsHandleTableEntryV2<'a, Driver>),
+    V1(WindowsHandleTableEntryV1<'a, Driver>),
+    V2(WindowsHandleTableEntryV2<'a, Driver>),
 }
 
 const OBJ_PROTECT_CLOSE: u64 = 0x00000001;
@@ -91,7 +91,7 @@ const OBJ_INHERIT: u64 = 0x00000002;
 const OBJ_AUDIT_OBJECT_CLOSE: u64 = 0x00000004;
 const OBJ_HANDLE_ATTRIBUTES: u64 = OBJ_PROTECT_CLOSE | OBJ_INHERIT | OBJ_AUDIT_OBJECT_CLOSE;
 
-struct WindowsOsHandleTableEntryV1<'a, Driver>
+struct WindowsHandleTableEntryV1<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -100,7 +100,7 @@ where
     va: Va,
 }
 
-impl<'a, Driver> WindowsOsHandleTableEntryV1<'a, Driver>
+impl<'a, Driver> WindowsHandleTableEntryV1<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -116,7 +116,7 @@ where
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
     ///
     /// A pointer to an `_OBJECT_HEADER` structure.
-    fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
+    fn object(&self) -> Result<WindowsObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
 
@@ -127,7 +127,7 @@ where
         let object = Va(object & !OBJ_HANDLE_ATTRIBUTES);
         let object = object + OBJECT_HEADER.Body.offset;
 
-        Ok(WindowsOsObject::new(self.vmi, object))
+        Ok(WindowsObject::new(self.vmi, object))
     }
 
     /// The `ObAttributes` (or `Attributes`) field of the handle table entry.
@@ -162,7 +162,7 @@ struct _HANDLE_TABLE_ENTRY {
     HighValue: u64,
 }
 
-struct WindowsOsHandleTableEntryV2<'a, Driver>
+struct WindowsHandleTableEntryV2<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -171,7 +171,7 @@ where
     va: Va,
 }
 
-impl<'a, Driver> WindowsOsHandleTableEntryV2<'a, Driver>
+impl<'a, Driver> WindowsHandleTableEntryV2<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -185,7 +185,7 @@ where
     }
 
     /// Returns the virtual address of the object.
-    fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
+    fn object(&self) -> Result<WindowsObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
         let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
@@ -200,7 +200,7 @@ where
         let object = Va(0xffff_0000_0000_0000 | object_pointer_bits << 4);
         let object = object + OBJECT_HEADER.Body.offset;
 
-        Ok(WindowsOsObject::new(self.vmi, object))
+        Ok(WindowsObject::new(self.vmi, object))
     }
 
     /// The `ObAttributes` (or `Attributes`) field of the handle table entry.

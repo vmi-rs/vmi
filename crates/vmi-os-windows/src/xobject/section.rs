@@ -1,7 +1,7 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use super::{WindowsOsControlArea, WindowsOsFileObject, WindowsOsObject};
+use super::{WindowsControlArea, WindowsFileObject, WindowsObject};
 use crate::{
     arch::ArchAdapter,
     macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// A Windows section object.
-pub struct WindowsOsSectionObject<'a, Driver>
+pub struct WindowsSectionObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -17,12 +17,12 @@ where
     inner: Inner<'a, Driver>,
 }
 
-impl<Driver> From<WindowsOsSectionObject<'_, Driver>> for Va
+impl<Driver> From<WindowsSectionObject<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsSectionObject<Driver>) -> Self {
+    fn from(value: WindowsSectionObject<Driver>) -> Self {
         match &value.inner {
             Inner::V1(inner) => inner.va,
             Inner::V2(inner) => inner.va,
@@ -30,12 +30,12 @@ where
     }
 }
 
-impl<'a, Driver> From<WindowsOsSectionObject<'a, Driver>> for WindowsOsObject<'a, Driver>
+impl<'a, Driver> From<WindowsSectionObject<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsSectionObject<'a, Driver>) -> Self {
+    fn from(value: WindowsSectionObject<'a, Driver>) -> Self {
         let (vmi, va) = match value.inner {
             Inner::V1(inner) => (inner.vmi, inner.va),
             Inner::V2(inner) => (inner.vmi, inner.va),
@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<'a, Driver> WindowsOsSectionObject<'a, Driver>
+impl<'a, Driver> WindowsSectionObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -53,8 +53,8 @@ where
     /// Create a new Windows section object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         let inner = match vmi.underlying_os().offsets().ext() {
-            Some(OffsetsExt::V1(_)) => Inner::V1(WindowsOsSectionObjectV1::new(vmi, va)),
-            Some(OffsetsExt::V2(_)) => Inner::V2(WindowsOsSectionObjectV2::new(vmi, va)),
+            Some(OffsetsExt::V1(_)) => Inner::V1(WindowsSectionObjectV1::new(vmi, va)),
+            Some(OffsetsExt::V2(_)) => Inner::V2(WindowsSectionObjectV2::new(vmi, va)),
             None => unimplemented!(),
         };
 
@@ -94,7 +94,7 @@ where
     }
 
     /// Returns the file object of the section.
-    pub fn file_object(&self) -> Result<Option<WindowsOsFileObject<'a, Driver>>, VmiError> {
+    pub fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         match &self.inner {
             Inner::V1(inner) => inner.file_object(),
             Inner::V2(inner) => inner.file_object(),
@@ -107,12 +107,12 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    V1(WindowsOsSectionObjectV1<'a, Driver>),
-    V2(WindowsOsSectionObjectV2<'a, Driver>),
+    V1(WindowsSectionObjectV1<'a, Driver>),
+    V2(WindowsSectionObjectV2<'a, Driver>),
 }
 
 /// A Windows section object.
-struct WindowsOsSectionObjectV1<'a, Driver>
+struct WindowsSectionObjectV1<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -127,7 +127,7 @@ where
     segment: OnceCell<Va>,
 }
 
-impl<'a, Driver> WindowsOsSectionObjectV1<'a, Driver>
+impl<'a, Driver> WindowsSectionObjectV1<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -184,7 +184,7 @@ where
         Ok(self.vmi.read_u32(flags)? as u64)
     }
 
-    fn file_object(&self) -> Result<Option<WindowsOsFileObject<'a, Driver>>, VmiError> {
+    fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
         let SEGMENT_OBJECT = &offsets_ext._SEGMENT_OBJECT;
@@ -202,7 +202,7 @@ where
             .read_field(self.segment()?, &SEGMENT_OBJECT.ControlArea)?);
 
         Ok(Some(
-            WindowsOsControlArea::new(self.vmi, control_area).file_object()?,
+            WindowsControlArea::new(self.vmi, control_area).file_object()?,
         ))
     }
 
@@ -220,7 +220,7 @@ where
     }
 }
 
-struct WindowsOsSectionObjectV2<'a, Driver>
+struct WindowsSectionObjectV2<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -232,7 +232,7 @@ where
     va: Va,
 }
 
-impl<'a, Driver> WindowsOsSectionObjectV2<'a, Driver>
+impl<'a, Driver> WindowsSectionObjectV2<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -277,7 +277,7 @@ where
         self.vmi.read_field(self.va, &SECTION.Flags)
     }
 
-    fn file_object(&self) -> Result<Option<WindowsOsFileObject<'a, Driver>>, VmiError> {
+    fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
         let MMSECTION_FLAGS = &offsets._MMSECTION_FLAGS;
@@ -294,11 +294,11 @@ where
 
         if control_area.0 & 0x3 != 0 {
             let file_object = control_area;
-            return Ok(Some(WindowsOsFileObject::new(self.vmi, file_object)));
+            return Ok(Some(WindowsFileObject::new(self.vmi, file_object)));
         }
 
         Ok(Some(
-            WindowsOsControlArea::new(self.vmi, control_area).file_object()?,
+            WindowsControlArea::new(self.vmi, control_area).file_object()?,
         ))
     }
 }

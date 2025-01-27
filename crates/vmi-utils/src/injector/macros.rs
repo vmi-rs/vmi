@@ -109,14 +109,14 @@ pub mod __private {
         Driver: VmiDriver,
         Os: VmiOs<Driver>,
     {
-        let current_process = vmi.os().__current_process()?;
+        let current_process = vmi.os().current_process()?;
 
         let region = match __find_region(&current_process, filename)? {
             Some(image) => image,
             None => return Ok(None),
         };
 
-        let image = vmi.os().__image(region.start()?)?;
+        let image = vmi.os().image(region.start()?)?;
         let symbols = image.exports()?;
 
         tracing::trace!(

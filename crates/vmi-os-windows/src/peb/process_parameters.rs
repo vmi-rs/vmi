@@ -4,7 +4,7 @@ use super::WindowsWow64Kind;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsExt as _};
 
 /// A Windows process parameters object.
-pub struct WindowsOsProcessParameters<'a, Driver>
+pub struct WindowsProcessParameters<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -12,12 +12,12 @@ where
     inner: Inner<'a, Driver>,
 }
 
-impl<Driver> From<WindowsOsProcessParameters<'_, Driver>> for Va
+impl<Driver> From<WindowsProcessParameters<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsProcessParameters<Driver>) -> Self {
+    fn from(value: WindowsProcessParameters<Driver>) -> Self {
         match &value.inner {
             Inner::Native(inner) => inner.va,
             Inner::X86(inner) => inner.va,
@@ -25,7 +25,7 @@ where
     }
 }
 
-impl<Driver> std::fmt::Debug for WindowsOsProcessParameters<'_, Driver>
+impl<Driver> std::fmt::Debug for WindowsProcessParameters<'_, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<'a, Driver> WindowsOsProcessParameters<'a, Driver>
+impl<'a, Driver> WindowsProcessParameters<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -59,9 +59,9 @@ where
     ) -> Self {
         let inner = match kind {
             WindowsWow64Kind::Native => {
-                Inner::Native(WindowsOsProcessParametersNative::new(vmi, va, root))
+                Inner::Native(WindowsProcessParametersNative::new(vmi, va, root))
             }
-            WindowsWow64Kind::X86 => Inner::X86(WindowsOsProcessParameters32::new(vmi, va, root)),
+            WindowsWow64Kind::X86 => Inner::X86(WindowsProcessParameters32::new(vmi, va, root)),
         };
 
         Self { inner }
@@ -135,13 +135,13 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// A native (non-WoW64) process.
-    Native(WindowsOsProcessParametersNative<'a, Driver>),
+    Native(WindowsProcessParametersNative<'a, Driver>),
 
     /// An x86 process running under WoW64.
-    X86(WindowsOsProcessParameters32<'a, Driver>),
+    X86(WindowsProcessParameters32<'a, Driver>),
 }
 
-struct WindowsOsProcessParametersNative<'a, Driver>
+struct WindowsProcessParametersNative<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -156,7 +156,7 @@ where
     root: Pa,
 }
 
-impl<'a, Driver> WindowsOsProcessParametersNative<'a, Driver>
+impl<'a, Driver> WindowsProcessParametersNative<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -230,7 +230,7 @@ where
     }
 }
 
-struct WindowsOsProcessParameters32<'a, Driver>
+struct WindowsProcessParameters32<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -245,7 +245,7 @@ where
     root: Pa,
 }
 
-impl<'a, Driver> WindowsOsProcessParameters32<'a, Driver>
+impl<'a, Driver> WindowsProcessParameters32<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,

@@ -97,26 +97,26 @@ where
     ///
     /// - **Windows**: Retrieves information from the `PsLoadedModuleList`.
     /// - **Linux**: Retrieves information from the `modules` list.
-    fn __modules<'a>(
+    fn modules<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError>;
 
     /// XXX
-    fn __processes<'a>(
+    fn processes<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError>;
 
     /// XXX
-    fn __process<'a>(
+    fn process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         process: ProcessObject,
     ) -> Result<Self::Process<'a>, VmiError>;
 
     /// XXX
-    fn __current_process<'a>(
+    fn current_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Process<'a>, VmiError>;
@@ -129,40 +129,40 @@ where
     ///
     /// - **Windows**: Retrieves the `PsInitialSystemProcess` global variable.
     /// - **Linux**: Retrieves the `init_task` global variable.
-    fn __system_process<'a>(
+    fn system_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Process<'a>, VmiError>;
 
     /// XXX
-    fn __thread<'a>(
+    fn thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         thread: ThreadObject,
     ) -> Result<Self::Thread<'a>, VmiError>;
 
     /// XXX
-    fn __current_thread<'a>(
+    fn current_thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Thread<'a>, VmiError>;
 
     /// XXX
-    fn __image<'a>(
+    fn image<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         image_base: Va,
     ) -> Result<Self::Image<'a>, VmiError>;
 
     /// XXX
-    fn __module<'a>(
+    fn module<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         module: Va,
     ) -> Result<Self::Module<'a>, VmiError>;
 
     /// XXX
-    fn __region<'a>(
+    fn region<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         region: Va,

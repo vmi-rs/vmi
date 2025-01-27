@@ -1,7 +1,7 @@
 mod process_parameters;
 use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState};
 
-pub use self::process_parameters::WindowsOsProcessParameters;
+pub use self::process_parameters::WindowsProcessParameters;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs};
 
 /// The address space type in a WoW64 process.
@@ -19,7 +19,7 @@ pub(crate) enum WindowsWow64Kind {
 }
 
 /// A Windows PEB structure.
-pub struct WindowsOsPeb<'a, Driver>
+pub struct WindowsPeb<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -37,17 +37,17 @@ where
     kind: WindowsWow64Kind,
 }
 
-impl<Driver> From<WindowsOsPeb<'_, Driver>> for Va
+impl<Driver> From<WindowsPeb<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsPeb<Driver>) -> Self {
+    fn from(value: WindowsPeb<Driver>) -> Self {
         value.va
     }
 }
 
-impl<Driver> std::fmt::Debug for WindowsOsPeb<'_, Driver>
+impl<Driver> std::fmt::Debug for WindowsPeb<'_, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -61,7 +61,7 @@ where
     }
 }
 
-impl<'a, Driver> WindowsOsPeb<'a, Driver>
+impl<'a, Driver> WindowsPeb<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -84,7 +84,7 @@ where
     }
 
     /// The address of this `_PEB` structure.
-    pub fn process_parameters(&self) -> Result<WindowsOsProcessParameters<'a, Driver>, VmiError> {
+    pub fn process_parameters(&self) -> Result<WindowsProcessParameters<'a, Driver>, VmiError> {
         let va = match self.kind {
             WindowsWow64Kind::Native => {
                 let offsets = self.offsets();
@@ -101,7 +101,7 @@ where
             }
         };
 
-        Ok(WindowsOsProcessParameters::new(
+        Ok(WindowsProcessParameters::new(
             self.vmi, va, self.root, self.kind,
         ))
     }

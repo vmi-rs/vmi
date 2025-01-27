@@ -67,35 +67,33 @@ mod iter;
 pub use self::iter::{ListEntryIterator, TreeNodeIterator};
 
 pub mod pe;
-pub use self::pe::{CodeView, PeError, PeLite, PeLite32, PeLite64};
+pub use self::pe::{CodeView, Pe, PeError};
 
 mod offsets;
 pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + remove offsets() & symbols() methods
 
 mod image;
-//pub mod object;
 mod handle_table;
 mod handle_table_entry;
 pub(crate) mod macros;
 mod module;
-mod pe2;
 mod peb;
 mod process;
 mod region;
 mod thread;
 mod xobject;
 pub use self::{
-    handle_table::WindowsOsHandleTable,
-    handle_table_entry::WindowsOsHandleTableEntry,
-    image::WindowsOsImage,
-    module::WindowsOsModule,
-    peb::WindowsOsPeb,
-    process::WindowsOsProcess,
-    region::WindowsOsRegion,
-    thread::WindowsOsThread,
+    handle_table::WindowsHandleTable,
+    handle_table_entry::WindowsHandleTableEntry,
+    image::WindowsImage,
+    module::WindowsModule,
+    peb::WindowsPeb,
+    process::WindowsProcess,
+    region::WindowsRegion,
+    thread::WindowsThread,
     xobject::{
-        WindowsObjectType, WindowsOsDirectoryObject, WindowsOsObject,
-        WindowsOsObjectHeaderNameInfo, WindowsOsSectionObject,
+        WindowsObjectType, WindowsDirectoryObject, WindowsObject,
+        WindowsObjectHeaderNameInfo, WindowsSectionObject,
     },
 };
 
@@ -275,325 +273,6 @@ pub struct WindowsExceptionRecord {
     pub information: Vec<u64>,
 }
 
-/*
-/// Represents a `_HANDLE_TABLE` structure.
-#[derive(Debug)]
-pub struct WindowsHandleTable {
-    /// The `TableCode` field of the handle table.
-    ///
-    /// A pointer to the top level handle table tree node.
-    pub table_code: u64,
-}
-
-/// Represents a `_HANDLE_TABLE_ENTRY` structure.
-#[derive(Debug)]
-pub struct WindowsHandleTableEntry {
-    /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
-    ///
-    /// A pointer to an `_OBJECT_HEADER` structure.
-    pub object: Va, // _OBJECT_HEADER*
-
-    /// The `ObAttributes` (or `Attributes`) field of the handle table entry.
-    pub attributes: u32,
-
-    /// The `GrantedAccess` (or `GrantedAccessBits`) field of the handle table entry.
-    pub granted_access: u32,
-}
-
-/// Represents a `_PEB` structure.
-#[derive(Debug)]
-pub struct WindowsPeb {
-    /// The address of this `_PEB` structure.
-    pub address: Va,
-
-    /// The `Peb->ProcessParameters->CurrentDirectory` field.
-    pub current_directory: String,
-
-    /// The `Peb->ProcessParameters->DllPath` field.
-    pub dll_path: String,
-
-    /// The `Peb->ProcessParameters->ImagePathName` field.
-    pub image_path_name: String,
-
-    /// The `Peb->ProcessParameters->CommandLine` field.
-    pub command_line: String,
-}
-
-/// Identifies the type of a Windows kernel object.
-///
-/// Windows uses a object-based kernel architecture where various system
-/// resources (processes, threads, files, etc.) are represented as kernel
-/// objects. This enum identifies the different types of objects that can
-/// be encountered during introspection.
-///
-/// Each variant corresponds to a specific object type string used internally
-/// by the Windows kernel. For example, "Process" for process objects,
-/// "Thread" for thread objects, etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowsObjectType {
-    /// ALPC Port object.
-    ///
-    /// Represented by `_ALPC_PORT` structure.
-    /// Has `ALPC Port` type name.
-    AlpcPort,
-
-    /// Debug object.
-    ///
-    /// Represented by `_DEBUG_OBJECT` structure.
-    /// Has `DebugObject` type name.
-    DebugObject,
-
-    /// Device object.
-    ///
-    /// Represented by `_DEVICE_OBJECT` structure.
-    /// Has `Device` type name.
-    Device,
-
-    /// Directory object.
-    ///
-    /// Represented by `_OBJECT_DIRECTORY` structure.
-    /// Has `Directory` type name.
-    Directory,
-
-    /// Driver object.
-    ///
-    /// Represented by `_DRIVER_OBJECT` structure.
-    /// Has `Driver` type name.
-    Driver,
-
-    /// Event object.
-    ///
-    /// Represented by `_KEVENT` structure.
-    /// Has `Event` type name.
-    Event,
-
-    /// File object.
-    ///
-    /// Represented by `_FILE_OBJECT` structure.
-    /// Has `File` type name.
-    File,
-
-    /// Job object.
-    ///
-    /// Represented by `_EJOB` structure.
-    /// Has `Job` type name.
-    Job,
-
-    /// Key object.
-    ///
-    /// Represented by `_CM_KEY_BODY` structure.
-    /// Has `Key` type name.
-    Key,
-
-    /// Mutant object.
-    ///
-    /// Represented by `_KMUTANT` structure.
-    /// Has `Mutant` type name.
-    Mutant,
-
-    /// Port object.
-    ///
-    /// Represented by `_PORT_MESSAGE` structure.
-    /// Has `Port` type name.
-    Port,
-
-    /// Process object.
-    ///
-    /// Represented by `_EPROCESS` structure.
-    /// Has `Process` type name.
-    Process,
-
-    /// Section object.
-    ///
-    /// Represented by `_SECTION` (or `_SECTION_OBJECT`) structure.
-    /// Has `Section` type name.
-    Section,
-
-    /// Symbolic link object.
-    ///
-    /// Represented by `_OBJECT_SYMBOLIC_LINK` structure.
-    /// Has `SymbolicLink` type name.
-    SymbolicLink,
-
-    /// Thread object.
-    ///
-    /// Represented by `_ETHREAD` structure.
-    /// Has `Thread` type name.
-    Thread,
-
-    /// Timer object.
-    ///
-    /// Represented by `_KTIMER` structure.
-    /// Has `Timer` type name.
-    Timer,
-
-    /// Token object.
-    ///
-    /// Represented by `_TOKEN` structure.
-    /// Has `Token` type name.
-    Token,
-
-    /// Type object.
-    ///
-    /// Represented by `_OBJECT_TYPE` structure.
-    /// Has `Type` type name.
-    Type,
-}
-
-/// A Windows object name.
-///
-/// Represents the name of a Windows object, along with its directory.
-#[derive(Debug)]
-pub struct WindowsObjectName {
-    /// A `Directory` field of the `_OBJECT_HEADER_NAME_INFO` structure.
-    ///
-    /// A pointer to the `_OBJECT_DIRECTORY` structure.
-    pub directory: Va, // _OBJECT_DIRECTORY*
-
-    /// A `Name` field of the `_OBJECT_HEADER_NAME_INFO` structure.
-    pub name: String,
-}
-
-/// A Windows object.
-#[derive(Debug)]
-pub enum WindowsObject {
-    /// File object.
-    File(WindowsFileObject),
-
-    /// Section object.
-    Section(WindowsSectionObject),
-}
-
-/// A Windows file object.
-#[derive(Debug)]
-pub struct WindowsFileObject {
-    /// The `DeviceObject` field of the file object.
-    ///
-    /// A pointer to the `_DEVICE_OBJECT` structure.
-    pub device_object: Va,
-
-    /// The `FileName` field of the file object.
-    pub filename: String,
-}
-
-/// A Windows section object.
-#[derive(Debug)]
-pub struct WindowsSectionObject {
-    /// The virtual address range of the section.
-    pub region: OsRegion,
-
-    /// The size of the section.
-    pub size: u64,
-}
-
-/// Represents a `_VAD` structure.
-#[derive(Debug)]
-pub struct WindowsVad {
-    /// The `StartingVpn` field of the VAD.
-    ///
-    /// The starting virtual page number of the VAD.
-    pub starting_vpn: u64,
-
-    /// The `EndingVpn` field of the VAD.
-    ///
-    /// The ending virtual page number of the VAD.
-    pub ending_vpn: u64,
-
-    /// The `VadType` field of the VAD.
-    pub vad_type: u8,
-
-    /// The `Protection` field of the VAD.
-    pub protection: u8,
-
-    /// The `PrivateMemory` field of the VAD.
-    pub private_memory: bool,
-
-    /// The `MemCommit` field of the VAD.
-    pub mem_commit: bool,
-
-    /// The `Left` field of the VAD.
-    pub left_child: Va,
-
-    /// The `Right` field of the VAD.
-    pub right_child: Va,
-}
-
-/// Represents a `KLDR_DATA_TABLE_ENTRY` structure.
-#[derive(Debug)]
-pub struct WindowsModule {
-    /// The `DllBase` field of the module.
-    ///
-    /// The base address of the module.
-    pub base_address: Va,
-
-    /// The `EntryPoint` field of the module.
-    ///
-    /// The entry point of the module.
-    pub entry_point: Va,
-
-    /// The `SizeOfImage` field of the module.
-    ///
-    /// The size of the module image.
-    pub size: u64,
-
-    /// The `FullDllName` field of the module.
-    ///
-    /// The full name of the module.
-    pub full_name: String,
-
-    /// The `BaseDllName` field of the module.
-    ///
-    /// The base name of the module.
-    pub name: String,
-}
-
-//
-// Private types
-//
-
-/// The address space type in a WoW64 process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WindowsWow64Kind {
-    /// Native address space.
-    Native = 0,
-
-    /// x86 (32-bit) address space under WoW64.
-    X86 = 1,
-    // Arm32 = 2,
-    // Amd64 = 3,
-    // ChpeX86 = 4,
-    // VsmEnclave = 5,
-}
-
-/// A 32-bit or 64-bit virtual address in WoW64 processes.
-#[expect(unused)]
-struct WindowsWow64Va {
-    /// The virtual address.
-    va: Va,
-
-    /// The kind of the virtual address.
-    kind: WindowsWow64Kind,
-}
-
-impl WindowsWow64Va {
-    #[expect(unused)]
-    fn native(va: Va) -> Self {
-        Self {
-            va,
-            kind: WindowsWow64Kind::Native,
-        }
-    }
-
-    #[expect(unused)]
-    fn x86(va: Va) -> Self {
-        Self {
-            va,
-            kind: WindowsWow64Kind::X86,
-        }
-    }
-}
-*/
-
 #[derive_trait_from_impl(WindowsOsExt)]
 #[allow(non_snake_case, non_upper_case_globals)]
 impl<Driver> WindowsOs<Driver>
@@ -730,7 +409,7 @@ where
         pfn: Gfn,
         increment: i16,
     ) -> Result<Option<u16>, VmiError> {
-        let MMPFN = &self.offsets.common._MMPFN;
+        let MMPFN = &self.offsets._MMPFN;
 
         // const ZeroedPageList: u16 = 0;
         // const FreePageList: u16 = 1;
@@ -1017,10 +696,10 @@ where
     /// return NtCurrentTeb()->LastStatusValue;
     /// ```
     pub fn last_status(&self, vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
-        let KTHREAD = &self.offsets.common._KTHREAD;
-        let TEB = &self.offsets.common._TEB;
+        let KTHREAD = &self.offsets._KTHREAD;
+        let TEB = &self.offsets._TEB;
 
-        let current_thread = self.__current_thread(vmi)?.object()?;
+        let current_thread = self.current_thread(vmi)?.object()?;
         let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
 
         if teb.is_null() {
@@ -1040,8 +719,8 @@ where
         &self,
         vmi: VmiState<'a, Driver, Self>,
         va: Va,
-    ) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
-        Ok(WindowsOsObject::new(vmi, va))
+    ) -> Result<WindowsObject<'a, Driver>, VmiError> {
+        Ok(WindowsObject::new(vmi, va))
     }
 
     /// Retrieves the root directory object for the Windows kernel.
@@ -1053,7 +732,7 @@ where
     pub fn __object_root_directory<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsDirectoryObject<'a, Driver>, VmiError> {
+    ) -> Result<WindowsDirectoryObject<'a, Driver>, VmiError> {
         let object_root_directory = self
             .object_root_directory
             .get_or_try_init(|| {
@@ -1064,7 +743,7 @@ where
             })
             .copied()?;
 
-        Ok(WindowsOsDirectoryObject::new(vmi, object_root_directory))
+        Ok(WindowsDirectoryObject::new(vmi, object_root_directory))
     }
 
     /// Retrieves the object header cookie used for obfuscating object types.
@@ -1113,8 +792,8 @@ where
         object: Va,
     ) -> Result<Option<WindowsObjectType>, VmiError> {
         let ObTypeIndexTable = self.symbols.ObTypeIndexTable;
-        let OBJECT_HEADER = &self.offsets.common._OBJECT_HEADER;
-        let OBJECT_TYPE = &self.offsets.common._OBJECT_TYPE;
+        let OBJECT_HEADER = &self.offsets._OBJECT_HEADER;
+        let OBJECT_TYPE = &self.offsets._OBJECT_TYPE;
 
         let object_header = object - OBJECT_HEADER.Body.offset;
         let type_index = vmi.read_u8(object_header + OBJECT_HEADER.TypeIndex.offset)?;
@@ -1187,7 +866,7 @@ where
         process: ProcessObject,
         object_attributes: Va,
     ) -> Result<Option<String>, VmiError> {
-        let OBJECT_ATTRIBUTES = &self.offsets.common._OBJECT_ATTRIBUTES;
+        let OBJECT_ATTRIBUTES = &self.offsets._OBJECT_ATTRIBUTES;
 
         let object_name_address =
             vmi.read_va_native(object_attributes + OBJECT_ATTRIBUTES.ObjectName.offset)?;
@@ -1539,8 +1218,8 @@ where
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
         image_base: Va,
-    ) -> Result<WindowsOsImage<'a, Driver>, VmiError> {
-        Ok(WindowsOsImage::new(vmi, image_base))
+    ) -> Result<WindowsImage<'a, Driver>, VmiError> {
+        Ok(WindowsImage::new(vmi, image_base))
     }
 
     /// xxx
@@ -1560,11 +1239,11 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    type Process<'a> = WindowsOsProcess<'a, Driver>;
-    type Thread<'a> = WindowsOsThread<'a, Driver>;
-    type Image<'a> = WindowsOsImage<'a, Driver>;
-    type Module<'a> = WindowsOsModule<'a, Driver>;
-    type Region<'a> = WindowsOsRegion<'a, Driver>;
+    type Process<'a> = WindowsProcess<'a, Driver>;
+    type Thread<'a> = WindowsThread<'a, Driver>;
+    type Image<'a> = WindowsImage<'a, Driver>;
+    type Module<'a> = WindowsModule<'a, Driver>;
+    type Region<'a> = WindowsRegion<'a, Driver>;
 
     fn kernel_image_base(&self, vmi: VmiState<Driver, Self>) -> Result<Va, VmiError> {
         Driver::Architecture::kernel_image_base(vmi, self)
@@ -1597,12 +1276,11 @@ where
             .copied()
     }
 
-    fn __modules<'a>(
+    fn modules<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError> {
         let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
-
         let KLDR_DATA_TABLE_ENTRY = &self.offsets._KLDR_DATA_TABLE_ENTRY;
 
         Ok(self
@@ -1611,40 +1289,39 @@ where
                 PsLoadedModuleList,
                 KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset,
             )?
-            .map(move |result| result.map(|entry| WindowsOsModule::new(vmi, entry))))
+            .map(move |result| result.map(|entry| WindowsModule::new(vmi, entry))))
     }
 
-    fn __processes<'a>(
+    fn processes<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError> {
         let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
-
-        let EPROCESS = &self.offsets.common._EPROCESS;
+        let EPROCESS = &self.offsets._EPROCESS;
 
         Ok(self
             .linked_list(vmi, PsActiveProcessHead, EPROCESS.ActiveProcessLinks.offset)?
             .map(move |result| {
-                result.map(|entry| WindowsOsProcess::new(vmi, ProcessObject(entry)))
+                result.map(|entry| WindowsProcess::new(vmi, ProcessObject(entry)))
             }))
     }
 
-    fn __process<'a>(
+    fn process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         process: ProcessObject,
     ) -> Result<Self::Process<'a>, VmiError> {
-        Ok(WindowsOsProcess::new(vmi, process))
+        Ok(WindowsProcess::new(vmi, process))
     }
 
-    fn __current_process<'a>(
+    fn current_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Process<'a>, VmiError> {
-        self.__current_thread(vmi)?.attached_process()
+        self.current_thread(vmi)?.attached_process()
     }
 
-    fn __system_process<'a>(
+    fn system_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Process<'a>, VmiError> {
@@ -1652,18 +1329,18 @@ where
             self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
 
         let process = vmi.read_va_native(PsInitialSystemProcess)?;
-        Ok(WindowsOsProcess::new(vmi, ProcessObject(process)))
+        Ok(WindowsProcess::new(vmi, ProcessObject(process)))
     }
 
-    fn __thread<'a>(
+    fn thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         thread: ThreadObject,
     ) -> Result<Self::Thread<'a>, VmiError> {
-        Ok(WindowsOsThread::new(vmi, thread))
+        Ok(WindowsThread::new(vmi, thread))
     }
 
-    fn __current_thread<'a>(
+    fn current_thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<Self::Thread<'a>, VmiError> {
@@ -1683,31 +1360,31 @@ where
             return Err(VmiError::Other("Invalid thread"));
         }
 
-        Ok(WindowsOsThread::new(vmi, ThreadObject(result)))
+        Ok(WindowsThread::new(vmi, ThreadObject(result)))
     }
 
-    fn __image<'a>(
+    fn image<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         image_base: Va,
     ) -> Result<Self::Image<'a>, VmiError> {
-        Ok(WindowsOsImage::new(vmi, image_base))
+        Ok(WindowsImage::new(vmi, image_base))
     }
 
-    fn __module<'a>(
+    fn module<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         module: Va,
     ) -> Result<Self::Module<'a>, VmiError> {
-        Ok(WindowsOsModule::new(vmi, module))
+        Ok(WindowsModule::new(vmi, module))
     }
 
-    fn __region<'a>(
+    fn region<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         region: Va,
     ) -> Result<Self::Region<'a>, VmiError> {
-        Ok(WindowsOsRegion::new(vmi, region))
+        Ok(WindowsRegion::new(vmi, region))
     }
 
     fn syscall_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
@@ -1723,10 +1400,10 @@ where
     }
 
     fn last_error(&self, vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
-        let KTHREAD = &self.offsets.common._KTHREAD;
-        let TEB = &self.offsets.common._TEB;
+        let KTHREAD = &self.offsets._KTHREAD;
+        let TEB = &self.offsets._TEB;
 
-        let current_thread = self.__current_thread(vmi)?.object()?;
+        let current_thread = self.current_thread(vmi)?.object()?;
         let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
 
         if teb.is_null() {

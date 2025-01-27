@@ -7,9 +7,9 @@ mod section;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
 pub use self::{
-    control_area::WindowsOsControlArea, directory::WindowsOsDirectoryObject,
-    file::WindowsOsFileObject, name_info::WindowsOsObjectHeaderNameInfo,
-    section::WindowsOsSectionObject,
+    control_area::WindowsControlArea, directory::WindowsDirectoryObject,
+    file::WindowsFileObject, name_info::WindowsObjectHeaderNameInfo,
+    section::WindowsSectionObject,
 };
 use crate::{
     arch::ArchAdapter,
@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// A Windows object.
-pub struct WindowsOsObject<'a, Driver>
+pub struct WindowsObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -30,17 +30,17 @@ where
     va: Va,
 }
 
-impl<Driver> From<WindowsOsObject<'_, Driver>> for Va
+impl<Driver> From<WindowsObject<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsObject<Driver>) -> Self {
+    fn from(value: WindowsObject<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsObject<'a, Driver>
+impl<'a, Driver> WindowsObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -66,7 +66,7 @@ where
     }
 
     /// Returns the name information of the object.
-    pub fn name_info(&self) -> Result<Option<WindowsOsObjectHeaderNameInfo<'a, Driver>>, VmiError> {
+    pub fn name_info(&self) -> Result<Option<WindowsObjectHeaderNameInfo<'a, Driver>>, VmiError> {
         let symbols = self.symbols();
         let offsets = self.offsets();
         let ObpInfoMaskToOffset = symbols.ObpInfoMaskToOffset;
@@ -101,7 +101,7 @@ where
             .vmi
             .read_u8(kernel_image_base + ObpInfoMaskToOffset + mask)? as u64;
 
-        Ok(Some(WindowsOsObjectHeaderNameInfo::new(
+        Ok(Some(WindowsObjectHeaderNameInfo::new(
             self.vmi,
             self.header() - offset,
         )))
@@ -113,16 +113,16 @@ where
     }
 
     /// Returns the kind of the object.
-    pub fn kind(&self) -> Result<Option<WindowsOsObjectKind<'a, Driver>>, VmiError> {
+    pub fn kind(&self) -> Result<Option<WindowsObjectKind<'a, Driver>>, VmiError> {
         let result = match self.typ()? {
             Some(WindowsObjectType::Directory) => {
-                WindowsOsObjectKind::Directory(WindowsOsDirectoryObject::new(self.vmi, self.va))
+                WindowsObjectKind::Directory(WindowsDirectoryObject::new(self.vmi, self.va))
             }
             Some(WindowsObjectType::File) => {
-                WindowsOsObjectKind::File(WindowsOsFileObject::new(self.vmi, self.va))
+                WindowsObjectKind::File(WindowsFileObject::new(self.vmi, self.va))
             }
             Some(WindowsObjectType::Section) => {
-                WindowsOsObjectKind::Section(WindowsOsSectionObject::new(self.vmi, self.va))
+                WindowsObjectKind::Section(WindowsSectionObject::new(self.vmi, self.va))
             }
             _ => return Ok(None),
         };
@@ -131,25 +131,25 @@ where
     }
 
     /// Returns the object as a directory (`_OBJECT_DIRECTORY`).
-    pub fn as_directory(&self) -> Option<WindowsOsDirectoryObject<'a, Driver>> {
+    pub fn as_directory(&self) -> Option<WindowsDirectoryObject<'a, Driver>> {
         match self.kind() {
-            Ok(Some(WindowsOsObjectKind::Directory(directory))) => Some(directory),
+            Ok(Some(WindowsObjectKind::Directory(directory))) => Some(directory),
             _ => None,
         }
     }
 
     /// Returns the object as a file (`_FILE_OBJECT`).
-    pub fn as_file(&self) -> Option<WindowsOsFileObject<'a, Driver>> {
+    pub fn as_file(&self) -> Option<WindowsFileObject<'a, Driver>> {
         match self.kind() {
-            Ok(Some(WindowsOsObjectKind::File(file))) => Some(file),
+            Ok(Some(WindowsObjectKind::File(file))) => Some(file),
             _ => None,
         }
     }
 
     /// Returns the object as a section (`_SECTION_OBJECT`).
-    pub fn as_section(&self) -> Option<WindowsOsSectionObject<'a, Driver>> {
+    pub fn as_section(&self) -> Option<WindowsSectionObject<'a, Driver>> {
         match self.kind() {
-            Ok(Some(WindowsOsObjectKind::Section(section))) => Some(section),
+            Ok(Some(WindowsObjectKind::Section(section))) => Some(section),
             _ => None,
         }
     }
@@ -277,17 +277,17 @@ pub enum WindowsObjectType {
 }
 
 /// A Windows object.
-pub enum WindowsOsObjectKind<'a, Driver>
+pub enum WindowsObjectKind<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Directory object (`_OBJECT_DIRECTORY`).
-    Directory(WindowsOsDirectoryObject<'a, Driver>),
+    Directory(WindowsDirectoryObject<'a, Driver>),
 
     /// File object (`_FILE_OBJECT`).
-    File(WindowsOsFileObject<'a, Driver>),
+    File(WindowsFileObject<'a, Driver>),
 
     /// Section object (`_SECTION_OBJECT`).
-    Section(WindowsOsSectionObject<'a, Driver>),
+    Section(WindowsSectionObject<'a, Driver>),
 }

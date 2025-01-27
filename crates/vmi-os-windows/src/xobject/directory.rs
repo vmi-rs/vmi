@@ -1,10 +1,10 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use super::WindowsOsObject;
+use super::WindowsObject;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs};
 
 /// A Windows directory object.
-pub struct WindowsOsDirectoryObject<'a, Driver>
+pub struct WindowsDirectoryObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -16,27 +16,27 @@ where
     va: Va,
 }
 
-impl<Driver> From<WindowsOsDirectoryObject<'_, Driver>> for Va
+impl<Driver> From<WindowsDirectoryObject<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsDirectoryObject<Driver>) -> Self {
+    fn from(value: WindowsDirectoryObject<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> From<WindowsOsDirectoryObject<'a, Driver>> for WindowsOsObject<'a, Driver>
+impl<'a, Driver> From<WindowsDirectoryObject<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsDirectoryObject<'a, Driver>) -> Self {
+    fn from(value: WindowsDirectoryObject<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
     }
 }
 
-impl<'a, Driver> WindowsOsDirectoryObject<'a, Driver>
+impl<'a, Driver> WindowsDirectoryObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -51,7 +51,7 @@ where
     /// Enumerates the objects in the directory.
     pub fn enumerate(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsObject<'a, Driver>, VmiError>>, VmiError> {
+    ) -> Result<impl Iterator<Item = Result<WindowsObject<'a, Driver>, VmiError>>, VmiError> {
         let offsets = self.offsets();
         let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
         let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
@@ -69,7 +69,7 @@ where
                     .vmi
                     .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset)?;
 
-                let object = WindowsOsObject::new(self.vmi, object);
+                let object = WindowsObject::new(self.vmi, object);
 
                 entries.push(Ok(object));
 
@@ -86,7 +86,7 @@ where
     pub fn lookup(
         &self,
         needle: impl AsRef<str>,
-    ) -> Result<Option<WindowsOsObject<'a, Driver>>, VmiError> {
+    ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
         let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
@@ -114,7 +114,7 @@ where
                     .read_u32(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset)?;
                 println!("    hash_value: {}", hash_value);
 
-                let object = WindowsOsObject::new(self.vmi, object);
+                let object = WindowsObject::new(self.vmi, object);
 
                 if let Some(name_info) = object.name_info()? {
                     let name = name_info.name()?;

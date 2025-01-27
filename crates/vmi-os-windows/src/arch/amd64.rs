@@ -1,4 +1,3 @@
-use object::{FileKind, LittleEndian as LE};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
     os::{ProcessObject, VmiOsProcess},
@@ -6,9 +5,7 @@ use vmi_core::{
 };
 
 use super::ArchAdapter;
-use crate::{
-    pe::codeview::codeview_from_pe, PeLite32, PeLite64, WindowsKernelInformation, WindowsOs,
-};
+use crate::{WindowsKernelInformation, WindowsOs};
 
 /// An extension trait for [`PageTableEntry`] that provides access to
 /// Windows-specific fields.
@@ -111,7 +108,12 @@ where
                 continue;
             }
 
+            unimplemented!()
+
+            /*
             tracing::debug!(%base_address, "found MZ");
+            let pe = Pe::new(&data[..])?;
+
             match FileKind::parse(&data[..]) {
                 Ok(FileKind::Pe32) => {
                     let pe = PeLite32::parse(&data).map_err(|err| VmiError::Os(err.into()))?;
@@ -156,6 +158,7 @@ where
                     tracing::warn!(%err, "Error parsing PE");
                 }
             }
+            */
         }
 
         tracing::warn!(
@@ -237,9 +240,9 @@ where
         // function.
         //
 
-        use crate::WindowsOsProcess;
+        use crate::WindowsProcess;
 
-        let process = WindowsOsProcess::new(vmi, process);
+        let process = WindowsProcess::new(vmi, process);
 
         let vad = match process.find_region(address)? {
             Some(vad) => vad,

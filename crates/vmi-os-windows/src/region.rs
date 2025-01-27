@@ -5,11 +5,11 @@ use vmi_core::{
 };
 
 use crate::{
-    arch::ArchAdapter, macros::impl_offsets, xobject::WindowsOsControlArea, OffsetsExt, WindowsOs,
+    arch::ArchAdapter, macros::impl_offsets, xobject::WindowsControlArea, OffsetsExt, WindowsOs,
 };
 
 /// A Windows OS region (`_MMVAD`).
-pub struct WindowsOsRegion<'a, Driver>
+pub struct WindowsRegion<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -47,17 +47,17 @@ where
 }
 */
 
-impl<Driver> From<WindowsOsRegion<'_, Driver>> for Va
+impl<Driver> From<WindowsRegion<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsRegion<Driver>) -> Self {
+    fn from(value: WindowsRegion<Driver>) -> Self {
         value.va
     }
 }
 
-impl<Driver> std::fmt::Debug for WindowsOsRegion<'_, Driver>
+impl<Driver> std::fmt::Debug for WindowsRegion<'_, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<'a, Driver> WindowsOsRegion<'a, Driver>
+impl<'a, Driver> WindowsRegion<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -229,7 +229,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_MMVAD_SHORT.Left`.
-    pub fn left_child(&self) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+    pub fn left_child(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let MMVAD_SHORT = &offsets._MMVAD_SHORT;
 
@@ -239,7 +239,7 @@ where
             return Ok(None);
         }
 
-        Ok(Some(WindowsOsRegion::new(self.vmi, Va(left_child))))
+        Ok(Some(WindowsRegion::new(self.vmi, Va(left_child))))
     }
 
     /// Returns the right child of the VAD.
@@ -247,7 +247,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_MMVAD_SHORT.Right`.
-    pub fn right_child(&self) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+    pub fn right_child(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let MMVAD_SHORT = &offsets._MMVAD_SHORT;
 
@@ -257,11 +257,11 @@ where
             return Ok(None);
         }
 
-        Ok(Some(WindowsOsRegion::new(self.vmi, Va(right_child))))
+        Ok(Some(WindowsRegion::new(self.vmi, Va(right_child))))
     }
 }
 
-impl<'a, Driver> VmiOsRegion<'a, Driver> for WindowsOsRegion<'a, Driver>
+impl<'a, Driver> VmiOsRegion<'a, Driver> for WindowsRegion<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -334,7 +334,7 @@ where
 
         // Note that filename is allocated from paged pool,
         // so this read might fail.
-        let path = WindowsOsControlArea::new(self.vmi, control_area)
+        let path = WindowsControlArea::new(self.vmi, control_area)
             .file_object()?
             .filename()
             .map(Some);

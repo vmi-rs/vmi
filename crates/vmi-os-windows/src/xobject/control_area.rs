@@ -1,10 +1,10 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use super::WindowsOsFileObject;
+use super::WindowsFileObject;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs};
 
 /// A Windows section object.
-pub struct WindowsOsControlArea<'a, Driver>
+pub struct WindowsControlArea<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -16,17 +16,17 @@ where
     va: Va,
 }
 
-impl<Driver> From<WindowsOsControlArea<'_, Driver>> for Va
+impl<Driver> From<WindowsControlArea<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsControlArea<Driver>) -> Self {
+    fn from(value: WindowsControlArea<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsControlArea<'a, Driver>
+impl<'a, Driver> WindowsControlArea<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -43,7 +43,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_CONTROL_AREA.FilePointer`.
-    pub fn file_object(&self) -> Result<WindowsOsFileObject<'a, Driver>, VmiError> {
+    pub fn file_object(&self) -> Result<WindowsFileObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let EX_FAST_REF = &offsets._EX_FAST_REF;
         let CONTROL_AREA = &offsets._CONTROL_AREA;
@@ -59,6 +59,6 @@ where
         let file_pointer = file_pointer & !((1 << EX_FAST_REF.RefCnt.bit_length) - 1);
         //let file_pointer = file_pointer & !0xf;
 
-        Ok(WindowsOsFileObject::new(self.vmi, file_pointer))
+        Ok(WindowsFileObject::new(self.vmi, file_pointer))
     }
 }

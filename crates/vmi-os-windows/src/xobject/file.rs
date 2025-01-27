@@ -1,10 +1,10 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use super::WindowsOsObject;
+use super::WindowsObject;
 use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsOsExt as _};
 
 /// A Windows file object.
-pub struct WindowsOsFileObject<'a, Driver>
+pub struct WindowsFileObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -16,27 +16,27 @@ where
     va: Va,
 }
 
-impl<Driver> From<WindowsOsFileObject<'_, Driver>> for Va
+impl<Driver> From<WindowsFileObject<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsFileObject<Driver>) -> Self {
+    fn from(value: WindowsFileObject<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> From<WindowsOsFileObject<'a, Driver>> for WindowsOsObject<'a, Driver>
+impl<'a, Driver> From<WindowsFileObject<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsFileObject<'a, Driver>) -> Self {
+    fn from(value: WindowsFileObject<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
     }
 }
 
-impl<'a, Driver> WindowsOsFileObject<'a, Driver>
+impl<'a, Driver> WindowsFileObject<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -53,7 +53,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_FILE_OBJECT.DeviceObject`.
-    pub fn device_object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
+    pub fn device_object(&self) -> Result<WindowsObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let FILE_OBJECT = &offsets._FILE_OBJECT;
 
@@ -61,7 +61,7 @@ where
             .vmi
             .read_va_native(self.va + FILE_OBJECT.DeviceObject.offset)?;
 
-        Ok(WindowsOsObject::new(self.vmi, device_object))
+        Ok(WindowsObject::new(self.vmi, device_object))
     }
 
     /// Returns the filename associated with the file object.

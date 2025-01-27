@@ -389,7 +389,7 @@ where
         // Early exit if the current process is not the target process.
         //
 
-        let current_pid = vmi.os().__current_process()?.id()?;
+        let current_pid = vmi.os().current_process()?.id()?;
         if current_pid != self.pid {
             return Ok(VmiEventResponse::default());
         }
@@ -404,7 +404,7 @@ where
         let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset;
         let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset;
 
-        let current_thread = vmi.os().__current_thread()?;
+        let current_thread = vmi.os().current_thread()?;
         let current_tid = current_thread.id()?;
         let current_thread = Va::from(current_thread);
 
@@ -511,7 +511,7 @@ where
         // Therefore this event might have been triggered by a different process.
         //
 
-        let current_pid = vmi.os().__current_process()?.id()?;
+        let current_pid = vmi.os().current_process()?.id()?;
         if current_pid != self.pid {
             // Too noisy...
             // tracing::trace!(
@@ -526,7 +526,7 @@ where
         // Early exit if the current thread is not the target thread.
         //
 
-        let current_tid = vmi.os().__current_thread()?.id()?;
+        let current_tid = vmi.os().current_thread()?.id()?;
         if Some(current_tid) != self.tid {
             // Too noisy...
             // tracing::trace!(

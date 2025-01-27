@@ -2,12 +2,12 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
 use crate::{
-    arch::ArchAdapter, handle_table_entry::WindowsOsHandleTableEntry, macros::impl_offsets,
+    arch::ArchAdapter, handle_table_entry::WindowsHandleTableEntry, macros::impl_offsets,
     WindowsOs,
 };
 
 /// A Windows OS module.
-pub struct WindowsOsHandleTable<'a, Driver>
+pub struct WindowsHandleTable<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -18,17 +18,17 @@ where
     next_handle_needing_pool: OnceCell<u64>,
 }
 
-impl<Driver> From<WindowsOsHandleTable<'_, Driver>> for Va
+impl<Driver> From<WindowsHandleTable<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsHandleTable<Driver>) -> Self {
+    fn from(value: WindowsHandleTable<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsHandleTable<'a, Driver>
+impl<'a, Driver> WindowsHandleTable<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -88,7 +88,7 @@ where
     pub fn lookup(
         &self,
         handle: u64,
-    ) -> Result<Option<WindowsOsHandleTableEntry<'a, Driver>>, VmiError> {
+    ) -> Result<Option<WindowsHandleTableEntry<'a, Driver>>, VmiError> {
         const SIZEOF_POINTER: u64 = 8;
         const SIZEOF_HANDLE_TABLE_ENTRY: u64 = 16;
 
@@ -148,6 +148,6 @@ where
             _ => unreachable!(),
         };
 
-        Ok(Some(WindowsOsHandleTableEntry::new(self.vmi, entry)))
+        Ok(Some(WindowsHandleTableEntry::new(self.vmi, entry)))
     }
 }

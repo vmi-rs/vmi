@@ -2,7 +2,7 @@ use super::{OsArchitecture, ProcessId, ProcessObject, VmiOs};
 use crate::{Pa, Va, VmiDriver, VmiError};
 
 /// A process object.
-pub trait VmiOsProcess<'a, Driver>: Copy + Into<Va> + 'a
+pub trait VmiOsProcess<'a, Driver>: Into<Va> + 'a
 where
     Driver: VmiDriver,
 {
@@ -44,7 +44,7 @@ where
 
     /// Retrieves a list of memory regions for a given process.
     fn regions(
-        self,
+        &self,
     ) -> Result<
         impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Region<'a>, VmiError>>,
         VmiError,
@@ -52,7 +52,7 @@ where
 
     /// Finds a specific memory region in a process given an address.
     fn find_region(
-        self,
+        &self,
         address: Va,
     ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError>;
 

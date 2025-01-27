@@ -6,16 +6,16 @@ use vmi_core::{
 
 use crate::{
     arch::ArchAdapter,
-    handle_table::WindowsOsHandleTable,
+    handle_table::WindowsHandleTable,
     macros::impl_offsets,
     offsets::{v1, v2},
-    peb::{WindowsOsPeb, WindowsWow64Kind},
-    region::WindowsOsRegion,
+    peb::{WindowsPeb, WindowsWow64Kind},
+    region::WindowsRegion,
     OffsetsExt, TreeNodeIterator, WindowsOs,
 };
 
 /// A Windows OS process (`_EPROCESS`).
-pub struct WindowsOsProcess<'a, Driver>
+pub struct WindowsProcess<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -27,37 +27,17 @@ where
     va: Va,
 }
 
-impl<Driver> Clone for WindowsOsProcess<'_, Driver>
+impl<Driver> From<WindowsProcess<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn clone(&self) -> Self {
-        Self {
-            vmi: self.vmi.clone(),
-            va: self.va,
-        }
-    }
-}
-
-impl<Driver> Copy for WindowsOsProcess<'_, Driver>
-where
-    Driver: VmiDriver,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
-{
-}
-
-impl<Driver> From<WindowsOsProcess<'_, Driver>> for Va
-where
-    Driver: VmiDriver,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
-{
-    fn from(value: WindowsOsProcess<Driver>) -> Self {
+    fn from(value: WindowsProcess<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsProcess<'a, Driver>
+impl<'a, Driver> WindowsProcess<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -77,7 +57,7 @@ where
     /// if the process is a 32-bit process. If the field is `NULL`, the process
     /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
     /// to get the 32-bit PEB.
-    pub fn peb(&self) -> Result<WindowsOsPeb<'a, Driver>, VmiError> {
+    pub fn peb(&self) -> Result<WindowsPeb<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -90,7 +70,7 @@ where
         if wow64.is_null() {
             let peb64 = self.vmi.read_va_native(self.va + EPROCESS.Peb.offset)?;
 
-            Ok(WindowsOsPeb::new(
+            Ok(WindowsPeb::new(
                 self.vmi,
                 peb64,
                 root,
@@ -106,7 +86,7 @@ where
                 None => panic!("OffsetsExt not set"),
             };
 
-            Ok(WindowsOsPeb::new(
+            Ok(WindowsPeb::new(
                 self.vmi,
                 peb32,
                 root,
@@ -116,7 +96,7 @@ where
     }
 
     /// Returns the handle table of the process.
-    pub fn handle_table(&self) -> Result<WindowsOsHandleTable<'a, Driver>, VmiError> {
+    pub fn handle_table(&self) -> Result<WindowsHandleTable<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -124,7 +104,7 @@ where
             .vmi
             .read_va_native(self.va + EPROCESS.ObjectTable.offset)?;
 
-        Ok(WindowsOsHandleTable::new(self.vmi.clone(), handle_table))
+        Ok(WindowsHandleTable::new(self.vmi.clone(), handle_table))
     }
 
     /// Returns the address of the root node in the VAD tree.
@@ -133,14 +113,14 @@ where
     ///
     /// Corresponds to `_EPROCESS.VadRoot->BalancedRoot` for Windows 7 and
     /// `_EPROCESS.VadRoot->Root` for Windows 8.1 and later.
-    pub fn vad_root(&self) -> Result<WindowsOsRegion<'a, Driver>, VmiError> {
+    pub fn vad_root(&self) -> Result<WindowsRegion<'a, Driver>, VmiError> {
         let node = match &self.offsets().ext() {
             Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(offsets)?,
             Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(offsets)?,
             None => panic!("OffsetsExt not set"),
         };
 
-        Ok(WindowsOsRegion::new(self.vmi, node))
+        Ok(WindowsRegion::new(self.vmi, node))
     }
 
     fn vad_root_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
@@ -178,7 +158,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.VadRoot->NodeHint` for Windows 7 and
     /// `_EPROCESS.VadRoot->Hint` for Windows 8.1 and later.
-    pub fn vad_hint(&self) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+    pub fn vad_hint(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let node = match &self.offsets().ext() {
             Some(OffsetsExt::V1(offsets)) => self.vad_hint_v1(offsets)?,
             Some(OffsetsExt::V2(offsets)) => self.vad_hint_v2(offsets)?,
@@ -189,7 +169,7 @@ where
             return Ok(None);
         }
 
-        Ok(Some(WindowsOsRegion::new(self.vmi, node)))
+        Ok(Some(WindowsRegion::new(self.vmi, node)))
     }
 
     fn vad_hint_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
@@ -213,7 +193,7 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsProcess<'a, Driver> for WindowsOsProcess<'a, Driver>
+impl<'a, Driver> VmiOsProcess<'a, Driver> for WindowsProcess<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -302,7 +282,7 @@ where
         let offsets = self.offsets();
         let KPROCESS = &offsets._KPROCESS;
 
-        let current_process = self.vmi.os().__current_process()?.object()?;
+        let current_process = self.vmi.os().current_process()?.object()?;
 
         if self.va == current_process.0 {
             return Ok(self.vmi.translation_root(self.va));
@@ -382,10 +362,10 @@ where
     ///
     /// The function iterates over the VAD tree of the process.
     fn regions(
-        self,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsRegion<'a, Driver>, VmiError>>, VmiError> {
+        &self,
+    ) -> Result<impl Iterator<Item = Result<WindowsRegion<'a, Driver>, VmiError>>, VmiError> {
         Ok(TreeNodeIterator::new(self.vmi, self.vad_root()?.into())?
-            .map(move |result| result.map(|vad| WindowsOsRegion::new(self.vmi, vad))))
+            .map(move |result| result.map(|vad| WindowsRegion::new(self.vmi, vad))))
     }
 
     /// Locates the VAD that encompasses a specific virtual address in the process.
@@ -397,7 +377,7 @@ where
     ///
     /// Returns the matching VAD if found, or `None` if the address is not
     /// within any VAD.
-    fn find_region(self, address: Va) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+    fn find_region(&self, address: Va) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let vad = match self.vad_hint()? {
             Some(vad) => vad,
             None => return Ok(None),

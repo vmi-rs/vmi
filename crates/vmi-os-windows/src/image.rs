@@ -11,7 +11,7 @@ use vmi_core::{
 
 use crate::{
     arch::ArchAdapter,
-    pe2::{
+    pe::{
         ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, Pe, PeDebugDirectory,
         PeExportDirectory,
     },
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// A Windows OS image.
-pub struct WindowsOsImage<'a, Driver>
+pub struct WindowsImage<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -56,17 +56,17 @@ where
 }
 */
 
-impl<Driver> From<WindowsOsImage<'_, Driver>> for Va
+impl<Driver> From<WindowsImage<'_, Driver>> for Va
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn from(value: WindowsOsImage<Driver>) -> Self {
+    fn from(value: WindowsImage<Driver>) -> Self {
         value.va
     }
 }
 
-impl<'a, Driver> WindowsOsImage<'a, Driver>
+impl<'a, Driver> WindowsImage<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -93,7 +93,7 @@ where
     }
 
     /// Returns the debug directory.
-    pub fn debug_directory(&self) -> Result<Option<PeDebugDirectory<Driver>>, VmiError> {
+    pub fn debug_directory(&'a self) -> Result<Option<PeDebugDirectory<'a, Driver>>, VmiError> {
         let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_DEBUG)? {
             Some(entry) => entry,
             None => return Ok(None),
@@ -151,7 +151,7 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsImage<'a, Driver> for WindowsOsImage<'a, Driver>
+impl<'a, Driver> VmiOsImage<'a, Driver> for WindowsImage<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
