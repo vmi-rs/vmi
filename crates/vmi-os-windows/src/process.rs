@@ -9,9 +9,9 @@ use crate::{
     handle_table::WindowsOsHandleTable,
     macros::impl_offsets,
     offsets::{v1, v2},
-    peb::WindowsOsPeb,
+    peb::{WindowsOsPeb, WindowsWow64Kind},
     region::WindowsOsRegion,
-    OffsetsExt, TreeNodeIterator, WindowsOs, WindowsWow64Kind,
+    OffsetsExt, TreeNodeIterator, WindowsOs,
 };
 
 /// A Windows OS process (`_EPROCESS`).

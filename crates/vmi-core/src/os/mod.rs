@@ -154,6 +154,20 @@ where
         image_base: Va,
     ) -> Result<Self::Image<'a>, VmiError>;
 
+    /// XXX
+    fn __module<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        module: Va,
+    ) -> Result<Self::Module<'a>, VmiError>;
+
+    /// XXX
+    fn __region<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        region: Va,
+    ) -> Result<Self::Region<'a>, VmiError>;
+
     /// Retrieves a specific syscall argument according to the system call ABI.
     ///
     /// This function assumes that it is called in the prologue of the system
@@ -188,36 +202,4 @@ where
     ///   field.
     ///   - See also: [`WindowsOs::last_status()`](../../../../vmi_os_windows/struct.WindowsOs.html#method.last_status)
     fn last_error(&self, vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError>;
-}
-
-/// Operating system extension trait.
-pub trait OsExt<Driver>: VmiOs<Driver>
-where
-    Driver: VmiDriver,
-{
-    /// Enumerates a linked list.
-    ///
-    /// # Platform-specific
-    ///
-    /// - **Windows**: Enumerates a `LIST_ENTRY` structure.
-    /// - **Linux**: Enumerates a `list_head` structure.
-    fn enumerate_list(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        list_head: Va,
-        callback: impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError>;
-
-    /// Enumerates a tree structure.
-    ///
-    /// # Platform-specific
-    ///
-    /// - **Windows 7**: Enumerates a `MMADDRESS_NODE` structure.
-    /// - **Windows 10+**: Enumerates a `RTL_BALANCED_NODE` structure.
-    fn enumerate_tree(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Va,
-        callback: impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError>;
 }

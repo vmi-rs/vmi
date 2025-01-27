@@ -57,6 +57,26 @@ where
     }
 }
 
+impl<Driver> std::fmt::Debug for WindowsOsRegion<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let start = self.start();
+        let end = self.end();
+        let protection = self.protection();
+        let kind = self.kind();
+
+        f.debug_struct("WindowsOsRegion")
+            .field("start", &start)
+            .field("end", &end)
+            .field("protection", &protection)
+            .field("kind", &kind)
+            .finish()
+    }
+}
+
 impl<'a, Driver> WindowsOsRegion<'a, Driver>
 where
     Driver: VmiDriver,

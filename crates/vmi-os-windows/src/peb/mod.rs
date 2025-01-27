@@ -2,7 +2,21 @@ mod process_parameters;
 use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState};
 
 pub use self::process_parameters::WindowsOsProcessParameters;
-use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs, WindowsWow64Kind};
+use crate::{arch::ArchAdapter, macros::impl_offsets, WindowsOs};
+
+/// The address space type in a WoW64 process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WindowsWow64Kind {
+    /// Native address space.
+    Native = 0,
+
+    /// x86 (32-bit) address space under WoW64.
+    X86 = 1,
+    // Arm32 = 2,
+    // Amd64 = 3,
+    // ChpeX86 = 4,
+    // VsmEnclave = 5,
+}
 
 /// A Windows PEB structure.
 pub struct WindowsOsPeb<'a, Driver>

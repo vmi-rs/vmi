@@ -14,7 +14,7 @@ pub use self::{
 use crate::{
     arch::ArchAdapter,
     macros::{impl_offsets, impl_symbols},
-    WindowsObjectType, WindowsOs, WindowsOsExt,
+    WindowsOs, WindowsOsExt,
 };
 
 /// A Windows object.
@@ -153,6 +153,127 @@ where
             _ => None,
         }
     }
+}
+
+/// Identifies the type of a Windows kernel object.
+///
+/// Windows uses a object-based kernel architecture where various system
+/// resources (processes, threads, files, etc.) are represented as kernel
+/// objects. This enum identifies the different types of objects that can
+/// be encountered during introspection.
+///
+/// Each variant corresponds to a specific object type string used internally
+/// by the Windows kernel. For example, "Process" for process objects,
+/// "Thread" for thread objects, etc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsObjectType {
+    /// ALPC Port object.
+    ///
+    /// Represented by `_ALPC_PORT` structure.
+    /// Has `ALPC Port` type name.
+    AlpcPort,
+
+    /// Debug object.
+    ///
+    /// Represented by `_DEBUG_OBJECT` structure.
+    /// Has `DebugObject` type name.
+    DebugObject,
+
+    /// Device object.
+    ///
+    /// Represented by `_DEVICE_OBJECT` structure.
+    /// Has `Device` type name.
+    Device,
+
+    /// Directory object.
+    ///
+    /// Represented by `_OBJECT_DIRECTORY` structure.
+    /// Has `Directory` type name.
+    Directory,
+
+    /// Driver object.
+    ///
+    /// Represented by `_DRIVER_OBJECT` structure.
+    /// Has `Driver` type name.
+    Driver,
+
+    /// Event object.
+    ///
+    /// Represented by `_KEVENT` structure.
+    /// Has `Event` type name.
+    Event,
+
+    /// File object.
+    ///
+    /// Represented by `_FILE_OBJECT` structure.
+    /// Has `File` type name.
+    File,
+
+    /// Job object.
+    ///
+    /// Represented by `_EJOB` structure.
+    /// Has `Job` type name.
+    Job,
+
+    /// Key object.
+    ///
+    /// Represented by `_CM_KEY_BODY` structure.
+    /// Has `Key` type name.
+    Key,
+
+    /// Mutant object.
+    ///
+    /// Represented by `_KMUTANT` structure.
+    /// Has `Mutant` type name.
+    Mutant,
+
+    /// Port object.
+    ///
+    /// Represented by `_PORT_MESSAGE` structure.
+    /// Has `Port` type name.
+    Port,
+
+    /// Process object.
+    ///
+    /// Represented by `_EPROCESS` structure.
+    /// Has `Process` type name.
+    Process,
+
+    /// Section object.
+    ///
+    /// Represented by `_SECTION` (or `_SECTION_OBJECT`) structure.
+    /// Has `Section` type name.
+    Section,
+
+    /// Symbolic link object.
+    ///
+    /// Represented by `_OBJECT_SYMBOLIC_LINK` structure.
+    /// Has `SymbolicLink` type name.
+    SymbolicLink,
+
+    /// Thread object.
+    ///
+    /// Represented by `_ETHREAD` structure.
+    /// Has `Thread` type name.
+    Thread,
+
+    /// Timer object.
+    ///
+    /// Represented by `_KTIMER` structure.
+    /// Has `Timer` type name.
+    Timer,
+
+    /// Token object.
+    ///
+    /// Represented by `_TOKEN` structure.
+    /// Has `Token` type name.
+    Token,
+
+    /// Type object.
+    ///
+    /// Represented by `_OBJECT_TYPE` structure.
+    /// Has `Type` type name.
+    Type,
 }
 
 /// A Windows object.
