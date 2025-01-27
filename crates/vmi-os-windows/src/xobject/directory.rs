@@ -16,6 +16,16 @@ where
     va: Va,
 }
 
+impl<Driver> From<WindowsOsDirectoryObject<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsDirectoryObject<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> From<WindowsOsDirectoryObject<'a, Driver>> for WindowsOsObject<'a, Driver>
 where
     Driver: VmiDriver,
@@ -36,11 +46,6 @@ where
     /// Create a new Windows directory object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
-    }
-
-    /// Returns the virtual address of the `_OBJECT_DIRECTORY` structure.
-    pub fn va(&self) -> Va {
-        self.va
     }
 
     /// Enumerates the objects in the directory.

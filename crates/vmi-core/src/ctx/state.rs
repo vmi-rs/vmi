@@ -28,7 +28,7 @@ where
     registers: &'a <Driver::Architecture as Architecture>::Registers,
 }
 
-impl<'a, Driver, Os> Clone for VmiState<'a, Driver, Os>
+impl<Driver, Os> Clone for VmiState<'_, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
@@ -41,7 +41,7 @@ where
     }
 }
 
-impl<'a, Driver, Os> Copy for VmiState<'a, Driver, Os>
+impl<Driver, Os> Copy for VmiState<'_, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,

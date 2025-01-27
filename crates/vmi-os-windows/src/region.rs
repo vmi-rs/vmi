@@ -24,6 +24,39 @@ where
     vad_flags: OnceCell<u64>,
 }
 
+/*
+impl<Driver> Clone for WindowsOsRegion<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            vmi: self.vmi.clone(),
+            va: self.va,
+            vad_flags: OnceCell::new(),
+        }
+    }
+}
+
+impl<Driver> Copy for WindowsOsRegion<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+}
+*/
+
+impl<Driver> From<WindowsOsRegion<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsRegion<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsRegion<'a, Driver>
 where
     Driver: VmiDriver,
@@ -84,12 +117,14 @@ where
     ///
     /// Corresponds to `_MMVAD_SHORT.VadFlags`.
     pub fn vad_flags(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
-
         Ok(self
             .vad_flags
-            .get_or_try_init(|| self.vmi.read_field(self.va, &MMVAD_SHORT.VadFlags))
+            .get_or_try_init(|| {
+                let offsets = self.offsets();
+                let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+
+                self.vmi.read_field(self.va, &MMVAD_SHORT.VadFlags)
+            })
             .copied()?)
     }
 
@@ -111,7 +146,7 @@ where
     /// # Implementation Details
     ///
     /// Calculated from `_MMVAD_SHORT.VadFlags.Protection` field.
-    fn vad_protection(&self) -> Result<u8, VmiError> {
+    pub fn vad_protection(&self) -> Result<u8, VmiError> {
         let offsets = self.offsets();
         let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
 
@@ -206,15 +241,12 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsRegion for WindowsOsRegion<'a, Driver>
+impl<'a, Driver> VmiOsRegion<'a, Driver> for WindowsOsRegion<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Returns the virtual address of the `_MMVAD` structure.
-    fn va(&self) -> Va {
-        self.va
-    }
+    type Os = WindowsOs<Driver>;
 
     /// Returns the starting virtual address of the memory region.
     ///
@@ -284,10 +316,9 @@ where
         // so this read might fail.
         let path = WindowsOsControlArea::new(self.vmi, control_area)
             .file_object()?
-            .filename()?;
+            .filename()
+            .map(Some);
 
-        Ok(OsRegionKind::Mapped(OsMapped {
-            path: Ok(Some(path)),
-        }))
+        Ok(OsRegionKind::Mapped(OsMapped { path }))
     }
 }

@@ -23,6 +23,30 @@ where
     kind: WindowsWow64Kind,
 }
 
+impl<Driver> From<WindowsOsPeb<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsPeb<Driver>) -> Self {
+        value.va
+    }
+}
+
+impl<Driver> std::fmt::Debug for WindowsOsPeb<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let process_parameters = self.process_parameters();
+
+        f.debug_struct("WindowsOsPeb")
+            .field("process_parameters", &process_parameters)
+            .finish()
+    }
+}
+
 impl<'a, Driver> WindowsOsPeb<'a, Driver>
 where
     Driver: VmiDriver,
@@ -46,7 +70,7 @@ where
     }
 
     /// The address of this `_PEB` structure.
-    pub fn process_parameters(&self) -> Result<WindowsOsProcessParameters<Driver>, VmiError> {
+    pub fn process_parameters(&self) -> Result<WindowsOsProcessParameters<'a, Driver>, VmiError> {
         let va = match self.kind {
             WindowsWow64Kind::Native => {
                 let offsets = self.offsets();

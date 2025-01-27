@@ -4,6 +4,7 @@ use zerocopy::{FromBytes, IntoBytes};
 use crate::{
     arch::ArchAdapter,
     macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
+    xobject::WindowsOsObject,
     OffsetsExt, WindowsOs,
 };
 
@@ -14,6 +15,19 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
+}
+
+impl<Driver> From<WindowsOsHandleTableEntry<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsHandleTableEntry<Driver>) -> Self {
+        match &value.inner {
+            Inner::V1(inner) => inner.va,
+            Inner::V2(inner) => inner.va,
+        }
+    }
 }
 
 impl<'a, Driver> WindowsOsHandleTableEntry<'a, Driver>
@@ -32,18 +46,10 @@ where
         Self { inner }
     }
 
-    /// Returns the virtual address of the section.
-    pub fn va(&self) -> Va {
-        match &self.inner {
-            Inner::V1(inner) => inner.va,
-            Inner::V2(inner) => inner.va,
-        }
-    }
-
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
     ///
     /// A pointer to an `_OBJECT_HEADER` structure.
-    pub fn object(&self) -> Result<Va, VmiError> {
+    pub fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
         match &self.inner {
             Inner::V1(inner) => inner.object(),
             Inner::V2(inner) => inner.object(),
@@ -110,7 +116,7 @@ where
     /// The `Object` (or `ObjectPointerBits`) field of the handle table entry.
     ///
     /// A pointer to an `_OBJECT_HEADER` structure.
-    fn object(&self) -> Result<Va, VmiError> {
+    fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
 
@@ -121,7 +127,7 @@ where
         let object = Va(object & !OBJ_HANDLE_ATTRIBUTES);
         let object = object + OBJECT_HEADER.Body.offset;
 
-        Ok(object)
+        Ok(WindowsOsObject::new(self.vmi, object))
     }
 
     /// The `ObAttributes` (or `Attributes`) field of the handle table entry.
@@ -179,7 +185,7 @@ where
     }
 
     /// Returns the virtual address of the object.
-    fn object(&self) -> Result<Va, VmiError> {
+    fn object(&self) -> Result<WindowsOsObject<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let offsets_ext = self.offsets_ext();
         let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
@@ -194,7 +200,7 @@ where
         let object = Va(0xffff_0000_0000_0000 | object_pointer_bits << 4);
         let object = object + OBJECT_HEADER.Body.offset;
 
-        Ok(object)
+        Ok(WindowsOsObject::new(self.vmi, object))
     }
 
     /// The `ObAttributes` (or `Attributes`) field of the handle table entry.

@@ -51,24 +51,21 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use ::object::{
-    pe::{
-        ImageNtHeaders32, ImageNtHeaders64, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC,
-    },
-    read::pe::{optional_header_magic, ExportTarget, ImageNtHeaders},
+    pe::IMAGE_DIRECTORY_ENTRY_EXPORT,
+    read::pe::{ExportTarget, ImageNtHeaders},
     LittleEndian as LE,
 };
 use isr_core::Profile;
 use module::WindowsOsModule;
 use once_cell::unsync::OnceCell;
-use vmi_arch_amd64::{Amd64, Cr3};
+use vmi_arch_amd64::Amd64;
 use vmi_core::{
     os::{
-        OsArchitecture, OsExt, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
-        OsRegionKind, ProcessId, ProcessObject, StructReader, ThreadId, ThreadObject, VmiOs,
+        OsExt, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion, OsRegionKind,
+        ProcessObject, StructReader, ThreadObject, VmiOs, VmiOsProcess, VmiOsThread,
     },
-    AccessContext, Architecture, Gfn, Hex, MemoryAccess, Pa, Registers as _, Va, VmiCore,
-    VmiDriver, VmiError, VmiState,
+    AccessContext, Architecture, Gfn, Hex, MemoryAccess, Registers as _, Va, VmiCore, VmiDriver,
+    VmiError, VmiState,
 };
 use vmi_macros::derive_trait_from_impl;
 use zerocopy::{FromBytes, IntoBytes};
@@ -88,19 +85,25 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod image;
 //pub mod object;
-pub mod handle_table;
-pub mod handle_table_entry;
+mod handle_table;
+mod handle_table_entry;
 pub(crate) mod macros;
-pub mod module;
+mod module;
 mod pe2;
-pub mod peb;
+mod peb;
 mod process;
 mod region;
 mod thread;
-pub mod xobject;
+mod xobject;
 pub use self::{
-    image::WindowsOsImage, process::WindowsOsProcess, region::WindowsOsRegion,
-    thread::WindowsOsThread, xobject::WindowsOsDirectoryObject,
+    handle_table::WindowsOsHandleTable,
+    handle_table_entry::WindowsOsHandleTableEntry,
+    image::WindowsOsImage,
+    peb::WindowsOsPeb,
+    process::WindowsOsProcess,
+    region::WindowsOsRegion,
+    thread::WindowsOsThread,
+    xobject::{WindowsOsDirectoryObject, WindowsOsObjectHeaderNameInfo, WindowsOsSectionObject},
 };
 
 /// VMI operations for the Windows operating system.
@@ -569,6 +572,7 @@ enum WindowsWow64Kind {
 }
 
 /// A 32-bit or 64-bit virtual address in WoW64 processes.
+#[expect(unused)]
 struct WindowsWow64Va {
     /// The virtual address.
     va: Va,
@@ -578,6 +582,7 @@ struct WindowsWow64Va {
 }
 
 impl WindowsWow64Va {
+    #[expect(unused)]
     fn native(va: Va) -> Self {
         Self {
             va,
@@ -585,6 +590,7 @@ impl WindowsWow64Va {
         }
     }
 
+    #[expect(unused)]
     fn x86(va: Va) -> Self {
         Self {
             va,
@@ -735,6 +741,7 @@ where
         self.enumerate_tree_node_v2(vmi, root, &mut callback, offsets)
     }
 
+    #[expect(unused)]
     fn image_exported_symbols_generic<Pe>(
         &self,
         vmi: VmiState<Driver, Self>,
@@ -935,7 +942,7 @@ where
         let mut handle = handle;
 
         if self.is_kernel_handle(vmi, handle)? {
-            process = self.system_process(vmi)?;
+            process = self.__system_process(vmi)?.object()?;
             handle &= 0x7fff_ffff;
         }
 
@@ -1467,7 +1474,6 @@ where
     ///
     /// Returns virtual address of the matching VAD if found, or `None` if the
     /// address is not within any VAD.
-    ///
     pub fn find_process_vad(
         &self,
         vmi: VmiState<Driver, Self>,
@@ -1822,7 +1828,7 @@ where
         let KTHREAD = &self.offsets.common._KTHREAD;
         let TEB = &self.offsets.common._TEB;
 
-        let current_thread = self.current_thread(vmi)?;
+        let current_thread = self.__current_thread(vmi)?.object()?;
         let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
 
         if teb.is_null() {
@@ -1900,6 +1906,7 @@ where
             .copied()
     }
 
+    /// Retrieves the root directory object for the Windows kernel.
     pub fn __object_root_directory<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
@@ -2296,400 +2303,6 @@ where
     }
 
     // endregion: Object
-
-    // region: PEB
-
-    /// Retrieves the Process Environment Block (PEB) for a given process.
-    ///
-    /// The PEB contains crucial information about a process, including its
-    /// loaded modules, environment variables, and command line arguments.
-    pub fn process_peb(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<WindowsPeb, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-
-        let address = self.__process_peb_address(vmi, process, root)?;
-        let current_directory = self.__process_current_directory(vmi, process, root)?;
-        let dll_path = self.__process_dll_path(vmi, process, root)?;
-        let image_path_name = self.__process_image_path_name(vmi, process, root)?;
-        let command_line = self.__process_command_line(vmi, process, root)?;
-
-        Ok(WindowsPeb {
-            address: address.va,
-            current_directory,
-            dll_path,
-            image_path_name,
-            command_line,
-        })
-    }
-
-    /// Internal method to get the address of the PEB.
-    ///
-    /// This method handles both native (non-WoW64) processes and WoW64
-    /// processes, returning the appropriate PEB address based on the
-    /// process architecture.
-    fn __process_peb_address(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<WindowsWow64Va, VmiError> {
-        let EPROCESS = &self.offsets.common._EPROCESS;
-
-        let wow64 = vmi.read_va_native_in((process.0 + EPROCESS.WoW64Process.offset, root))?;
-
-        if wow64.is_null() {
-            let peb64 = vmi.read_va_native_in((process.0 + EPROCESS.Peb.offset, root))?;
-
-            Ok(WindowsWow64Va::native(peb64))
-        }
-        else {
-            let peb32 = match &self.offsets.ext {
-                Some(OffsetsExt::V1(_)) => wow64,
-                Some(OffsetsExt::V2(v2)) => {
-                    vmi.read_va_native_in((wow64 + v2._EWOW64PROCESS.Peb.offset, root))?
-                }
-                None => panic!("OffsetsExt not set"),
-            };
-
-            Ok(WindowsWow64Va::x86(peb32))
-        }
-    }
-
-    /// Internal method to retrieve the address of
-    /// `RTL_USER_PROCESS_PARAMETERS`.
-    ///
-    /// This structure contains various process-specific parameters, including
-    /// the command line, current directory, and DLL search path.
-    fn __process_rtl_process_parameters(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<WindowsWow64Va, VmiError> {
-        let address = self.__process_peb_address(vmi, process, root)?;
-
-        match address.kind {
-            WindowsWow64Kind::Native => {
-                let PEB = &self.offsets.common._PEB;
-
-                let va =
-                    vmi.read_va_native_in((address.va + PEB.ProcessParameters.offset, root))?;
-
-                Ok(WindowsWow64Va::native(va))
-            }
-            WindowsWow64Kind::X86 => {
-                const PEB32_ProcessParameters_offset: u64 = 0x10;
-
-                let va =
-                    vmi.read_va_native_in((address.va + PEB32_ProcessParameters_offset, root))?;
-
-                Ok(WindowsWow64Va::x86(va))
-            }
-        }
-    }
-
-    /// Gets the current working directory of a process.
-    ///
-    /// This method retrieves the full path of the current working directory
-    /// for the specified process.
-    ///
-    /// # Equivalent C pseudo-code
-    ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING CurrentDirectory = ProcessParameters->CurrentDirectory;
-    /// return CurrentDirectory;
-    /// ```
-    pub fn process_current_directory(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_current_directory(vmi, process, root)
-    }
-
-    /// Internal method to get the current directory, handling both 32-bit and
-    /// 64-bit processes.
-    fn __process_current_directory(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
-
-        match address.kind {
-            WindowsWow64Kind::Native => {
-                self.process_current_directory_native(vmi, root, address.va)
-            }
-            WindowsWow64Kind::X86 => self.process_current_directory_32bit(vmi, root, address.va),
-        }
-    }
-
-    /// Retrieves the current directory for a native (non-WoW64) process.
-    fn process_current_directory_native(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        let CURDIR = &self.offsets.common._CURDIR;
-        let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
-
-        self.read_unicode_string_in(
-            vmi,
-            (
-                rtl_process_parameters
-                    + RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.offset
-                    + CURDIR.DosPath.offset,
-                root,
-            ),
-        )
-    }
-
-    /// Retrieves the current directory for a 32-bit process running under
-    /// WoW64.
-    fn process_current_directory_32bit(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset: u64 = 0x24;
-
-        self.read_unicode_string32_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset,
-                root,
-            ),
-        )
-    }
-
-    /// Gets the DLL search path for a process.
-    ///
-    /// This method retrieves the list of directories that the system searches
-    /// when loading DLLs for the specified process.
-    ///
-    /// # Equivalent C pseudo-code
-    ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING DllPath = ProcessParameters->DllPath;
-    /// return DllPath;
-    /// ```
-    pub fn process_dll_path(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_dll_path(vmi, process, root)
-    }
-
-    /// Internal method to get the DLL path, handling both 32-bit and 64-bit
-    /// processes.
-    fn __process_dll_path(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
-
-        match address.kind {
-            WindowsWow64Kind::Native => self.process_dll_path_native(vmi, root, address.va),
-            WindowsWow64Kind::X86 => self.process_dll_path_32bit(vmi, root, address.va),
-        }
-    }
-
-    /// Retrieves the DLL search path for a native (non-WoW64) process.
-    fn process_dll_path_native(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
-
-        self.read_unicode_string_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.DllPath.offset,
-                root,
-            ),
-        )
-    }
-
-    /// Retrieves the DLL search path for a 32-bit process running under WoW64.
-    fn process_dll_path_32bit(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_DllPath_offset: u64 = 0x30;
-
-        self.read_unicode_string32_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_DllPath_offset,
-                root,
-            ),
-        )
-    }
-
-    /// Gets the full path of the executable image for a process.
-    ///
-    /// This method retrieves the full file system path of the main executable
-    /// that was used to create the specified process.
-    ///
-    /// # Equivalent C pseudo-code
-    ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING ImagePathName = ProcessParameters->ImagePathName;
-    /// return ImagePathName;
-    /// ```
-    pub fn process_image_path_name(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_image_path_name(vmi, process, root)
-    }
-
-    /// Internal method to get the image path name, handling both 32-bit and
-    /// 64-bit processes.
-    fn __process_image_path_name(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
-
-        match address.kind {
-            WindowsWow64Kind::Native => self.process_image_path_name_native(vmi, root, address.va),
-            WindowsWow64Kind::X86 => self.process_image_path_name_32bit(vmi, root, address.va),
-        }
-    }
-
-    /// Retrieves the image path name for a native (non-WoW64) process.
-    fn process_image_path_name_native(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
-
-        self.read_unicode_string_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.ImagePathName.offset,
-                root,
-            ),
-        )
-    }
-
-    /// Retrieves the image path name for a 32-bit process running under WoW64.
-    fn process_image_path_name_32bit(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset: u64 = 0x38;
-
-        self.read_unicode_string32_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset,
-                root,
-            ),
-        )
-    }
-
-    /// Gets the command line used to launch a process.
-    ///
-    /// This method retrieves the full command line string, including the
-    /// executable path and any arguments, used to start the specified process.
-    ///
-    /// # Equivalent C pseudo-code
-    ///
-    /// ```c
-    /// PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NtCurrentPeb()->ProcessParameters;
-    /// PUNICODE_STRING CommandLine = ProcessParameters->CommandLine;
-    /// return CommandLine;
-    /// ```
-    pub fn process_command_line(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<String, VmiError> {
-        let root = self.process_translation_root(vmi, process)?;
-        self.__process_command_line(vmi, process, root)
-    }
-
-    /// Internal method to get the command line, handling both 32-bit and 64-bit
-    /// processes.
-    fn __process_command_line(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        root: Pa,
-    ) -> Result<String, VmiError> {
-        let address = self.__process_rtl_process_parameters(vmi, process, root)?;
-
-        match address.kind {
-            WindowsWow64Kind::Native => self.process_command_line_native(vmi, root, address.va),
-            WindowsWow64Kind::X86 => self.process_command_line_32bit(vmi, root, address.va),
-        }
-    }
-
-    /// Retrieves the command line for a native (non-WoW64) process.
-    fn process_command_line_native(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        let RTL_USER_PROCESS_PARAMETERS = &self.offsets.common._RTL_USER_PROCESS_PARAMETERS;
-
-        self.read_unicode_string_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS.CommandLine.offset,
-                root,
-            ),
-        )
-    }
-
-    /// Retrieves the command line for a 32-bit process running under WoW64.
-    fn process_command_line_32bit(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        root: Pa,
-        rtl_process_parameters: Va,
-    ) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset: u64 = 0x40;
-
-        self.read_unicode_string32_in(
-            vmi,
-            (
-                rtl_process_parameters + RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset,
-                root,
-            ),
-        )
-    }
-
-    // endregion: PEB
 
     // region: Process
 
@@ -3140,6 +2753,12 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    type Process<'a> = WindowsOsProcess<'a, Driver>;
+    type Thread<'a> = WindowsOsThread<'a, Driver>;
+    type Image<'a> = WindowsOsImage<'a, Driver>;
+    type Module<'a> = WindowsOsModule<'a, Driver>;
+    type Region<'a> = WindowsOsRegion<'a, Driver>;
+
     fn kernel_image_base(&self, vmi: VmiState<Driver, Self>) -> Result<Va, VmiError> {
         Driver::Architecture::kernel_image_base(vmi, self)
     }
@@ -3171,6 +2790,7 @@ where
             .copied()
     }
 
+    /*
     fn modules(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsModule>, VmiError> {
         let mut result = Vec::new();
 
@@ -3190,13 +2810,12 @@ where
 
         Ok(result)
     }
+    */
 
-    #[expect(refining_impl_trait)]
     fn __modules<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsModule<'a, Driver>, VmiError>> + 'a, VmiError>
-    {
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError> {
         let PsLoadedModuleList = self.kernel_image_base(vmi)? + self.symbols.PsLoadedModuleList;
 
         let KLDR_DATA_TABLE_ENTRY = &self.offsets._KLDR_DATA_TABLE_ENTRY;
@@ -3210,6 +2829,7 @@ where
             .map(move |result| result.map(|entry| WindowsOsModule::new(vmi, entry))))
     }
 
+    /*
     fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError> {
         let PsInitialSystemProcess =
             self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
@@ -3218,13 +2838,12 @@ where
 
         Ok(ProcessObject(process))
     }
+    */
 
-    #[expect(refining_impl_trait)]
     fn __processes<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<WindowsOsProcess<'a, Driver>, VmiError>> + 'a, VmiError>
-    {
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError> {
         let PsActiveProcessHead = self.kernel_image_base(vmi)? + self.symbols.PsActiveProcessHead;
 
         let EPROCESS = &self.offsets.common._EPROCESS;
@@ -3236,35 +2855,25 @@ where
             }))
     }
 
-    #[expect(refining_impl_trait)]
     fn __process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         process: ProcessObject,
-    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+    ) -> Result<Self::Process<'a>, VmiError> {
         Ok(WindowsOsProcess::new(vmi, process))
     }
 
-    #[expect(refining_impl_trait)]
     fn __current_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
-        let thread = self.current_thread(vmi)?;
-
-        if thread.is_null() {
-            return Err(VmiError::Other("Invalid thread"));
-        }
-
-        let process = self.process_from_thread_apc_state(vmi, thread)?;
-        Ok(WindowsOsProcess::new(vmi, process))
+    ) -> Result<Self::Process<'a>, VmiError> {
+        self.__current_thread(vmi)?.attached_process()
     }
 
-    #[expect(refining_impl_trait)]
     fn __system_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsProcess<'a, Driver>, VmiError> {
+    ) -> Result<Self::Process<'a>, VmiError> {
         let PsInitialSystemProcess =
             self.kernel_image_base(vmi)? + self.symbols.PsInitialSystemProcess;
 
@@ -3272,20 +2881,18 @@ where
         Ok(WindowsOsProcess::new(vmi, ProcessObject(process)))
     }
 
-    #[expect(refining_impl_trait)]
     fn __thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         thread: ThreadObject,
-    ) -> Result<WindowsOsThread<'a, Driver>, VmiError> {
+    ) -> Result<Self::Thread<'a>, VmiError> {
         Ok(WindowsOsThread::new(vmi, thread))
     }
 
-    #[expect(refining_impl_trait)]
     fn __current_thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<WindowsOsThread<'a, Driver>, VmiError> {
+    ) -> Result<Self::Thread<'a>, VmiError> {
         let KPCR = &self.offsets._KPCR;
         let KPRCB = &self.offsets._KPRCB;
 
@@ -3298,9 +2905,22 @@ where
         let addr = kpcr + KPCR.Prcb.offset + KPRCB.CurrentThread.offset;
         let result = vmi.read_va_native(addr)?;
 
+        if result.is_null() {
+            return Err(VmiError::Other("Invalid thread"));
+        }
+
         Ok(WindowsOsThread::new(vmi, ThreadObject(result)))
     }
 
+    fn __image<'a>(
+        &self,
+        vmi: VmiState<'a, Driver, Self>,
+        image_base: Va,
+    ) -> Result<Self::Image<'a>, VmiError> {
+        Ok(WindowsOsImage::new(vmi, image_base))
+    }
+
+    /*
     fn thread_id(
         &self,
         vmi: VmiState<Driver, Self>,
@@ -3547,6 +3167,7 @@ where
             }
         }
     }
+    */
 
     fn syscall_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
         Driver::Architecture::syscall_argument(vmi, self, index)
@@ -3564,7 +3185,7 @@ where
         let KTHREAD = &self.offsets.common._KTHREAD;
         let TEB = &self.offsets.common._TEB;
 
-        let current_thread = self.current_thread(vmi)?;
+        let current_thread = self.__current_thread(vmi)?.object()?;
         let teb = vmi.read_va_native(current_thread.0 + KTHREAD.Teb.offset)?;
 
         if teb.is_null() {

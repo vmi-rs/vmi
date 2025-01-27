@@ -1,10 +1,12 @@
+use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess, VmiOsRegion},
+    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState,
 };
 
 use crate::{
     arch::ArchAdapter,
+    handle_table::WindowsOsHandleTable,
     macros::impl_offsets,
     offsets::{v1, v2},
     peb::WindowsOsPeb,
@@ -23,6 +25,36 @@ where
 
     /// The virtual address of the `_EPROCESS` structure.
     va: Va,
+}
+
+impl<Driver> Clone for WindowsOsProcess<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            vmi: self.vmi.clone(),
+            va: self.va,
+        }
+    }
+}
+
+impl<Driver> Copy for WindowsOsProcess<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+}
+
+impl<Driver> From<WindowsOsProcess<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsProcess<Driver>) -> Self {
+        value.va
+    }
 }
 
 impl<'a, Driver> WindowsOsProcess<'a, Driver>
@@ -45,7 +77,7 @@ where
     /// if the process is a 32-bit process. If the field is `NULL`, the process
     /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
     /// to get the 32-bit PEB.
-    pub fn peb(&self) -> Result<WindowsOsPeb<Driver>, VmiError> {
+    pub fn peb(&self) -> Result<WindowsOsPeb<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -81,6 +113,18 @@ where
                 WindowsWow64Kind::X86,
             ))
         }
+    }
+
+    /// Returns the handle table of the process.
+    pub fn handle_table(&self) -> Result<WindowsOsHandleTable<'a, Driver>, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let handle_table = self
+            .vmi
+            .read_va_native(self.va + EPROCESS.ObjectTable.offset)?;
+
+        Ok(WindowsOsHandleTable::new(self.vmi.clone(), handle_table))
     }
 
     /// Returns the address of the root node in the VAD tree.
@@ -169,11 +213,13 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsProcess for WindowsOsProcess<'a, Driver>
+impl<'a, Driver> VmiOsProcess<'a, Driver> for WindowsOsProcess<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    type Os = WindowsOs<Driver>;
+
     /// Returns the process ID.
     ///
     /// # Implementation Details
@@ -253,7 +299,21 @@ where
     ///
     /// Corresponds to `_KPROCESS.DirectoryTableBase`.
     fn translation_root(&self) -> Result<Pa, VmiError> {
-        self.vmi.os().process_translation_root(self.object()?)
+        let offsets = self.offsets();
+        let KPROCESS = &offsets._KPROCESS;
+
+        let current_process = self.vmi.os().__current_process()?.object()?;
+
+        if self.va == current_process.0 {
+            return Ok(self.vmi.translation_root(self.va));
+        }
+
+        let root = Cr3(self
+            .vmi
+            .read_va_native(self.va + KPROCESS.DirectoryTableBase.offset)?
+            .0);
+
+        Ok(root.into())
     }
 
     /// Retrieves the base address of the user translation root.
@@ -265,7 +325,42 @@ where
     ///
     /// Corresponds to `_KPROCESS.UserDirectoryTableBase`.
     fn user_translation_root(&self) -> Result<Pa, VmiError> {
+        let offsets = self.offsets();
+        let KPROCESS = &offsets._KPROCESS;
+        let UserDirectoryTableBase = match &KPROCESS.UserDirectoryTableBase {
+            Some(UserDirectoryTableBase) => UserDirectoryTableBase,
+            None => return self.translation_root(),
+        };
+
+        let root = Cr3(self
+            .vmi
+            .read_va_native(self.va + UserDirectoryTableBase.offset)?
+            .0);
+
+        if root.0 < Driver::Architecture::PAGE_SIZE {
+            return self.translation_root();
+        }
+
+        Ok(root.into())
+
+        /*
+
+                let KPROCESS = &self.offsets.common._KPROCESS;
+        let UserDirectoryTableBase = match &KPROCESS.UserDirectoryTableBase {
+            Some(UserDirectoryTableBase) => UserDirectoryTableBase,
+            None => return self.process_translation_root(vmi, process),
+        };
+
+        let root = u64::from(vmi.read_va_native(process.0 + UserDirectoryTableBase.offset)?);
+
+        if root < Driver::Architecture::PAGE_SIZE {
+            return self.process_translation_root(vmi, process);
+        }
+
+        Ok(Cr3(root).into())
         self.vmi.os().process_user_translation_root(self.object()?)
+
+         */
     }
 
     /// Returns the base address of the process image.
@@ -286,12 +381,11 @@ where
     /// # Implementation Details
     ///
     /// The function iterates over the VAD tree of the process.
-    #[expect(refining_impl_trait)]
     fn regions(
-        &self,
+        self,
     ) -> Result<impl Iterator<Item = Result<WindowsOsRegion<'a, Driver>, VmiError>>, VmiError> {
-        Ok(TreeNodeIterator::new(self.vmi, self.vad_root()?.va())?
-            .map(|result| result.map(|vad| WindowsOsRegion::new(self.vmi, vad))))
+        Ok(TreeNodeIterator::new(self.vmi, self.vad_root()?.into())?
+            .map(move |result| result.map(|vad| WindowsOsRegion::new(self.vmi, vad))))
     }
 
     /// Locates the VAD that encompasses a specific virtual address in the process.
@@ -303,8 +397,7 @@ where
     ///
     /// Returns the matching VAD if found, or `None` if the address is not
     /// within any VAD.
-    #[expect(refining_impl_trait)]
-    fn find_region(&self, address: Va) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
+    fn find_region(self, address: Va) -> Result<Option<WindowsOsRegion<'a, Driver>>, VmiError> {
         let vad = match self.vad_hint()? {
             Some(vad) => vad,
             None => return Ok(None),
@@ -334,8 +427,6 @@ where
 
     /// Checks if a given virtual address is valid in the process.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError> {
-        self.vmi
-            .os()
-            .process_address_is_valid(self.object()?, address)
+        Driver::Architecture::process_address_is_valid(self.vmi, ProcessObject(self.va), address)
     }
 }

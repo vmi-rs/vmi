@@ -1,8 +1,14 @@
-use super::{OsArchitecture, OsImageExportedSymbol};
-use crate::{Va, VmiError};
+use super::{OsArchitecture, OsImageExportedSymbol, VmiOs};
+use crate::{Va, VmiDriver, VmiError};
 
 /// Represents information about a process in the target system.
-pub trait VmiOsImage {
+pub trait VmiOsImage<'a, Driver>: Into<Va> + 'a
+where
+    Driver: VmiDriver,
+{
+    /// The VMI OS type.
+    type Os: VmiOs<Driver>;
+
     /// Returns the base address of the image.
     fn base_address(&self) -> Va;
 

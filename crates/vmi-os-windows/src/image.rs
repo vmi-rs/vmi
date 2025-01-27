@@ -34,6 +34,38 @@ where
     pe: OnceCell<Pe>,
 }
 
+/*
+impl<Driver> Clone for WindowsOsImage<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            vmi: self.vmi.clone(),
+            va: self.va,
+        }
+    }
+}
+
+impl<Driver> Copy for WindowsOsImage<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+}
+*/
+
+impl<Driver> From<WindowsOsImage<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsImage<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsImage<'a, Driver>
 where
     Driver: VmiDriver,
@@ -119,11 +151,13 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsImage for WindowsOsImage<'a, Driver>
+impl<'a, Driver> VmiOsImage<'a, Driver> for WindowsOsImage<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    type Os = WindowsOs<Driver>;
+
     /// Returns the base address of the image.
     fn base_address(&self) -> Va {
         self.va

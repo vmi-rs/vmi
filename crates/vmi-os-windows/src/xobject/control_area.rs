@@ -16,6 +16,16 @@ where
     va: Va,
 }
 
+impl<Driver> From<WindowsOsControlArea<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsControlArea<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsControlArea<'a, Driver>
 where
     Driver: VmiDriver,
@@ -26,11 +36,6 @@ where
     /// Creates a new Windows section object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
-    }
-
-    /// Returns the virtual address of the `_CONTROL_AREA` structure.
-    pub fn va(&self) -> Va {
-        self.va
     }
 
     /// Returns the file object associated with the control area.

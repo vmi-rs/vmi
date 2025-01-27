@@ -1,8 +1,14 @@
-use super::{ThreadId, ThreadObject};
-use crate::VmiError;
+use super::{ThreadId, ThreadObject, VmiOs};
+use crate::{Va, VmiDriver, VmiError};
 
 /// A thread object.
-pub trait VmiOsThread {
+pub trait VmiOsThread<'a, Driver>: Into<Va> + 'a
+where
+    Driver: VmiDriver,
+{
+    /// The VMI OS type.
+    type Os: VmiOs<Driver>;
+
     /// Returns the thread ID.
     fn id(&self) -> Result<ThreadId, VmiError>;
 

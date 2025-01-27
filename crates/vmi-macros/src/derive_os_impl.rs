@@ -23,7 +23,7 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
         // Skip the first argument (`self`).
         1 => quote! {},
 
-        // Skip the first two arguments (`self` and `&impl Vmi*`).
+        // Skip the first two arguments (`self` and `Vmi*`).
         2 => quote! { self.state(), },
 
         // This should never happen.

@@ -14,7 +14,7 @@ pub fn build_args(sig: &Signature) -> Option<(Vec<TokenStream>, Vec<TokenStream>
     let mut args = Vec::new();
     let mut arg_names = Vec::new();
 
-    // Skip the first two arguments (`self` and `&impl Vmi*`).
+    // Skip the first two arguments (`self` and `Vmi*`).
     for arg in sig.inputs.iter().skip(2) {
         let PatType { pat, ty, .. } = match arg {
             FnArg::Typed(pat_type) => pat_type,

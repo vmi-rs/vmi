@@ -30,6 +30,16 @@ where
     va: Va,
 }
 
+impl<Driver> From<WindowsOsObject<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsObject<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsObject<'a, Driver>
 where
     Driver: VmiDriver,
@@ -41,11 +51,6 @@ where
     /// Create a new Windows object.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
-    }
-
-    /// Returns the virtual address of the object.
-    pub fn va(&self) -> Va {
-        self.va
     }
 
     /// Returns the virtual address of the `_OBJECT_HEADER` structure.

@@ -38,7 +38,6 @@ where
 
     fn process_address_is_valid(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError>;

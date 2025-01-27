@@ -22,7 +22,7 @@ pub use self::{
     struct_reader::StructReader,
     thread::VmiOsThread,
 };
-use crate::{Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
+use crate::{Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
 #[derive_os_wrapper(VmiOsState)]
@@ -30,6 +30,31 @@ pub trait VmiOs<Driver>: Sized
 where
     Driver: VmiDriver,
 {
+    /// The process object type.
+    type Process<'a>: VmiOsProcess<'a, Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The thread object type.
+    type Thread<'a>: VmiOsThread<'a, Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The image object type.
+    type Image<'a>: VmiOsImage<'a, Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The module object type.
+    type Module<'a>: VmiOsModule<'a, Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The region object type.
+    type Region<'a>: VmiOsRegion<'a, Driver> + 'a
+    where
+        Self: 'a;
+
     /// Retrieves the base address of the kernel image.
     ///
     /// The kernel image base address is usually found using some special
@@ -66,14 +91,6 @@ where
     /// Checks if Kernel Page Table Isolation (KPTI) is enabled.
     fn kpti_enabled(&self, vmi: VmiState<Driver, Self>) -> Result<bool, VmiError>;
 
-    /// Retrieves a list of loaded kernel modules.
-    ///
-    /// # Platform-specific
-    ///
-    /// - **Windows**: Retrieves information from the `PsLoadedModuleList`.
-    /// - **Linux**: Retrieves information from the `modules` list.
-    fn modules(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsModule>, VmiError>;
-
     /// Returns an iterator over the loaded kernel modules.
     ///
     /// # Platform-specific
@@ -83,33 +100,26 @@ where
     fn __modules<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<impl VmiOsModule + 'a, VmiError>> + 'a, VmiError>;
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError>;
 
-    /// Retrieves the system process object.
-    ///
-    /// The system process is the first process created by the kernel.
-    ///
-    /// # Platform-specific
-    ///
-    /// - **Windows**: Retrieves the `PsInitialSystemProcess` global variable.
-    /// - **Linux**: Retrieves the `init_task` global variable.
-    fn system_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError>;
-
+    /// XXX
     fn __processes<'a>(
         &'a self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl Iterator<Item = Result<impl VmiOsProcess + 'a, VmiError>> + 'a, VmiError>;
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError>;
 
+    /// XXX
     fn __process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         process: ProcessObject,
-    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+    ) -> Result<Self::Process<'a>, VmiError>;
 
+    /// XXX
     fn __current_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+    ) -> Result<Self::Process<'a>, VmiError>;
 
     /// Returns the system process object.
     ///
@@ -122,145 +132,27 @@ where
     fn __system_process<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl VmiOsProcess + 'a, VmiError>;
+    ) -> Result<Self::Process<'a>, VmiError>;
 
+    /// XXX
     fn __thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
         thread: ThreadObject,
-    ) -> Result<impl VmiOsThread + 'a, VmiError>;
+    ) -> Result<Self::Thread<'a>, VmiError>;
 
+    /// XXX
     fn __current_thread<'a>(
         &self,
         vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<impl VmiOsThread + 'a, VmiError>;
+    ) -> Result<Self::Thread<'a>, VmiError>;
 
-    /// Retrieves the thread ID for a given thread object.
-    fn thread_id(
+    /// XXX
+    fn __image<'a>(
         &self,
-        vmi: VmiState<Driver, Self>,
-        thread: ThreadObject,
-    ) -> Result<ThreadId, VmiError>;
-
-    /// Retrieves the process ID for a given process object.
-    fn process_id(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<ProcessId, VmiError>;
-
-    /// Retrieves the current thread object.
-    fn current_thread(&self, vmi: VmiState<Driver, Self>) -> Result<ThreadObject, VmiError>;
-
-    /// Retrieves the current thread ID.
-    fn current_thread_id(&self, vmi: VmiState<Driver, Self>) -> Result<ThreadId, VmiError>;
-
-    /// Retrieves the current process object.
-    fn current_process(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessObject, VmiError>;
-
-    /// Retrieves the current process ID.
-    fn current_process_id(&self, vmi: VmiState<Driver, Self>) -> Result<ProcessId, VmiError>;
-
-    /// Retrieves a list of all processes in the system.
-    fn processes(&self, vmi: VmiState<Driver, Self>) -> Result<Vec<OsProcess>, VmiError>;
-
-    /// Retrieves the parent process ID for a given process object.
-    fn process_parent_process_id(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<ProcessId, VmiError>;
-
-    /// Retrieves the architecture of a given process.
-    fn process_architecture(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<OsArchitecture, VmiError>;
-
-    /// Retrieves the translation root for a given process.
-    ///
-    /// The translation root is the root of the page table hierarchy (also
-    /// known as the Directory Table Base (DTB) or Page Global Directory (PGD)).
-    ///
-    /// # Architecture-specific
-    ///
-    /// - **AMD64**: The translation root corresponds with the CR3 register
-    ///   and PML4 table.
-    ///
-    /// # Platform-specific
-    ///
-    /// - **Windows**: Retrieves the `DirectoryTableBase` field from the
-    ///   `KPROCESS` structure.
-    /// - **Linux**: Retrieves the `mm->pgd` field from the `task_struct`.
-    fn process_translation_root(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<Pa, VmiError>;
-
-    /// Retrieves the base address of the user translation root for a given
-    /// process.
-    ///
-    /// If KPTI is disabled, this function will return the same value as
-    /// [`VmiOs::process_translation_root`].
-    fn process_user_translation_root(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<Pa, VmiError>;
-
-    /// Retrieves the filename of a given process.
-    fn process_filename(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<String, VmiError>;
-
-    /// Retrieves the base address of the process image.
-    fn process_image_base(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<Va, VmiError>;
-
-    /// Retrieves a list of memory regions for a given process.
-    fn process_regions(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-    ) -> Result<Vec<OsRegion>, VmiError>;
-
-    /// Checks if a given virtual address is valid in a given process.
-    fn process_address_is_valid(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        address: Va,
-    ) -> Result<Option<bool>, VmiError>;
-
-    /// Finds a specific memory region in a process given an address.
-    fn find_process_region(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        address: Va,
-    ) -> Result<Option<OsRegion>, VmiError>;
-
-    /// Retrieves the architecture of an image at a given base address.
-    fn image_architecture(
-        &self,
-        vmi: VmiState<Driver, Self>,
+        vmi: VmiState<'a, Driver, Self>,
         image_base: Va,
-    ) -> Result<OsArchitecture, VmiError>;
-
-    /// Retrieves a list of exported symbols from an image at a given base
-    /// address.
-    fn image_exported_symbols(
-        &self,
-        vmi: VmiState<Driver, Self>,
-        image_base: Va,
-    ) -> Result<Vec<OsImageExportedSymbol>, VmiError>;
+    ) -> Result<Self::Image<'a>, VmiError>;
 
     /// Retrieves a specific syscall argument according to the system call ABI.
     ///

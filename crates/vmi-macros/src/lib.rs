@@ -4,6 +4,7 @@ mod common;
 mod derive_os_impl;
 mod derive_os_trait;
 mod method;
+mod transform;
 
 use proc_macro::TokenStream;
 

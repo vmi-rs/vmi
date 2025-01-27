@@ -8,7 +8,10 @@ pub mod __private {
         pub use zerocopy::*;
     }
 
-    use vmi_core::{os::OsRegionKind, Va, VmiContext, VmiDriver, VmiError, VmiOs};
+    use vmi_core::{
+        os::{OsRegionKind, VmiOsImage, VmiOsProcess, VmiOsRegion},
+        Va, VmiDriver, VmiError, VmiOs, VmiState,
+    };
 
     use super::super::RecipeContext;
     use crate::injector::recipe::SymbolCache;
@@ -65,44 +68,60 @@ pub mod __private {
         }
     }
 
+    pub fn __find_region<'a, Driver>(
+        process: &impl VmiOsProcess<'a, Driver>,
+        filename: &str,
+    ) -> Result<Option<impl VmiOsRegion<'a, Driver>>, VmiError>
+    where
+        Driver: VmiDriver,
+    {
+        for region in process.regions()? {
+            let region = region?;
+
+            let mapped = match region.kind()? {
+                OsRegionKind::Mapped(mapped) => mapped,
+                _ => continue,
+            };
+
+            let path = match &mapped.path {
+                Ok(Some(path)) => path,
+                _ => continue,
+            };
+
+            if path.to_ascii_lowercase().ends_with(filename) {
+                return Ok(Some(region));
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Finds a first mapped region with the specified filename in the current
     /// process and retrieves the exported symbols from the image. The filename
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
     #[tracing::instrument(skip(vmi))]
     pub fn exported_symbols<Driver, Os>(
-        vmi: &VmiContext<'_, Driver, Os>,
+        vmi: &VmiState<'_, Driver, Os>,
         filename: &str,
     ) -> Result<Option<SymbolCache>, VmiError>
     where
         Driver: VmiDriver,
         Os: VmiOs<Driver>,
     {
-        let current_process = vmi.os().current_process()?;
-        let regions = vmi.os().process_regions(current_process)?;
+        let current_process = vmi.os().__current_process()?;
 
-        let image = match regions.iter().find(|region| {
-            let mapped = match &region.kind {
-                OsRegionKind::Mapped(mapped) => mapped,
-                _ => return false,
-            };
-
-            let path = match &mapped.path {
-                Ok(Some(path)) => path,
-                _ => return false,
-            };
-
-            path.to_ascii_lowercase().ends_with(filename)
-        }) {
+        let region = match __find_region(&current_process, filename)? {
             Some(image) => image,
             None => return Ok(None),
         };
 
-        let symbols = vmi.os().image_exported_symbols(image.start)?;
+        let image = vmi.os().__image(region.start()?)?;
+        let symbols = image.exports()?;
 
         tracing::trace!(
-            va = %image.start,
-            kind = ?image.kind,
+            va = %region.start()?,
+            kind = ?region.kind()?,
             symbols = symbols.len(),
             "image found"
         );

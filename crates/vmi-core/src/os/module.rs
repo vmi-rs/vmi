@@ -1,9 +1,13 @@
-use crate::{Va, VmiError};
+use super::VmiOs;
+use crate::{Va, VmiDriver, VmiError};
 
 /// Represents information about a process in the target system.
-pub trait VmiOsModule {
-    /// Returns the virtual address of the module object.
-    fn va(&self) -> Va;
+pub trait VmiOsModule<'a, Driver>: Into<Va> + 'a
+where
+    Driver: VmiDriver,
+{
+    /// The VMI OS type.
+    type Os: VmiOs<Driver>;
 
     /// The base address of the module.
     ///

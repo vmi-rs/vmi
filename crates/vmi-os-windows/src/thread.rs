@@ -18,6 +18,38 @@ where
     va: Va,
 }
 
+/*
+impl<Driver> Clone for WindowsOsThread<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            vmi: self.vmi.clone(),
+            va: self.va,
+        }
+    }
+}
+
+impl<Driver> Copy for WindowsOsThread<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+}
+*/
+
+impl<Driver> From<WindowsOsThread<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsThread<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsThread<'a, Driver>
 where
     Driver: VmiDriver,
@@ -68,11 +100,13 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsThread for WindowsOsThread<'a, Driver>
+impl<'a, Driver> VmiOsThread<'a, Driver> for WindowsOsThread<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    type Os = WindowsOs<Driver>;
+
     /// Returns the thread ID.
     ///
     /// # Implementation Details

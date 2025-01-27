@@ -136,7 +136,8 @@ offsets! {
         }
 
         struct _HANDLE_TABLE {
-            TableCode: Field,
+            NextHandleNeedingPool: Field,   // ULONG
+            TableCode: Field,               // ULONG_PTR
         }
 
         struct _OBJECT_ATTRIBUTES {

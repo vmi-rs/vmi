@@ -15,6 +15,36 @@ where
     va: Va,
 }
 
+impl<Driver> Clone for WindowsOsModule<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            vmi: self.vmi.clone(),
+            va: self.va,
+        }
+    }
+}
+
+impl<Driver> Copy for WindowsOsModule<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+}
+
+impl<Driver> From<WindowsOsModule<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsModule<Driver>) -> Self {
+        value.va
+    }
+}
+
 impl<'a, Driver> WindowsOsModule<'a, Driver>
 where
     Driver: VmiDriver,
@@ -55,15 +85,12 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsModule for WindowsOsModule<'a, Driver>
+impl<'a, Driver> VmiOsModule<'a, Driver> for WindowsOsModule<'a, Driver>
 where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Returns the virtual address of the `_KLDR_DATA_TABLE_ENTRY` structure.
-    fn va(&self) -> Va {
-        self.va
-    }
+    type Os = WindowsOs<Driver>;
 
     /// Returns the base address of the module.
     ///

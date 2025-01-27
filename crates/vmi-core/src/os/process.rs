@@ -1,8 +1,14 @@
-use super::{OsArchitecture, ProcessId, ProcessObject, VmiOsRegion};
-use crate::{Pa, Va, VmiError};
+use super::{OsArchitecture, ProcessId, ProcessObject, VmiOs};
+use crate::{Pa, Va, VmiDriver, VmiError};
 
 /// A process object.
-pub trait VmiOsProcess {
+pub trait VmiOsProcess<'a, Driver>: Copy + Into<Va> + 'a
+where
+    Driver: VmiDriver,
+{
+    /// The VMI OS type.
+    type Os: VmiOs<Driver>;
+
     /// The PID of the process.
     fn id(&self) -> Result<ProcessId, VmiError>;
 
@@ -37,11 +43,18 @@ pub trait VmiOsProcess {
     fn image_base(&self) -> Result<Va, VmiError>;
 
     /// Retrieves a list of memory regions for a given process.
-    fn regions(&self)
-        -> Result<impl Iterator<Item = Result<impl VmiOsRegion, VmiError>>, VmiError>;
+    fn regions(
+        self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Region<'a>, VmiError>>,
+        VmiError,
+    >;
 
     /// Finds a specific memory region in a process given an address.
-    fn find_region(&self, address: Va) -> Result<Option<impl VmiOsRegion>, VmiError>;
+    fn find_region(
+        self,
+        address: Va,
+    ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError>;
 
     /// Checks if a given virtual address is valid in a given process.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError>;

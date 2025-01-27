@@ -1,8 +1,8 @@
 use object::{FileKind, LittleEndian as LE};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
-    os::ProcessObject, Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError,
-    VmiState,
+    os::{ProcessObject, VmiOsProcess},
+    Architecture as _, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiState,
 };
 
 use super::ArchAdapter;
@@ -182,7 +182,6 @@ where
 
     fn process_address_is_valid(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
         process: ProcessObject,
         address: Va,
     ) -> Result<Option<bool>, VmiError> {
@@ -238,8 +237,12 @@ where
         // function.
         //
 
-        let vad_va = match os.find_process_vad(vmi, process, address)? {
-            Some(vad_va) => vad_va,
+        use crate::WindowsOsProcess;
+
+        let process = WindowsOsProcess::new(vmi, process);
+
+        let vad = match process.find_region(address)? {
+            Some(vad) => vad,
             None => return Ok(Some(false)),
         };
 
@@ -249,15 +252,16 @@ where
 
         const VadImageMap: u8 = 2;
 
-        let vad = os.vad(vmi, vad_va)?;
-
-        if matches!(vad.protection, MM_ZERO_ACCESS | MM_DECOMMIT | MM_NOACCESS) {
+        if matches!(
+            vad.vad_protection()?,
+            MM_ZERO_ACCESS | MM_DECOMMIT | MM_NOACCESS
+        ) {
             return Ok(Some(false));
         }
 
         Ok(Some(
             // Private memory must be committed.
-            (vad.private_memory && vad.mem_commit) ||
+            (vad.private_memory()? && vad.mem_commit()?) ||
 
             // Non-private memory must be mapped from an image.
             // Note that this isn't actually correct, because
@@ -268,7 +272,7 @@ where
             // be quite complex, so we just assume that the image
             // is always committed and has the same protection as
             // the VAD.
-            (!vad.private_memory && vad.vad_type == VadImageMap),
+            (!vad.private_memory()? && vad.vad_type()? == VadImageMap),
         ))
     }
 

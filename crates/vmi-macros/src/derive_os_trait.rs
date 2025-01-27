@@ -5,6 +5,7 @@ use syn::{parse_macro_input, Ident, ItemTrait};
 use crate::{
     common::{self, __vmi_lifetime},
     method::{FnArgExt, ItemExt, ItemFnExt},
+    transform
 };
 
 struct TraitFn {
@@ -20,6 +21,10 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
 
     let (args, arg_names) = common::build_args(&sig)?;
     let where_clause = common::build_where_clause(&sig);
+
+    // Replace `Self` with `Os` in the return type.
+    let mut return_type = return_type.clone();
+    transform::replace_self_with_os(&mut return_type);
 
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
@@ -43,7 +48,7 @@ fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     // First argument must be a receiver (`self`).
     inputs.next()?.receiver()?;
 
-    // Second argument must be of type `& impl Vmi*`.
+    // Second argument must be of type `Vmi*`.
     if !inputs.next()?.contains("Vmi") {
         return None;
     }

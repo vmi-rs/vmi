@@ -12,6 +12,39 @@ where
     inner: Inner<'a, Driver>,
 }
 
+impl<Driver> From<WindowsOsProcessParameters<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsProcessParameters<Driver>) -> Self {
+        match &value.inner {
+            Inner::Native(inner) => inner.va,
+            Inner::X86(inner) => inner.va,
+        }
+    }
+}
+
+impl<Driver> std::fmt::Debug for WindowsOsProcessParameters<'_, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let current_directory = self.current_directory();
+        let dll_path = self.dll_path();
+        let image_path_name = self.image_path_name();
+        let command_line = self.command_line();
+
+        f.debug_struct("WindowsOsProcessParameters")
+            .field("current_directory", &current_directory)
+            .field("dll_path", &dll_path)
+            .field("image_path_name", &image_path_name)
+            .field("command_line", &command_line)
+            .finish()
+    }
+}
+
 impl<'a, Driver> WindowsOsProcessParameters<'a, Driver>
 where
     Driver: VmiDriver,

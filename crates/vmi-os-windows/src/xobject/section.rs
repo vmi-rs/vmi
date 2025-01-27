@@ -17,6 +17,19 @@ where
     inner: Inner<'a, Driver>,
 }
 
+impl<Driver> From<WindowsOsSectionObject<'_, Driver>> for Va
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from(value: WindowsOsSectionObject<Driver>) -> Self {
+        match &value.inner {
+            Inner::V1(inner) => inner.va,
+            Inner::V2(inner) => inner.va,
+        }
+    }
+}
+
 impl<'a, Driver> From<WindowsOsSectionObject<'a, Driver>> for WindowsOsObject<'a, Driver>
 where
     Driver: VmiDriver,
@@ -46,14 +59,6 @@ where
         };
 
         Self { inner }
-    }
-
-    /// Returns the virtual address of the section.
-    pub fn va(&self) -> Va {
-        match &self.inner {
-            Inner::V1(inner) => inner.va,
-            Inner::V2(inner) => inner.va,
-        }
     }
 
     /// Returns the starting address of the section.
