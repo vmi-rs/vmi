@@ -13,7 +13,7 @@ pub trait VmiDriver: 'static {
     /// The architecture supported by the driver.
     type Architecture: Architecture + ?Sized;
 
-    /// Retrieves information about the virtual machine.
+    /// Returns information about the virtual machine.
     fn info(&self) -> Result<VmiInfo, VmiError>;
 
     /// Pauses the virtual machine.
@@ -22,7 +22,7 @@ pub trait VmiDriver: 'static {
     /// Resumes the virtual machine.
     fn resume(&self) -> Result<(), VmiError>;
 
-    /// Retrieves the registers of a specific virtual CPU.
+    /// Returns the registers of a specific virtual CPU.
     fn registers(
         &self,
         vcpu: VcpuId,
@@ -35,7 +35,7 @@ pub trait VmiDriver: 'static {
         registers: <Self::Architecture as Architecture>::Registers,
     ) -> Result<(), VmiError>;
 
-    /// Retrieves the memory access permissions for a specific GFN.
+    /// Returns the memory access permissions for a specific GFN.
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError>;
 
     /// Sets the memory access permissions for a specific GFN.

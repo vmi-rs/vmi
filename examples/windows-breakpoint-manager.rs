@@ -12,7 +12,7 @@ use vmi::{
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::xen::VmiXenDriver,
     os::{
-        windows::{WindowsObjectType, WindowsOs, WindowsOsExt as _},
+        windows::{WindowsOs, WindowsOsExt as _},
         ProcessObject,
     },
     utils::{
@@ -22,6 +22,7 @@ use vmi::{
     MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError, VmiEventResponse,
     VmiHandler, VmiSession,
 };
+use vmi::{os::VmiOsProcess as _, Hex};
 use xen::XenStore;
 
 symbols! {
@@ -55,17 +56,19 @@ where
     ptm: PageTableMonitor<Driver>,
 }
 
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 impl<Driver> Monitor<Driver>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
     pub fn new(
-        vmi: &VmiSession<Driver, WindowsOs<Driver>>,
+        session: &VmiSession<Driver, WindowsOs<Driver>>,
         profile: &Profile,
         terminate_flag: Arc<AtomicBool>,
     ) -> Result<Self, VmiError> {
-        // Get the base address of the kernel.
+        // Capture the current state of the VCPU and get the base address of
+        // the kernel.
+        //
         // This base address is essential to correctly offset monitored
         // functions.
         //
@@ -76,11 +79,13 @@ where
         //       handler. This register is set by the operating system during
         //       boot and is left unchanged (unless some rootkits are involved).
         //
-        //       Therefore, what we are doing here is querying the registers
-        //       of the first VCPU and trying to find the kernel image base
-        //       address using them.
-        let registers = vmi.registers(VcpuId(0))?;
-        let kernel_image_base = vmi.os().kernel_image_base(&registers)?;
+        //       Therefore, we can take an arbitrary registers at any point
+        //       in time (as long as the OS has booted and the page tables are
+        //       set up) and use them to find the kernel image base.
+        let registers = session.registers(VcpuId(0))?;
+        let vmi = session.with_registers(&registers);
+
+        let kernel_image_base = vmi.os().kernel_image_base()?;
         tracing::info!(%kernel_image_base);
 
         // Get the system process.
@@ -89,17 +94,15 @@ where
         // In Windows, it is referenced by the kernel symbol `PsInitialSystemProcess`.
         // To monitor page table entries, we need to locate the translation root
         // of this process.
-        let system_process = vmi.os().system_process(&registers)?;
-        tracing::info!(%system_process);
+        let system_process = vmi.os().system_process()?;
+        tracing::info!(system_process = %system_process.object()?);
 
         // Get the translation root of the system process.
         // This is effectively "the CR3 of the kernel".
         //
         // The translation root is the root of the page table hierarchy (also
         // known as the Directory Table Base or PML4).
-        let root = vmi
-            .os()
-            .process_translation_root(&registers, system_process)?;
+        let root = system_process.translation_root()?;
         tracing::info!(%root);
 
         // Load the symbols from the profile.
@@ -186,8 +189,8 @@ where
         let bp_NtCreateFile = Breakpoint::new(cx_NtCreateFile, view)
             .global()
             .with_tag("NtCreateFile");
-        bpm.insert(vmi, bp_NtCreateFile)?;
-        ptm.monitor(vmi, cx_NtCreateFile, view, "NtCreateFile")?;
+        bpm.insert(&vmi, bp_NtCreateFile)?;
+        ptm.monitor(&vmi, cx_NtCreateFile, view, "NtCreateFile")?;
         tracing::info!(%va_NtCreateFile);
 
         // Insert breakpoint for the `NtWriteFile` function.
@@ -196,8 +199,8 @@ where
         let bp_NtWriteFile = Breakpoint::new(cx_NtWriteFile, view)
             .global()
             .with_tag("NtWriteFile");
-        bpm.insert(vmi, bp_NtWriteFile)?;
-        ptm.monitor(vmi, cx_NtWriteFile, view, "NtWriteFile")?;
+        bpm.insert(&vmi, bp_NtWriteFile)?;
+        ptm.monitor(&vmi, cx_NtWriteFile, view, "NtWriteFile")?;
         tracing::info!(%va_NtWriteFile);
 
         // Insert breakpoint for the `PspInsertProcess` function.
@@ -206,8 +209,8 @@ where
         let bp_PspInsertProcess = Breakpoint::new(cx_PspInsertProcess, view)
             .global()
             .with_tag("PspInsertProcess");
-        bpm.insert(vmi, bp_PspInsertProcess)?;
-        ptm.monitor(vmi, cx_PspInsertProcess, view, "PspInsertProcess")?;
+        bpm.insert(&vmi, bp_PspInsertProcess)?;
+        ptm.monitor(&vmi, cx_PspInsertProcess, view, "PspInsertProcess")?;
 
         // Insert breakpoint for the `MmCleanProcessAddressSpace` function.
         let va_MmCleanProcessAddressSpace = kernel_image_base + symbols.MmCleanProcessAddressSpace;
@@ -215,9 +218,9 @@ where
         let bp_MmCleanProcessAddressSpace = Breakpoint::new(cx_MmCleanProcessAddressSpace, view)
             .global()
             .with_tag("MmCleanProcessAddressSpace");
-        bpm.insert(vmi, bp_MmCleanProcessAddressSpace)?;
+        bpm.insert(&vmi, bp_MmCleanProcessAddressSpace)?;
         ptm.monitor(
-            vmi,
+            &vmi,
             cx_MmCleanProcessAddressSpace,
             view,
             "MmCleanProcessAddressSpace",
@@ -254,15 +257,13 @@ where
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
 
             Ok(VmiEventResponse::toggle_singlestep().and_set_view(vmi.default_view()))
-        }
-        else if memory_access.access.contains(MemoryAccess::R) {
+        } else if memory_access.access.contains(MemoryAccess::R) {
             // When the guest tries to read from the memory, a fast-singlestep
             // is performed over the instruction that tried to read the memory.
             // This is done to allow the instruction to read the original memory
             // content.
             Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()))
-        }
-        else {
+        } else {
             panic!("Unhandled memory access: {memory_access:?}");
         }
     }
@@ -284,8 +285,7 @@ where
                     // This breakpoint was not set by us. Reinject it.
                     tracing::warn!("Unknown breakpoint, reinjecting");
                     return Ok(VmiEventResponse::reinject_interrupt());
-                }
-                else {
+                } else {
                     // We have received a breakpoint event, but there is no
                     // breakpoint instruction at the current memory location.
                     // This can happen if the event was triggered by a breakpoint
@@ -299,8 +299,8 @@ where
         };
 
         let process = vmi.os().current_process()?;
-        let process_id = vmi.os().process_id(process)?;
-        let process_name = vmi.os().process_filename(process)?;
+        let process_id = process.id()?;
+        let process_name = process.name()?;
         tracing::Span::current()
             .record("pid", process_id.0)
             .record("process", process_name);
@@ -364,19 +364,16 @@ where
 
         let ObjectAttributes = Va(vmi.os().function_argument(2)?);
 
-        let process = vmi.os().current_process()?;
-        let path = match vmi
-            .os()
-            .object_attributes_to_object_name(process, ObjectAttributes)?
-        {
-            Some(path) => path,
+        let object_attributes = vmi.os().object_attributes(ObjectAttributes)?;
+        let object_name = match object_attributes.object_name()? {
+            Some(object_name) => object_name,
             None => {
                 tracing::warn!(%ObjectAttributes, "No object name found");
                 return Ok(());
             }
         };
 
-        tracing::info!(%path);
+        tracing::info!(%object_name);
 
         Ok(())
     }
@@ -403,22 +400,36 @@ where
 
         let FileHandle = vmi.os().function_argument(0)?;
 
-        let process = vmi.os().current_process()?;
-
-        let object = match vmi.os().handle_to_object_address(process, FileHandle)? {
-            Some(object) => object,
+        let handle_table_entry = match vmi
+            .os()
+            .current_process()?
+            .handle_table()?
+            .lookup(FileHandle)?
+        {
+            Some(handle_table_entry) => handle_table_entry,
             None => {
-                tracing::warn!("No object found for handle");
+                tracing::warn!(FileHandle = %Hex(FileHandle), "No handle table entry found");
                 return Ok(());
             }
         };
 
-        if !matches!(vmi.os().object_type(object)?, Some(WindowsObjectType::File)) {
-            tracing::warn!("Not a file object");
-            return Ok(());
-        }
+        let object = match handle_table_entry.object()? {
+            Some(object) => object,
+            None => {
+                tracing::warn!(FileHandle = %Hex(FileHandle), "No object found");
+                return Ok(());
+            }
+        };
 
-        let path = vmi.os().file_object_to_full_path(object)?;
+        let file_object = match object.as_file()? {
+            Some(file_object) => file_object,
+            None => {
+                tracing::warn!(FileHandle = %Hex(FileHandle), "Not a file object");
+                return Ok(());
+            }
+        };
+
+        let path = file_object.full_path()?;
         tracing::info!(%path);
 
         Ok(())
@@ -443,30 +454,27 @@ where
         let NewProcess = vmi.os().function_argument(0)?;
         let Parent = vmi.os().function_argument(1)?;
 
-        let process_object = ProcessObject(Va(NewProcess));
-        let process_id = vmi.os().process_id(process_object)?;
+        let process = vmi.os().process(ProcessObject(Va(NewProcess)))?;
+        let process_id = process.id()?;
 
-        let parent_process_object = ProcessObject(Va(Parent));
-        let parent_process_id = vmi.os().process_id(parent_process_object)?;
+        let parent_process = vmi.os().process(ProcessObject(Va(Parent)))?;
+        let parent_process_id = parent_process.id()?;
 
         // We rely heavily on the 2nd argument to be the parent process object.
         // If that ever changes, this assertion should catch it.
         //
         // So far it is verified that it works for Windows 7 up to Windows 11
         // (23H2, build 22631).
-        debug_assert_eq!(
-            parent_process_id,
-            vmi.os().process_parent_process_id(process_object)?
-        );
+        debug_assert_eq!(parent_process_id, process.parent_id()?);
 
-        let peb = vmi.os().process_peb(process_object)?;
+        let peb = process.peb()?.process_parameters()?;
 
-        let filename = vmi.os().process_filename(process_object)?;
-        let image_base = vmi.os().process_image_base(process_object)?;
+        let name = process.name()?;
+        let image_base = process.image_base()?;
 
         tracing::info!(
             %process_id,
-            filename,
+            name,
             %image_base,
             ?peb,
         );
@@ -488,13 +496,13 @@ where
 
         let Process = vmi.os().function_argument(0)?;
 
-        let process_object = ProcessObject(Va(Process));
-        let process_id = vmi.os().process_id(process_object)?;
+        let process = vmi.os().process(ProcessObject(Va(Process)))?;
+        let process_id = process.id()?;
 
-        let filename = vmi.os().process_filename(process_object)?;
-        let image_base = vmi.os().process_image_base(process_object)?;
+        let name = process.name()?;
+        let image_base = process.image_base()?;
 
-        tracing::info!(%process_id, filename, %image_base);
+        tracing::info!(%process_id, name, %image_base);
 
         Ok(())
     }

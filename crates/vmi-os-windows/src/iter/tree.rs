@@ -2,7 +2,7 @@ use std::iter::FusedIterator;
 
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
+use crate::{offsets::OffsetsExt, ArchAdapter, WindowsOs};
 
 /// An iterator for traversing tree nodes.
 ///
@@ -13,7 +13,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// Current node.
     current: Option<Va>,
 
     /// Offset to the left child pointer.
@@ -37,22 +40,19 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Create a new tree node iterator.
-    pub fn new(
-        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
-        root: Va,
-    ) -> Result<Self, VmiError> {
-        let offsets = vmi.underlying_os().offsets();
+    /// Creates a new tree node iterator.
+    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, root: Va) -> Result<Self, VmiError> {
+        let offsets = &vmi.underlying_os().offsets;
 
         let (mut current, offset_left, offset_right, offset_parent) = match &offsets.ext {
             Some(OffsetsExt::V1(offsets)) => {
                 let MMADDRESS_NODE = &offsets._MMADDRESS_NODE;
 
                 (
-                    vmi.read_va_native(root + MMADDRESS_NODE.RightChild.offset)?,
-                    MMADDRESS_NODE.LeftChild.offset,
-                    MMADDRESS_NODE.RightChild.offset,
-                    MMADDRESS_NODE.Parent.offset,
+                    vmi.read_va_native(root + MMADDRESS_NODE.RightChild.offset())?,
+                    MMADDRESS_NODE.LeftChild.offset(),
+                    MMADDRESS_NODE.RightChild.offset(),
+                    MMADDRESS_NODE.Parent.offset(),
                 )
             }
             Some(OffsetsExt::V2(offsets)) => {
@@ -60,9 +60,9 @@ where
 
                 (
                     root,
-                    RTL_BALANCED_NODE.Left.offset,
-                    RTL_BALANCED_NODE.Right.offset,
-                    RTL_BALANCED_NODE.ParentValue.offset,
+                    RTL_BALANCED_NODE.Left.offset(),
+                    RTL_BALANCED_NODE.Right.offset(),
+                    RTL_BALANCED_NODE.ParentValue.offset(),
                 )
             }
             None => panic!("OffsetsExt not set"),

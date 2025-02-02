@@ -4,14 +4,13 @@ use vmi_core::{Architecture, Registers as _, Va, VmiCore, VmiDriver, VmiError, V
 use super::ArchAdapter;
 use crate::LinuxOs;
 
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 impl<Driver> ArchAdapter<Driver> for Amd64
 where
     Driver: VmiDriver<Architecture = Self>,
 {
     fn syscall_argument(
         vmi: VmiState<Driver, LinuxOs<Driver>>,
-        _os: &LinuxOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
         match index {
@@ -29,7 +28,6 @@ where
 
     fn function_argument(
         vmi: VmiState<Driver, LinuxOs<Driver>>,
-        _os: &LinuxOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError> {
         if vmi.registers().cs.access.long_mode() {
@@ -40,10 +38,7 @@ where
         }
     }
 
-    fn function_return_value(
-        vmi: VmiState<Driver, LinuxOs<Driver>>,
-        _os: &LinuxOs<Driver>,
-    ) -> Result<u64, VmiError> {
+    fn function_return_value(vmi: VmiState<Driver, LinuxOs<Driver>>) -> Result<u64, VmiError> {
         Ok(vmi.registers().rax)
     }
 
@@ -108,10 +103,8 @@ where
         Ok(None)
     }
 
-    fn kernel_image_base(
-        vmi: VmiState<Driver, LinuxOs<Driver>>,
-        os: &LinuxOs<Driver>,
-    ) -> Result<Va, VmiError> {
+    fn kernel_image_base(vmi: VmiState<Driver, LinuxOs<Driver>>) -> Result<Va, VmiError> {
+        let os = vmi.underlying_os();
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
         let _text = os.symbols._text;
 
@@ -127,10 +120,8 @@ where
         Ok(kernel_image_base)
     }
 
-    fn kaslr_offset(
-        vmi: VmiState<Driver, LinuxOs<Driver>>,
-        os: &LinuxOs<Driver>,
-    ) -> Result<u64, VmiError> {
+    fn kaslr_offset(vmi: VmiState<Driver, LinuxOs<Driver>>) -> Result<u64, VmiError> {
+        let os = vmi.underlying_os();
         let entry_SYSCALL_64 = os.symbols.entry_SYSCALL_64;
 
         if let Some(kaslr_offset) = *os.kaslr_offset.borrow() {
@@ -142,7 +133,7 @@ where
         Ok(kaslr_offset)
     }
 
-    fn per_cpu(vmi: VmiState<Driver, LinuxOs<Driver>>, _os: &LinuxOs<Driver>) -> Va {
+    fn per_cpu(vmi: VmiState<Driver, LinuxOs<Driver>>) -> Va {
         if vmi.registers().cs.selector.request_privilege_level() != 0
             || (vmi.registers().gs.base & (1 << 47)) == 0
         {

@@ -27,7 +27,7 @@ mod common;
 
 use vmi::{
     arch::amd64::Amd64,
-    os::windows::WindowsOs,
+    os::{windows::WindowsOs, VmiOsProcess as _},
     utils::injector::{recipe, InjectorHandler, Recipe, RecipeControlFlow},
     Hex, Va, VcpuId, VmiDriver,
 };
@@ -200,31 +200,39 @@ where
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (vmi, profile) = common::create_vmi_session()?;
+    let (session, profile) = common::create_vmi_session()?;
 
-    let processes = {
-        let _pause_guard = vmi.pause_guard()?;
+    let explorer_pid = {
+        // This block is used to drop the pause guard after the PID is found.
+        // If the `session.handle()` would be called with the VM paused, no
+        // events would be triggered.
+        let _pause_guard = session.pause_guard()?;
 
-        let registers = vmi.registers(VcpuId(0))?;
-        vmi.os().processes(&registers)?
+        let registers = session.registers(VcpuId(0))?;
+        let vmi = session.with_registers(&registers);
+
+        let explorer = match common::find_process(&vmi, "explorer.exe")? {
+            Some(explorer) => explorer,
+            None => {
+                tracing::error!("explorer.exe not found");
+                return Ok(());
+            }
+        };
+
+        tracing::info!(
+            pid = %explorer.id()?,
+            object = %explorer.object()?,
+            "found explorer.exe"
+        );
+
+        explorer.id()?
     };
 
-    let explorer = processes
-        .iter()
-        .find(|process| process.name.to_lowercase() == "explorer.exe")
-        .expect("explorer.exe");
-
-    tracing::info!(
-        pid = %explorer.id,
-        object = %explorer.object,
-        "found explorer.exe"
-    );
-
-    vmi.handle(|vmi| {
+    session.handle(|session| {
         InjectorHandler::new(
-            vmi,
+            session,
             &profile,
-            explorer.id,
+            explorer_pid,
             recipe_factory(GuestFile::new(
                 "C:\\Users\\John\\Desktop\\test.txt",
                 "Hello, World!".as_bytes(),

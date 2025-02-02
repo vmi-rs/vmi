@@ -1,14 +1,17 @@
 use std::{io::ErrorKind, time::Duration};
 
-use super::{context::VmiContext, cow::VmiCow, VmiState};
-use crate::{os::VmiOs, Architecture, VmiCore, VmiDriver, VmiError, VmiHandler};
+use super::{context::VmiContext, VmiState};
+use crate::{
+    os::{NoOS, VmiOs},
+    Architecture, VmiCore, VmiDriver, VmiError, VmiHandler,
+};
 
 /// A VMI session.
 ///
 /// The session combines a [`VmiCore`] with an OS-specific [`VmiOs`]
 /// implementation to provide unified access to both low-level VMI operations
 /// and higher-level OS abstractions.
-pub struct VmiSession<'a, Driver, Os>
+pub struct VmiSession<'a, Driver, Os = NoOS>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
@@ -18,6 +21,23 @@ where
 
     /// The OS-specific operations and abstractions.
     os: &'a Os,
+}
+
+impl<Driver, Os> Clone for VmiSession<'_, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Driver, Os> Copy for VmiSession<'_, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
 }
 
 impl<Driver, Os> std::ops::Deref for VmiSession<'_, Driver, Os>
@@ -42,12 +62,20 @@ where
         Self { core, os }
     }
 
-    /// Creates a new VMI context with the specified registers.
+    /// Creates a new VMI state with the specified registers.
     pub fn with_registers(
         &'a self,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> VmiState<'a, Driver, Os> {
         VmiState::new(self, registers)
+    }
+
+    /// Creates a new VMI session without an OS-specific implementation.
+    pub fn without_os(&self) -> VmiSession<'a, Driver, NoOS> {
+        VmiSession {
+            core: self.core,
+            os: &NoOS,
+        }
     }
 
     /// Returns the VMI core.
@@ -71,7 +99,8 @@ where
         handler: &mut impl VmiHandler<Driver, Os>,
     ) -> Result<(), VmiError> {
         self.core.wait_for_event(timeout, |event| {
-            handler.handle_event(VmiContext::new(self, event))
+            let state = VmiState::new(self, event.registers());
+            handler.handle_event(VmiContext::new(&state, event))
         })
     }
 
@@ -138,27 +167,5 @@ where
         }
 
         Ok(result)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-impl<'a, Driver, Os> From<VmiSession<'a, Driver, Os>> for VmiCow<'a, VmiSession<'a, Driver, Os>>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    fn from(value: VmiSession<'a, Driver, Os>) -> Self {
-        VmiCow::Owned(value)
-    }
-}
-
-impl<'a, Driver, Os> From<&'a VmiSession<'a, Driver, Os>> for VmiCow<'a, VmiSession<'a, Driver, Os>>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-    fn from(value: &'a VmiSession<'a, Driver, Os>) -> Self {
-        VmiCow::Borrowed(value)
     }
 }

@@ -3,28 +3,25 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::session::VmiSession;
 use crate::{
-    os::VmiOs, AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore,
-    VmiDriver, VmiError,
+    os::{NoOS, VmiOs},
+    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver,
+    VmiError,
 };
 
-/// A VMI context.
+/// A VMI state.
 ///
-/// `VmiState` combines access to a [`VmiSession`] with [`VmiEvent`] to
-/// provide unified access to VMI operations in the context of a specific event.
-///
-/// This structure is created inside the [`VmiSession::handle`] method and
-/// passed to the [`VmiHandler::handle_event`] method to handle VMI events.
-///
-/// [`VmiHandler::handle_event`]: crate::VmiHandler::handle_event
-pub struct VmiState<'a, Driver, Os>
+/// The state combines access to a [`VmiSession`] with [`Architecture::Registers`]
+/// to provide unified access to VMI operations in the context of a specific
+/// virtual machine state.
+pub struct VmiState<'a, Driver, Os = NoOS>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    session: &'a VmiSession<'a, Driver, Os>,
+    session: VmiSession<'a, Driver, Os>,
 
-    /// The VMI event.
+    /// The CPU registers associated with the current VM state.
     registers: &'a <Driver::Architecture as Architecture>::Registers,
 }
 
@@ -34,10 +31,7 @@ where
     Os: VmiOs<Driver>,
 {
     fn clone(&self) -> Self {
-        Self {
-            session: self.session,
-            registers: self.registers,
-        }
+        *self
     }
 }
 
@@ -65,15 +59,15 @@ where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
-    /// Creates a new VMI context.
+    /// Creates a new VMI state.
     pub fn new(
         session: &'a VmiSession<'a, Driver, Os>,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Self {
-        Self { session, registers }
+        Self { session: *session, registers }
     }
 
-    /// Creates a new VMI context with the specified registers.
+    /// Creates a new VMI state with the specified registers.
     pub fn with_registers(
         &'a self,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
@@ -84,11 +78,19 @@ where
         }
     }
 
+    /// Creates a new VMI state without an OS-specific implementation.
+    pub fn without_os(&self) -> VmiState<'a, Driver, NoOS> {
+        VmiState {
+            session: self.session.without_os(),
+            registers: self.registers,
+        }
+    }
+
     // Note that `core()` and `underlying_os()` are delegated to the `VmiSession`.
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &'a VmiSession<'a, Driver, Os> {
-        self.session
+    pub fn session(&self) -> &VmiSession<'a, Driver, Os> {
+        &self.session
     }
 
     /// Returns the CPU registers associated with the current event.
@@ -162,14 +164,22 @@ where
     /// Reads an unsigned integer of the specified size from the virtual machine.
     ///
     /// This method reads an unsigned integer of the specified size (in bytes)
-    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
-    /// The result is returned as a `u64` to accommodate the widest possible
+    /// from the virtual machine. Note that the size must be 1, 2, 4, or 8.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
     /// integer size.
     pub fn read_uint(&self, address: Va, size: usize) -> Result<u64, VmiError> {
         self.read_uint_in(self.access_context(address), size)
     }
 
-    /// TODO: xxx
+    /// Reads a field of a structure from the virtual machine.
+    ///
+    /// This method reads a field from the virtual machine. The field is
+    /// defined by the provided [`Field`] structure, which specifies the
+    /// offset and size of the field within the memory region.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
+    /// integer size.
     pub fn read_field(&self, base_address: Va, field: &Field) -> Result<u64, VmiError> {
         self.read_field_in(self.access_context(base_address), field)
     }
@@ -315,8 +325,9 @@ where
     /// Reads an unsigned integer of the specified size from the virtual machine.
     ///
     /// This method reads an unsigned integer of the specified size (in bytes)
-    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
-    /// The result is returned as a `u64` to accommodate the widest possible
+    /// from the virtual machine. Note that the size must be 1, 2, 4, or 8.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
     /// integer size.
     pub fn read_uint_in(
         &self,
@@ -326,7 +337,14 @@ where
         self.core().read_uint(ctx, size)
     }
 
-    /// TODO: xxx
+    /// Reads a field of a structure from the virtual machine.
+    ///
+    /// This method reads a field from the virtual machine. The field is
+    /// defined by the provided [`Field`] structure, which specifies the
+    /// offset and size of the field within the memory region.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
+    /// integer size.
     pub fn read_field_in(
         &self,
         ctx: impl Into<AccessContext>,
@@ -503,7 +521,7 @@ where
     }
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &'a VmiSession<'a, Driver, Os> {
+    pub fn session(&self) -> &VmiSession<'a, Driver, Os> {
         self.0.session()
     }
 
@@ -524,8 +542,7 @@ where
         registers: &<Driver::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
-        self.underlying_os()
-            .function_argument(self.0.with_registers(registers), index)
+        Os::function_argument(self.0.with_registers(registers), index)
     }
 
     /// Retrieves the return value of a function.
@@ -533,7 +550,6 @@ where
         &self,
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<u64, VmiError> {
-        self.underlying_os()
-            .function_return_value(self.0.with_registers(registers))
+        Os::function_return_value(self.0.with_registers(registers))
     }
 }

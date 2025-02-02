@@ -14,6 +14,12 @@ impl Va {
     }
 }
 
+/// A trait for types that have a virtual address.
+pub trait VmiVa {
+    /// Returns the virtual address.
+    fn va(&self) -> Va;
+}
+
 /// The mechanism used for translating virtual addresses to physical addresses.
 ///
 /// Understanding and navigating the memory translation mechanisms of the target

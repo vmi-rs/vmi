@@ -1,7 +1,9 @@
 #![doc = include_str!("../../docs/os.md")]
 
 mod common;
+mod dummy;
 mod image;
+mod mapped;
 mod module;
 mod process;
 mod region;
@@ -13,9 +15,11 @@ use vmi_macros::derive_os_wrapper;
 pub use self::{
     common::{
         OsArchitecture, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
-        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
+        OsRegionKind, VmiOsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
     },
+    dummy::NoOS,
     image::VmiOsImage,
+    mapped::VmiOsMapped,
     module::VmiOsModule,
     process::VmiOsProcess,
     region::VmiOsRegion,
@@ -25,33 +29,39 @@ pub use self::{
 use crate::{Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
+#[expect(clippy::needless_lifetimes)]
 #[derive_os_wrapper(VmiOsState)]
 pub trait VmiOs<Driver>: Sized
 where
     Driver: VmiDriver,
 {
-    /// The process object type.
+    /// The process type.
     type Process<'a>: VmiOsProcess<'a, Driver> + 'a
     where
         Self: 'a;
 
-    /// The thread object type.
+    /// The thread type.
     type Thread<'a>: VmiOsThread<'a, Driver> + 'a
     where
         Self: 'a;
 
-    /// The image object type.
+    /// The image type.
     type Image<'a>: VmiOsImage<'a, Driver> + 'a
     where
         Self: 'a;
 
-    /// The module object type.
+    /// The kernel module type.
     type Module<'a>: VmiOsModule<'a, Driver> + 'a
     where
         Self: 'a;
 
-    /// The region object type.
+    /// The memory region type.
     type Region<'a>: VmiOsRegion<'a, Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The memory mapped region type.
+    type Mapped<'a>: VmiOsMapped<'a, Driver> + 'a
     where
         Self: 'a;
 
@@ -77,7 +87,7 @@ where
     ///
     /// A malicious code (such as a rootkit) could modify values of the
     /// registers, so the returned value might not be accurate.
-    fn kernel_image_base(&self, vmi: VmiState<Driver, Self>) -> Result<Va, VmiError>;
+    fn kernel_image_base(vmi: VmiState<Driver, Self>) -> Result<Va, VmiError>;
 
     /// Retrieves an implementation-specific string containing kernel
     /// information.
@@ -86,10 +96,14 @@ where
     ///
     /// - **Windows**: Retrieves the `NtBuildLab` string from the kernel image.
     /// - **Linux**: Retrieves the `linux_banner` string from the kernel image.
-    fn kernel_information_string(&self, vmi: VmiState<Driver, Self>) -> Result<String, VmiError>;
+    fn kernel_information_string(vmi: VmiState<Driver, Self>) -> Result<String, VmiError>;
 
     /// Checks if Kernel Page Table Isolation (KPTI) is enabled.
-    fn kpti_enabled(&self, vmi: VmiState<Driver, Self>) -> Result<bool, VmiError>;
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: Retrieves the `KiKvaShadow` global variable, if it exists.
+    fn kpti_enabled(vmi: VmiState<Driver, Self>) -> Result<bool, VmiError>;
 
     /// Returns an iterator over the loaded kernel modules.
     ///
@@ -98,28 +112,27 @@ where
     /// - **Windows**: Retrieves information from the `PsLoadedModuleList`.
     /// - **Linux**: Retrieves information from the `modules` list.
     fn modules<'a>(
-        &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError>;
 
-    /// XXX
+    /// Returns an iterator over the processes.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: Retrieves information from the `PsActiveProcessHead` list.
+    /// - **Linux**: Retrieves information from the `tasks` list.
     fn processes<'a>(
-        &'a self,
         vmi: VmiState<'a, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError>;
 
-    /// XXX
+    /// Returns the process corresponding to the given process object.
     fn process<'a>(
-        &self,
         vmi: VmiState<'a, Driver, Self>,
         process: ProcessObject,
     ) -> Result<Self::Process<'a>, VmiError>;
 
-    /// XXX
-    fn current_process<'a>(
-        &self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<Self::Process<'a>, VmiError>;
+    /// Returns the currently executing process.
+    fn current_process<'a>(vmi: VmiState<'a, Driver, Self>) -> Result<Self::Process<'a>, VmiError>;
 
     /// Returns the system process object.
     ///
@@ -129,41 +142,36 @@ where
     ///
     /// - **Windows**: Retrieves the `PsInitialSystemProcess` global variable.
     /// - **Linux**: Retrieves the `init_task` global variable.
-    fn system_process<'a>(
-        &self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<Self::Process<'a>, VmiError>;
+    fn system_process<'a>(vmi: VmiState<'a, Driver, Self>) -> Result<Self::Process<'a>, VmiError>;
 
-    /// XXX
+    /// Returns the thread corresponding to the given thread object.
     fn thread<'a>(
-        &self,
         vmi: VmiState<'a, Driver, Self>,
         thread: ThreadObject,
     ) -> Result<Self::Thread<'a>, VmiError>;
 
-    /// XXX
-    fn current_thread<'a>(
-        &self,
-        vmi: VmiState<'a, Driver, Self>,
-    ) -> Result<Self::Thread<'a>, VmiError>;
+    /// Returns the currently executing thread.
+    fn current_thread<'a>(vmi: VmiState<'a, Driver, Self>) -> Result<Self::Thread<'a>, VmiError>;
 
-    /// XXX
+    /// Returns the image corresponding to the given base address.
     fn image<'a>(
-        &self,
         vmi: VmiState<'a, Driver, Self>,
         image_base: Va,
     ) -> Result<Self::Image<'a>, VmiError>;
 
-    /// XXX
+    /// Returns the kernel module corresponding to the given base address.
     fn module<'a>(
-        &self,
         vmi: VmiState<'a, Driver, Self>,
         module: Va,
     ) -> Result<Self::Module<'a>, VmiError>;
 
-    /// XXX
+    /// Returns the memory region corresponding to the given address.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: The region is represented by the `_MMVAD` structure.
+    /// - **Linux**: The region is represented by the `vm_area_struct` structure.
     fn region<'a>(
-        &self,
         vmi: VmiState<'a, Driver, Self>,
         region: Va,
     ) -> Result<Self::Region<'a>, VmiError>;
@@ -173,7 +181,7 @@ where
     /// This function assumes that it is called in the prologue of the system
     /// call handler, i.e., the instruction pointer is pointing to the first
     /// instruction of the function.
-    fn syscall_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError>;
+    fn syscall_argument(vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError>;
 
     /// Retrieves a specific function argument according to the calling
     /// convention of the operating system.
@@ -186,13 +194,13 @@ where
     ///
     /// - **Windows**: Assumes that the function is using the `stdcall`
     ///   calling convention.
-    fn function_argument(&self, vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError>;
+    fn function_argument(vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError>;
 
     /// Retrieves the return value of a function.
     ///
     /// This function assumes that it is called immediately after the function
     /// returns.
-    fn function_return_value(&self, vmi: VmiState<Driver, Self>) -> Result<u64, VmiError>;
+    fn function_return_value(vmi: VmiState<Driver, Self>) -> Result<u64, VmiError>;
 
     /// Retrieves the last error value.
     ///
@@ -201,5 +209,5 @@ where
     /// - **Windows**: Retrieves the value of the `NtCurrentTeb()->LastErrorValue`
     ///   field.
     ///   - See also: [`WindowsOs::last_status()`](../../../../vmi_os_windows/struct.WindowsOs.html#method.last_status)
-    fn last_error(&self, vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError>;
+    fn last_error(vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError>;
 }

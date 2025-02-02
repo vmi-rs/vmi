@@ -92,6 +92,7 @@ fn replace_in_trait_bound(trait_bound: &mut TraitBound) {
 
 fn replace_in_type_impl_trait(impl_trait: &mut TypeImplTrait) {
     for bound in &mut impl_trait.bounds {
+        #[expect(clippy::single_match)]
         match bound {
             TypeParamBound::Trait(trait_bound) => replace_in_trait_bound(trait_bound),
             _ => {}

@@ -4,7 +4,7 @@ use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrup
 use vmi_core::{
     os::{ProcessId, VmiOsProcess, VmiOsThread},
     Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiDriver,
-    VmiError, VmiEventResponse, VmiHandler,
+    VmiError, VmiEventResponse, VmiHandler, VmiVa as _,
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
@@ -182,7 +182,7 @@ where
     }
 }
 
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
@@ -400,13 +400,13 @@ where
         // trap frame of the current thread.
         //
 
-        let KTHREAD_TrapFrame = self.offsets._KTHREAD.TrapFrame.offset;
-        let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset;
-        let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset;
+        let KTHREAD_TrapFrame = self.offsets._KTHREAD.TrapFrame.offset();
+        let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset();
+        let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset();
 
         let current_thread = vmi.os().current_thread()?;
         let current_tid = current_thread.id()?;
-        let current_thread = Va::from(current_thread);
+        let current_thread = current_thread.va();
 
         let trap_frame = vmi.read_va(current_thread + KTHREAD_TrapFrame)?;
         let sp_va = vmi.read_va(trap_frame + KTRAP_FRAME_Rsp)?;

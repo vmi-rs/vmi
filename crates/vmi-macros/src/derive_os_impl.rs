@@ -12,46 +12,31 @@ struct TraitFn {
     os_context_fn: TokenStream,
 }
 
-fn generate_trait_fn(item_fn: impl ItemFnExt, skip: usize) -> Option<TraitFn> {
+fn generate_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
     let generics = &sig.generics;
     let return_type = &sig.output;
-    let receiver = sig.receiver()?;
+    //let receiver = sig.receiver()?;
 
-    let maybe_vmi = match skip {
-        // Skip the first argument (`self`).
-        1 => quote! {},
-
-        // Skip the first two arguments (`self` and `Vmi*`).
-        2 => quote! { self.state(), },
-
-        // This should never happen.
-        _ => panic!("unexpected number of arguments to skip"),
-    };
-
-    let (args, arg_names) = common::build_args(&sig)?;
-    let where_clause = common::build_where_clause(&sig);
+    let (args, arg_names) = common::build_args(sig)?;
+    let where_clause = common::build_where_clause(sig);
 
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
     let os_context_sig = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#args),*) #return_type
+        fn #ident #generics(&self, #(#args),*) #return_type
             #where_clause;
     };
 
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        fn #ident #generics(#receiver, #(#args),*) #return_type
+        fn #ident #generics(&self, #(#args),*) #return_type
             #where_clause
         {
-            self.underlying_os()
-                .#ident(
-                    #maybe_vmi
-                    #(#arg_names),*
-                )
+            <<Self as VmiOsStateExt>::Os>::#ident(self.state(), #(#arg_names),*)
         }
     };
 
@@ -73,18 +58,18 @@ fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let mut inputs = sig.inputs.iter();
 
     // First argument must be a receiver (`self`).
-    inputs.next()?.receiver()?;
+    //inputs.next()?.receiver()?;
 
     // Second argument _might_ be of type `&VmiCore<Driver>`.
     if !inputs
         .next()
-        .map(|fn_arg| fn_arg.contains("Vmi"))
+        .map(|fn_arg| fn_arg.contains("VmiState"))
         .unwrap_or(false)
     {
-        return generate_trait_fn(item_fn, 1);
+        return None;
     }
 
-    generate_trait_fn(item_fn, 2)
+    generate_trait_fn(item_fn)
 }
 
 fn verify_generics(generics: &Generics) -> Result<()> {
@@ -147,6 +132,19 @@ pub fn derive_trait_from_impl(
 
     let expanded = quote! {
         #input
+
+        // A helper trait to expose the Os type from VmiOsState
+        trait VmiOsStateExt {
+            type Os;
+        }
+
+        impl<'__vmi, TDriver, TOs> VmiOsStateExt for vmi_core::VmiOsState<'__vmi, TDriver, TOs>
+        where
+            TDriver: VmiDriver,
+            TOs: VmiOs<TDriver>,
+        {
+            type Os = TOs;
+        }
 
         //
         // OS Context

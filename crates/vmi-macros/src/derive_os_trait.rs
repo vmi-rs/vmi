@@ -17,10 +17,10 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let ident = &sig.ident;
     let generics = &sig.generics;
     let return_type = &sig.output;
-    let receiver = sig.receiver()?;
+    //let receiver = sig.receiver()?;
 
-    let (args, arg_names) = common::build_args(&sig)?;
-    let where_clause = common::build_where_clause(&sig);
+    let (args, arg_names) = common::build_args(sig)?;
+    let where_clause = common::build_where_clause(sig);
 
     // Replace `Self` with `Os` in the return type.
     let mut return_type = return_type.clone();
@@ -30,11 +30,10 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        pub fn #ident #generics(#receiver, #(#args),*) #return_type
+        pub fn #ident #generics(&self, #(#args),*) #return_type
             #where_clause
         {
-            self.underlying_os()
-                .#ident(self.state(), #(#arg_names),*)
+            Os::#ident(self.state(), #(#arg_names),*)
         }
     };
 
@@ -46,10 +45,10 @@ fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let mut inputs = sig.inputs.iter();
 
     // First argument must be a receiver (`self`).
-    inputs.next()?.receiver()?;
+    // inputs.next()?.receiver()?;
 
     // Second argument must be of type `Vmi*`.
-    if !inputs.next()?.contains("Vmi") {
+    if !inputs.next()?.contains("VmiState") {
         return None;
     }
 

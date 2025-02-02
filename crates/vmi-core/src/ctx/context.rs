@@ -1,12 +1,13 @@
-use super::{cow::VmiCow, state::VmiState, VmiOsState, VmiSession};
+use super::{state::VmiState, VmiOsState};
 use crate::{os::VmiOs, VmiCore, VmiDriver, VmiEvent};
 
 /// A VMI context.
 ///
-/// `VmiContext` combines access to a [`VmiState`] with [`VmiEvent`] to
-/// provide unified access to VMI operations in the context of a specific event.
+/// The context combines access to a [`VmiState`] with [`VmiEvent`] to
+/// provide unified access to VMI operations in the context of a specific
+/// event.
 ///
-/// This structure is created inside the [`VmiState::handle`] method and
+/// This structure is created inside the [`VmiSession::handle`] method and
 /// passed to the [`VmiHandler::handle_event`] method to handle VMI events.
 ///
 /// [`VmiHandler::handle_event`]: crate::VmiHandler::handle_event
@@ -16,10 +17,27 @@ where
     Os: VmiOs<Driver>,
 {
     /// The VMI session.
-    state: VmiCow<'a, VmiState<'a, Driver, Os>>,
+    state: &'a VmiState<'a, Driver, Os>,
 
     /// The VMI event.
     event: &'a VmiEvent<Driver::Architecture>,
+}
+
+impl<Driver, Os> Clone for VmiContext<'_, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Driver, Os> Copy for VmiContext<'_, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
 }
 
 impl<'a, Driver, Os> std::ops::Deref for VmiContext<'a, Driver, Os>
@@ -30,7 +48,7 @@ where
     type Target = VmiState<'a, Driver, Os>;
 
     fn deref(&self) -> &Self::Target {
-        &self.state
+        self.state
     }
 }
 
@@ -41,16 +59,16 @@ where
 {
     /// Creates a new VMI context.
     pub fn new(
-        session: &'a VmiSession<'a, Driver, Os>,
+        state: &'a VmiState<'a, Driver, Os>,
         event: &'a VmiEvent<Driver::Architecture>,
     ) -> Self {
-        Self {
-            state: VmiCow::Owned(VmiState::new(session, event.registers())),
-            event,
-        }
+        debug_assert_eq!(state.registers() as *const _, event.registers() as *const _);
+
+        Self { state, event }
     }
 
-    // Note that `core()` and `underlying_os()` are delegated to the `VmiState`.
+    // Note that `core()` and `underlying_os()` and other methods are delegated
+    // to the `VmiState`.
 
     /// Returns the VMI session.
     pub fn state(&self) -> VmiState<'a, Driver, Os> {
@@ -77,7 +95,7 @@ where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
-    /// The VMI session.
+    /// The VMI OS state.
     state: VmiOsState<'a, Driver, Os>,
 
     /// The VMI event.
@@ -96,7 +114,7 @@ where
     }
 }
 
-impl<'a, Driver, Os> VmiOsContext<'a, Driver, Os>
+impl<Driver, Os> VmiOsContext<'_, Driver, Os>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,

@@ -9,7 +9,7 @@ pub mod __private {
     }
 
     use vmi_core::{
-        os::{OsRegionKind, VmiOsImage, VmiOsProcess, VmiOsRegion},
+        os::{VmiOsRegionKind, VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion},
         Va, VmiDriver, VmiError, VmiOs, VmiState,
     };
 
@@ -79,11 +79,11 @@ pub mod __private {
             let region = region?;
 
             let mapped = match region.kind()? {
-                OsRegionKind::Mapped(mapped) => mapped,
+                VmiOsRegionKind::Mapped(mapped) => mapped,
                 _ => continue,
             };
 
-            let path = match &mapped.path {
+            let path = match mapped.path() {
                 Ok(Some(path)) => path,
                 _ => continue,
             };
@@ -121,7 +121,7 @@ pub mod __private {
 
         tracing::trace!(
             va = %region.start()?,
-            kind = ?region.kind()?,
+            //kind = ?region.kind()?,
             symbols = symbols.len(),
             "image found"
         );

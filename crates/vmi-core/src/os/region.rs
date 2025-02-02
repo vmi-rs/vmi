@@ -1,23 +1,25 @@
-use super::{OsRegionKind, VmiOs};
-use crate::{MemoryAccess, Va, VmiDriver, VmiError};
+use super::{VmiOsRegionKind, VmiOs};
+use crate::{MemoryAccess, Va, VmiDriver, VmiError, VmiVa};
 
-/// Represents information about a process in the target system.
-pub trait VmiOsRegion<'a, Driver>: Into<Va> + 'a
+/// A trait for memory regions.
+///
+/// This trait provides an abstraction over memory regions within a guest OS.
+pub trait VmiOsRegion<'a, Driver>: VmiVa + 'a
 where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
     type Os: VmiOs<Driver>;
 
-    /// The start address of the region.
+    /// Returns the starting virtual address of the memory region.
     fn start(&self) -> Result<Va, VmiError>;
 
-    /// The end address of the region.
+    /// Returns the ending virtual address of the memory region.
     fn end(&self) -> Result<Va, VmiError>;
 
-    /// The protection flags of the region.
+    /// Returns the memory protection of the memory region.
     fn protection(&self) -> Result<MemoryAccess, VmiError>;
 
-    /// The kind of memory region.
-    fn kind(&self) -> Result<OsRegionKind, VmiError>;
+    /// Returns the memory region's kind.
+    fn kind(&self) -> Result<VmiOsRegionKind<'a, Driver, Self::Os>, VmiError>;
 }

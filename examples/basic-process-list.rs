@@ -1,7 +1,9 @@
 use isr::cache::{IsrCache, JsonCodec};
 use vmi::{
-    arch::amd64::Amd64, driver::xen::VmiXenDriver, os::windows::WindowsOs, VcpuId, VmiCore,
-    VmiSession,
+    arch::amd64::Amd64,
+    driver::xen::VmiXenDriver,
+    os::{windows::WindowsOs, VmiOsProcess as _},
+    VcpuId, VmiCore, VmiSession,
 };
 use xen::XenStore;
 
@@ -23,9 +25,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Try to find the kernel information.
     // This is necessary in order to load the profile.
     let kernel_info = {
+        // Pause the VM to get consistent state.
         let _pause_guard = core.pause_guard()?;
+
+        // Get the register state for the first VCPU.
         let registers = core.registers(VcpuId(0))?;
 
+        // On AMD64 architecture, the kernel is usually found using the
+        // `MSR_LSTAR` register, which contains the address of the system call
+        // handler. This register is set by the operating system during boot
+        // and is left unchanged (unless some rootkits are involved).
+        //
+        // Therefore, we can take an arbitrary registers at any point in time
+        // (as long as the OS has booted and the page tables are set up) and
+        // use them to find the kernel.
         WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
     };
 
@@ -40,11 +53,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
     let session = VmiSession::new(&core, &os);
 
-    // Get the list of processes and print them.
+    // Pause the VM again to get consistent state.
     let _pause_guard = session.pause_guard()?;
+
+    // Create a new `VmiState` with the current register.
     let registers = session.registers(VcpuId(0))?;
-    let processes = session.os().processes(&registers)?;
-    println!("Processes: {processes:#?}");
+    let vmi = session.with_registers(&registers);
+
+    // Get the list of processes and print them.
+    for process in vmi.os().processes()? {
+        let process = process?;
+
+        println!(
+            "{} [{}] {} (root @ {})",
+            process.object()?,
+            process.id()?,
+            process.name()?,
+            process.translation_root()?
+        );
+    }
 
     Ok(())
 }

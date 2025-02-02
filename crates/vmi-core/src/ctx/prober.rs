@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
 
 use indexmap::IndexSet;
 
@@ -7,22 +7,23 @@ use crate::{PageFault, PageFaults, VmiError};
 /// Prober for safely handling page faults during memory access operations.
 pub struct VmiProber {
     /// The set of restricted page faults that are allowed to occur.
-    restricted: Rc<IndexSet<PageFault>>,
+    restricted: IndexSet<PageFault>,
 
     /// The set of page faults that have occurred.
-    page_faults: Rc<RefCell<IndexSet<PageFault>>>,
+    page_faults: RefCell<IndexSet<PageFault>>,
 }
 
 impl VmiProber {
     /// Creates a new prober.
     pub fn new(restricted: &IndexSet<PageFault>) -> Self {
         Self {
-            restricted: Rc::new(restricted.clone()),
-            page_faults: Rc::new(RefCell::new(IndexSet::new())),
+            restricted: restricted.clone(),
+            page_faults: RefCell::new(IndexSet::new()),
         }
     }
 
-    /// Handles a result that may contain page faults, returning the value if successful.
+    /// Handles a result that may contain page faults, returning the value
+    /// if successful.
     pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
         match result {
             Ok(value) => Ok(Some(value)),
@@ -35,7 +36,8 @@ impl VmiProber {
     }
 
     /*
-    /// Handles a result that may contain page faults over a memory range, returning the value if successful.
+    /// Handles a result that may contain page faults over a memory range,
+    /// returning the value if successful.
     fn check_result_range<T>(
         &self,
         result: Result<T, VmiError>,
@@ -69,7 +71,8 @@ impl VmiProber {
     }
 
     /*
-    /// Records any page faults that are not in the restricted set over a memory range.
+    /// Records any page faults that are not in the restricted set over
+    /// a memory range.
     fn check_restricted_range(&self, pf: PageFault, ctx: AccessContext, mut length: usize) {
         let mut page_faults = self.page_faults.borrow_mut();
 
@@ -137,7 +140,8 @@ impl VmiProber {
     }
     */
 
-    /// Checks for any unexpected page faults that have occurred and returns an error if any are present.
+    /// Checks for any unexpected page faults that have occurred and returns
+    /// an error if any are present.
     #[tracing::instrument(skip_all)]
     pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
         let pfs = self.page_faults.borrow();

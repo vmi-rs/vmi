@@ -154,7 +154,7 @@ where
     Key: KeyType,
     Tag: TagType,
 {
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     /// Creates a new breakpoint manager.
     pub fn new() -> Self {
         Self {

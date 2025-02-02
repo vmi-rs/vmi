@@ -37,9 +37,3 @@ pub enum PeError {
     #[error("Invalid export table")]
     InvalidExportTable,
 }
-
-impl From<PeError> for vmi_core::VmiError {
-    fn from(err: PeError) -> Self {
-        vmi_core::VmiError::Os(err.into())
-    }
-}

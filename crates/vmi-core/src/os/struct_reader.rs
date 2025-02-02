@@ -89,15 +89,15 @@ impl StructReader {
     /// Extracts a value from the buffer using the provided field descriptor,
     /// which specifies the offset and size of the field.
     /// The value is interpreted as a little-endian integer of the appropriate
-    /// size and returned as a `u64`.
+    /// size and returned as a [`u64`].
     ///
     /// # Endianness
     ///
-    /// Values are always read as little-endian integers. The returned `u64`
+    /// Values are always read as little-endian integers. The returned [`u64`]
     /// will contain the zero-extended value.
     pub fn read(&self, field: Field) -> Result<u64, VmiError> {
-        let offset = field.offset as usize;
-        let size = field.size as usize;
+        let offset = field.offset() as usize;
+        let size = field.size() as usize;
 
         let offset_end = match offset.checked_add(size) {
             Some(offset_end) => offset_end,

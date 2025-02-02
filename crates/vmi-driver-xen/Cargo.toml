@@ -1,6 +1,6 @@
 [package]
 name = "vmi-driver-xen"
-version = "0.1.1"
+version = "0.2.0"
 license = "MIT"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -9,7 +9,7 @@ rust-version = { workspace = true }
 
 homepage = { workspace = true }
 repository = { workspace = true }
-description = "Xen driver for VMI"
+description = "VMI driver for Xen hypervisor"
 keywords = [
     "vmi",
     "xen",

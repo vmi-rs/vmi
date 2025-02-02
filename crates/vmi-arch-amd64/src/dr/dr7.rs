@@ -50,7 +50,7 @@ impl Dr7 {
     /// clear this flag on a task switch, allowing a breakpoint to be enabled
     /// for all tasks.
     pub fn global_breakpoint_0(self) -> bool {
-        self.0 >> 1 & 1 != 0
+        (self.0 >> 1) & 1 != 0
     }
 
     /// L1 (local breakpoint enable) flag (bit 2).
@@ -61,7 +61,7 @@ impl Dr7 {
     /// processor automatically clears this flag on every task switch to
     /// avoid unwanted breakpoint conditions in the new task.
     pub fn local_breakpoint_1(self) -> bool {
-        self.0 >> 2 & 1 != 0
+        (self.0 >> 2) & 1 != 0
     }
 
     /// G1 (global breakpoint enable) flag (bit 3).
@@ -72,7 +72,7 @@ impl Dr7 {
     /// clear this flag on a task switch, allowing a breakpoint to be enabled
     /// for all tasks.
     pub fn global_breakpoint_1(self) -> bool {
-        self.0 >> 3 & 1 != 0
+        (self.0 >> 3) & 1 != 0
     }
 
     /// L2 (local breakpoint enable) flag (bit 4).
@@ -83,7 +83,7 @@ impl Dr7 {
     /// processor automatically clears this flag on every task switch to
     /// avoid unwanted breakpoint conditions in the new task.
     pub fn local_breakpoint_2(self) -> bool {
-        self.0 >> 4 & 1 != 0
+        (self.0 >> 4) & 1 != 0
     }
 
     /// G2 (global breakpoint enable) flag (bit 5).
@@ -94,7 +94,7 @@ impl Dr7 {
     /// clear this flag on a task switch, allowing a breakpoint to be enabled
     /// for all tasks.
     pub fn global_breakpoint_2(self) -> bool {
-        self.0 >> 5 & 1 != 0
+        (self.0 >> 5) & 1 != 0
     }
 
     /// L3 (local breakpoint enable) flag (bit 6).
@@ -105,7 +105,7 @@ impl Dr7 {
     /// processor automatically clears this flag on every task switch to
     /// avoid unwanted breakpoint conditions in the new task.
     pub fn local_breakpoint_3(self) -> bool {
-        self.0 >> 6 & 1 != 0
+        (self.0 >> 6) & 1 != 0
     }
 
     /// G3 (global breakpoint enable) flag (bit 7).
@@ -116,7 +116,7 @@ impl Dr7 {
     /// clear this flag on a task switch, allowing a breakpoint to be enabled
     /// for all tasks.
     pub fn global_breakpoint_3(self) -> bool {
-        self.0 >> 7 & 1 != 0
+        (self.0 >> 7) & 1 != 0
     }
 
     /// LE (local exact breakpoint enable) flag (bit 8).
@@ -133,7 +133,7 @@ impl Dr7 {
     /// is recommended that the LE and GE flags be set to 1 if exact
     /// breakpoints are required.
     pub fn local_exact_breakpoint_0(self) -> bool {
-        self.0 >> 8 & 1 != 0
+        (self.0 >> 8) & 1 != 0
     }
 
     /// GE (global exact breakpoint enable) flag (bit 9).
@@ -150,7 +150,7 @@ impl Dr7 {
     /// is recommended that the LE and GE flags be set to 1 if exact
     /// breakpoints are required.
     pub fn global_exact_breakpoint_0(self) -> bool {
-        self.0 >> 9 & 1 != 0
+        (self.0 >> 9) & 1 != 0
     }
 
     /// RTM (restricted transactional memory) flag (bit 11).
@@ -159,7 +159,7 @@ impl Dr7 {
     /// transactional regions. This advanced debugging is enabled only if
     /// IA32_DEBUGCTL.RTM is also set.
     pub fn restricted_transactional_memory(self) -> bool {
-        self.0 >> 11 & 1 != 0
+        (self.0 >> 11) & 1 != 0
     }
 
     /// GD (general detect enable) flag (bit 13).
@@ -178,7 +178,7 @@ impl Dr7 {
     /// The processor clears the GD flag upon entering to the debug exception
     /// handler, to allow the handler access to the debug registers.
     pub fn general_detect(self) -> bool {
-        self.0 >> 13 & 1 != 0
+        (self.0 >> 13) & 1 != 0
     }
 
     /// Condition for breakpoint 0 (R/W0).
@@ -186,7 +186,7 @@ impl Dr7 {
     /// Specifies the breakpoint condition for the corresponding breakpoint
     /// (DR0).
     pub fn condition_0(self) -> BreakpointCondition {
-        match self.0 >> 16 & 0b11 {
+        match (self.0 >> 16) & 0b11 {
             0b00 => BreakpointCondition::Execution,
             0b01 => BreakpointCondition::Write,
             0b10 => BreakpointCondition::Io,
@@ -200,7 +200,7 @@ impl Dr7 {
     /// Specifies the size of the memory location at the address specified in
     /// the corresponding breakpoint address register (DR0).
     pub fn length_0(self) -> BreakpointLength {
-        match self.0 >> 18 & 0b11 {
+        match (self.0 >> 18) & 0b11 {
             0b00 => BreakpointLength::Byte,
             0b01 => BreakpointLength::Word,
             0b10 => BreakpointLength::Quadword,
@@ -214,7 +214,7 @@ impl Dr7 {
     /// Specifies the breakpoint condition for the corresponding breakpoint
     /// (DR1).
     pub fn condition_1(self) -> BreakpointCondition {
-        match self.0 >> 20 & 0b11 {
+        match (self.0 >> 20) & 0b11 {
             0b00 => BreakpointCondition::Execution,
             0b01 => BreakpointCondition::Write,
             0b10 => BreakpointCondition::Io,
@@ -228,7 +228,7 @@ impl Dr7 {
     /// Specifies the size of the memory location at the address specified in
     /// the corresponding breakpoint address register (DR1).
     pub fn length_1(self) -> BreakpointLength {
-        match self.0 >> 22 & 0b11 {
+        match (self.0 >> 22) & 0b11 {
             0b00 => BreakpointLength::Byte,
             0b01 => BreakpointLength::Word,
             0b10 => BreakpointLength::Quadword,
@@ -242,7 +242,7 @@ impl Dr7 {
     /// Specifies the breakpoint condition for the corresponding breakpoint
     /// (DR2).
     pub fn condition_2(self) -> BreakpointCondition {
-        match self.0 >> 24 & 0b11 {
+        match (self.0 >> 24) & 0b11 {
             0b00 => BreakpointCondition::Execution,
             0b01 => BreakpointCondition::Write,
             0b10 => BreakpointCondition::Io,
@@ -256,7 +256,7 @@ impl Dr7 {
     /// Specifies the size of the memory location at the address specified in
     /// the corresponding breakpoint address register (DR2).
     pub fn length_2(self) -> BreakpointLength {
-        match self.0 >> 26 & 0b11 {
+        match (self.0 >> 26) & 0b11 {
             0b00 => BreakpointLength::Byte,
             0b01 => BreakpointLength::Word,
             0b10 => BreakpointLength::Quadword,
@@ -270,7 +270,7 @@ impl Dr7 {
     /// Specifies the breakpoint condition for the corresponding breakpoint
     /// (DR3).
     pub fn condition_3(self) -> BreakpointCondition {
-        match self.0 >> 28 & 0b11 {
+        match (self.0 >> 28) & 0b11 {
             0b00 => BreakpointCondition::Execution,
             0b01 => BreakpointCondition::Write,
             0b10 => BreakpointCondition::Io,
@@ -284,7 +284,7 @@ impl Dr7 {
     /// Specifies the size of the memory location at the address specified in
     /// the corresponding breakpoint address register (DR3).
     pub fn length_3(self) -> BreakpointLength {
-        match self.0 >> 30 & 0b11 {
+        match (self.0 >> 30) & 0b11 {
             0b00 => BreakpointLength::Byte,
             0b01 => BreakpointLength::Word,
             0b10 => BreakpointLength::Quadword,

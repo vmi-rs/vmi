@@ -263,6 +263,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
 
 [[package]]
+name = "elf"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4445909572dbd556c457c849c4ca58623d84b27c8fff1e74b0b4227d8b90d17b"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -772,9 +778,7 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 
 [[package]]
 name = "isr"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a7d72d55de0118f860db9f8e9d928289f8952e653571885f17452dd9124bc1f"
+version = "0.2.0"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -787,9 +791,7 @@ dependencies = [
 
 [[package]]
 name = "isr-cache"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a57c10be1c546915ad498ea424f400cfe2c79f5e682e2e2e54498899dc39ac3a"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "isr-core",
@@ -807,9 +809,7 @@ dependencies = [
 
 [[package]]
 name = "isr-core"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e9f0114ba6ebc8b5c8f6255083a754176877eb6875c1b56ea7f8a8dcb91aab"
+version = "0.2.0"
 dependencies = [
  "indexmap 2.6.0",
  "serde",
@@ -818,9 +818,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-linux"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72bb2343ea9f9eae0d754aa3e0ac64675157b152381a2b886cfc00a4c1a51a49"
+version = "0.2.0"
 dependencies = [
  "debpkg",
  "flate2",
@@ -834,9 +832,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-pdb"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad7105d41eb95e86862490cd53e79a05683d6f2f4012541d98a2aa8a27a331a7"
+version = "0.2.0"
 dependencies = [
  "object",
  "reqwest",
@@ -846,9 +842,7 @@ dependencies = [
 
 [[package]]
 name = "isr-dwarf"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdff591004404c670c4f01ff2f7f00cd7193e84d3d56a9084346de7009029af8"
+version = "0.2.0"
 dependencies = [
  "gimli",
  "indexmap 2.6.0",
@@ -862,9 +856,7 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27a16ac35394b3b5e59f4edd6f3f1e7338ad1d3b86b9725ab4f0334b9bf8b052"
+version = "0.2.0"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -877,9 +869,7 @@ dependencies = [
 
 [[package]]
 name = "isr-pdb"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd61ef4282a14622e4b6abc3472e16aa1bbdacb2fcad7c0172dd2eff6681a0e2"
+version = "0.2.0"
 dependencies = [
  "indexmap 2.6.0",
  "isr-core",
@@ -956,9 +946,7 @@ dependencies = [
 
 [[package]]
 name = "libxen"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b8e0c665235e811a6dc4976cb9a00d4449f1088bfcc4fd53cc7e0152e5fe46a"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "libc",
@@ -969,9 +957,7 @@ dependencies = [
 
 [[package]]
 name = "libxen-sys"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40a0f7caaf357e5b4e459e218092674b09a77fdc5b8081d43aa17b24c7768fdd"
+version = "0.2.0"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -1923,6 +1909,7 @@ dependencies = [
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-driver-xen",
+ "vmi-driver-xen-core-dump",
  "vmi-os-linux",
  "vmi-os-windows",
  "vmi-utils",
@@ -1931,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-arch-amd64"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -1941,7 +1928,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "indexmap 2.6.0",
@@ -1958,7 +1945,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "libc",
  "libxen",
@@ -1968,8 +1955,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "vmi-driver-xen-core-dump"
+version = "0.2.0"
+dependencies = [
+ "elf",
+ "libc",
+ "libxen",
+ "memmap2",
+ "tracing",
+ "vmi-arch-amd64",
+ "vmi-core",
+ "zerocopy",
+]
+
+[[package]]
 name = "vmi-macros"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1978,11 +1979,13 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-linux"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "isr-core",
  "isr-macros",
  "memchr",
+ "once_cell",
+ "thiserror",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",
@@ -1990,7 +1993,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-windows"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "isr",
@@ -1998,6 +2001,7 @@ dependencies = [
  "isr-dl-pdb",
  "isr-macros",
  "object",
+ "once_cell",
  "thiserror",
  "tracing",
  "vmi-arch-amd64",
@@ -2008,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-utils"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "isr-core",
  "isr-macros",

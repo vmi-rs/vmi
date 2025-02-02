@@ -1,8 +1,11 @@
 use super::{OsArchitecture, OsImageExportedSymbol, VmiOs};
-use crate::{Va, VmiDriver, VmiError};
+use crate::{Va, VmiDriver, VmiError, VmiVa};
 
-/// Represents information about a process in the target system.
-pub trait VmiOsImage<'a, Driver>: Into<Va> + 'a
+/// A trait for executable images.
+///
+/// This trait provides an abstraction over executable images,
+/// such as binaries and shared libraries, within a guest OS.
+pub trait VmiOsImage<'a, Driver>: VmiVa + 'a
 where
     Driver: VmiDriver,
 {
@@ -12,10 +15,9 @@ where
     /// Returns the base address of the image.
     fn base_address(&self) -> Va;
 
-    /// Retrieves the architecture of an image at a given base address.
+    /// Returns the target architecture for which the image was compiled.
     fn architecture(&self) -> Result<OsArchitecture, VmiError>;
 
-    /// Retrieves a list of exported symbols from an image at a given base
-    /// address.
+    /// Returns the exported symbols.
     fn exports(&self) -> Result<Vec<OsImageExportedSymbol>, VmiError>;
 }

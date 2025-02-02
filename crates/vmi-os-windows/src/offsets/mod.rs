@@ -163,8 +163,8 @@ offsets! {
         }
 
         struct _OBJECT_HEADER_NAME_INFO {
-            Directory: Field,
-            Name: Field,
+            Directory: Field,               // _OBJECT_DIRECTORY*
+            Name: Field,                    // _UNICODE_STRING
         }
 
         struct _OBJECT_TYPE {

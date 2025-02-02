@@ -1,8 +1,10 @@
 use super::{ThreadId, ThreadObject, VmiOs};
-use crate::{Va, VmiDriver, VmiError};
+use crate::{VmiDriver, VmiError, VmiVa};
 
-/// A thread object.
-pub trait VmiOsThread<'a, Driver>: Into<Va> + 'a
+/// A trait for thread objects.
+///
+/// This trait provides an abstraction over threads within a guest OS.
+pub trait VmiOsThread<'a, Driver>: VmiVa + 'a
 where
     Driver: VmiDriver,
 {

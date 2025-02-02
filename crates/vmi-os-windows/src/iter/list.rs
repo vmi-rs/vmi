@@ -2,7 +2,7 @@ use std::iter::FusedIterator;
 
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use crate::{arch::ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, WindowsOs};
 
 /// An iterator for traversing list entries.
 ///
@@ -12,7 +12,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    /// VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+
+    /// Current entry.
     current: Option<Va>,
 
     /// Address of the list head.
@@ -37,14 +40,10 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    /// Create a new list entry iterator.
-    pub fn new(
-        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
-        list_head: Va,
-        offset: u64,
-    ) -> Self {
-        let LIST_ENTRY = &vmi.underlying_os().offsets()._LIST_ENTRY;
-        let (offset_flink, offset_blink) = (LIST_ENTRY.Flink.offset, LIST_ENTRY.Blink.offset);
+    /// Creates a new list entry iterator.
+    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, list_head: Va, offset: u64) -> Self {
+        let LIST_ENTRY = &vmi.underlying_os().offsets._LIST_ENTRY;
+        let (offset_flink, offset_blink) = (LIST_ENTRY.Flink.offset(), LIST_ENTRY.Blink.offset());
 
         Self {
             vmi,

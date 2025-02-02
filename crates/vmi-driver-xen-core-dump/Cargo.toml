@@ -1,0 +1,32 @@
+[package]
+name = "vmi-driver-xen-core-dump"
+version = "0.2.0"
+license = "MIT"
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "VMI driver for Xen core dump"
+keywords = [
+    "vmi",
+    "xen",
+    "dump",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+elf = { workspace = true }
+libc = { workspace = true }
+memmap2 = { workspace = true }
+tracing = { workspace = true }
+zerocopy = { workspace = true }
+
+vmi-arch-amd64 = { workspace = true }
+vmi-core = { workspace = true }
+
+xen = { workspace = true }

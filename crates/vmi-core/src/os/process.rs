@@ -1,21 +1,23 @@
 use super::{OsArchitecture, ProcessId, ProcessObject, VmiOs};
-use crate::{Pa, Va, VmiDriver, VmiError};
+use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
-/// A process object.
-pub trait VmiOsProcess<'a, Driver>: Into<Va> + 'a
+/// A trait for process objects.
+///
+/// This trait provides an abstraction over processes within a guest OS.
+pub trait VmiOsProcess<'a, Driver>: VmiVa + 'a
 where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
     type Os: VmiOs<Driver>;
 
-    /// The PID of the process.
+    /// Returns the process ID.
     fn id(&self) -> Result<ProcessId, VmiError>;
 
-    /// The process object.
+    /// Returns the process object.
     fn object(&self) -> Result<ProcessObject, VmiError>;
 
-    /// The short name of the process.
+    /// Returns the name of the process.
     ///
     /// # Platform-specific
     ///
@@ -23,26 +25,25 @@ where
     /// - **Linux**: `_task_struct::comm` (limited to 16 characters).
     fn name(&self) -> Result<String, VmiError>;
 
-    /// Retrieves the parent process ID for a given process object.
+    /// Returns the parent process ID.
     fn parent_id(&self) -> Result<ProcessId, VmiError>;
 
-    /// Retrieves the architecture of a given process.
+    /// Returns the architecture of the process.
     fn architecture(&self) -> Result<OsArchitecture, VmiError>;
 
-    /// Retrieves the translation root for a given process.
+    /// Returns the process's page table translation root.
     fn translation_root(&self) -> Result<Pa, VmiError>;
 
-    /// Retrieves the base address of the user translation root for a given
-    /// process.
+    /// Returns the user-mode page table translation root.
     ///
     /// If KPTI is disabled, this function will return the same value as
-    /// [`VmiOs::process_translation_root`].
+    /// [`translation_root`](Self::translation_root).
     fn user_translation_root(&self) -> Result<Pa, VmiError>;
 
-    /// Retrieves the base address of the process image.
+    /// Returns the base address of the process image.
     fn image_base(&self) -> Result<Va, VmiError>;
 
-    /// Retrieves a list of memory regions for a given process.
+    /// Returns an iterator over the process's memory regions.
     fn regions(
         &self,
     ) -> Result<
@@ -50,12 +51,15 @@ where
         VmiError,
     >;
 
-    /// Finds a specific memory region in a process given an address.
+    /// Finds the memory region containing the given address.
     fn find_region(
         &self,
         address: Va,
     ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError>;
 
-    /// Checks if a given virtual address is valid in a given process.
+    /// Checks whether the given virtual address is valid in the process.
+    ///
+    /// This method checks if page-faulting on the address would result in
+    /// a successful access.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError>;
 }

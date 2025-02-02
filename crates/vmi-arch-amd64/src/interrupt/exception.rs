@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExceptionVector(pub u8);
 
-#[allow(non_upper_case_globals)]
+#[expect(non_upper_case_globals)]
 impl ExceptionVector {
     /// Divide Error (#DE).
     ///

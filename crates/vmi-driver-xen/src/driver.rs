@@ -15,8 +15,7 @@ use xen::{
     XenMonitor,
 };
 
-use super::arch::ArchAdapter;
-use crate::{Error, IntoExt as _};
+use crate::{ArchAdapter, Error, IntoExt as _};
 
 /// VMI driver for Xen hypervisor.
 pub struct XenDriver<Arch>

@@ -1,6 +1,6 @@
 mod amd64;
 
-use vmi_core::{os::ProcessObject, Architecture, Va, VmiCore, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError, VmiState};
 
 use crate::{WindowsKernelInformation, WindowsOs};
 
@@ -11,36 +11,27 @@ where
 {
     fn syscall_argument(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError>;
 
     fn function_argument(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
         index: u64,
     ) -> Result<u64, VmiError>;
 
-    fn function_return_value(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
-    ) -> Result<u64, VmiError>;
+    fn function_return_value(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<u64, VmiError>;
 
     fn find_kernel(
         vmi: &VmiCore<Driver>,
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<WindowsKernelInformation>, VmiError>;
 
-    fn kernel_image_base(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        os: &WindowsOs<Driver>,
-    ) -> Result<Va, VmiError>;
+    fn kernel_image_base(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<Va, VmiError>;
 
-    fn process_address_is_valid(
+    fn is_page_present_or_transition(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
-        process: ProcessObject,
         address: Va,
-    ) -> Result<Option<bool>, VmiError>;
+    ) -> Result<bool, VmiError>;
 
-    fn current_kpcr(vmi: VmiState<Driver, WindowsOs<Driver>>, os: &WindowsOs<Driver>) -> Va;
+    fn current_kpcr(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Va;
 }

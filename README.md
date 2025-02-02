@@ -25,7 +25,7 @@ manipulating virtual machine state from the outside.
   - [Address Contexts](#address-contexts)
 - [Architecture](#architecture)
   - [Core Components](#core-components)
-    - [Relationship between `VmiCore`, `VmiSession`, and `VmiContext`](#relationship-between-vmicore-vmisession-and-vmicontext)
+    - [Relationship between `VmiCore`, `VmiSession`, `VmiState` and `VmiContext`](#relationship-between-vmicore-vmisession-vmistate-and-vmicontext)
     - [OS-Specific Operations](#os-specific-operations)
     - [Implicit vs. Explicit Registers](#implicit-vs-explicit-registers)
   - [Event Handling](#event-handling)
@@ -117,7 +117,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vmi = "0.1"
+vmi = "0.2"
 ```
 
 Basic usage example:
@@ -127,7 +127,7 @@ use isr::{cache::JsonCodec, IsrCache};
 use vmi::{
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
-    os::windows::WindowsOs,
+    os::{windows::WindowsOs, VmiOsProcess as _},
     VcpuId, VmiCore, VmiSession,
 };
 use xen::XenDomainId;
@@ -140,9 +140,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Try to find the kernel information.
     // This is necessary in order to load the profile.
     let kernel_info = {
+        // Pause the VCPU to get consistent state.
         let _pause_guard = core.pause_guard()?;
+
+        // Get the register state for the first VCPU.
         let registers = core.registers(VcpuId(0))?;
 
+        // On AMD64 architecture, the kernel is usually found using the
+        // `MSR_LSTAR` register, which contains the address of the system call
+        // handler. This register is set by the operating system during boot
+        // and is left unchanged (unless some rootkits are involved).
+        //
+        // Therefore, we can take an arbitrary registers at any point in time
+        // (as long as the OS has booted and the page tables are set up) and
+        // use them to find the kernel.
         WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
     };
 
@@ -153,14 +164,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let profile = entry.profile()?;
 
     // Create the VMI session.
+    tracing::info!("Creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
     let session = VmiSession::new(&core, &os);
 
-    // Get the list of processes and print them.
+    // Pause the VM again to get consistent state.
     let _pause_guard = session.pause_guard()?;
+
+    // Create a new `VmiState` with the current register.
     let registers = session.registers(VcpuId(0))?;
-    let processes = session.os().processes(&registers)?;
-    println!("Processes: {processes:#?}");
+    let vmi = session.with_registers(&registers);
+
+    // Get the list of processes and print them.
+    for process in vmi.os().processes()? {
+        let process = process?;
+
+        println!(
+            "{} [{}] {} (root @ {})",
+            process.object()?,
+            process.id()?,
+            process.name()?,
+            process.translation_root()?
+        );
+    }
 
     Ok(())
 }
@@ -170,11 +196,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 But first, you need to install the prerequisites.
 
-The framework has been tested on Ubuntu 22.04 and Xen 4.19.
-Note that Xen 4.19 is the minimum version required to use the
+The framework has been tested on Ubuntu 22.04 and Xen 4.20.
+Note that Xen 4.20 is the minimum version required to use the
 framework, and it is the current version (at the time of writing).
 
-Unfortunately, Xen 4.19 is not available in the official Ubuntu
+Unfortunately, Xen 4.20 is not available in the official Ubuntu
 repositories, so it must be built from source.
 
 This guide assumes you have a fresh Ubuntu 22.04 installation.
@@ -332,37 +358,43 @@ The core components of the framework are:
   to provide OS-aware operations. This enables high-level introspection
   tasks, but - like `VmiCore` - `VmiSession` does not store register state.
 
-- [`VmiContext`]: Represents a point-in-time state of the virtual CPU
-  during event handling. Unlike `VmiCore` (and `VmiSession`), `VmiContext`
-  *does* hold the register state at the time of the event, simplifying
-  event handler logic.
+- [`VmiState`]: Represents a state of the virtual machine at a given moment,
+  combining [`VmiSession`] with [`Architecture::Registers`].
+  This allows for consistent access to memory, registers, and OS-level
+  abstractions without requiring explicit register state management for
+  every operation.
 
-  It provides access to both `VmiCore` and `VmiOs` functionality within
-  a specific [`VmiEvent`].
+- [`VmiContext`]: Represents a point-in-time state of the virtual CPU
+  during event handling, combining [`VmiState`] with a [`VmiEvent`].
 
 - [`VmiError`]: Represents errors that can occur during VMI operations,
   including translation faults ([`PageFault`]).
 
-### Relationship between `VmiCore`, `VmiSession`, and `VmiContext`
+### Relationship between `VmiCore`, `VmiSession`, `VmiState` and `VmiContext`
 
 Each of these structures can be implicitly dereferenced down the hierarchy.
-This means that `VmiContext` implements [`Deref`] to `VmiSession`,
-which in turn implements `Deref` to `VmiCore`.
+This means that:
+
+- `VmiContext` implements [`Deref`] to `VmiState`
+  - which in turn implements `Deref` to `VmiSession`
+    - which in turn implements `Deref` to `VmiCore`.
 
 This design enables convenient access to lower-level functionality:
 
-- Access `VmiCore` methods directly from a `VmiSession` or `VmiContext`
-  without explicit dereferencing.
+- Access `VmiCore` methods directly from a `VmiSession`, `VmiState` or
+  `VmiContext` without explicit dereferencing.
 
-- Pass a `&VmiContext` to functions expecting a `&VmiSession`
+- Pass a `&VmiContext` to functions expecting a `&VmiState`, `&VmiSession`
   or `&VmiCore`.
 
 #### OS-Specific Operations
 
-Both `VmiSession` and `VmiContext` provide access to OS-specific
+Both `VmiState` and `VmiContext` provide access to OS-specific
 functionality through the [`os()`] method. This method returns a structure
 implementing the [`VmiOs`] trait methods, as well as any additional
 OS-specific operations.
+
+See the [`os`] module documentation for more information.
 
 #### Implicit vs. Explicit Registers
 
@@ -371,9 +403,9 @@ state. This means that functions requiring register information (e.g.,
 for address translation or OS-specific operations) must be explicitly
 provided with the register state.
 
-`VmiContext`, on the other hand, *does* hold the register state at
-the time of the event. This difference has important implications for
-how you interact with these components:
+`VmiState` and `VmiContext`, on the other hand, *does* hold the register
+state. This difference has important implications for how you interact with
+these components:
 
 - With `VmiCore` and `VmiSession`, you must explicitly provide
   the translation root (e.g., `CR3`) when performing memory operations:
@@ -386,7 +418,7 @@ how you interact with these components:
   let value = vmi.read_u64((va, registers.cr3.into()))?; // Explicitly pass the translation root (CR3)
   ```
 
-- With `VmiContext`, register state is managed internally:
+- With `VmiState` and ``VmiContext`, register state is managed internally:
 
   ```rust,ignore
   // let vmi: &VmiContext = ...;
@@ -398,18 +430,20 @@ This extends to OS-specific operations as well.
 - `VmiSession` requires explicit register state:
 
 ```rust,ignore
-// let vmi: &VmiSession = ...;
-let registers = vmi.registers(VcpuId(0))?;
-let process = vmi.os().current_process(&registers)?;
-let process_id = vmi.os().process_id(&registers, process)?;
+// let session: &VmiSession = ...;
+let registers = session.registers(VcpuId(0))?;
+let vmi = session.with_registers(&registers); // Create a new VmiState
+let process = vmi.os().current_process()?;
+let process_id = process.id()?;
 ```
 
-- `VmiContext` simplifies this by providing register state implicitly:
+- `VmiState` and `VmiContext` simplifies this by providing register state
+  implicitly:
 
 ```rust,ignore
 // let vmi: &VmiContext = ...;
 let process = vmi.os().current_process()?;
-let process_id = vmi.os().process_id(process)?;
+let process_id = process.id()?;
 ```
 
 ## Event Handling
@@ -546,6 +580,7 @@ This project is licensed under the MIT license.
 [`VmiHandler`]: https://docs.rs/vmi/latest/vmi/trait.VmiHandler.html
 [`VmiOs`]: https://docs.rs/vmi/latest/vmi/trait.VmiOs.html
 [`VmiSession`]: https://docs.rs/vmi/latest/vmi/struct.VmiSession.html
+[`VmiState`]: https://docs.rs/vmi/latest/vmi/struct.VmiState.html
 
 [`Amd64`]: https://docs.rs/vmi/latest/vmi/arch/amd64/struct.Amd64.html
 [`VmiXenDriver`]: https://docs.rs/vmi/latest/vmi/driver/xen/struct.VmiXenDriver.html
@@ -561,7 +596,7 @@ This project is licensed under the MIT license.
 [`PageIn`]: https://docs.rs/vmi/latest/vmi/utils/ptm/enum.PageTableMonitorEvent.html#variant.PageIn
 [`PageOut`]: https://docs.rs/vmi/latest/vmi/utils/ptm/enum.PageTableMonitorEvent.html#variant.PageOut
 [`handle_event`]: https://docs.rs/vmi/latest/vmi/trait.VmiHandler.html#tymethod.handle_event
-[`os()`]: https://docs.rs/vmi/latest/vmi/struct.VmiSession.html#method.os
+[`os()`]: https://docs.rs/vmi/latest/vmi/struct.VmiState.html#method.os
 [physical page lookups]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_gfn_cache
 [Virtual-to-Physical address translations]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_v2p_cache
 

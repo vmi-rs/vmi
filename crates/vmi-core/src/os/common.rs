@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{MemoryAccess, Pa, Va, VmiError};
+use super::VmiOs;
+use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError};
 
 /// A process object within a system.
 ///
@@ -222,6 +223,26 @@ pub enum OsRegionKind {
     /// Such regions are usually created by functions like `MapViewOfFile` on
     /// Windows.
     Mapped(OsMapped),
+}
+
+/// Specifies the kind of memory region.
+pub enum VmiOsRegionKind<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+    Self: 'a,
+{
+    /// A private region of memory.
+    ///
+    /// Such regions are usually created by functions like `VirtualAlloc` on
+    /// Windows.
+    Private,
+
+    /// A mapped region of memory. Might be backed by a file.
+    ///
+    /// Such regions are usually created by functions like `MapViewOfFile` on
+    /// Windows.
+    Mapped(Os::Mapped<'a>),
 }
 
 /// Contains information about a mapped memory region.

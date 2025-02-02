@@ -53,10 +53,9 @@ impl SegmentAccess {
     /// Specifies whether the segment descriptor is for a system segment (S flag
     /// is clear) or a code or data segment (S flag is set).
     pub fn descriptor_type(self) -> DescriptorType {
-        if self.0 >> 4 & 1 == 0 {
+        if (self.0 >> 4) & 1 == 0 {
             DescriptorType::System
-        }
-        else {
+        } else {
             DescriptorType::CodeOrData
         }
     }
@@ -67,7 +66,7 @@ impl SegmentAccess {
     /// Levels”, for a description of the relationship of the DPL to the CPL of
     /// the executing code segment and the RPL of a segment selector.
     pub fn descriptor_privilege_level(self) -> u8 {
-        (self.0 >> 5 & 0b11) as _
+        ((self.0 >> 5) & 0b11) as _
     }
 
     /// Indicates whether the segment is present in memory (set) or not present
@@ -79,12 +78,12 @@ impl SegmentAccess {
     /// time. It offers a control in addition to paging for managing virtual
     /// memory.
     pub fn present(self) -> bool {
-        self.0 >> 7 & 1 != 0
+        (self.0 >> 7) & 1 != 0
     }
 
     /// This bit is available for use by system software.
     pub fn available_bit(self) -> bool {
-        self.0 >> 8 & 1 != 0
+        (self.0 >> 8) & 1 != 0
     }
 
     /// In IA-32e mode, bit 21 of the second doubleword of the segment
@@ -96,7 +95,7 @@ impl SegmentAccess {
     /// or for non-code segments, bit 21 is reserved and should always be set to
     /// 0.
     pub fn long_mode(self) -> bool {
-        self.0 >> 9 & 1 != 0
+        (self.0 >> 9) & 1 != 0
     }
 
     /// Performs different functions depending on whether the segment descriptor
@@ -128,10 +127,9 @@ impl SegmentAccess {
     ///   upper bound is FFFFFFFFH (4 GBytes); if the flag is clear, the upper
     ///   bound is FFFFH (64 KBytes).
     pub fn operation_size(self) -> OperationSize {
-        if self.0 >> 10 & 1 == 0 {
+        if (self.0 >> 10) & 1 == 0 {
             OperationSize::Default
-        }
-        else {
+        } else {
             OperationSize::Big
         }
     }
@@ -145,10 +143,9 @@ impl SegmentAccess {
     /// offset against the segment limit. For example, when the granularity flag
     /// is set, a limit of 0 results in valid offsets from 0 to 4095.
     pub fn granularity(self) -> Granularity {
-        if self.0 >> 11 & 1 == 0 {
+        if (self.0 >> 11) & 1 == 0 {
             Granularity::Byte
-        }
-        else {
+        } else {
             Granularity::Page4K
         }
     }

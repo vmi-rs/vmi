@@ -203,27 +203,78 @@ impl EventReason {
 }
 
 /// Specifies which hardware events should be monitored.
+///
+/// This enum is used to specify which hardware events should be monitored by
+/// the VMI system.
 #[derive(Debug, Clone, Copy)]
 pub enum EventMonitor {
     // MemoryAccess, (implicit)
     /// Monitor writes to a specific control register.
+    ///
+    /// This method allows for setting up event triggers when certain CPU
+    /// registers are accessed or modified. The specific registers that can
+    /// be monitored depend on the architecture and are defined by the
+    /// [`Architecture::MonitorRegisterOptions`] type.
+    ///
+    /// When enabled, relevant events will be passed to the event callback
+    /// function.
     Register(ControlRegister),
 
     /// Monitor specific hardware interrupts or exception vectors.
+    ///
+    /// This method sets up event triggers for specified interrupt events. The
+    /// types of interrupts that can be monitored are defined by the
+    /// [`Architecture::MonitorInterruptOptions`] type, which is specific to
+    /// the architecture being used.
+    ///
+    /// When an interrupt event occurs, it will be passed to the event callback
+    /// function.
     Interrupt(ExceptionVector),
 
     /// Monitor singlestep execution of instructions.
+    ///
+    /// When enabled, this method causes the VMI system to generate an event
+    /// after each instruction execution in the guest. This can be useful
+    /// for detailed analysis of guest behavior, but may have a significant
+    /// performance impact.
+    ///
+    /// Single-step events will be passed to the event callback function when
+    /// they occur.
     Singlestep,
 
     /// Monitor execution of VMCALL instructions.
+    ///
+    /// When enabled, this method generates an event each time a VMCALL
+    /// instruction is executed in the guest. This can be useful for
+    /// implementing custom guest requests or for implementing custom
+    /// virtual device behavior.
+    ///
+    /// VMCALL events will be passed to the event callback function when they
+    /// occur.
     GuestRequest {
         /// Allow userspace to handle the VMCALL.
         allow_userspace: bool,
     },
 
     /// Monitor execution of CPUID instructions.
+    ///
+    /// When enabled, this method generates an event each time a CPUID
+    /// instruction is executed in the guest. This can be useful for
+    /// analyzing how the guest queries CPU features or for implementing CPU
+    /// feature spoofing.
+    ///
+    /// CPUID events will be passed to the event callback function when they
+    /// occur.
     CpuId,
 
     /// Monitor I/O port accesses.
+    ///
+    /// When enabled, this method generates events for I/O port read and write
+    /// operations performed by the guest. This can be useful for analyzing
+    /// guest interactions with virtual hardware or for implementing custom
+    /// virtual device behavior.
+    ///
+    /// I/O port events will be passed to the event callback function when they
+    /// occur.
     Io,
 }

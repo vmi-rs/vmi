@@ -85,50 +85,50 @@ impl PageTableEntry {
 
     /// Checks if the page is writable.
     pub fn write(self) -> bool {
-        self.0 >> 1 & 1 != 0
+        (self.0 >> 1) & 1 != 0
     }
 
     /// Checks if the page is accessible in user mode.
     /// Note: Returns true for user mode, false for supervisor mode.
     pub fn supervisor(self) -> bool {
-        self.0 >> 2 & 1 != 0
+        (self.0 >> 2) & 1 != 0
     }
 
     /// Checks if write-through caching is enabled for the page.
     pub fn page_level_write_through(self) -> bool {
-        self.0 >> 3 & 1 != 0
+        (self.0 >> 3) & 1 != 0
     }
 
     /// Checks if caching is disabled for the page.
     pub fn page_level_cache_disable(self) -> bool {
-        self.0 >> 4 & 1 != 0
+        (self.0 >> 4) & 1 != 0
     }
 
     /// Checks if the page has been accessed.
     pub fn accessed(self) -> bool {
-        self.0 >> 5 & 1 != 0
+        (self.0 >> 5) & 1 != 0
     }
 
     /// Checks if the page has been written to.
     pub fn dirty(self) -> bool {
-        self.0 >> 6 & 1 != 0
+        (self.0 >> 6) & 1 != 0
     }
 
     /// Checks if this entry refers to a large page.
     pub fn large(self) -> bool {
-        self.0 >> 7 & 1 != 0
+        (self.0 >> 7) & 1 != 0
     }
 
     /// Checks if the page is global (shared between all processes).
     pub fn global(self) -> bool {
-        self.0 >> 8 & 1 != 0
+        (self.0 >> 8) & 1 != 0
     }
 
     /// Extracts the page frame number from the entry.
     pub fn pfn(self) -> Gfn {
         const BITS: u64 = 40;
         const MASK: u64 = (1 << BITS) - 1;
-        Gfn::new(self.0 >> 12 & MASK)
+        Gfn::new((self.0 >> 12) & MASK)
     }
 }
 

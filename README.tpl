@@ -22,6 +22,7 @@
 [`VmiHandler`]: https://docs.rs/vmi/latest/vmi/trait.VmiHandler.html
 [`VmiOs`]: https://docs.rs/vmi/latest/vmi/trait.VmiOs.html
 [`VmiSession`]: https://docs.rs/vmi/latest/vmi/struct.VmiSession.html
+[`VmiState`]: https://docs.rs/vmi/latest/vmi/struct.VmiState.html
 
 [`Amd64`]: https://docs.rs/vmi/latest/vmi/arch/amd64/struct.Amd64.html
 [`VmiXenDriver`]: https://docs.rs/vmi/latest/vmi/driver/xen/struct.VmiXenDriver.html
@@ -37,7 +38,8 @@
 [`PageIn`]: https://docs.rs/vmi/latest/vmi/utils/ptm/enum.PageTableMonitorEvent.html#variant.PageIn
 [`PageOut`]: https://docs.rs/vmi/latest/vmi/utils/ptm/enum.PageTableMonitorEvent.html#variant.PageOut
 [`handle_event`]: https://docs.rs/vmi/latest/vmi/trait.VmiHandler.html#tymethod.handle_event
-[`os()`]: https://docs.rs/vmi/latest/vmi/struct.VmiSession.html#method.os
+[`os()`]: https://docs.rs/vmi/latest/vmi/struct.VmiState.html#method.os
+[`os`]: https://docs.rs/vmi/latest/vmi/os/index.html
 [physical page lookups]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_gfn_cache
 [Virtual-to-Physical address translations]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_v2p_cache
 

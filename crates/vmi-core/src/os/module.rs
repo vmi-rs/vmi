@@ -1,15 +1,18 @@
 use super::VmiOs;
-use crate::{Va, VmiDriver, VmiError};
+use crate::{Va, VmiDriver, VmiError, VmiVa};
 
-/// Represents information about a process in the target system.
-pub trait VmiOsModule<'a, Driver>: Into<Va> + 'a
+/// A trait for kernel modules.
+///
+/// This trait provides an abstraction over dynamically loaded modules,
+/// such as kernel drivers and shared libraries, within a guest OS.
+pub trait VmiOsModule<'a, Driver>: VmiVa + 'a
 where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
     type Os: VmiOs<Driver>;
 
-    /// The base address of the module.
+    /// Returns the base address of the module.
     ///
     /// # Platform-specific
     ///
@@ -19,7 +22,7 @@ where
     ///   - before v6.4-rc1: `module::core_layout.base`
     fn base_address(&self) -> Result<Va, VmiError>;
 
-    /// The size of the module.
+    /// Returns the size of the module.
     ///
     /// # Platform-specific
     ///
@@ -29,7 +32,7 @@ where
     ///   - before v6.4-rc1: `module::init_layout.size + module::core_layout.size (+ module::data_layout.size)`
     fn size(&self) -> Result<u64, VmiError>;
 
-    /// The short name of the module.
+    /// Returns the name of the module.
     ///
     /// # Platform-specific
     ///

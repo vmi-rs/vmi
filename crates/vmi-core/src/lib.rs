@@ -20,7 +20,7 @@ pub use self::{
     arch::{Architecture, Registers},
     core::{
         AccessContext, AddressContext, Gfn, Hex, MemoryAccess, MemoryAccessOptions, Pa,
-        TranslationMechanism, Va, VcpuId, View, VmiInfo,
+        TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
     },
     ctx::{VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiState},
     driver::VmiDriver,
@@ -69,7 +69,7 @@ impl<Driver> VmiCore<Driver>
 where
     Driver: VmiDriver,
 {
-    /// Creates a new VmiCore instance with the given driver.
+    /// Creates a new `VmiCore` instance with the given driver.
     ///
     /// Both the GFN cache and the V2P cache are enabled by default,
     /// each with a capacity of 8192 entries.
@@ -498,6 +498,17 @@ where
     }
 
     /// Enables monitoring of specific events.
+    ///
+    /// This method allows you to enable monitoring of specific events, such as
+    /// control register writes, interrupts, or single-step execution.
+    /// Monitoring events can be useful for tracking specific guest behavior or
+    /// for implementing custom analysis tools.
+    ///
+    /// The type of event to monitor is defined by the architecture-specific
+    /// [`Architecture::EventMonitor`] type.
+    ///
+    /// When an event occurs, it will be passed to the event callback function
+    /// for processing.
     pub fn monitor_enable(
         &self,
         option: <Driver::Architecture as Architecture>::EventMonitor,
@@ -506,87 +517,19 @@ where
     }
 
     /// Disables monitoring of specific events.
+    ///
+    /// This method allows you to disable monitoring of specific events that
+    /// were previously enabled. It can be used to stop tracking certain
+    /// hardware events or to reduce the overhead of event processing.
+    ///
+    /// The type of event to disable is defined by the architecture-specific
+    /// [`Architecture::EventMonitor`] type.
     pub fn monitor_disable(
         &self,
         option: <Driver::Architecture as Architecture>::EventMonitor,
     ) -> Result<(), VmiError> {
         self.driver.monitor_disable(option)
     }
-
-    /*
-    /// Enables or disables monitoring of specific CPU registers.
-    ///
-    /// This method allows for setting up event triggers when certain CPU
-    /// registers are accessed or modified. The specific registers that can
-    /// be monitored depend on the architecture and are defined by the
-    /// [`Architecture::MonitorRegisterOptions`] type.
-    ///
-    /// When enabled, relevant events will be passed to the event callback
-    /// function.
-    pub fn monitor_register(
-        &self,
-        enable: bool,
-        options: <Driver::Architecture as Architecture>::MonitorRegisterOptions,
-    ) -> Result<(), VmiError> {
-        self.driver.monitor_register(enable, options)
-    }
-
-    /// Enables or disables monitoring of specific interrupts.
-    ///
-    /// This method sets up event triggers for specified interrupt events. The
-    /// types of interrupts that can be monitored are defined by the
-    /// [`Architecture::MonitorInterruptOptions`] type, which is specific to
-    /// the architecture being used.
-    ///
-    /// When an interrupt event occurs, it will be passed to the event callback
-    /// function.
-    pub fn monitor_interrupt(
-        &self,
-        enable: bool,
-        options: <Driver::Architecture as Architecture>::MonitorInterruptOptions,
-    ) -> Result<(), VmiError> {
-        self.driver.monitor_interrupt(enable, options)
-    }
-
-    /// Enables or disables single-step monitoring.
-    ///
-    /// When enabled, this method causes the VMI system to generate an event
-    /// after each instruction execution in the guest. This can be useful
-    /// for detailed analysis of guest behavior, but may have a significant
-    /// performance impact.
-    ///
-    /// Single-step events will be passed to the event callback function when
-    /// they occur.
-    pub fn monitor_singlestep(&self, enable: bool) -> Result<(), VmiError> {
-        self.driver.monitor_singlestep(enable)
-    }
-
-    /// Enables or disables monitoring of CPUID instruction execution.
-    ///
-    /// When enabled, this method generates an event each time a CPUID
-    /// instruction is executed in the guest. This can be useful for
-    /// analyzing how the guest queries CPU features or for implementing CPU
-    /// feature spoofing.
-    ///
-    /// CPUID events will be passed to the event callback function when they
-    /// occur.
-    pub fn monitor_cpuid(&self, enable: bool) -> Result<(), VmiError> {
-        self.driver.monitor_cpuid(enable)
-    }
-
-    /// Enables or disables monitoring of I/O port operations.
-    ///
-    /// When enabled, this method generates events for I/O port read and write
-    /// operations performed by the guest. This can be useful for analyzing
-    /// guest interactions with virtual hardware or for implementing custom
-    /// virtual device behavior.
-    ///
-    /// I/O port events will be passed to the event callback function when they
-    /// occur.
-    pub fn monitor_io(&self, enable: bool) -> Result<(), VmiError> {
-        self.driver.monitor_io(enable)
-    }
-    */
 
     /// Injects an interrupt into a specific virtual CPU.
     ///
@@ -726,8 +669,9 @@ where
     /// Reads an unsigned integer of the specified size from the virtual machine.
     ///
     /// This method reads an unsigned integer of the specified size (in bytes)
-    /// from the given access context. Note that the size must be 1, 2, 4, or 8.
-    /// The result is returned as a `u64` to accommodate the widest possible
+    /// from the virtual machine. Note that the size must be 1, 2, 4, or 8.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
     /// integer size.
     pub fn read_uint(&self, ctx: impl Into<AccessContext>, size: usize) -> Result<u64, VmiError> {
         match size {
@@ -739,13 +683,20 @@ where
         }
     }
 
-    /// TODO: xxx
+    /// Reads a field of a structure from the virtual machine.
+    ///
+    /// This method reads a field from the virtual machine. The field is
+    /// defined by the provided [`Field`] structure, which specifies the
+    /// offset and size of the field within the memory region.
+    ///
+    /// The result is returned as a [`u64`] to accommodate the widest possible
+    /// integer size.
     pub fn read_field(
         &self,
         ctx: impl Into<AccessContext>,
         field: &Field,
     ) -> Result<u64, VmiError> {
-        self.read_uint(ctx.into() + field.offset, field.size as usize)
+        self.read_uint(ctx.into() + field.offset(), field.size() as usize)
     }
 
     /// Reads an address-sized unsigned integer from the virtual machine.

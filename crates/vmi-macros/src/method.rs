@@ -1,7 +1,7 @@
 use quote::quote;
 use syn::{
-    Attribute, FnArg, ImplItem, ImplItemFn, PatType, Receiver, Signature, TraitItem, TraitItemFn,
-    Type, TypeReference, Visibility,
+    Attribute, FnArg, ImplItem, ImplItemFn, PatType, Signature, TraitItem, TraitItemFn, Type,
+    TypeReference, Visibility,
 };
 
 /// Trait for items.
@@ -69,7 +69,6 @@ impl ItemFnExt for &TraitItemFn {
 }
 
 pub trait FnArgExt {
-    fn receiver(&self) -> Option<&Receiver>;
     fn typed(&self) -> Option<&PatType>;
     fn contains(&self, needle: &str) -> bool;
 }
@@ -80,13 +79,6 @@ pub trait TypeExt {
 }
 
 impl FnArgExt for FnArg {
-    fn receiver(&self) -> Option<&Receiver> {
-        match self {
-            FnArg::Receiver(receiver) => Some(receiver),
-            _ => None,
-        }
-    }
-
     fn typed(&self) -> Option<&PatType> {
         match self {
             FnArg::Typed(typed) => Some(typed),
