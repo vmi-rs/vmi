@@ -64,7 +64,10 @@ where
         session: &'a VmiSession<'a, Driver, Os>,
         registers: &'a <Driver::Architecture as Architecture>::Registers,
     ) -> Self {
-        Self { session: *session, registers }
+        Self {
+            session: *session,
+            registers,
+        }
     }
 
     /// Creates a new VMI state with the specified registers.

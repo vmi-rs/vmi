@@ -5,7 +5,7 @@ use syn::{parse_macro_input, Ident, ItemTrait};
 use crate::{
     common::{self, __vmi_lifetime},
     method::{FnArgExt, ItemExt, ItemFnExt},
-    transform
+    transform,
 };
 
 struct TraitFn {

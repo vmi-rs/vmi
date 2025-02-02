@@ -225,7 +225,8 @@ where
         if !xa_is_node(entry) {
             // Handle non-node entry (direct value/zero entry)
             self.node = Some(entry);
-        } else if !entry.is_null() {
+        }
+        else if !entry.is_null() {
             self.node = Some(entry);
             self.node_type = mte_node_type(entry);
             self.walk_to_first()?;
@@ -254,7 +255,8 @@ where
     }
 
     fn walk_next(&mut self) -> Result<Option<Va>, VmiError> {
-        let Some(current_node) = self.node else {
+        let Some(current_node) = self.node
+        else {
             return Ok(None);
         };
 
@@ -262,11 +264,14 @@ where
         if !xa_is_node(current_node) {
             let entry = if xa_is_value(current_node) {
                 Va::new(xa_to_value(current_node))
-            } else if xa_is_zero(current_node) {
+            }
+            else if xa_is_zero(current_node) {
                 Va::new(xa_to_internal(current_node))
-            } else if !mt_is_reserved(current_node) {
+            }
+            else if !mt_is_reserved(current_node) {
                 current_node
-            } else {
+            }
+            else {
                 return Ok(None);
             };
 
@@ -282,7 +287,8 @@ where
 
             if let Some(next) = next {
                 self.node = Some(next);
-            } else {
+            }
+            else {
                 self.node = None;
             }
 
@@ -300,7 +306,8 @@ where
         if let Some(next) = next {
             self.node = Some(next);
             self.walk_next()
-        } else {
+        }
+        else {
             Ok(None)
         }
     }
@@ -354,7 +361,8 @@ where
         let last = if self.offset < 15 {
             self.vmi
                 .read_u64(node + __maple_range_64.pivot.offset() + (self.offset as u64 * 8))?
-        } else {
+        }
+        else {
             self.max
         };
 
@@ -362,7 +370,8 @@ where
 
         if mte_is_leaf(self.node.unwrap()) {
             Ok(Some(slot))
-        } else {
+        }
+        else {
             // Descend into child node
             self.node = Some(slot);
             self.node_type = mte_node_type(slot);
@@ -398,14 +407,16 @@ where
             let last = if self.offset < 9 {
                 self.vmi
                     .read_u64(node + __maple_arange_64.pivot.offset() + (self.offset as u64 * 8))?
-            } else {
+            }
+            else {
                 self.max
             };
 
             self.last = last;
             if mte_is_leaf(self.node.unwrap()) {
                 return Ok(Some(slot));
-            } else {
+            }
+            else {
                 self.node = Some(slot);
                 self.node_type = mte_node_type(slot);
                 self.offset = 0;

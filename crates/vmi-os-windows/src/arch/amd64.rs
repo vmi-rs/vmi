@@ -58,7 +58,8 @@ where
 
         if registers.cs.access.long_mode() {
             function_argument_x64(vmi, index)
-        } else {
+        }
+        else {
             function_argument_x86(vmi, index)
         }
     }
@@ -147,7 +148,8 @@ where
                 if entry.entry.present() {
                     // The address is valid if the page is present.
                     return Ok(true);
-                } else if entry.entry.windows_transition() && !entry.entry.windows_prototype() {
+                }
+                else if entry.entry.windows_transition() && !entry.entry.windows_prototype() {
                     // The Transition bit being 1 indicates that the page is in a transitional
                     // state. This means the page is not currently in the process's working
                     // set, but it's still resident in physical memory.
@@ -174,7 +176,8 @@ where
             || (registers.gs.base & (1 << 47)) == 0
         {
             registers.shadow_gs.into()
-        } else {
+        }
+        else {
             registers.gs.base.into()
         }
     }

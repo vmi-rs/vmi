@@ -13,16 +13,15 @@ use vmi::{
     driver::xen::VmiXenDriver,
     os::{
         windows::{WindowsOs, WindowsOsExt as _},
-        ProcessObject,
+        ProcessObject, VmiOsProcess as _,
     },
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
         ptm::{PageTableMonitor, PageTableMonitorEvent},
     },
-    MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError, VmiEventResponse,
-    VmiHandler, VmiSession,
+    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError,
+    VmiEventResponse, VmiHandler, VmiSession,
 };
-use vmi::{os::VmiOsProcess as _, Hex};
 use xen::XenStore;
 
 symbols! {
@@ -257,13 +256,15 @@ where
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
 
             Ok(VmiEventResponse::toggle_singlestep().and_set_view(vmi.default_view()))
-        } else if memory_access.access.contains(MemoryAccess::R) {
+        }
+        else if memory_access.access.contains(MemoryAccess::R) {
             // When the guest tries to read from the memory, a fast-singlestep
             // is performed over the instruction that tried to read the memory.
             // This is done to allow the instruction to read the original memory
             // content.
             Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()))
-        } else {
+        }
+        else {
             panic!("Unhandled memory access: {memory_access:?}");
         }
     }
@@ -285,7 +286,8 @@ where
                     // This breakpoint was not set by us. Reinject it.
                     tracing::warn!("Unknown breakpoint, reinjecting");
                     return Ok(VmiEventResponse::reinject_interrupt());
-                } else {
+                }
+                else {
                     // We have received a breakpoint event, but there is no
                     // breakpoint instruction at the current memory location.
                     // This can happen if the event was triggered by a breakpoint

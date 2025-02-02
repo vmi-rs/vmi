@@ -389,12 +389,13 @@ This design enables convenient access to lower-level functionality:
 
 #### OS-Specific Operations
 
+> *Consult the [`os`] module documentation for more information
+> and examples.*
+
 Both `VmiState` and `VmiContext` provide access to OS-specific
 functionality through the [`os()`] method. This method returns a structure
 implementing the [`VmiOs`] trait methods, as well as any additional
 OS-specific operations.
-
-See the [`os`] module documentation for more information.
 
 #### Implicit vs. Explicit Registers
 
@@ -403,7 +404,7 @@ state. This means that functions requiring register information (e.g.,
 for address translation or OS-specific operations) must be explicitly
 provided with the register state.
 
-`VmiState` and `VmiContext`, on the other hand, *does* hold the register
+`VmiState` and `VmiContext`, on the other hand, *do* hold the register
 state. This difference has important implications for how you interact with
 these components:
 
@@ -418,7 +419,7 @@ these components:
   let value = vmi.read_u64((va, registers.cr3.into()))?; // Explicitly pass the translation root (CR3)
   ```
 
-- With `VmiState` and ``VmiContext`, register state is managed internally:
+- With `VmiState` and `VmiContext`, register state is managed internally:
 
   ```rust,ignore
   // let vmi: &VmiContext = ...;
@@ -597,6 +598,7 @@ This project is licensed under the MIT license.
 [`PageOut`]: https://docs.rs/vmi/latest/vmi/utils/ptm/enum.PageTableMonitorEvent.html#variant.PageOut
 [`handle_event`]: https://docs.rs/vmi/latest/vmi/trait.VmiHandler.html#tymethod.handle_event
 [`os()`]: https://docs.rs/vmi/latest/vmi/struct.VmiState.html#method.os
+[`os`]: https://docs.rs/vmi/latest/vmi/os/index.html
 [physical page lookups]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_gfn_cache
 [Virtual-to-Physical address translations]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html#method.with_v2p_cache
 

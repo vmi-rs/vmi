@@ -36,7 +36,7 @@ macro_rules! impl_offsets_ext_v2 {
     };
 }
 
-pub(crate) use impl_symbols;
 pub(crate) use impl_offsets;
 pub(crate) use impl_offsets_ext_v1;
 pub(crate) use impl_offsets_ext_v2;
+pub(crate) use impl_symbols;

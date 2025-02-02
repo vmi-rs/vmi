@@ -9,7 +9,7 @@ pub mod __private {
     }
 
     use vmi_core::{
-        os::{VmiOsRegionKind, VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion},
+        os::{VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion, VmiOsRegionKind},
         Va, VmiDriver, VmiError, VmiOs, VmiState,
     };
 

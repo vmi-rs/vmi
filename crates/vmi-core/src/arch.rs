@@ -2,7 +2,9 @@
 
 use std::fmt::Debug;
 
-use crate::{AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError};
+use crate::{
+    AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError,
+};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///

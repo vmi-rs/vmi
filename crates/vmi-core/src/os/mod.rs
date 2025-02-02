@@ -15,7 +15,7 @@ use vmi_macros::derive_os_wrapper;
 pub use self::{
     common::{
         OsArchitecture, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
-        OsRegionKind, VmiOsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject,
+        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsRegionKind,
     },
     dummy::NoOS,
     image::VmiOsImage,

@@ -413,25 +413,29 @@ where
             return Ok(Some(
                 self.page_change(vmi, entry_pa, vas, old_value, new_value, view)?,
             ));
-        } else if old_value.present() && !new_value.present() {
+        }
+        else if old_value.present() && !new_value.present() {
             if old_value.large() {
                 self.dump();
                 unimplemented!(
                     "large page page-out, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
                     entry_pa, old_value, old_value.pfn(), new_value, new_value.pfn()
                 );
-            } else {
+            }
+            else {
                 let vas = entry.vas.clone();
                 return Ok(Some(self.page_out(vmi, entry_pa, vas, old_value, view)?));
             }
-        } else if !old_value.present() && new_value.present() {
+        }
+        else if !old_value.present() && new_value.present() {
             if new_value.large() {
                 self.dump();
                 unimplemented!(
                     "large page page-in, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
                     entry_pa, old_value, old_value.pfn(), new_value, new_value.pfn()
                 );
-            } else {
+            }
+            else {
                 let vas = entry.vas.clone();
                 return Ok(Some(self.page_in(vmi, entry_pa, vas, new_value, view)?));
             }

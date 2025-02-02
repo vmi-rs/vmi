@@ -1,4 +1,4 @@
-use super::{VmiOsRegionKind, VmiOs};
+use super::{VmiOs, VmiOsRegionKind};
 use crate::{MemoryAccess, Va, VmiDriver, VmiError, VmiVa};
 
 /// A trait for memory regions.

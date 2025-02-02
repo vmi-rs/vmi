@@ -55,7 +55,8 @@ impl SegmentAccess {
     pub fn descriptor_type(self) -> DescriptorType {
         if (self.0 >> 4) & 1 == 0 {
             DescriptorType::System
-        } else {
+        }
+        else {
             DescriptorType::CodeOrData
         }
     }
@@ -129,7 +130,8 @@ impl SegmentAccess {
     pub fn operation_size(self) -> OperationSize {
         if (self.0 >> 10) & 1 == 0 {
             OperationSize::Default
-        } else {
+        }
+        else {
             OperationSize::Big
         }
     }
@@ -145,7 +147,8 @@ impl SegmentAccess {
     pub fn granularity(self) -> Granularity {
         if (self.0 >> 11) & 1 == 0 {
             Granularity::Byte
-        } else {
+        }
+        else {
             Granularity::Page4K
         }
     }
