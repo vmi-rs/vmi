@@ -33,7 +33,7 @@ symbols! {
         PspInsertProcess: u64,
         MmCleanProcessAddressSpace: u64,
 
-        // symbols! macro also accepts an Option<u64> as a value,
+        // `symbols!` macro also accepts an `Option<u64>` as a value,
         // where `None` means that the symbol is not present in the profile.
         // MiInsertVad: Option<u64>,
         // MiInsertPrivateVad: Option<u64>,
@@ -525,7 +525,7 @@ where
         // a page fault error. In this case, we inject a page fault interrupt
         // to the guest.
         //
-        // Once the guest handles the page fault, it will try to retry the
+        // Once the guest handles the page fault, it will retry to execute the
         // instruction that caused the page fault.
         if let Err(VmiError::PageFault(pfs)) = result {
             tracing::warn!(?pfs, "Page fault, injecting");
