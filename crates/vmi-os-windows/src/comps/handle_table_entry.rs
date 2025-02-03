@@ -1,5 +1,4 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
-use zerocopy::{FromBytes, IntoBytes};
 
 use super::macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2};
 use crate::{ArchAdapter, OffsetsExt, WindowsObject, WindowsOs};
@@ -165,14 +164,6 @@ where
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, IntoBytes)]
-#[allow(non_camel_case_types, non_snake_case)]
-struct _HANDLE_TABLE_ENTRY {
-    LowValue: u64,
-    HighValue: u64,
-}
-
 struct WindowsHandleTableEntryV2<'a, Driver>
 where
     Driver: VmiDriver,
@@ -203,11 +194,13 @@ where
         let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
         let OBJECT_HEADER = &offsets._OBJECT_HEADER;
 
-        let handle_table_entry = self.vmi.read_struct::<_HANDLE_TABLE_ENTRY>(self.va)?;
+        let object_pointer_bits = self
+            .vmi
+            .read_field(self.va, &HANDLE_TABLE_ENTRY.ObjectPointerBits)?;
 
         let object_pointer_bits = HANDLE_TABLE_ENTRY
             .ObjectPointerBits
-            .value_from(handle_table_entry.LowValue);
+            .extract(object_pointer_bits);
 
         if object_pointer_bits == 0 {
             return Ok(None);
@@ -223,25 +216,21 @@ where
         let offsets_ext = self.offsets_ext();
         let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
 
-        let handle_table_entry = self.vmi.read_struct::<_HANDLE_TABLE_ENTRY>(self.va)?;
+        let attributes = self
+            .vmi
+            .read_field(self.va, &HANDLE_TABLE_ENTRY.Attributes)?;
 
-        let attributes = HANDLE_TABLE_ENTRY
-            .Attributes
-            .value_from(handle_table_entry.LowValue) as u32;
-
-        Ok(attributes)
+        Ok(HANDLE_TABLE_ENTRY.Attributes.extract(attributes) as u32)
     }
 
     fn granted_access(&self) -> Result<u32, VmiError> {
         let offsets_ext = self.offsets_ext();
         let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
 
-        let handle_table_entry = self.vmi.read_struct::<_HANDLE_TABLE_ENTRY>(self.va)?;
+        let granted_access = self
+            .vmi
+            .read_field(self.va, &HANDLE_TABLE_ENTRY.GrantedAccessBits)?;
 
-        let granted_access = HANDLE_TABLE_ENTRY
-            .GrantedAccessBits
-            .value_from(handle_table_entry.HighValue) as u32;
-
-        Ok(granted_access)
+        Ok(HANDLE_TABLE_ENTRY.GrantedAccessBits.extract(granted_access) as u32)
     }
 }

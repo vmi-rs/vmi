@@ -145,7 +145,7 @@ where
         let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
 
         let vad_flags = self.vad_flags()?;
-        Ok(MMVAD_FLAGS.VadType.value_from(vad_flags) as u8)
+        Ok(MMVAD_FLAGS.VadType.extract(vad_flags) as u8)
     }
 
     /// Returns the memory protection of the VAD.
@@ -158,7 +158,7 @@ where
         let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
 
         let flags = self.vad_flags()?;
-        let protection = MMVAD_FLAGS.Protection.value_from(flags) as u8;
+        let protection = MMVAD_FLAGS.Protection.extract(flags) as u8;
 
         Ok(protection)
     }
@@ -173,7 +173,7 @@ where
         let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
 
         let vad_flags = self.vad_flags()?;
-        Ok(MMVAD_FLAGS.PrivateMemory.value_from(vad_flags) != 0)
+        Ok(MMVAD_FLAGS.PrivateMemory.extract(vad_flags) != 0)
     }
 
     /// Checks if the memory of the VAD is committed.
@@ -194,13 +194,13 @@ where
         // and fetch it from there.
         let mem_commit = match MMVAD_FLAGS.MemCommit {
             // `MemCommit` is present in `MMVAD_FLAGS`
-            Some(MemCommit) => MemCommit.value_from(vad_flags) != 0,
+            Some(MemCommit) => MemCommit.extract(vad_flags) != 0,
             None => match (&self.offsets().ext(), MMVAD_SHORT.VadFlags1) {
                 // `MemCommit` is present in `MMVAD_FLAGS1`
                 (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
                     let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
                     let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
-                    MMVAD_FLAGS1.MemCommit.value_from(vad_flags1) != 0
+                    MMVAD_FLAGS1.MemCommit.extract(vad_flags1) != 0
                 }
                 _ => {
                     panic!("Failed to read MemCommit from VAD");

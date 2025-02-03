@@ -299,6 +299,18 @@ where
         unimplemented!()
     }
 
+    fn threads(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
+        VmiError,
+    > {
+        #[expect(unreachable_code)]
+        {
+            unimplemented!() as Result<std::iter::Empty<_>, VmiError>
+        }
+    }
+
     fn is_valid_address(&self, _address: Va) -> Result<Option<bool>, VmiError> {
         unimplemented!()
     }

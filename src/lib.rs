@@ -657,6 +657,13 @@ pub mod arch {
 pub mod driver {
     //! VMI drivers
 
+    #[cfg(feature = "driver-kdmp")]
+    pub mod kdmp {
+        #![doc = include_str!("../docs/vmi-driver-xen.md")]
+
+        pub use vmi_driver_kdmp::*;
+    }
+
     #[cfg(feature = "driver-xen")]
     pub mod xen {
         #![doc = include_str!("../docs/vmi-driver-xen.md")]

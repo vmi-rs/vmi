@@ -224,7 +224,7 @@ where
         let MMSECTION_FLAGS = &offsets._MMSECTION_FLAGS;
 
         let flags = self.flags()?;
-        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
+        let file = MMSECTION_FLAGS.File.extract(flags) != 0;
 
         if !file {
             return Ok(None);
@@ -316,7 +316,7 @@ where
         let SECTION = &offsets_ext._SECTION;
 
         let flags = self.flags()?;
-        let file = MMSECTION_FLAGS.File.value_from(flags) != 0;
+        let file = MMSECTION_FLAGS.File.extract(flags) != 0;
 
         if !file {
             return Ok(None);

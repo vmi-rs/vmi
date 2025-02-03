@@ -1,14 +1,15 @@
 use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess},
+    os::{OsArchitecture, ProcessId, ProcessObject, ThreadObject, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
-use super::super::{macros::impl_offsets, peb::WindowsWow64Kind};
+use super::{
+    super::{macros::impl_offsets, peb::WindowsWow64Kind},
+    WindowsThread,
+};
 use crate::{
-    offsets::{v1, v2},
-    ArchAdapter, OffsetsExt, TreeNodeIterator, WindowsHandleTable, WindowsObject, WindowsOs,
-    WindowsPeb, WindowsRegion,
+    comps::WindowsSession, offsets::{v1, v2}, ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsHandleTable, WindowsObject, WindowsOs, WindowsPeb, WindowsRegion
 };
 
 /// A Windows process.
@@ -108,6 +109,22 @@ where
                 WindowsWow64Kind::X86,
             ))
         }
+    }
+
+    /// Returns the session of the process.
+    pub fn session(&self) -> Result<Option<WindowsSession<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let session = self
+            .vmi
+            .read_va_native(self.va + EPROCESS.Session.offset())?;
+
+        if session.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsSession::new(self.vmi, session)))
     }
 
     /// Returns the handle table of the process.
@@ -407,6 +424,34 @@ where
         }
 
         Ok(None)
+    }
+
+    /// Returns an iterator over the threads in the process.
+    ///
+    /// # Notes
+    ///
+    /// Both `_EPROCESS` and `_KPROCESS` structures contain the same list
+    /// of threads.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.ThreadListHead`.
+    fn threads(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as vmi_core::VmiOs<Driver>>::Thread<'a>, VmiError>>,
+        VmiError,
+    > {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+        let ETHREAD = &offsets._ETHREAD;
+
+        Ok(ListEntryIterator::new(
+            self.vmi,
+            self.va + EPROCESS.ThreadListHead.offset(),
+            ETHREAD.ThreadListEntry.offset(),
+        )
+        .map(move |result| result.map(|entry| WindowsThread::new(self.vmi, ThreadObject(entry)))))
     }
 
     /// Checks whether the given virtual address is valid in the process.

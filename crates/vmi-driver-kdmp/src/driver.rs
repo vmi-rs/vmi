@@ -1,58 +1,40 @@
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
+use kdmp_parser::{Gpa, KernelDumpParser, MappedFileReader};
 use vmi_core::{
     Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiEvent, VmiEventResponse,
     VmiInfo, VmiMappedPage,
 };
 
-use crate::{dump::Dump, ArchAdapter, Error};
+use crate::{ArchAdapter, Error};
 
 /// VMI driver for Xen core dump.
-pub struct XenCoreDumpDriver<Arch>
+pub struct KdmpDriver<Arch>
 where
     Arch: Architecture + ArchAdapter,
 {
-    pub(crate) dump: Dump,
-    pfn_cache: HashMap<Gfn, usize>,
-    max_gfn: Gfn,
+    pub(crate) dump: KernelDumpParser,
     _marker: std::marker::PhantomData<Arch>,
 }
 
-impl<Arch> XenCoreDumpDriver<Arch>
+impl<Arch> KdmpDriver<Arch>
 where
     Arch: Architecture + ArchAdapter,
 {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let dump = Dump::new(path)?;
-
-        let mut pfn_cache = HashMap::new();
-        let mut max_gfn = Gfn(0);
-        for (index, &pfn) in dump.xen_pfn()?.iter().enumerate() {
-            // > The value, ~(uint64_t)0, means invalid pfn and the
-            // > corresponding page has zero.
-            //
-            // ref: https://github.com/xen-project/xen/blob/staging/docs/misc/dump-core-format.txt#L95
-            if pfn == 0 || pfn == !0 {
-                continue;
-            }
-
-            pfn_cache.insert(Gfn(pfn), index);
-            max_gfn = max_gfn.max(Gfn(pfn));
-        }
+        let dump = KernelDumpParser::with_reader(MappedFileReader::new(path)?)?;
 
         Ok(Self {
             dump,
-            pfn_cache,
-            max_gfn,
             _marker: std::marker::PhantomData,
         })
     }
 
     pub fn info(&self) -> Result<VmiInfo, Error> {
         Ok(VmiInfo {
-            page_size: self.dump.page_size(),
+            page_size: 4096,
             page_shift: 12,
-            max_gfn: self.max_gfn,
+            max_gfn: Gfn(0),
             vcpus: 0,
         })
     }
@@ -97,16 +79,9 @@ where
     }
 
     pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, Error> {
-        let index = self
-            .pfn_cache
-            .get(&gfn)
-            .copied()
-            .ok_or(Error::OutOfBounds)?;
-
-        let pages = self.dump.xen_pages()?;
-        let start = index * self.dump.page_size() as usize;
-        let end = start + self.dump.page_size() as usize;
-        let content = &pages[start..end];
+        let mut content = [0u8; 4096];
+        self.dump
+            .phys_read_exact(Gpa::new(gfn.0 << 12), &mut content)?;
 
         Ok(VmiMappedPage::new(Vec::from(content)))
     }

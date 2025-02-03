@@ -77,10 +77,11 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod comps;
 pub use self::comps::{
-    WindowsControlArea, WindowsDirectoryObject, WindowsHandleTable, WindowsHandleTableEntry,
-    WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
+    WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsPeb, WindowsProcess,
-    WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsThread, WindowsWow64Kind,
+    WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsSession, WindowsThread,
+    WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -199,6 +200,7 @@ where
     object_root_directory: OnceCell<Va>, // _OBJECT_DIRECTORY*
     object_header_cookie: OnceCell<u8>,
     object_type_cache: RefCell<HashMap<Va, WindowsObjectType>>,
+    object_type_name_cache: RefCell<HashMap<Va, String>>,
 
     ki_kva_shadow: OnceCell<bool>,
     mm_pfn_database: OnceCell<Va>, // _MMPFN*
@@ -298,14 +300,24 @@ where
 
     /// Creates a new `WindowsOs` instance.
     pub fn new(profile: &Profile) -> Result<Self, VmiError> {
+        Self::create(profile, OnceCell::new())
+    }
+
+    /// Creates a new `WindowsOs` instance with a known kernel base address.
+    pub fn with_kernel_base(profile: &Profile, kernel_base: Va) -> Result<Self, VmiError> {
+        Self::create(profile, OnceCell::with_value(kernel_base))
+    }
+
+    fn create(profile: &Profile, kernel_image_base: OnceCell<Va>) -> Result<Self, VmiError> {
         Ok(Self {
             offsets: Offsets::new(profile)?,
             symbols: Symbols::new(profile)?,
-            kernel_image_base: OnceCell::new(),
+            kernel_image_base,
             highest_user_address: OnceCell::new(),
             object_root_directory: OnceCell::new(),
             object_header_cookie: OnceCell::new(),
             object_type_cache: RefCell::new(HashMap::new()),
+            object_type_name_cache: RefCell::new(HashMap::new()),
             ki_kva_shadow: OnceCell::new(),
             mm_pfn_database: OnceCell::new(),
             nt_build_lab: OnceCell::new(),
@@ -825,6 +837,56 @@ where
     /// type identification even on systems with this security feature enabled.
     ///
     /// Returns `None` if the object type cannot be determined.
+    pub fn object_type_name(vmi: VmiState<Driver, Self>, object: Va) -> Result<String, VmiError> {
+        let ObTypeIndexTable = symbol!(vmi, ObTypeIndexTable);
+        let OBJECT_HEADER = offset!(vmi, _OBJECT_HEADER);
+        let OBJECT_TYPE = offset!(vmi, _OBJECT_TYPE);
+
+        let object_header = object - OBJECT_HEADER.Body.offset();
+        let type_index = vmi.read_u8(object_header + OBJECT_HEADER.TypeIndex.offset())?;
+
+        let index = match Self::object_header_cookie(vmi)? {
+            Some(cookie) => {
+                //
+                // TypeIndex ^ 2nd least significate byte of OBJECT_HEADER address ^
+                // nt!ObHeaderCookie ref: https://medium.com/@ashabdalhalim/a-light-on-windows-10s-object-header-typeindex-value-e8f907e7073a
+                //
+
+                let salt = (u64::from(object_header) >> 8) as u8;
+                type_index ^ salt ^ cookie
+            }
+            None => type_index,
+        };
+
+        let index = index as u64;
+
+        let kernel_image_base = Self::kernel_image_base(vmi)?;
+        let object_type = vmi.read_va_native(
+            kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
+        )?;
+
+        if let Some(typ) = this!(vmi).object_type_name_cache.borrow().get(&object_type) {
+            return Ok(typ.clone());
+        }
+
+        let object_name = Self::read_unicode_string(vmi, object_type + OBJECT_TYPE.Name.offset())?;
+
+        this!(vmi)
+            .object_type_name_cache
+            .borrow_mut()
+            .insert(object_type, object_name.clone());
+
+        Ok(object_name)
+    }
+
+    /// Determines the type of a Windows kernel object.
+    ///
+    /// This method analyzes the object header of a given kernel object
+    /// and returns its type (e.g., Process, Thread, File). It handles the
+    /// obfuscation introduced by the object header cookie, ensuring accurate
+    /// type identification even on systems with this security feature enabled.
+    ///
+    /// Returns `None` if the object type cannot be determined.
     pub fn object_type(
         vmi: VmiState<Driver, Self>,
         object: Va,
@@ -1261,11 +1323,11 @@ where
         let PsLoadedModuleList = Self::kernel_image_base(vmi)? + symbol!(vmi, PsLoadedModuleList);
         let KLDR_DATA_TABLE_ENTRY = offset!(vmi, _KLDR_DATA_TABLE_ENTRY);
 
-        Ok(Self::linked_list(
+        Ok(ListEntryIterator::new(
             vmi,
             PsLoadedModuleList,
             KLDR_DATA_TABLE_ENTRY.InLoadOrderLinks.offset(),
-        )?
+        )
         .map(move |result| result.map(|entry| WindowsModule::new(vmi, entry))))
     }
 
@@ -1280,11 +1342,11 @@ where
         let PsActiveProcessHead = Self::kernel_image_base(vmi)? + symbol!(vmi, PsActiveProcessHead);
         let EPROCESS = offset!(vmi, _EPROCESS);
 
-        Ok(Self::linked_list(
+        Ok(ListEntryIterator::new(
             vmi,
             PsActiveProcessHead,
             EPROCESS.ActiveProcessLinks.offset(),
-        )?
+        )
         .map(move |result| result.map(|entry| WindowsProcess::new(vmi, ProcessObject(entry)))))
     }
 

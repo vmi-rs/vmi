@@ -21,8 +21,8 @@ where
     ///
     /// # Platform-specific
     ///
-    /// - **Windows**: `_EPROCESS::ImageFileName` (limited to 16 characters).
-    /// - **Linux**: `_task_struct::comm` (limited to 16 characters).
+    /// - **Windows**: `_EPROCESS.ImageFileName` (limited to 16 characters).
+    /// - **Linux**: `_task_struct.comm` (limited to 16 characters).
     fn name(&self) -> Result<String, VmiError>;
 
     /// Returns the parent process ID.
@@ -56,6 +56,18 @@ where
         &self,
         address: Va,
     ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError>;
+
+    /// Returns an iterator over the threads in the process.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `_EPROCESS.ThreadListHead`.
+    fn threads(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
+        VmiError,
+    >;
 
     /// Checks whether the given virtual address is valid in the process.
     ///

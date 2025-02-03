@@ -183,6 +183,11 @@ where
         self.vmi.os().object_type(self.va)
     }
 
+    /// Returns the object type.
+    pub fn type_name(&self) -> Result<String, VmiError> {
+        self.vmi.os().object_type_name(self.va)
+    }
+
     /// Returns the specific kind of this object.
     pub fn kind(&self) -> Result<Option<WindowsObjectKind<'a, Driver>>, VmiError> {
         let result = match self.typ()? {
@@ -260,17 +265,68 @@ where
 /// "Thread" for thread objects, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowsObjectType {
+    /// Activation object.
+    ///
+    /// Has `ActivationObject` type name.
+    ActivationObject,
+
+    /// Activity reference object.
+    ///
+    /// Has `ActivityReference` type name.
+    ActivityReference,
+
+    /// Adapter object.
+    ///
+    /// Represented by `_ADAPTER_OBJECT` structure.
+    /// Has `Adapter` type name.
+    Adapter,
+
     /// ALPC Port object.
     ///
     /// Represented by `_ALPC_PORT` structure.
     /// Has `ALPC Port` type name.
     AlpcPort,
 
+    /// Callback object.
+    ///
+    /// Has `Callback` type name.
+    Callback,
+
+    /// Composition object.
+    ///
+    /// Has `Composition` type name.
+    Composition,
+
+    /// Controller object.
+    ///
+    /// Has `Controller` type name.
+    Controller,
+
+    /// Core messaging object.
+    ///
+    /// Has `CoreMessaging` type name.
+    CoreMessaging,
+
+    /// Coverage sampler object.
+    ///
+    /// Has `CoverageSampler` type name.
+    CoverageSampler,
+
+    /// CPU partition object.
+    ///
+    /// Has `CpuPartition` type name.
+    CpuPartition,
+
     /// Debug object.
     ///
     /// Represented by `_DEBUG_OBJECT` structure.
     /// Has `DebugObject` type name.
     DebugObject,
+
+    /// Desktop object.
+    ///
+    /// Has `Desktop` type name.
+    Desktop,
 
     /// Device object.
     ///
@@ -284,11 +340,76 @@ pub enum WindowsObjectType {
     /// Has `Directory` type name.
     Directory,
 
+    /// DMA adapter object.
+    ///
+    /// Has `DmaAdapter` type name.
+    DmaAdapter,
+
     /// Driver object.
     ///
     /// Represented by `_DRIVER_OBJECT` structure.
     /// Has `Driver` type name.
     Driver,
+
+    /// DX Composition object.
+    ///
+    /// Has `DxgkCompositionObject` type name.
+    DxgkCompositionObject,
+
+    /// DX Display Manager object.
+    ///
+    /// Has `DxgkDisplayManagerObject` type name.
+    DxgkDisplayManagerObject,
+
+    /// DX Shared Bundle object.
+    ///
+    /// Has `DxgkSharedBundleObject` type name.
+    DxgkSharedBundleObject,
+
+    /// DX Shared Keyed Mutex object.
+    ///
+    /// Has `DxgkSharedKeyedMutexObject` type name.
+    DxgkSharedKeyedMutexObject,
+
+    /// DX Shared Protected Session object.
+    ///
+    /// Has `DxgkSharedProtectedSessionObject` type name.
+    DxgkSharedProtectedSessionObject,
+
+    /// DX Shared Resource object.
+    ///
+    /// Has `DxgkSharedResource` type name.
+    DxgkSharedResource,
+
+    /// DX Shared Swap Chain object.
+    ///
+    /// Has `DxgkSharedSwapChainObject` type name.
+    DxgkSharedSwapChainObject,
+
+    /// DX Shared Sync object.
+    ///
+    /// Has `DxgkSharedSyncObject` type name.
+    DxgkSharedSyncObject,
+
+    /// Energy tracker object.
+    ///
+    /// Has `EnergyTracker` type name.
+    EnergyTracker,
+
+    /// ETW consumer object.
+    ///
+    /// Has `EtwConsumer` type name.
+    EtwConsumer,
+
+    /// ETW registration object.
+    ///
+    /// Has `EtwRegistration` type name.
+    EtwRegistration,
+
+    /// ETW session demux entry object.
+    ///
+    /// Has `EtwSessionDemuxEntry` type name.
+    EtwSessionDemuxEntry,
 
     /// Event object.
     ///
@@ -302,6 +423,36 @@ pub enum WindowsObjectType {
     /// Has `File` type name.
     File,
 
+    /// Filter communication port object.
+    ///
+    /// Has `FilterCommunicationPort` type name.
+    FilterCommunicationPort,
+
+    /// Filter connection port object.
+    ///
+    /// Has `FilterConnectionPort` type name.
+    FilterConnectionPort,
+
+    /// I/O completion object.
+    ///
+    /// Has `IoCompletion` type name.
+    IoCompletion,
+
+    /// I/O completion reserve object.
+    ///
+    /// Has `IoCompletionReserve` type name.
+    IoCompletionReserve,
+
+    /// I/O ring object.
+    ///
+    /// Has `IoRing` type name.
+    IoRing,
+
+    /// IR timer object.
+    ///
+    /// Has `IRTimer` type name.
+    IRTimer,
+
     /// Job object.
     ///
     /// Represented by `_EJOB` structure.
@@ -314,11 +465,36 @@ pub enum WindowsObjectType {
     /// Has `Key` type name.
     Key,
 
+    /// Keyed event object.
+    ///
+    /// Has `KeyedEvent` type name.
+    KeyedEvent,
+
     /// Mutant object.
     ///
     /// Represented by `_KMUTANT` structure.
     /// Has `Mutant` type name.
     Mutant,
+
+    /// NDIS CM state object.
+    ///
+    /// Has `NdisCmState` type name.
+    NdisCmState,
+
+    /// Partition object.
+    ///
+    /// Has `Partition` type name.
+    Partition,
+
+    /// Performance counter object.
+    ///
+    /// Has `PcwObject` type name.
+    PcwObject,
+
+    /// Power request object.
+    ///
+    /// Has `PowerRequest` type name.
+    PowerRequest,
 
     /// Port object.
     ///
@@ -332,11 +508,52 @@ pub enum WindowsObjectType {
     /// Has `Process` type name.
     Process,
 
+    /// Process state change object.
+    ///
+    /// Has `ProcessStateChange` type name.
+    ProcessStateChange,
+
+    /// Profile object.
+    ///
+    /// Has `Profile` type name.
+    Profile,
+
+    /// Sile context (non-paged) object.
+    ///
+    /// Has `PsSiloContextNonPaged` type name.
+    PsSiloContextNonPaged,
+
+    /// Sile context (paged) object.
+    ///
+    /// Has `PsSiloContextPaged` type name.
+    PsSiloContextPaged,
+
+    /// Raw input manager object.
+    ///
+    /// Has `RawInputManager` type name.
+    RawInputManager,
+
+    /// Registry transaction object.
+    ///
+    /// Has `RegistryTransaction` type name.
+    RegistryTransaction,
+
     /// Section object.
     ///
     /// Represented by `_SECTION` (or `_SECTION_OBJECT`) structure.
     /// Has `Section` type name.
     Section,
+
+    /// Semaphore object.
+    ///
+    /// Represented by `_KSEMAPHORE` structure.
+    /// Has `Semaphore` type name.
+    Semaphore,
+
+    /// Session object.
+    ///
+    /// Has `Session` type name.
+    Session,
 
     /// Symbolic link object.
     ///
@@ -350,11 +567,32 @@ pub enum WindowsObjectType {
     /// Has `Thread` type name.
     Thread,
 
+    /// Thread state change object.
+    ///
+    /// Has `ThreadStateChange` type name.
+    ThreadStateChange,
+
     /// Timer object.
     ///
     /// Represented by `_KTIMER` structure.
     /// Has `Timer` type name.
     Timer,
+
+    /// Transaction manager (Enlistment) object.
+    ///
+    /// Has `TmEn` type name.
+    TmEn,
+
+    /// Transaction manager (Resource Manager) object.
+    ///
+    /// Has `TmRm` type name.
+    TmRm,
+
+    /// Transaction manager object.
+    TmTm,
+
+    /// Transaction object.
+    TmTx,
 
     /// Token object.
     ///
@@ -362,11 +600,36 @@ pub enum WindowsObjectType {
     /// Has `Token` type name.
     Token,
 
+    /// Thread pool worker factory object.
+    ///
+    /// Has `TpWorkerFactory` type name.
+    TpWorkerFactory,
+
     /// Type object.
     ///
     /// Represented by `_OBJECT_TYPE` structure.
     /// Has `Type` type name.
     Type,
+
+    /// User APC reserve object.
+    ///
+    /// Has `UserApcReserve` type name.
+    UserApcReserve,
+
+    /// Wait completion packet object.
+    ///
+    /// Has `WaitCompletionPacket` type name.
+    WaitCompletionPacket,
+
+    /// Window station object.
+    ///
+    /// Has `WindowStation` type name.
+    WindowStation,
+
+    /// WMI GUID object.
+    ///
+    /// Has `WmiGuid` type name.
+    WmiGuid,
 }
 
 /// Represents a specific kind of Windows object.

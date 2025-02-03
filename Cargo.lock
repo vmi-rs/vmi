@@ -803,7 +803,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
 ]
 
@@ -825,7 +825,7 @@ dependencies = [
  "indexmap 2.6.0",
  "regex",
  "reqwest",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
  "url",
 ]
@@ -836,7 +836,7 @@ version = "0.2.0"
 dependencies = [
  "object",
  "reqwest",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
 ]
 
@@ -850,7 +850,7 @@ dependencies = [
  "memmap2",
  "object",
  "smallvec",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
 ]
 
@@ -864,7 +864,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "thiserror",
+ "thiserror 2.0.1",
 ]
 
 [[package]]
@@ -874,7 +874,7 @@ dependencies = [
  "indexmap 2.6.0",
  "isr-core",
  "pdb",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
 ]
 
@@ -909,6 +909,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a88f1bda2bd75b0452a14784937d796722fdebfe50df998aeb3f0b7603019a9"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "kdmp-parser"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9020e118f80785d03e42307666fbbff8cb5cf11ac06f8a662c528191ac040404"
+dependencies = [
+ "bitflags",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -951,7 +961,7 @@ dependencies = [
  "bitflags",
  "libc",
  "libxen-sys",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
 ]
 
@@ -1675,11 +1685,31 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07c1e40dd48a282ae8edc36c732cbc219144b87fb6a4c7316d611c6b1f06ec0c"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.1",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1908,6 +1938,7 @@ dependencies = [
  "tracing-subscriber",
  "vmi-arch-amd64",
  "vmi-core",
+ "vmi-driver-kdmp",
  "vmi-driver-xen",
  "vmi-driver-xen-core-dump",
  "vmi-os-linux",
@@ -1937,9 +1968,21 @@ dependencies = [
  "lru",
  "serde",
  "smallvec",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
  "vmi-macros",
+ "zerocopy",
+]
+
+[[package]]
+name = "vmi-driver-kdmp"
+version = "0.2.0"
+dependencies = [
+ "kdmp-parser",
+ "memmap2",
+ "tracing",
+ "vmi-arch-amd64",
+ "vmi-core",
  "zerocopy",
 ]
 
@@ -1959,7 +2002,6 @@ name = "vmi-driver-xen-core-dump"
 version = "0.2.0"
 dependencies = [
  "elf",
- "libc",
  "libxen",
  "memmap2",
  "tracing",
@@ -1985,7 +2027,7 @@ dependencies = [
  "isr-macros",
  "memchr",
  "once_cell",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",
@@ -2002,7 +2044,7 @@ dependencies = [
  "isr-macros",
  "object",
  "once_cell",
- "thiserror",
+ "thiserror 2.0.1",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",

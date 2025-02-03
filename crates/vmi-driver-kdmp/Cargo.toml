@@ -1,5 +1,5 @@
 [package]
-name = "vmi-driver-xen-core-dump"
+name = "vmi-driver-kdmp"
 version = "0.2.0"
 license = "MIT"
 authors = { workspace = true }
@@ -9,10 +9,10 @@ rust-version = { workspace = true }
 
 homepage = { workspace = true }
 repository = { workspace = true }
-description = "VMI driver for Xen core dump"
+description = "VMI driver for Windows kernel dump"
 keywords = [
     "vmi",
-    "xen",
+    "windows",
     "dump",
 ]
 
@@ -20,12 +20,10 @@ keywords = [
 workspace = true
 
 [dependencies]
-elf = { workspace = true }
+kdmp-parser = "0.5"
 memmap2 = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
 vmi-arch-amd64 = { workspace = true }
 vmi-core = { workspace = true }
-
-xen = { workspace = true }

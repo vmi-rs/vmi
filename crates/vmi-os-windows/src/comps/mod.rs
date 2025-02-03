@@ -10,6 +10,7 @@ mod object_attributes;
 mod peb;
 mod process_parameters;
 mod region;
+mod session;
 
 pub use self::{
     control_area::WindowsControlArea,
@@ -19,11 +20,12 @@ pub use self::{
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
     object::{
-        WindowsDirectoryObject, WindowsObject, WindowsObjectType, WindowsProcess,
-        WindowsSectionObject, WindowsThread,
+        WindowsDirectoryObject, WindowsFileObject, WindowsObject, WindowsObjectType,
+        WindowsProcess, WindowsSectionObject, WindowsThread,
     },
     object_attributes::WindowsObjectAttributes,
     peb::{WindowsPeb, WindowsWow64Kind},
     process_parameters::WindowsProcessParameters,
     region::WindowsRegion,
+    session::WindowsSession,
 };

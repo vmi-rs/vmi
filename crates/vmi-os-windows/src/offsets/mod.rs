@@ -198,23 +198,28 @@ offsets! {
             ApcState: Field,
             Teb: Field,
             Process: Field,
+            ThreadListEntry: Field,         // _LIST_ENTRY
         }
 
         struct _ETHREAD {
             Cid: Field,
+            ThreadListEntry: Field,         // _LIST_ENTRY
         }
 
         struct _KPROCESS {
             DirectoryTableBase: Field,
             UserDirectoryTableBase: Option<Field>,
+            ThreadListHead: Field,          // _LIST_ENTRY
         }
 
         struct _EPROCESS {
             UniqueProcessId: Field,
-            ActiveProcessLinks: Field,
+            ActiveProcessLinks: Field,      // _LIST_ENTRY
+            SessionProcessLinks: Field,     // _LIST_ENTRY
             SectionBaseAddress: Field,
             InheritedFromUniqueProcessId: Field,
             Peb: Field,
+            Session: Field,                 // _MM_SESSION_SPACE*
             ObjectTable: Field,
             #[isr(alias = "Wow64Process")]
             WoW64Process: Field,
@@ -222,6 +227,7 @@ offsets! {
             VadRoot: Field,                 // _MM_AVL_TABLE (Windows 7, contains BalancedRoot at offset 0)
                                             // _RTL_AVL_TREE (Windows 10+)
             VadHint: Option<Field>,         // PVOID (Windows 10+, _MM_AVL_TABLE.NodeHint on Windows 7)
+            ThreadListHead: Field,          // _LIST_ENTRY
         }
 
         struct _PEB {
@@ -244,6 +250,11 @@ offsets! {
 
         struct _CURDIR {
             DosPath: Field,                 // _UNICODE_STRING
+        }
+
+        struct _MM_SESSION_SPACE {
+            SessionId: Field,               // ULONG
+            ProcessList: Field,             // _LIST_ENTRY
         }
 
         struct _MMPFN {
