@@ -133,6 +133,18 @@ where
             Inner::V2(inner) => inner.file_object(),
         }
     }
+
+    /// Constructs the full path of the file object associated with the section.
+    ///
+    /// # Implementation Details
+    ///
+    /// Shortcut for `file_object()?.full_path()`.
+    pub fn full_path(&self) -> Result<Option<String>, VmiError> {
+        match self.file_object() {
+            Ok(Some(file_object)) => Ok(Some(file_object.full_path()?)),
+            _ => Ok(None),
+        }
+    }
 }
 
 /// Inner representation of a Windows section object.
@@ -321,6 +333,28 @@ where
         if !file {
             return Ok(None);
         }
+
+        //
+        // We have to distinguish between FileObject and ControlArea.
+        // Here's an excerpt from _SECTION:
+        //
+        //     union {
+        //       union {
+        //         PCONTROL_AREA ControlArea;
+        //         PFILE_OBJECT FileObject;
+        //         struct {
+        //           ULONG_PTR RemoteImageFileObject : 1;
+        //           ULONG_PTR RemoteDataFileObject : 1;
+        //         };
+        //       };
+        //     };
+        //
+        // Based on information from Geoff Chappell's website, we can determine whether
+        // ControlArea is in fact FileObject by checking the lowest 2 bits of the
+        // pointer.
+        //
+        // ref: https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/mi/section.htm
+        //
 
         let control_area = Va(self.vmi.read_field(self.va, &SECTION.ControlArea)?);
 

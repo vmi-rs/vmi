@@ -171,6 +171,24 @@ offsets! {
             Name: Field,
         }
 
+        struct _CM_KEY_BODY {
+            KeyControlBlock: Field,
+        }
+
+        struct _CM_KEY_CONTROL_BLOCK {
+            ParentKcb: Field,               // _CM_KEY_CONTROL_BLOCK*
+            NameBlock: Field,               // _CM_NAME_CONTROL_BLOCK*
+
+            RealKeyName: Field,             // char*
+            FullKCBName: Field,             // _UNICODE_STRING*
+        }
+
+        struct _CM_NAME_CONTROL_BLOCK {
+            Compressed: Bitfield,
+            NameLength: Field,
+            Name: Field,
+        }
+
         struct _MMSECTION_FLAGS {
             Image: Bitfield,
             File: Bitfield,

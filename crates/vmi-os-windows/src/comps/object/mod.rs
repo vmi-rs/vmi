@@ -1,5 +1,6 @@
 mod directory;
 mod file;
+mod key;
 mod process;
 mod section;
 mod thread;
@@ -10,8 +11,8 @@ use vmi_core::{
 };
 
 pub use self::{
-    directory::WindowsDirectoryObject, file::WindowsFileObject, process::WindowsProcess,
-    section::WindowsSectionObject, thread::WindowsThread,
+    directory::WindowsDirectoryObject, file::WindowsFileObject, key::WindowsKey,
+    process::WindowsProcess, section::WindowsSectionObject, thread::WindowsThread,
 };
 use super::{
     macros::{impl_offsets, impl_symbols},
@@ -163,10 +164,8 @@ where
     pub fn full_path(&self) -> Result<Option<String>, VmiError> {
         match self.kind()? {
             Some(WindowsObjectKind::File(file)) => Ok(Some(file.full_path()?)),
-            Some(WindowsObjectKind::Section(section)) => match section.file_object()? {
-                Some(file) => Ok(Some(file.full_path()?)),
-                None => Ok(None),
-            },
+            Some(WindowsObjectKind::Key(key)) => Ok(Some(key.full_path()?)),
+            Some(WindowsObjectKind::Section(section)) => section.full_path(),
             _ => {
                 let name_info = match self.name_info()? {
                     Some(name_info) => name_info,
@@ -197,6 +196,9 @@ where
             Some(WindowsObjectType::File) => {
                 WindowsObjectKind::File(WindowsFileObject::new(self.vmi, self.va))
             }
+            Some(WindowsObjectType::Key) => {
+                WindowsObjectKind::Key(WindowsKey::new(self.vmi, self.va))
+            }
             Some(WindowsObjectType::Process) => {
                 WindowsObjectKind::Process(WindowsProcess::new(self.vmi, ProcessObject(self.va)))
             }
@@ -224,6 +226,14 @@ where
     pub fn as_file(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         match self.kind()? {
             Some(WindowsObjectKind::File(file)) => Ok(Some(file)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Returns the object as a key (`_CM_KEY_BODY`).
+    pub fn as_key(&self) -> Result<Option<WindowsKey<'a, Driver>>, VmiError> {
+        match self.kind()? {
+            Some(WindowsObjectKind::Key(key)) => Ok(Some(key)),
             _ => Ok(None),
         }
     }
@@ -643,6 +653,9 @@ where
 
     /// A file object (`_FILE_OBJECT`).
     File(WindowsFileObject<'a, Driver>),
+
+    /// A registry key object (`_CM_KEY_BODY`).
+    Key(WindowsKey<'a, Driver>),
 
     /// A process object (`_EPROCESS`).
     Process(WindowsProcess<'a, Driver>),

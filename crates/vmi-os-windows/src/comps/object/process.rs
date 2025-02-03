@@ -5,11 +5,15 @@ use vmi_core::{
 };
 
 use super::{
-    super::{macros::impl_offsets, peb::WindowsWow64Kind},
-    WindowsThread,
+    super::{
+        macros::impl_offsets, peb::WindowsWow64Kind, WindowsHandleTable, WindowsPeb, WindowsRegion,
+        WindowsSession,
+    },
+    WindowsObject, WindowsThread,
 };
 use crate::{
-    comps::WindowsSession, offsets::{v1, v2}, ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsHandleTable, WindowsObject, WindowsOs, WindowsPeb, WindowsRegion
+    offsets::{v1, v2},
+    ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs,
 };
 
 /// A Windows process.

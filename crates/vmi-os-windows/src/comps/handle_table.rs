@@ -1,8 +1,8 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsHandleTableEntry, WindowsOs};
+use super::{macros::impl_offsets, WindowsHandleTableEntry};
+use crate::{ArchAdapter, WindowsOs};
 
 /// A Windows handle table.
 ///

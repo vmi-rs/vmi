@@ -3,8 +3,8 @@ use vmi_core::{
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
-use super::super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsObject, WindowsOs, WindowsProcess};
+use super::{super::macros::impl_offsets, WindowsObject, WindowsProcess};
+use crate::{ArchAdapter, WindowsOs};
 
 /// A Windows thread.
 ///

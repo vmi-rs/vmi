@@ -4,8 +4,8 @@ use vmi_core::{
     Architecture, MemoryAccess, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, OffsetsExt, WindowsControlArea, WindowsOs};
+use super::{macros::impl_offsets, WindowsControlArea};
+use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 
 /// A Windows memory region.
 ///
