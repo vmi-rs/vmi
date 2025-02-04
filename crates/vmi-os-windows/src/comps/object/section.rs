@@ -246,9 +246,7 @@ where
             .vmi
             .read_field(self.segment()?, &SEGMENT_OBJECT.ControlArea)?);
 
-        Ok(Some(
-            WindowsControlArea::new(self.vmi, control_area).file_object()?,
-        ))
+        WindowsControlArea::new(self.vmi, control_area).file_object()
     }
 
     fn segment(&self) -> Result<Va, VmiError> {
@@ -363,8 +361,6 @@ where
             return Ok(Some(WindowsFileObject::new(self.vmi, file_object)));
         }
 
-        Ok(Some(
-            WindowsControlArea::new(self.vmi, control_area).file_object()?,
-        ))
+        WindowsControlArea::new(self.vmi, control_area).file_object()
     }
 }

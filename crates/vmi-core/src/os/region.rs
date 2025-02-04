@@ -41,5 +41,35 @@ where
     ///
     /// Such regions are usually created by functions like `MapViewOfFile` on
     /// Windows.
-    Mapped(Os::Mapped<'a>),
+    MappedData(Os::Mapped<'a>),
+
+    /// A mapped image region of memory. Might be backed by a file.
+    ///
+    /// Such regions are usually created by functions like `MapViewOfFile` on
+    /// Windows.
+    MappedImage(Os::Mapped<'a>),
+}
+
+impl<'a, Driver, Os> VmiOsRegionKind<'a, Driver, Os>
+where
+    Driver: VmiDriver,
+    Os: VmiOs<Driver>,
+{
+    /// Checks if the region is private.
+    pub fn is_private(&self) -> bool {
+        matches!(self, Self::Private)
+    }
+
+    /// Checks if the region is mapped.
+    pub fn is_mapped(&self) -> bool {
+        matches!(self, Self::MappedData(_) | Self::MappedImage(_))
+    }
+
+    /// Returns the mapped region.
+    pub fn mapped(&self) -> Option<&Os::Mapped<'a>> {
+        match self {
+            Self::MappedData(mapped) | Self::MappedImage(mapped) => Some(mapped),
+            _ => None,
+        }
+    }
 }

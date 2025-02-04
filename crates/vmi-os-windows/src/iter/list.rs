@@ -33,6 +33,9 @@ where
 
     /// Offset to the backward link pointer (`LIST_ENTRY.Blink`).
     offset_blink: u64,
+
+    /// Whether the iterator has been initialized.
+    initialized: bool,
 }
 
 impl<'a, Driver> ListEntryIterator<'a, Driver>
@@ -52,24 +55,80 @@ where
             offset,
             offset_flink,
             offset_blink,
+            initialized: false,
         }
     }
 
-    fn __first(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va_native(self.list_head + self.offset_flink)
+    /// Creates an empty tree node iterator.
+    pub fn empty(vmi: VmiState<'a, Driver, WindowsOs<Driver>>) -> Self {
+        Self {
+            vmi,
+            current: None,
+            list_head: Va(0),
+            offset: 0,
+            offset_flink: 0,
+            offset_blink: 0,
+            initialized: true,
+        }
     }
 
-    fn __last(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va_native(self.list_head + self.offset_blink)
+    /// Returns the next entry in the list.
+    ///
+    /// Corresponds to the `LIST_ENTRY.Flink` pointer.
+    fn next_entry(&self, entry: Va) -> Result<Va, VmiError> {
+        self.vmi.read_va_native(entry + self.offset_flink)
     }
 
-    fn __next(&mut self) -> Result<Option<Va>, VmiError> {
+    /// Returns the previous entry in the list.
+    ///
+    /// Corresponds to the `LIST_ENTRY.Blink` pointer.
+    fn previous_entry(&self, entry: Va) -> Result<Va, VmiError> {
+        self.vmi.read_va_native(entry + self.offset_blink)
+    }
+
+    /// Returns the first entry in the list.
+    ///
+    /// Returns `None` if the `list_head` is `NULL`.
+    fn first_entry(&self) -> Result<Option<Va>, VmiError> {
+        if self.list_head.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(self.next_entry(self.list_head)?))
+    }
+
+    /// Returns the last entry in the list.
+    ///
+    /// Returns `None` if the `list_head` is `NULL`.
+    fn last_entry(&self) -> Result<Option<Va>, VmiError> {
+        if self.list_head.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(self.previous_entry(self.list_head)?))
+    }
+
+    /// Walks to the next entry in the list.
+    fn walk_next(&mut self) -> Result<Option<Va>, VmiError> {
         let entry = match self.current {
             Some(entry) => entry,
             None => {
-                let flink = self.__first()?;
-                self.current = Some(flink);
-                flink
+                // If `self.current` is `None`, we need to initialize the iterator.
+                //
+                // However, if the iterator has already been initialized, we should
+                // return `None` to prevent infinite iteration.
+                if self.initialized {
+                    return Ok(None);
+                }
+
+                let first = match self.first_entry()? {
+                    Some(first) => first,
+                    None => return Ok(None),
+                };
+
+                self.current = Some(first);
+                self.initialized = true;
+                first
             }
         };
 
@@ -77,18 +136,32 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va_native(entry + self.offset_flink)?);
+        self.current = Some(self.next_entry(entry)?);
 
         Ok(Some(entry - self.offset))
     }
 
-    fn __next_back(&mut self) -> Result<Option<Va>, VmiError> {
+    /// Walks to the previous entry in the list.
+    fn walk_next_back(&mut self) -> Result<Option<Va>, VmiError> {
         let entry = match self.current {
             Some(entry) => entry,
             None => {
-                let blink = self.__last()?;
-                self.current = Some(blink);
-                blink
+                // If `self.current` is `None`, we need to initialize the iterator.
+                //
+                // However, if the iterator has already been initialized, we should
+                // return `None` to prevent infinite iteration.
+                if self.initialized {
+                    return Ok(None);
+                }
+
+                let last = match self.last_entry()? {
+                    Some(last) => last,
+                    None => return Ok(None),
+                };
+
+                self.current = Some(last);
+                self.initialized = true;
+                last
             }
         };
 
@@ -96,7 +169,7 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va_native(entry + self.offset_blink)?);
+        self.current = Some(self.previous_entry(entry)?);
 
         Ok(Some(entry - self.offset))
     }
@@ -110,7 +183,7 @@ where
     type Item = Result<Va, VmiError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.__next().transpose()
+        self.walk_next().transpose()
     }
 }
 
@@ -120,7 +193,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.__next_back().transpose()
+        self.walk_next_back().transpose()
     }
 }
 

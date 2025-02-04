@@ -51,7 +51,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_CONTROL_AREA.FilePointer` (with reference count masked out).
-    pub fn file_object(&self) -> Result<WindowsFileObject<'a, Driver>, VmiError> {
+    pub fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let EX_FAST_REF = &offsets._EX_FAST_REF;
         let CONTROL_AREA = &offsets._CONTROL_AREA;
@@ -67,7 +67,11 @@ where
         let file_pointer = file_pointer & !((1 << EX_FAST_REF.RefCnt.bit_length()) - 1);
         //let file_pointer = file_pointer & !0xf;
 
-        Ok(WindowsFileObject::new(self.vmi, file_pointer))
+        if file_pointer.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsFileObject::new(self.vmi, file_pointer)))
     }
 }
 
@@ -79,6 +83,9 @@ where
     type Os = WindowsOs<Driver>;
 
     fn path(&self) -> Result<Option<String>, VmiError> {
-        Ok(Some(self.file_object()?.filename()?))
+        match self.file_object()? {
+            Some(file_object) => Ok(Some(file_object.filename()?)),
+            None => Ok(None),
+        }
     }
 }

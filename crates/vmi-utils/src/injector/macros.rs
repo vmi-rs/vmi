@@ -79,7 +79,7 @@ pub mod __private {
             let region = region?;
 
             let mapped = match region.kind()? {
-                VmiOsRegionKind::Mapped(mapped) => mapped,
+                VmiOsRegionKind::MappedImage(mapped) => mapped,
                 _ => continue,
             };
 

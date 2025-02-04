@@ -309,19 +309,30 @@ where
         let MMVAD = &offsets._MMVAD;
         let SUBSECTION = &offsets._SUBSECTION;
 
+        /*
         const VadImageMap: u8 = 2;
 
         let vad_type = self.vad_type()?;
         if vad_type != VadImageMap {
             return Ok(VmiOsRegionKind::Private);
         }
+        */
+
+        if self.private_memory()? {
+            return Ok(VmiOsRegionKind::Private);
+        }
 
         let subsection = Va(self.vmi.read_field(self.va, &MMVAD.Subsection)?);
         let control_area = Va(self.vmi.read_field(subsection, &SUBSECTION.ControlArea)?);
 
-        Ok(VmiOsRegionKind::Mapped(WindowsControlArea::new(
-            self.vmi,
-            control_area,
-        )))
+        let region_kind = WindowsControlArea::new(self.vmi, control_area);
+
+        const VadImageMap: u8 = 2;
+        let vad_type = self.vad_type()?;
+        if vad_type == VadImageMap {
+            Ok(VmiOsRegionKind::MappedImage(region_kind))
+        } else {
+            Ok(VmiOsRegionKind::MappedData(region_kind))
+        }
     }
 }

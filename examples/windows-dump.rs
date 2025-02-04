@@ -7,7 +7,7 @@ use vmi::{
     driver::kdmp::VmiKdmpDriver,
     os::{
         windows::{WindowsDirectoryObject, WindowsOs, WindowsOsExt, WindowsProcess},
-        VmiOsProcess as _, VmiOsThread as _,
+        VmiOsMapped as _, VmiOsProcess as _, VmiOsRegion as _, VmiOsRegionKind, VmiOsThread as _,
     },
     VcpuId, VmiCore, VmiError, VmiSession, VmiState, VmiVa as _,
 };
@@ -22,6 +22,7 @@ fn handle_error(err: VmiError) -> Result<String, VmiError> {
     }
 }
 
+// Enumerate entries in a `_OBJECT_DIRECTORY`.
 fn enumerate_directory_object(
     directory_object: &WindowsDirectoryObject<Driver>,
     level: usize,
@@ -32,7 +33,7 @@ fn enumerate_directory_object(
             print!("    ");
         }
 
-        // Retrieve the entry.
+        // Retrieve the `_OBJECT_DIRECTORY_ENTRY.Object`.
         let object = match object {
             Ok(object) => object,
             Err(err) => {
@@ -43,7 +44,7 @@ fn enumerate_directory_object(
 
         let object_va = object.va();
 
-        // Retrieve the type kind.
+        // Determine the object type.
         let type_kind = match object.type_kind() {
             Ok(Some(typ)) => format!("{typ:?}"),
             Ok(None) => String::from("<unknown>"),
@@ -52,7 +53,7 @@ fn enumerate_directory_object(
 
         print!("{type_kind}: ");
 
-        // Retrieve the name.
+        // Retrieve the full name of the object.
         let name = match object.full_path() {
             Ok(Some(name)) => name,
             Ok(None) => String::from("<unnamed>"),
@@ -70,6 +71,7 @@ fn enumerate_directory_object(
     Ok(())
 }
 
+// Enumerate entries in a `_HANDLE_TABLE`.
 fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
     const OBJ_PROTECT_CLOSE: u32 = 0x00000001;
     const OBJ_INHERIT: u32 = 0x00000002;
@@ -79,6 +81,7 @@ fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiErr
     static LABEL_INHERIT: [&str; 2] = ["", " (Inherit)"];
     static LABEL_AUDIT: [&str; 2] = ["", " (Audit)"];
 
+    // Get the handle table from `_EPROCESS.ObjectTable`.
     let handle_table = match process.handle_table() {
         Ok(handle_table) => handle_table,
         Err(err) => {
@@ -98,6 +101,7 @@ fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiErr
         }
     };
 
+    // Iterate over `_HANDLE_TABLE_ENTRY` items.
     for (handle, entry) in handle_table_iterator {
         let attributes = match entry.attributes() {
             Ok(attributes) => attributes,
@@ -157,6 +161,46 @@ fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiErr
     Ok(())
 }
 
+// Enumerate VADs in a process.
+fn enumerate_regions(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
+    for region in process.regions()? {
+        let region = region?;
+
+        let region_va = region.va();
+        let start = region.start()?;
+        let end = region.end()?;
+        let protection = region.protection()?;
+        let kind = region.kind()?;
+
+        print!("        Region @ {region_va}: {start}-{end} {protection:?}");
+
+        match &kind {
+            VmiOsRegionKind::Private => println!(" Private"),
+            VmiOsRegionKind::MappedImage(mapped) => {
+                let path = match mapped.path() {
+                    Ok(Some(path)) => path,
+                    Ok(None) => String::from("<Pagefile>"),
+                    Err(err) => handle_error(err)?,
+                };
+
+                println!(" Mapped (Exe): {path}");
+            }
+            VmiOsRegionKind::MappedData(mapped) => {
+                let path = match mapped.path() {
+                    Ok(Some(path)) => path,
+                    Ok(None) => String::from("<Pagefile>"),
+                    Err(err) => handle_error(err)?,
+                };
+
+                println!(" Mapped: {path}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// Enumerate threads in a process.
 fn enumerate_threads(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
     for thread in process.threads()? {
         let thread = thread?;
@@ -164,12 +208,13 @@ fn enumerate_threads(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
         let tid = thread.id()?;
         let object = thread.object()?;
 
-        println!("        Thread @ {}, TID: {}", object, tid);
+        println!("        Thread @ {object}, TID: {tid}");
     }
 
     Ok(())
 }
 
+// Print process information in a `_PEB.ProcessParameters`.
 fn print_process_parameters(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
     let parameters = match process.peb()?.process_parameters() {
         Ok(parameters) => parameters,
@@ -207,23 +252,27 @@ fn print_process_parameters(process: &WindowsProcess<Driver>) -> Result<(), VmiE
     Ok(())
 }
 
+// Enumerate processes in the system.
 fn enumerate_processes(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result<(), VmiError> {
     for process in vmi.os().processes()? {
         let process = process?;
 
-        let pid = process.id()?;
-        let object = process.object()?;
-        let name = process.name()?;
-        let session = process.session()?;
+        let pid = process.id()?; // `_EPROCESS.UniqueProcessId`
+        let object = process.object()?; // `_EPROCESS` pointer
+        let name = process.name()?; // `_EPROCESS.ImageFileName`
+        let session = process.session()?; // `_EPROCESS.Session`
 
-        println!("Process @ {}, PID: {}", object, pid);
+        println!("Process @ {object}, PID: {pid}");
         println!("    Name: {name}");
         if let Some(session) = session {
-            println!("    Session: {}", session.id()?);
+            println!("    Session: {}", session.id()?); // `_MM_SESSION_SPACE.SessionId`
         }
 
         println!("    Threads:");
         enumerate_threads(&process)?;
+
+        println!("    Regions:");
+        enumerate_regions(&process)?;
 
         println!("    PEB:");
         print_process_parameters(&process)?;

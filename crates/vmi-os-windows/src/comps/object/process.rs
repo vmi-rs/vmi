@@ -1,6 +1,6 @@
 use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    os::{VmiOsImageArchitecture, ProcessId, ProcessObject, ThreadObject, VmiOsProcess},
+    os::{ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
@@ -96,8 +96,7 @@ where
                 root,
                 WindowsWow64Kind::Native,
             ))
-        }
-        else {
+        } else {
             let peb32 = match &offsets.ext {
                 Some(OffsetsExt::V1(_)) => wow64,
                 Some(OffsetsExt::V2(v2)) => self
@@ -153,14 +152,19 @@ where
     ///
     /// Corresponds to `_EPROCESS.VadRoot->BalancedRoot` for Windows 7 and
     /// `_EPROCESS.VadRoot->Root` for Windows 8.1 and later.
-    pub fn vad_root(&self) -> Result<WindowsRegion<'a, Driver>, VmiError> {
+    pub fn vad_root(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let node = match &self.offsets().ext() {
             Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(offsets)?,
             Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(offsets)?,
             None => panic!("OffsetsExt not set"),
         };
 
-        Ok(WindowsRegion::new(self.vmi, node))
+        // `VadRoot` can be `NULL`.
+        if node.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsRegion::new(self.vmi, node)))
     }
 
     fn vad_root_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
@@ -307,8 +311,7 @@ where
 
         if wow64process.is_null() {
             Ok(VmiOsImageArchitecture::Amd64)
-        }
-        else {
+        } else {
             Ok(VmiOsImageArchitecture::X86)
         }
     }
@@ -385,8 +388,12 @@ where
     fn regions(
         &self,
     ) -> Result<impl Iterator<Item = Result<WindowsRegion<'a, Driver>, VmiError>>, VmiError> {
-        Ok(TreeNodeIterator::new(self.vmi, self.vad_root()?.va())?
-            .map(move |result| result.map(|vad| WindowsRegion::new(self.vmi, vad))))
+        let iterator = match self.vad_root()? {
+            Some(vad_root) => TreeNodeIterator::new(self.vmi, vad_root.va()),
+            None => TreeNodeIterator::empty(self.vmi),
+        };
+
+        Ok(iterator.map(move |result| result.map(|vad| WindowsRegion::new(self.vmi, vad))))
     }
 
     /// Finds the memory region (VAD) containing the given address.
@@ -414,15 +421,13 @@ where
             return Ok(Some(vad));
         }
 
-        let mut next = Some(self.vad_root()?);
+        let mut next = self.vad_root()?;
         while let Some(vad) = next {
             if vpn < vad.starting_vpn()? {
                 next = vad.left_child()?;
-            }
-            else if vpn > vad.ending_vpn()? {
+            } else if vpn > vad.ending_vpn()? {
                 next = vad.right_child()?;
-            }
-            else {
+            } else {
                 return Ok(Some(vad));
             }
         }
