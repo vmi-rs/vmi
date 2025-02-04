@@ -57,14 +57,14 @@ isr-macros = "0.2.0"
 
 # vmi = { path = "./crates/vmi", version = "0.2.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.2.0" }
-vmi-core = { path = "./crates/vmi-core", version = "0.2.0" }
+vmi-core = { path = "./crates/vmi-core", version = "0.2.1" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.2.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.2.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.2.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.2.0" }
 vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.2.0" }
 vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.2.0" }
-vmi-utils = { path = "./crates/vmi-utils", version = "0.2.0" }
+vmi-utils = { path = "./crates/vmi-utils", version = "0.2.1" }
 
 xen = { package = "libxen", version = "0.2.0" }
 
@@ -83,7 +83,7 @@ debug = 1
 
 [package]
 name = "vmi"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT"
 authors = { workspace = true }
 edition = { workspace = true }
