@@ -235,8 +235,7 @@ fn enumerate_processes(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result<(), 
     Ok(())
 }
 
-#[allow(unused)]
-pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_ansi(false)

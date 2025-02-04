@@ -913,9 +913,8 @@ dependencies = [
 
 [[package]]
 name = "kdmp-parser"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9020e118f80785d03e42307666fbbff8cb5cf11ac06f8a662c528191ac040404"
+version = "0.6.0"
+source = "git+https://github.com/0vercl0k/kdmp-parser-rs.git?rev=refs/pull/9/head#351a0347297a6b931b5f21b7535430ca5b63a358"
 dependencies = [
  "bitflags",
  "thiserror 1.0.69",

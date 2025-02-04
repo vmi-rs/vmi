@@ -20,7 +20,7 @@ keywords = [
 workspace = true
 
 [dependencies]
-kdmp-parser = "0.5"
+kdmp-parser = { workspace = true }
 memmap2 = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
