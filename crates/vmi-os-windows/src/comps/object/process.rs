@@ -1,6 +1,6 @@
 use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    os::{OsArchitecture, ProcessId, ProcessObject, ThreadObject, VmiOsProcess},
+    os::{VmiOsImageArchitecture, ProcessId, ProcessObject, ThreadObject, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
@@ -297,7 +297,7 @@ where
     /// The function reads the `_EPROCESS.WoW64Process` field to determine if the
     /// process is a 32-bit process. If the field is `NULL`, the process is 64-bit.
     /// Otherwise, the process is 32-bit.
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<VmiOsImageArchitecture, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -306,10 +306,10 @@ where
             .read_va_native(self.va + EPROCESS.WoW64Process.offset())?;
 
         if wow64process.is_null() {
-            Ok(OsArchitecture::Amd64)
+            Ok(VmiOsImageArchitecture::Amd64)
         }
         else {
-            Ok(OsArchitecture::X86)
+            Ok(VmiOsImageArchitecture::X86)
         }
     }
 
@@ -322,11 +322,11 @@ where
         let offsets = self.offsets();
         let KPROCESS = &offsets._KPROCESS;
 
-        let current_process = self.vmi.os().current_process()?.object()?;
-
-        if self.va == current_process.0 {
-            return Ok(self.vmi.translation_root(self.va));
-        }
+        // let current_process = self.vmi.os().current_process()?.object()?;
+        //
+        // if self.va == current_process.0 {
+        //     return Ok(self.vmi.translation_root(self.va));
+        // }
 
         let root = Cr3(self
             .vmi

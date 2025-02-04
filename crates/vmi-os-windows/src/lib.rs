@@ -77,11 +77,11 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod comps;
 pub use self::comps::{
-    WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
-    WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
-    WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsPeb, WindowsProcess,
-    WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsSession, WindowsThread,
-    WindowsWow64Kind,
+    ParseObjectTypeError, WindowsControlArea, WindowsDirectoryObject, WindowsFileObject,
+    WindowsHandleTable, WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject,
+    WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind,
+    WindowsPeb, WindowsProcess, WindowsProcessParameters, WindowsRegion, WindowsSectionObject,
+    WindowsSession, WindowsThread, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -143,18 +143,17 @@ pub use self::comps::{
 /// Retrieving information about the current process:
 ///
 /// ```no_run
-/// # use vmi::{VcpuId, VmiDriver, VmiSession, os::windows::WindowsOs};
+/// # use vmi::{VcpuId, VmiDriver, VmiState, os::windows::WindowsOs};
 /// #
 /// # fn example<Driver: VmiDriver>(
-/// #     vmi: &VmiSession<Driver, WindowsOs<Driver>>,
+/// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
 /// #     Driver: VmiDriver<Architecture = vmi_arch_amd64::Amd64>,
 /// # {
-/// let registers = vmi.registers(VcpuId(0))?;
-/// let current_process = vmi.os().current_process(&registers)?;
-/// let process_id = vmi.os().process_id(&registers, current_process)?;
-/// let process_name = vmi.os().process_filename(&registers, current_process)?;
+/// let process = vmi.os().current_process()?;
+/// let process_id = process.id()?;
+/// let process_name = process.name()?;
 /// println!("Current process: {} (PID: {})", process_name, process_id);
 /// # Ok(())
 /// # }
@@ -163,18 +162,16 @@ pub use self::comps::{
 /// Enumerating all processes:
 ///
 /// ```no_run
-/// # use vmi::{VcpuId, VmiDriver, VmiSession, os::windows::WindowsOs};
+/// # use vmi::{VcpuId, VmiDriver, VmiState, os::windows::WindowsOs};
 /// #
 /// # fn example<Driver: VmiDriver>(
-/// #     vmi: &VmiSession<Driver, WindowsOs<Driver>>,
+/// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
 /// #     Driver: VmiDriver<Architecture = vmi_arch_amd64::Amd64>,
 /// # {
-/// let registers = vmi.registers(VcpuId(0))?;
-/// let processes = vmi.os().processes(&registers)?;
-/// for process in processes {
-///     println!("Process: {} (PID: {})", process.name, process.id);
+/// for process in vmi.os().processes()? {
+///     println!("Process: {} (PID: {})", process.name()?, process.id()?);
 /// }
 /// # Ok(())
 /// # }
@@ -199,7 +196,7 @@ where
     highest_user_address: OnceCell<Va>,
     object_root_directory: OnceCell<Va>, // _OBJECT_DIRECTORY*
     object_header_cookie: OnceCell<u8>,
-    object_type_cache: RefCell<HashMap<Va, WindowsObjectType>>,
+    object_type_cache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
     ki_kva_shadow: OnceCell<bool>,
@@ -351,6 +348,10 @@ where
 
     /// Returns the kernel information string.
     ///
+    /// # Notes
+    ///
+    /// The kernel information string is cached after the first read.
+    ///
     /// # Implementation Details
     ///
     /// Corresponds to `NtBuildLab` symbol.
@@ -425,6 +426,10 @@ where
     ///
     /// This method reads the highest user-mode address from the Windows kernel.
     /// The value is cached after the first read for performance.
+    ///
+    /// # Notes
+    ///
+    /// This value is cached after the first read.
     ///
     /// # Implementation Details
     ///
@@ -539,6 +544,10 @@ where
     ///
     /// The PFN database is a critical data structure in Windows memory management,
     /// containing information about each physical page in the system.
+    ///
+    /// # Notes
+    ///
+    /// This value is cached after the first read.
     ///
     /// # Implementation Details
     ///
@@ -780,6 +789,10 @@ where
 
     /// Returns the root directory object for the Windows kernel.
     ///
+    /// # Notes
+    ///
+    /// The object root directory is cached after the first read.
+    ///
     /// # Implementation Details
     ///
     /// Corresponds to `ObpRootDirectoryObject` symbol.
@@ -809,6 +822,8 @@ where
     /// with a random cookie value. This method fetches that cookie, which is
     /// essential for correctly interpreting object headers in memory.
     ///
+    /// The cookie is cached after the first read.
+    ///
     /// # Implementation Details
     ///
     /// Corresponds to `ObHeaderCookie` symbol.
@@ -829,131 +844,6 @@ where
         ))
     }
 
-    /// Determines the type of a Windows kernel object.
-    ///
-    /// This method analyzes the object header of a given kernel object
-    /// and returns its type (e.g., Process, Thread, File). It handles the
-    /// obfuscation introduced by the object header cookie, ensuring accurate
-    /// type identification even on systems with this security feature enabled.
-    ///
-    /// Returns `None` if the object type cannot be determined.
-    pub fn object_type_name(vmi: VmiState<Driver, Self>, object: Va) -> Result<String, VmiError> {
-        let ObTypeIndexTable = symbol!(vmi, ObTypeIndexTable);
-        let OBJECT_HEADER = offset!(vmi, _OBJECT_HEADER);
-        let OBJECT_TYPE = offset!(vmi, _OBJECT_TYPE);
-
-        let object_header = object - OBJECT_HEADER.Body.offset();
-        let type_index = vmi.read_u8(object_header + OBJECT_HEADER.TypeIndex.offset())?;
-
-        let index = match Self::object_header_cookie(vmi)? {
-            Some(cookie) => {
-                //
-                // TypeIndex ^ 2nd least significate byte of OBJECT_HEADER address ^
-                // nt!ObHeaderCookie ref: https://medium.com/@ashabdalhalim/a-light-on-windows-10s-object-header-typeindex-value-e8f907e7073a
-                //
-
-                let salt = (u64::from(object_header) >> 8) as u8;
-                type_index ^ salt ^ cookie
-            }
-            None => type_index,
-        };
-
-        let index = index as u64;
-
-        let kernel_image_base = Self::kernel_image_base(vmi)?;
-        let object_type = vmi.read_va_native(
-            kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
-        )?;
-
-        if let Some(typ) = this!(vmi).object_type_name_cache.borrow().get(&object_type) {
-            return Ok(typ.clone());
-        }
-
-        let object_name = Self::read_unicode_string(vmi, object_type + OBJECT_TYPE.Name.offset())?;
-
-        this!(vmi)
-            .object_type_name_cache
-            .borrow_mut()
-            .insert(object_type, object_name.clone());
-
-        Ok(object_name)
-    }
-
-    /// Determines the type of a Windows kernel object.
-    ///
-    /// This method analyzes the object header of a given kernel object
-    /// and returns its type (e.g., Process, Thread, File). It handles the
-    /// obfuscation introduced by the object header cookie, ensuring accurate
-    /// type identification even on systems with this security feature enabled.
-    ///
-    /// Returns `None` if the object type cannot be determined.
-    pub fn object_type(
-        vmi: VmiState<Driver, Self>,
-        object: Va,
-    ) -> Result<Option<WindowsObjectType>, VmiError> {
-        let ObTypeIndexTable = symbol!(vmi, ObTypeIndexTable);
-        let OBJECT_HEADER = offset!(vmi, _OBJECT_HEADER);
-        let OBJECT_TYPE = offset!(vmi, _OBJECT_TYPE);
-
-        let object_header = object - OBJECT_HEADER.Body.offset();
-        let type_index = vmi.read_u8(object_header + OBJECT_HEADER.TypeIndex.offset())?;
-
-        let index = match Self::object_header_cookie(vmi)? {
-            Some(cookie) => {
-                //
-                // TypeIndex ^ 2nd least significate byte of OBJECT_HEADER address ^
-                // nt!ObHeaderCookie ref: https://medium.com/@ashabdalhalim/a-light-on-windows-10s-object-header-typeindex-value-e8f907e7073a
-                //
-
-                let salt = (u64::from(object_header) >> 8) as u8;
-                type_index ^ salt ^ cookie
-            }
-            None => type_index,
-        };
-
-        let index = index as u64;
-
-        let kernel_image_base = Self::kernel_image_base(vmi)?;
-        let object_type = vmi.read_va_native(
-            kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
-        )?;
-
-        if let Some(typ) = this!(vmi).object_type_cache.borrow().get(&object_type) {
-            return Ok(Some(*typ));
-        }
-
-        let object_name = Self::read_unicode_string(vmi, object_type + OBJECT_TYPE.Name.offset())?;
-
-        let typ = match object_name.as_str() {
-            "ALPC Port" => WindowsObjectType::AlpcPort,
-            "DebugObject" => WindowsObjectType::DebugObject,
-            "Device" => WindowsObjectType::Device,
-            "Directory" => WindowsObjectType::Directory,
-            "Driver" => WindowsObjectType::Driver,
-            "Event" => WindowsObjectType::Event,
-            "File" => WindowsObjectType::File,
-            "Job" => WindowsObjectType::Job,
-            "Key" => WindowsObjectType::Key,
-            "Mutant" => WindowsObjectType::Mutant,
-            "Port" => WindowsObjectType::Port,
-            "Process" => WindowsObjectType::Process,
-            "Section" => WindowsObjectType::Section,
-            "SymbolicLink" => WindowsObjectType::SymbolicLink,
-            "Thread" => WindowsObjectType::Thread,
-            "Timer" => WindowsObjectType::Timer,
-            "Token" => WindowsObjectType::Token,
-            "Type" => WindowsObjectType::Type,
-            _ => return Ok(None),
-        };
-
-        this!(vmi)
-            .object_type_cache
-            .borrow_mut()
-            .insert(object_type, typ);
-
-        Ok(Some(typ))
-    }
-
     /// Returns the Windows object attributes.
     pub fn object_attributes<'a>(
         vmi: VmiState<'a, Driver, Self>,
@@ -962,58 +852,39 @@ where
         Ok(WindowsObjectAttributes::new(vmi, object_attributes))
     }
 
-    /*
-    /// Converts an `OBJECT_ATTRIBUTES` structure to an object name string.
+    /// Reads string of bytes from an `_ANSI_STRING` structure.
     ///
-    /// `OBJECT_ATTRIBUTES` is a structure used in many Windows system calls to
-    /// specify an object. This method interprets that structure and extracts
-    /// a meaningful name or path for the object. It handles both absolute and
-    /// relative object names, considering the root directory if specified.
-    ///
-    /// Returns `None` if the `_OBJECT_ATTRIBUTES::ObjectName` field is `NULL`.
-    pub fn object_attributes_to_object_name(
-        &self,
+    /// This method reads a native `_ANSI_STRING` structure which contains
+    /// an ASCII/ANSI string. The structure is read according to the current
+    /// OS's architecture (32-bit or 64-bit).
+    pub fn read_ansi_string_bytes(
         vmi: VmiState<Driver, Self>,
-        process: ProcessObject,
-        object_attributes: Va,
-    ) -> Result<Option<String>, VmiError> {
-        let OBJECT_ATTRIBUTES = offset!(vmi, _OBJECT_ATTRIBUTES);
-
-        let object_name_address =
-            vmi.read_va_native(object_attributes + OBJECT_ATTRIBUTES.ObjectName.offset())?;
-
-        if object_name_address.is_null() {
-            return Ok(None);
-        }
-
-        let object_name = this!(vmi).read_unicode_string(vmi, object_name_address)?;
-
-        let root_directory =
-            vmi.read_va_native(object_attributes + OBJECT_ATTRIBUTES.RootDirectory.offset())?;
-
-        if root_directory.is_null() {
-            return Ok(Some(object_name));
-        }
-
-        let object = match this!(vmi).handle_to_object(vmi, process, u64::from(root_directory))? {
-            Some(object) => object,
-            None => return Ok(Some(object_name)),
-        };
-
-        let root_name = match object {
-            WindowsObject::File(file) => Some(file.filename),
-            WindowsObject::Section(section) => match section.region.kind {
-                OsRegionKind::Mapped(mapped) => mapped.path?,
-                _ => None,
-            },
-        };
-
-        match root_name {
-            Some(root_name) => Ok(Some(format!("{root_name}\\{object_name}"))),
-            None => Ok(Some(object_name)),
-        }
+        va: Va,
+    ) -> Result<Vec<u8>, VmiError> {
+        Self::read_ansi_string_bytes_in(vmi, vmi.access_context(va))
     }
-    */
+
+    /// Reads string of bytes from a 32-bit version of `_ANSI_STRING` structure.
+    ///
+    /// This method is specifically for reading `_ANSI_STRING` structures in
+    /// 32-bit processes or WoW64 processes where pointers are 32 bits.
+    pub fn read_ansi_string32_bytes(
+        vmi: VmiState<Driver, Self>,
+        va: Va,
+    ) -> Result<Vec<u8>, VmiError> {
+        Self::read_ansi_string32_bytes_in(vmi, vmi.access_context(va))
+    }
+
+    /// Reads string of bytes from a 64-bit version of `_ANSI_STRING` structure.
+    ///
+    /// This method is specifically for reading `_ANSI_STRING` structures in
+    /// 64-bit processes where pointers are 64 bits.
+    pub fn read_ansi_string64_bytes(
+        vmi: VmiState<Driver, Self>,
+        va: Va,
+    ) -> Result<Vec<u8>, VmiError> {
+        Self::read_ansi_string64_bytes_in(vmi, vmi.access_context(va))
+    }
 
     /// Reads string from an `_ANSI_STRING` structure.
     ///
@@ -1045,6 +916,40 @@ where
     /// This method reads a native `_UNICODE_STRING` structure which contains
     /// a UTF-16 string. The structure is read according to the current OS's
     /// architecture (32-bit or 64-bit).
+    pub fn read_unicode_string_bytes(
+        vmi: VmiState<Driver, Self>,
+        va: Va,
+    ) -> Result<Vec<u16>, VmiError> {
+        Self::read_unicode_string_bytes_in(vmi, vmi.access_context(va))
+    }
+
+    /// Reads string from a 32-bit version of `_UNICODE_STRING` structure.
+    ///
+    /// This method is specifically for reading `_UNICODE_STRING` structures
+    /// in 32-bit processes or WoW64 processes where pointers are 32 bits.
+    pub fn read_unicode_string32_bytes(
+        vmi: VmiState<Driver, Self>,
+        va: Va,
+    ) -> Result<Vec<u16>, VmiError> {
+        Self::read_unicode_string32_bytes_in(vmi, vmi.access_context(va))
+    }
+
+    /// Reads string from a 64-bit version of `_UNICODE_STRING` structure.
+    ///
+    /// This method is specifically for reading `_UNICODE_STRING` structures
+    /// in 64-bit processes where pointers are 64 bits.
+    pub fn read_unicode_string64_bytes(
+        vmi: VmiState<Driver, Self>,
+        va: Va,
+    ) -> Result<Vec<u16>, VmiError> {
+        Self::read_unicode_string64_bytes_in(vmi, vmi.access_context(va))
+    }
+
+    /// Reads string from a `_UNICODE_STRING` structure.
+    ///
+    /// This method reads a native `_UNICODE_STRING` structure which contains
+    /// a UTF-16 string. The structure is read according to the current OS's
+    /// architecture (32-bit or 64-bit).
     pub fn read_unicode_string(vmi: VmiState<Driver, Self>, va: Va) -> Result<String, VmiError> {
         Self::read_unicode_string_in(vmi, vmi.access_context(va))
     }
@@ -1065,7 +970,7 @@ where
         Self::read_unicode_string64_in(vmi, vmi.access_context(va))
     }
 
-    /// Reads string buffer from a 32-bit version of `_ANSI_STRING` or
+    /// Reads string of bytes from a 32-bit version of `_ANSI_STRING` or
     /// `_UNICODE_STRING` structure.
     ///
     /// This method is specifically for reading `_ANSI_STRING` or
@@ -1107,7 +1012,7 @@ where
         Ok(buffer)
     }
 
-    /// Reads string from a 64-bit version of `_ANSI_STRING` or
+    /// Reads string of bytes from a 64-bit version of `_ANSI_STRING` or
     /// `_UNICODE_STRING` structure.
     ///
     /// This method is specifically for reading `_ANSI_STRING` or
@@ -1152,6 +1057,44 @@ where
         Ok(buffer)
     }
 
+    /// Reads string of bytes from an `_ANSI_STRING` structure.
+    ///
+    /// This method reads a native `_ANSI_STRING` structure which contains
+    /// an ASCII/ANSI string. The structure is read according to the current
+    /// OS's architecture (32-bit or 64-bit).
+    pub fn read_ansi_string_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u8>, VmiError> {
+        match vmi.registers().address_width() {
+            4 => Self::read_ansi_string32_bytes_in(vmi, ctx),
+            8 => Self::read_ansi_string64_bytes_in(vmi, ctx),
+            _ => panic!("Unsupported address width"),
+        }
+    }
+
+    /// Reads string of bytes from a 32-bit version of `_ANSI_STRING` structure.
+    ///
+    /// This method is specifically for reading `_ANSI_STRING` structures in
+    /// 32-bit processes or WoW64 processes where pointers are 32 bits.
+    pub fn read_ansi_string32_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u8>, VmiError> {
+        Self::read_string32_in(vmi, ctx)
+    }
+
+    /// Reads string of bytes from a 64-bit version of `_ANSI_STRING` structure.
+    ///
+    /// This method is specifically for reading `_ANSI_STRING` structures in
+    /// 64-bit processes where pointers are 64 bits.
+    pub fn read_ansi_string64_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u8>, VmiError> {
+        Self::read_string64_in(vmi, ctx)
+    }
+
     /// Reads string from an `_ANSI_STRING` structure.
     ///
     /// This method reads a native `_ANSI_STRING` structure which contains
@@ -1176,9 +1119,7 @@ where
         vmi: VmiState<Driver, Self>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
-        let buffer = Self::read_string32_in(vmi, ctx)?;
-
-        Ok(String::from_utf8_lossy(&buffer).into())
+        Ok(String::from_utf8_lossy(&Self::read_ansi_string32_bytes_in(vmi, ctx)?).into())
     }
 
     /// Reads string from a 64-bit version of `_ANSI_STRING` structure.
@@ -1189,9 +1130,55 @@ where
         vmi: VmiState<Driver, Self>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
+        Ok(String::from_utf8_lossy(&Self::read_ansi_string64_bytes_in(vmi, ctx)?).into())
+    }
+
+    /// Reads string from a `_UNICODE_STRING` structure.
+    ///
+    /// This method reads a native `_UNICODE_STRING` structure which contains
+    /// a UTF-16 string. The structure is read according to the current OS's
+    /// architecture (32-bit or 64-bit).
+    pub fn read_unicode_string_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u16>, VmiError> {
+        match vmi.registers().address_width() {
+            4 => Self::read_unicode_string32_bytes_in(vmi, ctx),
+            8 => Self::read_unicode_string64_bytes_in(vmi, ctx),
+            _ => panic!("Unsupported address width"),
+        }
+    }
+
+    /// Reads string from a 32-bit version of `_UNICODE_STRING` structure.
+    ///
+    /// This method is specifically for reading `_UNICODE_STRING` structures
+    /// in 32-bit processes or WoW64 processes where pointers are 32 bits.
+    pub fn read_unicode_string32_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u16>, VmiError> {
+        let buffer = Self::read_string32_in(vmi, ctx)?;
+
+        Ok(buffer
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>())
+    }
+
+    /// Reads string from a 64-bit version of `_UNICODE_STRING` structure.
+    ///
+    /// This method is specifically for reading `_UNICODE_STRING` structures
+    /// in 64-bit processes where pointers are 64 bits.
+    pub fn read_unicode_string64_bytes_in(
+        vmi: VmiState<Driver, Self>,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u16>, VmiError> {
         let buffer = Self::read_string64_in(vmi, ctx)?;
 
-        Ok(String::from_utf8_lossy(&buffer).into())
+        Ok(buffer
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>())
     }
 
     /// Reads string from a `_UNICODE_STRING` structure.
@@ -1218,13 +1205,8 @@ where
         vmi: VmiState<Driver, Self>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
-        let buffer = Self::read_string32_in(vmi, ctx)?;
-
         Ok(String::from_utf16_lossy(
-            &buffer
-                .chunks_exact(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect::<Vec<_>>(),
+            &Self::read_unicode_string32_bytes_in(vmi, ctx)?,
         ))
     }
 
@@ -1236,13 +1218,8 @@ where
         vmi: VmiState<Driver, Self>,
         ctx: impl Into<AccessContext>,
     ) -> Result<String, VmiError> {
-        let buffer = Self::read_string64_in(vmi, ctx)?;
-
         Ok(String::from_utf16_lossy(
-            &buffer
-                .chunks_exact(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect::<Vec<_>>(),
+            &Self::read_unicode_string64_bytes_in(vmi, ctx)?,
         ))
     }
 
@@ -1294,6 +1271,14 @@ where
     /// KVA Shadow is a security feature introduced in Windows 10 that
     /// mitigates Meltdown and Spectre vulnerabilities by isolating
     /// kernel memory from user-mode processes.
+    ///
+    /// # Notes
+    ///
+    /// This value is cached after the first read.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KiKvaShadow` symbol.
     fn kpti_enabled(vmi: VmiState<Driver, Self>) -> Result<bool, VmiError> {
         this!(vmi)
             .ki_kva_shadow

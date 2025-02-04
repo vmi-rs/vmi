@@ -92,7 +92,7 @@ where
         while let Some(parent) = kcb.parent()? {
             let parent_name = parent.name()?;
 
-            result.insert_str(0, "\\");
+            result.insert(0, '\\');
             result.insert_str(0, &parent_name);
             kcb = parent;
         }

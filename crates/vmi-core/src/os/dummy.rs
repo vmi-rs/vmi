@@ -1,5 +1,5 @@
 use super::{
-    OsArchitecture, OsImageExportedSymbol, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOs,
+    VmiOsImageArchitecture, VmiOsImageSymbol, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOs,
     VmiOsImage, VmiOsMapped, VmiOsModule, VmiOsProcess, VmiOsRegion, VmiOsRegionKind, VmiOsThread,
 };
 use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
@@ -130,11 +130,11 @@ where
         unimplemented!()
     }
 
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<Option<VmiOsImageArchitecture>, VmiError> {
         unimplemented!()
     }
 
-    fn exports(&self) -> Result<Vec<OsImageExportedSymbol>, VmiError> {
+    fn exports(&self) -> Result<Vec<VmiOsImageSymbol>, VmiError> {
         unimplemented!()
     }
 }
@@ -191,7 +191,7 @@ where
         unimplemented!()
     }
 
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<VmiOsImageArchitecture, VmiError> {
         unimplemented!()
     }
 

@@ -1,6 +1,6 @@
 use vmi_core::{
     os::{
-        OsArchitecture, OsImageExportedSymbol, ThreadId, ThreadObject, VmiOsImage, VmiOsMapped,
+        ThreadId, ThreadObject, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsMapped,
         VmiOsModule, VmiOsThread,
     },
     Architecture, Va, VmiDriver, VmiError, VmiVa,
@@ -29,11 +29,11 @@ where
         unimplemented!()
     }
 
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<Option<VmiOsImageArchitecture>, VmiError> {
         unimplemented!()
     }
 
-    fn exports(&self) -> Result<Vec<OsImageExportedSymbol>, VmiError> {
+    fn exports(&self) -> Result<Vec<VmiOsImageSymbol>, VmiError> {
         unimplemented!()
     }
 }

@@ -1,6 +1,6 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{OsArchitecture, ProcessId, ProcessObject, VmiOsProcess},
+    os::{VmiOsImageArchitecture, ProcessId, ProcessObject, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiOs, VmiState, VmiVa,
 };
 
@@ -251,7 +251,7 @@ where
         unimplemented!()
     }
 
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<VmiOsImageArchitecture, VmiError> {
         unimplemented!()
     }
 

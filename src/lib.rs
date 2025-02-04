@@ -659,7 +659,7 @@ pub mod driver {
 
     #[cfg(feature = "driver-kdmp")]
     pub mod kdmp {
-        #![doc = include_str!("../docs/vmi-driver-xen.md")]
+        #![doc = include_str!("../docs/vmi-driver-kdmp.md")]
 
         pub use vmi_driver_kdmp::*;
     }

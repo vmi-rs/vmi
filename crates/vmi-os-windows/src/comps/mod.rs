@@ -22,8 +22,9 @@ pub use self::{
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
     object::{
-        WindowsDirectoryObject, WindowsFileObject, WindowsObject, WindowsObjectType,
-        WindowsProcess, WindowsSectionObject, WindowsThread,
+        ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject, WindowsObject,
+        WindowsObjectTypeKind, WindowsObjectType, WindowsProcess, WindowsSectionObject,
+        WindowsThread,
     },
     object_attributes::WindowsObjectAttributes,
     peb::{WindowsPeb, WindowsWow64Kind},

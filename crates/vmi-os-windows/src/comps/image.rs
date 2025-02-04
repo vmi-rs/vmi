@@ -5,7 +5,7 @@ use object::{
 };
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{OsArchitecture, OsImageExportedSymbol, VmiOsImage},
+    os::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
 };
 
@@ -161,15 +161,17 @@ where
     }
 
     /// Returns the target architecture for which the image was compiled.
-    fn architecture(&self) -> Result<OsArchitecture, VmiError> {
+    fn architecture(&self) -> Result<Option<VmiOsImageArchitecture>, VmiError> {
         match self.pe()?.nt_headers().optional_header() {
-            ImageOptionalHeader::ImageOptionalHeader32(_) => Ok(OsArchitecture::X86),
-            ImageOptionalHeader::ImageOptionalHeader64(_) => Ok(OsArchitecture::Amd64),
+            ImageOptionalHeader::ImageOptionalHeader32(_) => Ok(Some(VmiOsImageArchitecture::X86)),
+            ImageOptionalHeader::ImageOptionalHeader64(_) => {
+                Ok(Some(VmiOsImageArchitecture::Amd64))
+            }
         }
     }
 
     /// Returns the exported symbols.
-    fn exports(&self) -> Result<Vec<OsImageExportedSymbol>, VmiError> {
+    fn exports(&self) -> Result<Vec<VmiOsImageSymbol>, VmiError> {
         let directory = match self.export_directory()? {
             Some(directory) => directory,
             None => return Ok(Vec::new()),
@@ -180,7 +182,7 @@ where
         Ok(exports
             .into_iter()
             .filter_map(|export| match export.target {
-                ExportTarget::Address(address) => Some(OsImageExportedSymbol {
+                ExportTarget::Address(address) => Some(VmiOsImageSymbol {
                     name: String::from_utf8_lossy(export.name?).to_string(),
                     address: self.va + address as u64,
                 }),

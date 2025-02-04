@@ -101,7 +101,7 @@ where
             .copied()
     }
 
-    /// Enumerates all handle table entries.
+    /// Iterates over all handle table entries.
     ///
     /// Returns an iterator over all handle table entries that have a valid
     /// object pointer. The iterator yields a tuple containing the handle
@@ -111,7 +111,7 @@ where
     ///
     /// The functionality is similar to the Windows kernel's internal
     /// `ExpSnapShotHandleTables()` function.
-    pub fn enumerate(
+    pub fn iter(
         &self,
     ) -> Result<impl Iterator<Item = (u64, WindowsHandleTableEntry<'a, Driver>)>, VmiError> {
         const HANDLE_VALUE_INC: u64 = 4;

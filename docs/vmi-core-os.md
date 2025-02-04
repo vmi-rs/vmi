@@ -21,6 +21,7 @@ cases where an OS-specific implementation is not available or required.
 ## Key Components
 
 ### Core OS Trait
+
 - **[`VmiOs`]**
   This is the central trait for OS introspection. It defines associated types
   for the following:
@@ -32,10 +33,11 @@ cases where an OS-specific implementation is not available or required.
   - **Mapped Region**: Represented via the [`VmiOsMapped`] trait.
 
   In addition to these, it provides methods to retrieve critical OS-specific
-  information, such as the kernel image base, a human-readable kernel
-  information string, and whether Kernel Page Table Isolation (KPTI) is enabled.
+  information, such as the kernel image base, and whether Kernel Page Table
+  Isolation (KPTI) is enabled.
 
 ### Process and Thread Introspection
+
 - **[`VmiOsProcess`]**
 
   Provides an interface for inspecting guest processes. It offers methods to
@@ -60,6 +62,7 @@ cases where an OS-specific implementation is not available or required.
   prevent mix-ups with other addresses or identifiers.
 
 ### Memory Region and Mapped Region Introspection
+
 - **[`VmiOsRegion`]**
 
   Defines the interface for memory region introspection. Methods include
@@ -76,6 +79,7 @@ cases where an OS-specific implementation is not available or required.
   a method to retrieve the backing file’s path.
 
 ### Kernel Modules and Executable Images
+
 - **[`VmiOsModule`]**
 
   Offers an abstraction for kernel module introspection, providing methods to
@@ -87,6 +91,7 @@ cases where an OS-specific implementation is not available or required.
   the base address, target architecture, and exported symbols.
 
 ### Additional Components
+
 - **[`StructReader`]**
 
   A utility for safely reading structured data (such as C structs) from guest

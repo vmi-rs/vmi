@@ -55,8 +55,8 @@ where
         Self { vmi, va }
     }
 
-    /// Enumerates the objects in the directory.
-    pub fn enumerate(
+    /// Iterates over the objects in the directory.
+    pub fn iter(
         &self,
     ) -> Result<impl Iterator<Item = Result<WindowsObject<'a, Driver>, VmiError>>, VmiError> {
         let offsets = self.offsets();

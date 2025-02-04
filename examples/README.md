@@ -18,6 +18,10 @@ capabilities, from basic operations to more complex scenarios.
   Illustrates the usage of the [`BreakpointManager`] and
   [`PageTableMonitor`] to set and manage breakpoints on Windows systems.
 
+- **[`windows-dump.rs`]**
+
+  Demonstrates how to use the VMI library to analyze a Windows kernel dump file.
+
 - **[`windows-recipe-messagebox.rs`]**
 
   A simple example of code injection using a recipe to display a message

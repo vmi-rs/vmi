@@ -1,6 +1,5 @@
 #![doc = include_str!("../../docs/os.md")]
 
-mod common;
 mod dummy;
 mod image;
 mod mapped;
@@ -13,18 +12,14 @@ mod thread;
 use vmi_macros::derive_os_wrapper;
 
 pub use self::{
-    common::{
-        OsArchitecture, OsImageExportedSymbol, OsMapped, OsModule, OsProcess, OsRegion,
-        OsRegionKind, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsRegionKind,
-    },
     dummy::NoOS,
-    image::VmiOsImage,
+    image::{VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsImage},
     mapped::VmiOsMapped,
     module::VmiOsModule,
-    process::VmiOsProcess,
-    region::VmiOsRegion,
+    process::{ProcessId, ProcessObject, VmiOsProcess},
+    region::{VmiOsRegion, VmiOsRegionKind},
     struct_reader::StructReader,
-    thread::VmiOsThread,
+    thread::{ThreadId, ThreadObject, VmiOsThread},
 };
 use crate::{Va, VmiDriver, VmiError, VmiOsState, VmiState};
 

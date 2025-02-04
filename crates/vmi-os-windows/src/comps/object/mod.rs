@@ -1,6 +1,7 @@
 mod directory;
 mod file;
 mod key;
+mod object_type;
 mod process;
 mod section;
 mod thread;
@@ -12,7 +13,8 @@ use vmi_core::{
 
 pub use self::{
     directory::WindowsDirectoryObject, file::WindowsFileObject, key::WindowsKey,
-    process::WindowsProcess, section::WindowsSectionObject, thread::WindowsThread,
+    object_type::WindowsObjectType, process::WindowsProcess, section::WindowsSectionObject,
+    thread::WindowsThread,
 };
 use super::{
     macros::{impl_offsets, impl_symbols},
@@ -58,7 +60,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name_info = self.name_info();
-        let typ = self.typ();
+        let typ = self.type_kind();
 
         f.debug_struct("WindowsObject")
             .field("typ", &typ)
@@ -177,36 +179,89 @@ where
         }
     }
 
-    /// Returns the object type.
-    pub fn typ(&self) -> Result<Option<WindowsObjectType>, VmiError> {
-        self.vmi.os().object_type(self.va)
+    /// Returns the type of a Windows kernel object.
+    ///
+    /// This method analyzes the object header of a kernel object and returns
+    /// its type object (`_OBJECT_TYPE`). It handles the obfuscation introduced
+    /// by the object header cookie, ensuring accurate type identification even
+    /// on systems with this security feature enabled.
+    pub fn object_type(&self) -> Result<WindowsObjectType<'a, Driver>, VmiError> {
+        let symbols = self.symbols();
+        let offsets = self.offsets();
+        let ObTypeIndexTable = symbols.ObTypeIndexTable;
+        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+
+        let object_header = self.va - OBJECT_HEADER.Body.offset();
+        let type_index = self
+            .vmi
+            .read_u8(object_header + OBJECT_HEADER.TypeIndex.offset())?;
+
+        let index = match self.vmi.os().object_header_cookie()? {
+            Some(cookie) => {
+                //
+                // TypeIndex
+                //     ^ 2nd least significate byte of OBJECT_HEADER address
+                //     ^ nt!ObHeaderCookie
+                // ref: https://medium.com/@ashabdalhalim/a-light-on-windows-10s-object-header-typeindex-value-e8f907e7073a
+                //
+
+                let salt = (object_header.0 >> 8) as u8;
+                type_index ^ salt ^ cookie
+            }
+            None => type_index,
+        };
+
+        let index = index as u64;
+
+        let kernel_image_base = self.vmi.os().kernel_image_base()?;
+        let object_type = self.vmi.read_va_native(
+            kernel_image_base + ObTypeIndexTable + index * 8, // REVIEW: replace 8 with registers.address_width()?
+        )?;
+
+        Ok(WindowsObjectType::new(self.vmi, object_type))
     }
 
-    /// Returns the object type.
+    /// Returns the object type name.
+    ///
+    /// # Implementation Details
+    ///
+    /// Shortcut for `self.object_type()?.name()`.
     pub fn type_name(&self) -> Result<String, VmiError> {
-        self.vmi.os().object_type_name(self.va)
+        self.object_type()?.name()
+    }
+
+    /// Returns the object type kind.
+    ///
+    /// # Implementation Details
+    ///
+    /// Shortcut for `self.object_type()?.kind()`.
+    pub fn type_kind(&self) -> Result<Option<WindowsObjectTypeKind>, VmiError> {
+        self.object_type()?.kind()
     }
 
     /// Returns the specific kind of this object.
     pub fn kind(&self) -> Result<Option<WindowsObjectKind<'a, Driver>>, VmiError> {
-        let result = match self.typ()? {
-            Some(WindowsObjectType::Directory) => {
+        let result = match self.type_kind()? {
+            Some(WindowsObjectTypeKind::Directory) => {
                 WindowsObjectKind::Directory(WindowsDirectoryObject::new(self.vmi, self.va))
             }
-            Some(WindowsObjectType::File) => {
+            Some(WindowsObjectTypeKind::File) => {
                 WindowsObjectKind::File(WindowsFileObject::new(self.vmi, self.va))
             }
-            Some(WindowsObjectType::Key) => {
+            Some(WindowsObjectTypeKind::Key) => {
                 WindowsObjectKind::Key(WindowsKey::new(self.vmi, self.va))
             }
-            Some(WindowsObjectType::Process) => {
+            Some(WindowsObjectTypeKind::Process) => {
                 WindowsObjectKind::Process(WindowsProcess::new(self.vmi, ProcessObject(self.va)))
             }
-            Some(WindowsObjectType::Section) => {
+            Some(WindowsObjectTypeKind::Section) => {
                 WindowsObjectKind::Section(WindowsSectionObject::new(self.vmi, self.va))
             }
-            Some(WindowsObjectType::Thread) => {
+            Some(WindowsObjectTypeKind::Thread) => {
                 WindowsObjectKind::Thread(WindowsThread::new(self.vmi, ThreadObject(self.va)))
+            }
+            Some(WindowsObjectTypeKind::Type) => {
+                WindowsObjectKind::Type(WindowsObjectType::new(self.vmi, self.va))
             }
             _ => return Ok(None),
         };
@@ -261,6 +316,14 @@ where
             _ => Ok(None),
         }
     }
+
+    /// Returns the object as an object type (`_OBJECT_TYPE`).
+    pub fn as_type(&self) -> Result<Option<WindowsObjectType<'a, Driver>>, VmiError> {
+        match self.kind()? {
+            Some(WindowsObjectKind::Type(object_type)) => Ok(Some(object_type)),
+            _ => Ok(None),
+        }
+    }
 }
 
 /// Identifies the type of a Windows kernel object.
@@ -274,7 +337,7 @@ where
 /// by the Windows kernel. For example, "Process" for process objects,
 /// "Thread" for thread objects, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowsObjectType {
+pub enum WindowsObjectTypeKind {
     /// Activation object.
     ///
     /// Has `ActivationObject` type name.
@@ -642,6 +705,92 @@ pub enum WindowsObjectType {
     WmiGuid,
 }
 
+/// Error parsing a Windows object type.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseObjectTypeError;
+
+impl std::str::FromStr for WindowsObjectTypeKind {
+    type Err = ParseObjectTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use WindowsObjectTypeKind::*;
+
+        match s {
+            "ActivationObject" => Ok(ActivationObject),
+            "ActivityReference" => Ok(ActivityReference),
+            "Adapter" => Ok(Adapter),
+            "ALPC Port" => Ok(AlpcPort),
+            "Callback" => Ok(Callback),
+            "Composition" => Ok(Composition),
+            "Controller" => Ok(Controller),
+            "CoreMessaging" => Ok(CoreMessaging),
+            "CoverageSampler" => Ok(CoverageSampler),
+            "CpuPartition" => Ok(CpuPartition),
+            "DebugObject" => Ok(DebugObject),
+            "Desktop" => Ok(Desktop),
+            "Device" => Ok(Device),
+            "Directory" => Ok(Directory),
+            "DmaAdapter" => Ok(DmaAdapter),
+            "Driver" => Ok(Driver),
+            "DxgkCompositionObject" => Ok(DxgkCompositionObject),
+            "DxgkDisplayManagerObject" => Ok(DxgkDisplayManagerObject),
+            "DxgkSharedBundleObject" => Ok(DxgkSharedBundleObject),
+            "DxgkSharedKeyedMutexObject" => Ok(DxgkSharedKeyedMutexObject),
+            "DxgkSharedProtectedSessionObject" => Ok(DxgkSharedProtectedSessionObject),
+            "DxgkSharedResource" => Ok(DxgkSharedResource),
+            "DxgkSharedSwapChainObject" => Ok(DxgkSharedSwapChainObject),
+            "DxgkSharedSyncObject" => Ok(DxgkSharedSyncObject),
+            "EnergyTracker" => Ok(EnergyTracker),
+            "EtwConsumer" => Ok(EtwConsumer),
+            "EtwRegistration" => Ok(EtwRegistration),
+            "EtwSessionDemuxEntry" => Ok(EtwSessionDemuxEntry),
+            "Event" => Ok(Event),
+            "File" => Ok(File),
+            "FilterCommunicationPort" => Ok(FilterCommunicationPort),
+            "FilterConnectionPort" => Ok(FilterConnectionPort),
+            "IoCompletion" => Ok(IoCompletion),
+            "IoCompletionReserve" => Ok(IoCompletionReserve),
+            "IoRing" => Ok(IoRing),
+            "IRTimer" => Ok(IRTimer),
+            "Job" => Ok(Job),
+            "Key" => Ok(Key),
+            "KeyedEvent" => Ok(KeyedEvent),
+            "Mutant" => Ok(Mutant),
+            "NdisCmState" => Ok(NdisCmState),
+            "Partition" => Ok(Partition),
+            "PcwObject" => Ok(PcwObject),
+            "PowerRequest" => Ok(PowerRequest),
+            "Port" => Ok(Port),
+            "Process" => Ok(Process),
+            "ProcessStateChange" => Ok(ProcessStateChange),
+            "Profile" => Ok(Profile),
+            "PsSiloContextNonPaged" => Ok(PsSiloContextNonPaged),
+            "PsSiloContextPaged" => Ok(PsSiloContextPaged),
+            "RawInputManager" => Ok(RawInputManager),
+            "RegistryTransaction" => Ok(RegistryTransaction),
+            "Section" => Ok(Section),
+            "Semaphore" => Ok(Semaphore),
+            "Session" => Ok(Session),
+            "SymbolicLink" => Ok(SymbolicLink),
+            "Thread" => Ok(Thread),
+            "ThreadStateChange" => Ok(ThreadStateChange),
+            "Timer" => Ok(Timer),
+            "TmEn" => Ok(TmEn),
+            "TmRm" => Ok(TmRm),
+            "TmTm" => Ok(TmTm),
+            "TmTx" => Ok(TmTx),
+            "Token" => Ok(Token),
+            "TpWorkerFactory" => Ok(TpWorkerFactory),
+            "Type" => Ok(Type),
+            "UserApcReserve" => Ok(UserApcReserve),
+            "WaitCompletionPacket" => Ok(WaitCompletionPacket),
+            "WindowStation" => Ok(WindowStation),
+            "WmiGuid" => Ok(WmiGuid),
+            _ => Err(ParseObjectTypeError),
+        }
+    }
+}
+
 /// Represents a specific kind of Windows object.
 pub enum WindowsObjectKind<'a, Driver>
 where
@@ -665,4 +814,7 @@ where
 
     /// A thread object (`_ETHREAD`).
     Thread(WindowsThread<'a, Driver>),
+
+    /// An object type object (`_OBJECT_TYPE`).
+    Type(WindowsObjectType<'a, Driver>),
 }
