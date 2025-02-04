@@ -21,7 +21,7 @@ missing_docs = "warn"
 bitflags = "2"
 elf = "0.7"
 indexmap = "2"
-kdmp-parser = { git = "https://github.com/0vercl0k/kdmp-parser-rs.git", rev = "refs/pull/9/head" }
+kdmp-parser = "0.6"
 libc = "0.2"
 lru = "0.12"
 memchr = "2.7"

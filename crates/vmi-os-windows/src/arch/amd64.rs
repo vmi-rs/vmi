@@ -98,7 +98,7 @@ where
 
             match vmi.read(base_address, &mut data) {
                 Ok(()) => {}
-                Err(VmiError::PageFault(_)) => continue,
+                Err(VmiError::Translation(_)) => continue,
                 Err(err) => return Err(err),
             }
 

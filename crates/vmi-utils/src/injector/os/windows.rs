@@ -620,12 +620,12 @@ where
 
         match self.dispatch(&vmi) {
             Ok(response) => response,
-            Err(VmiError::PageFault(pfs)) => {
+            Err(VmiError::Translation(pfs)) => {
                 let pf = pfs[0];
 
                 tracing::debug!(?pf, "injecting page fault");
-                let _ = vmi
-                    .inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.address, 0));
+                let _ =
+                    vmi.inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.va, 0));
 
                 VmiEventResponse::default()
             }

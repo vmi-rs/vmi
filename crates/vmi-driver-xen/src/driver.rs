@@ -151,7 +151,7 @@ where
                 return Err(Error::NotSupported);
             }
 
-            xen_access = xen::MemoryAccess::R2PW;
+            xen_access = xen::MemoryAccess::R_PW;
         }
 
         if view.0 == 0 {

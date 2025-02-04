@@ -68,7 +68,9 @@ pub mod __private {
         }
     }
 
-    pub fn __find_region<'a, Driver>(
+    /// Finds a first mapped region with the specified filename in the current
+    /// process. The filename is case-insensitive. Returns the region if found.
+    pub fn find_region<'a, Driver>(
         process: &impl VmiOsProcess<'a, Driver>,
         filename: &str,
     ) -> Result<Option<impl VmiOsRegion<'a, Driver>>, VmiError>
@@ -111,7 +113,7 @@ pub mod __private {
     {
         let current_process = vmi.os().current_process()?;
 
-        let region = match __find_region(&current_process, filename)? {
+        let region = match find_region(&current_process, filename)? {
             Some(image) => image,
             None => return Ok(None),
         };

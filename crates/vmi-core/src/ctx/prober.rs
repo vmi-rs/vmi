@@ -2,20 +2,20 @@ use std::cell::RefCell;
 
 use indexmap::IndexSet;
 
-use crate::{PageFault, PageFaults, VmiError};
+use crate::{AddressContext, PageFaults, VmiError};
 
 /// Prober for safely handling page faults during memory access operations.
 pub struct VmiProber {
     /// The set of restricted page faults that are allowed to occur.
-    restricted: IndexSet<PageFault>,
+    restricted: IndexSet<AddressContext>,
 
     /// The set of page faults that have occurred.
-    page_faults: RefCell<IndexSet<PageFault>>,
+    page_faults: RefCell<IndexSet<AddressContext>>,
 }
 
 impl VmiProber {
     /// Creates a new prober.
-    pub fn new(restricted: &IndexSet<PageFault>) -> Self {
+    pub fn new(restricted: &IndexSet<AddressContext>) -> Self {
         Self {
             restricted: restricted.clone(),
             page_faults: RefCell::new(IndexSet::new()),
@@ -27,7 +27,7 @@ impl VmiProber {
     pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
         match result {
             Ok(value) => Ok(Some(value)),
-            Err(VmiError::PageFault(pfs)) => {
+            Err(VmiError::Translation(pfs)) => {
                 self.check_restricted(pfs);
                 Ok(None)
             }
@@ -61,11 +61,11 @@ impl VmiProber {
         let mut page_faults = self.page_faults.borrow_mut();
         for pf in pfs {
             if !self.restricted.contains(&pf) {
-                tracing::trace!(va = %pf.address, "page fault");
+                tracing::trace!(va = %pf.va, "page fault");
                 page_faults.insert(pf);
             }
             else {
-                tracing::trace!(va = %pf.address, "page fault (restricted)");
+                tracing::trace!(va = %pf.va, "page fault (restricted)");
             }
         }
     }

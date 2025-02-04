@@ -1,5 +1,80 @@
 //! This example demonstrates how to use the VMI library to analyze a Windows
 //! kernel dump file.
+//!
+//! # Possible log output
+//!
+//! ```text
+//! Kernel Modules:
+//! =================================================
+//! Module @ 0xffffd486baa62b80
+//!     Base Address: 0xfffff8016e80f000
+//!     Size: 17068032
+//!     Name: ntoskrnl.exe
+//!     Full Name: \SystemRoot\system32\ntoskrnl.exe
+//! Module @ 0xffffd486baa77050
+//!     Base Address: 0xfffff8016fa00000
+//!     Size: 24576
+//!     Name: hal.dll
+//!     Full Name: \SystemRoot\system32\hal.dll
+//! Module @ 0xffffd486baa77200
+//!     Base Address: 0xfffff8016fa10000
+//!     Size: 45056
+//!     Name: kdcom.dll
+//!     Full Name: \SystemRoot\system32\kd.dll
+//!
+//! ...
+//!
+//! Object Tree (root directory: 0xffffbe8b62c7ae10):
+//! =================================================
+//! Mutant: \PendingRenameMutex (Object: 0xffffd486bb6d6bd0)
+//! Directory: \ObjectTypes (Object: 0xffffbe8b62c900a0)
+//!     Type: \ObjectTypes\TmTm (Object: 0xffffd486bab8a220)
+//!     Type: \ObjectTypes\CpuPartition (Object: 0xffffd486baabdda0)
+//!     Type: \ObjectTypes\Desktop (Object: 0xffffd486baabc220)
+//!
+//! ...
+//!
+//! Process @ 0xffffd486be782080, PID: 1244
+//!     Name: svchost.exe
+//!     Session: 0
+//!     Threads:
+//!         Thread @ 0xffffd486be789080, TID: 1248
+//!         Thread @ 0xffffd486be7f0080, TID: 1464
+//!         Thread @ 0xffffd486be7ef080, TID: 1504
+//!         Thread @ 0xffffd486be81f040, TID: 1548
+//!         Thread @ 0xffffd486c0129080, TID: 4896
+//!         Thread @ 0xffffd486bfc52080, TID: 4876
+//!         Thread @ 0xffffd486bfcf5080, TID: 6832
+//!         Thread @ 0xffffd486bf57b080, TID: 3920
+//!         Thread @ 0xffffd486c0487080, TID: 6468
+//!         Thread @ 0xffffd486c012d080, TID: 4312
+//!     Regions:
+//!         Region @ 0xffffd486be7260d0: 0x000000007ffe0000-0x000000007ffe1000 MemoryAccess(R) Private
+//!         Region @ 0xffffd486be726260: 0x000000fb1a220000-0x000000fb1a2a0000 MemoryAccess(R | W) Private
+//!         ...
+//!         Region @ 0xffffd486be6f92f0: 0x00007ffa62cf0000-0x00007ffa62e9d000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\user32.dll
+//!         Region @ 0xffffd486be7a4a30: 0x00007ffa62ea0000-0x00007ffa62f46000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\sechost.dll
+//!         Region @ 0xffffd486be46e140: 0x00007ffa63190000-0x00007ffa63240000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\clbcatq.dll
+//!         Region @ 0xffffd486be6be530: 0x00007ffa632b0000-0x00007ffa633c7000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\rpcrt4.dll
+//!         Region @ 0xffffd486be6f87b0: 0x00007ffa63400000-0x00007ffa634a7000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\msvcrt.dll
+//!         Region @ 0xffffd486be6f60f0: 0x00007ffa63d50000-0x00007ffa63f67000 MemoryAccess(R | W | X) Mapped (Exe): \Windows\System32\ntdll.dll
+//!     PEB:
+//!         Current Directory:    C:\Windows\system32\
+//!         DLL Path:
+//!         Image Path Name:      C:\Windows\system32\svchost.exe
+//!         Command Line:         C:\Windows\system32\svchost.exe -k LocalServiceNetworkRestricted -p
+//!     Handles:
+//!         0004: Object: ffffd486be74cc60 GrantedAccess: 001f0003 Entry: 0xffffbe8b6e74d010
+//!             Type: Event, Path: <no-path>
+//!         0008: Object: ffffd486be74c9e0 GrantedAccess: 001f0003 Entry: 0xffffbe8b6e74d020
+//!             Type: Event, Path: <no-path>
+//!         000c: Object: ffffbe8b6e620900 GrantedAccess: 00000009 Entry: 0xffffbe8b6e74d030
+//!             Type: Key, Path: \REGISTRY\MACHINE\SOFTWARE\SOFTWARE\MICROSOFT\WINDOWS NT\CURRENTVERSION\IMAGE FILE EXECUTION OPTIONS
+//!         0010: Object: ffffd486be76f960 GrantedAccess: 00000804 Entry: 0xffffbe8b6e74d040
+//!             Type: EtwRegistration, Path: <no-path>
+//!
+//! ...
+//! ```
 
 use isr::cache::{IsrCache, JsonCodec};
 use vmi::{
@@ -7,7 +82,8 @@ use vmi::{
     driver::kdmp::VmiKdmpDriver,
     os::{
         windows::{WindowsDirectoryObject, WindowsOs, WindowsOsExt, WindowsProcess},
-        VmiOsMapped as _, VmiOsProcess as _, VmiOsRegion as _, VmiOsRegionKind, VmiOsThread as _,
+        VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _, VmiOsRegion as _, VmiOsRegionKind,
+        VmiOsThread as _,
     },
     VcpuId, VmiCore, VmiError, VmiSession, VmiState, VmiVa as _,
 };
@@ -17,9 +93,34 @@ type Driver = VmiKdmpDriver<Arch>;
 
 fn handle_error(err: VmiError) -> Result<String, VmiError> {
     match err {
-        VmiError::PageFault(pf) => Ok(format!("PF({pf:?})")),
+        VmiError::Translation(pf) => Ok(format!("PF({pf:?})")),
         _ => Err(err),
     }
+}
+
+// Enumerate processes in the system.
+fn enumerate_kernel_modules(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result<(), VmiError> {
+    for module in vmi.os().modules()? {
+        let module = module?;
+
+        let module_va = module.va();
+        let base_address = module.base_address()?; // `KLDR_DATA_TABLE_ENTRY.DllBase`
+        let size = module.size()?; // `KLDR_DATA_TABLE_ENTRY.SizeOfImage` pointer
+        let name = module.name()?; // `KLDR_DATA_TABLE_ENTRY.BaseDllName`
+        let full_name = match module.full_name() {
+            // `KLDR_DATA_TABLE_ENTRY.FullDllName`
+            Ok(full_name) => full_name,
+            Err(err) => handle_error(err)?,
+        };
+
+        println!("Module @ {module_va}");
+        println!("    Base Address: {base_address}");
+        println!("    Size: {size}");
+        println!("    Name: {name}");
+        println!("    Full Name: {full_name}");
+    }
+
+    Ok(())
 }
 
 // Enumerate entries in a `_OBJECT_DIRECTORY`.
@@ -290,8 +391,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_ansi(false)
         .init();
 
+    // First argument is the path to the dump file.
+    let args = std::env::args().collect::<Vec<_>>();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <dump-file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let dump_file = &args[1];
+
     // Setup VMI.
-    let driver = Driver::new("/root/__xdyna/MEMORY-win11.DMP")?;
+    let driver = Driver::new(dump_file)?;
     let core = VmiCore::new(driver)?;
 
     let registers = core.registers(VcpuId(0))?;
@@ -314,6 +424,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let vmi = session.with_registers(&registers);
     let root_directory = vmi.os().object_root_directory()?;
+
+    println!("Kernel Modules:");
+    println!("=================================================");
+    enumerate_kernel_modules(&vmi)?;
 
     println!("Object Tree (root directory: {}):", root_directory.va());
     println!("=================================================");

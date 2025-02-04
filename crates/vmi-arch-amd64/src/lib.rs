@@ -217,12 +217,9 @@ impl Amd64 {
     ///
     /// - **No Paging**: When paging is disabled (CR0.PG = 0)
     /// - **32-bit Paging**: Used when CR0.PG = 1 and CR4.PAE = 0
-    /// - **PAE Paging**: Used when CR0.PG = 1, CR4.PAE = 1, and IA32_EFER.LME =
-    ///   0
-    /// - **4-level Paging**: Used when CR0.PG = 1, CR4.PAE = 1, IA32_EFER.LME =
-    ///   1, and CR4.LA57 = 0
-    /// - **5-level Paging**: Used when CR0.PG = 1, CR4.PAE = 1, IA32_EFER.LME =
-    ///   1, and CR4.LA57 = 1
+    /// - **PAE Paging**: Used when CR0.PG = 1, CR4.PAE = 1, and IA32_EFER.LME = 0
+    /// - **4-level Paging**: Used when CR0.PG = 1, CR4.PAE = 1, IA32_EFER.LME = 1, and CR4.LA57 = 0
+    /// - **5-level Paging**: Used when CR0.PG = 1, CR4.PAE = 1, IA32_EFER.LME = 1, and CR4.LA57 = 1
     ///
     /// If paging is disabled, the function returns `None`.
     pub fn paging_mode(registers: &Registers) -> Option<PagingMode> {

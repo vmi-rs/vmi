@@ -24,7 +24,7 @@ pub use self::{
     },
     ctx::{VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiState},
     driver::VmiDriver,
-    error::{PageFault, PageFaults, VmiError},
+    error::{PageFaults, VmiError},
     event::{VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags},
     handler::VmiHandler,
     os::VmiOs,
