@@ -13,7 +13,7 @@ use vmi_macros::derive_os_wrapper;
 
 pub use self::{
     dummy::NoOS,
-    image::{VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsImage},
+    image::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
     mapped::VmiOsMapped,
     module::VmiOsModule,
     process::{ProcessId, ProcessObject, VmiOsProcess},

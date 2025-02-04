@@ -49,7 +49,7 @@ where
     recipe![
         Recipe::<_, WindowsOs<Driver>, _>::new(data),
         {
-            inj! {
+            inject! {
                 user32!MessageBoxA(
                     0,                          // hWnd
                     data![text],                // lpText

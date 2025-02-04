@@ -1,6 +1,6 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{VmiOsImageArchitecture, ProcessId, ProcessObject, VmiOsProcess},
+    os::{ProcessId, ProcessObject, VmiOsImageArchitecture, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiOs, VmiState, VmiVa,
 };
 

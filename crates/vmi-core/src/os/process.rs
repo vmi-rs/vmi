@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{VmiOsImageArchitecture, VmiOs};
+use super::{VmiOs, VmiOsImageArchitecture};
 use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
 /// A process ID within a system.

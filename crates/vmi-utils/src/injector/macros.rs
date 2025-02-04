@@ -152,7 +152,7 @@ pub mod __private {
 /// - `vmi!()` - Access the VMI context
 /// - `registers!()` - Access the registers
 /// - `data!()` - Access recipe data
-/// - `inj!()` - Inject and call functions
+/// - `inject!()` - Inject and call functions
 /// - `copy_to_stack!()` - Copy data to the stack
 ///
 /// [`RecipeContext`]: super::RecipeContext
@@ -230,7 +230,7 @@ macro_rules! _private_recipe {
                     /// # Example
                     ///
                     /// ```compile_fail
-                    /// inj! {
+                    /// inject! {
                     ///     user32!MessageBoxA(
                     ///         0,                          // hWnd
                     ///         data![text],                // lpText
@@ -240,7 +240,7 @@ macro_rules! _private_recipe {
                     /// }
                     /// ```
                     #[expect(unused_macros)]
-                    macro_rules! inj {
+                    macro_rules! inject {
                         ($image:ident!$function:ident($d($d arg:expr),*)) => {
                             $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
                         };
@@ -263,7 +263,7 @@ macro_rules! _private_recipe {
                     /// // Allocate a value on the stack to store the output parameter.
                     /// data![bytes_written_ptr] = copy_to_stack!(0u64)?;
                     ///
-                    /// inj! {
+                    /// inject! {
                     ///     kernel32!WriteFile(
                     ///         data![handle],              // hFile
                     ///         data![content],             // lpBuffer
@@ -319,7 +319,7 @@ macro_rules! _private_recipe {
             //
             // The parent macro can be invoked as follows:
             // ```
-            // inj! {
+            // inject! {
             //     kernel32!VirtualAlloc(
             //         0,                          // lpAddress
             //         0x1000,                     // dwSize

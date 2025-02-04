@@ -96,7 +96,8 @@ where
                 root,
                 WindowsWow64Kind::Native,
             ))
-        } else {
+        }
+        else {
             let peb32 = match &offsets.ext {
                 Some(OffsetsExt::V1(_)) => wow64,
                 Some(OffsetsExt::V2(v2)) => self
@@ -311,7 +312,8 @@ where
 
         if wow64process.is_null() {
             Ok(VmiOsImageArchitecture::Amd64)
-        } else {
+        }
+        else {
             Ok(VmiOsImageArchitecture::X86)
         }
     }
@@ -425,9 +427,11 @@ where
         while let Some(vad) = next {
             if vpn < vad.starting_vpn()? {
                 next = vad.left_child()?;
-            } else if vpn > vad.ending_vpn()? {
+            }
+            else if vpn > vad.ending_vpn()? {
                 next = vad.right_child()?;
-            } else {
+            }
+            else {
                 return Ok(Some(vad));
             }
         }

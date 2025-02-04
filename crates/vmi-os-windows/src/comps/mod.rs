@@ -23,7 +23,7 @@ pub use self::{
     name_info::WindowsObjectHeaderNameInfo,
     object::{
         ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject, WindowsObject,
-        WindowsObjectTypeKind, WindowsObjectType, WindowsProcess, WindowsSectionObject,
+        WindowsObjectType, WindowsObjectTypeKind, WindowsProcess, WindowsSectionObject,
         WindowsThread,
     },
     object_attributes::WindowsObjectAttributes,

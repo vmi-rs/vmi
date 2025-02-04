@@ -204,7 +204,8 @@ where
 
                 current = left;
             }
-        } else {
+        }
+        else {
             loop {
                 let parent = self.parent_node(current)?;
 

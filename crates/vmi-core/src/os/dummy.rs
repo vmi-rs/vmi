@@ -1,6 +1,7 @@
 use super::{
-    VmiOsImageArchitecture, VmiOsImageSymbol, ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOs,
-    VmiOsImage, VmiOsMapped, VmiOsModule, VmiOsProcess, VmiOsRegion, VmiOsRegionKind, VmiOsThread,
+    ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOs, VmiOsImage, VmiOsImageArchitecture,
+    VmiOsImageSymbol, VmiOsMapped, VmiOsModule, VmiOsProcess, VmiOsRegion, VmiOsRegionKind,
+    VmiOsThread,
 };
 use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
 

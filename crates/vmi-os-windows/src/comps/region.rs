@@ -331,7 +331,8 @@ where
         let vad_type = self.vad_type()?;
         if vad_type == VadImageMap {
             Ok(VmiOsRegionKind::MappedImage(region_kind))
-        } else {
+        }
+        else {
             Ok(VmiOsRegionKind::MappedData(region_kind))
         }
     }

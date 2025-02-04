@@ -150,7 +150,7 @@ where
             const CREATE_ALWAYS: u64 = 2;
             const FILE_ATTRIBUTE_NORMAL: u64 = 0x80;
 
-            inj! {
+            inject! {
                 kernel32!CreateFileA(
                     &data![target_path],        // lpFileName
                     GENERIC_WRITE,              // dwDesiredAccess
@@ -197,7 +197,7 @@ where
             let chunk_size = usize::min(content.len(), data![chunk_size]);
             let chunk = content[..chunk_size].to_vec();
 
-            inj! {
+            inject! {
                 kernel32!WriteFile(
                     data![handle],              // hFile
                     chunk,                      // lpBuffer
@@ -246,7 +246,7 @@ where
             // Allocate a value on the stack to store the output parameter.
             data![bytes_written_ptr] = copy_to_stack!(0u64)?;
 
-            inj! {
+            inject! {
                 kernel32!WriteFile(
                     data![handle],              // hFile
                     chunk,                      // lpBuffer
@@ -285,7 +285,7 @@ where
                 "step 4: kernel32!CloseHandle()"
             );
 
-            inj! {
+            inject! {
                 kernel32!CloseHandle(
                     data![handle]               // hObject
                 )

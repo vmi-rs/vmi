@@ -4,10 +4,7 @@ use vmi_core::VcpuId;
 use crate::{ArchAdapter, Error, KdmpDriver};
 
 impl ArchAdapter for Amd64 {
-    fn registers(
-        driver: &KdmpDriver<Self>,
-        _vcpu: VcpuId,
-    ) -> Result<Self::Registers, Error> {
+    fn registers(driver: &KdmpDriver<Self>, _vcpu: VcpuId) -> Result<Self::Registers, Error> {
         let headers = driver.dump.headers();
 
         Ok(Registers {
