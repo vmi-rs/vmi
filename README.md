@@ -372,7 +372,7 @@ The core components of the framework are:
   during event handling, combining [`VmiState`] with a [`VmiEvent`].
 
 - [`VmiError`]: Represents errors that can occur during VMI operations,
-  including translation faults ([`PageFault`]).
+  including translation faults ([`Translation`]).
 
 ### Relationship between `VmiCore`, `VmiSession`, `VmiState` and `VmiContext`
 
@@ -574,7 +574,7 @@ This project is licensed under the MIT license.
 [`Architecture`]: https://docs.rs/vmi/latest/vmi/trait.Architecture.html
 [`Gfn`]: https://docs.rs/vmi/latest/vmi/struct.Gfn.html
 [`Pa`]: https://docs.rs/vmi/latest/vmi/latest/vmi/struct.Pa.html
-[`PageFault`]: https://docs.rs/vmi/latest/vmi/struct.PageFault.html
+[`Translation`]: https://docs.rs/vmi/0.1.1/vmi/enum.VmiError.html#variant.Translation
 [`TranslationMechanism`]: https://docs.rs/vmi/latest/vmi/enum.TranslationMechanism.html
 [`Va`]: https://docs.rs/vmi/latest/vmi/latest/vmi/struct.Va.html
 [`VmiContext`]: https://docs.rs/vmi/latest/vmi/struct.VmiContext.html

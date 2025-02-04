@@ -17,6 +17,9 @@ repository = "https://github.com/vmi-rs/vmi"
 [workspace.lints.rust]
 missing_docs = "warn"
 
+[workspace.lints.clippy]
+doc_overindented_list_items = "allow"
+
 [workspace.dependencies]
 bitflags = "2"
 elf = "0.7"

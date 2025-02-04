@@ -58,7 +58,7 @@ where
     ///
     /// * Key: (View, GFN)
     /// * Value: Map of breakpoints, where each breakpoint is identified by
-    ///          (Key, AddressContext) and associated with a set of Breakpoints
+    ///   (Key, AddressContext) and associated with a set of Breakpoints
     ///
     /// This map is synchronized with `active_global_breakpoints`, `active_locations`,
     /// and `active_gfns_by_view`.

@@ -46,7 +46,7 @@ impl VmiProber {
     ) -> Result<Option<T>, VmiError> {
         match result {
             Ok(value) => Ok(Some(value)),
-            Err(VmiError::PageFault(pfs)) => {
+            Err(VmiError::Translation(pfs)) => {
                 debug_assert_eq!(pfs.len(), 1);
                 self.check_restricted_range(pfs[0], ctx, length);
                 Ok(None)
