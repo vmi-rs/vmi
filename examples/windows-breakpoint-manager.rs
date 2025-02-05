@@ -402,12 +402,15 @@ where
 
         let FileHandle = vmi.os().function_argument(0)?;
 
-        let handle_table_entry = match vmi
-            .os()
-            .current_process()?
-            .handle_table()?
-            .lookup(FileHandle)?
-        {
+        let handle_table = match vmi.os().current_process()?.handle_table()? {
+            Some(handle_table) => handle_table,
+            None => {
+                tracing::warn!("No handle table found");
+                return Ok(());
+            }
+        };
+
+        let handle_table_entry = match handle_table.lookup(FileHandle)? {
             Some(handle_table_entry) => handle_table_entry,
             None => {
                 tracing::warn!(FileHandle = %Hex(FileHandle), "No handle table entry found");
@@ -469,10 +472,9 @@ where
         // (23H2, build 22631).
         debug_assert_eq!(parent_process_id, process.parent_id()?);
 
-        let peb = process.peb()?.process_parameters()?;
-
         let name = process.name()?;
         let image_base = process.image_base()?;
+        let peb = process.peb()?;
 
         tracing::info!(
             %process_id,

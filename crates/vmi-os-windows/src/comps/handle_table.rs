@@ -2,7 +2,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
 use super::{macros::impl_offsets, WindowsHandleTableEntry};
-use crate::{ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, HandleTableEntryIterator, WindowsOs};
 
 /// A Windows handle table.
 ///
@@ -111,28 +111,8 @@ where
     ///
     /// The functionality is similar to the Windows kernel's internal
     /// `ExpSnapShotHandleTables()` function.
-    pub fn iter(
-        &self,
-    ) -> Result<impl Iterator<Item = (u64, WindowsHandleTableEntry<'a, Driver>)>, VmiError> {
-        const HANDLE_VALUE_INC: u64 = 4;
-
-        let mut entries = Vec::new();
-        let mut handle = 0;
-
-        loop {
-            let entry = match self.lookup(handle)? {
-                Some(entry) => entry,
-                None => break,
-            };
-
-            if entry.object()?.is_some() {
-                entries.push((handle, entry));
-            }
-
-            handle += HANDLE_VALUE_INC;
-        }
-
-        Ok(entries.into_iter())
+    pub fn iter(&'a self) -> Result<HandleTableEntryIterator<'a, Driver>, VmiError> {
+        Ok(HandleTableEntryIterator::new(self))
     }
 
     /// Performs a lookup in the handle table to find the address of a handle

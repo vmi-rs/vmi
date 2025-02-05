@@ -184,26 +184,27 @@ fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiErr
 
     // Get the handle table from `_EPROCESS.ObjectTable`.
     let handle_table = match process.handle_table() {
-        Ok(handle_table) => handle_table,
+        Ok(Some(handle_table)) => handle_table,
+        Ok(None) => {
+            println!("        (No handle table)");
+            return Ok(());
+        }
         Err(err) => {
             tracing::error!(?err, "Failed to get handle table");
             return Ok(());
         }
     };
 
-    let handle_table_iterator = match handle_table.iter() {
-        Ok(iterator) => iterator,
-        Err(err) => {
-            println!(
-                "Failed to get handle table iterator: {}",
-                handle_error(err)?
-            );
-            return Ok(());
-        }
-    };
-
     // Iterate over `_HANDLE_TABLE_ENTRY` items.
-    for (handle, entry) in handle_table_iterator {
+    for handle_entry in handle_table.iter()? {
+        let (handle, entry) = match handle_entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                println!("Failed to get handle entry: {}", handle_error(err)?);
+                continue;
+            }
+        };
+
         let attributes = match entry.attributes() {
             Ok(attributes) => attributes,
             Err(err) => {
