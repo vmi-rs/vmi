@@ -318,30 +318,34 @@ fn enumerate_threads(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
 
 // Print process information in a `_PEB.ProcessParameters`.
 fn print_process_parameters(process: &WindowsProcess<Driver>) -> Result<(), VmiError> {
-    let parameters = match process.peb()?.process_parameters() {
-        Ok(parameters) => parameters,
+    let peb = match process.peb() {
+        Ok(Some(peb)) => peb,
+        Ok(None) => {
+            println!("        (No PEB)");
+            return Ok(());
+        }
         Err(err) => {
-            println!("Failed to get process parameters: {}", handle_error(err)?);
+            println!("Failed to get PEB: {}", handle_error(err)?);
             return Ok(());
         }
     };
 
-    let current_directory = match parameters.current_directory() {
+    let current_directory = match peb.current_directory() {
         Ok(current_directory) => current_directory,
         Err(err) => handle_error(err)?,
     };
 
-    let dll_path = match parameters.dll_path() {
+    let dll_path = match peb.dll_path() {
         Ok(dll_path) => dll_path,
         Err(err) => handle_error(err)?,
     };
 
-    let image_path_name = match parameters.image_path_name() {
+    let image_path_name = match peb.image_path_name() {
         Ok(image_path_name) => image_path_name,
         Err(err) => handle_error(err)?,
     };
 
-    let command_line = match parameters.command_line() {
+    let command_line = match peb.command_line() {
         Ok(command_line) => command_line,
         Err(err) => handle_error(err)?,
     };
