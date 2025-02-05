@@ -136,7 +136,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_EPROCESS.ObjectTable`.
-    pub fn handle_table(&self) -> Result<WindowsHandleTable<'a, Driver>, VmiError> {
+    pub fn handle_table(&self) -> Result<Option<WindowsHandleTable<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -144,7 +144,11 @@ where
             .vmi
             .read_va_native(self.va + EPROCESS.ObjectTable.offset())?;
 
-        Ok(WindowsHandleTable::new(self.vmi, handle_table))
+        if handle_table.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsHandleTable::new(self.vmi, handle_table)))
     }
 
     /// Returns the root of the virtual address descriptor (VAD) tree.
