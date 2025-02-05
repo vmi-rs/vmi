@@ -160,7 +160,6 @@ where
             None => panic!("OffsetsExt not set"),
         };
 
-        // `VadRoot` can be `NULL`.
         if node.is_null() {
             return Ok(None);
         }

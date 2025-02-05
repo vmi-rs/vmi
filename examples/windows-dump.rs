@@ -105,7 +105,7 @@ fn enumerate_kernel_modules(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result
 
         let module_va = module.va();
         let base_address = module.base_address()?; // `KLDR_DATA_TABLE_ENTRY.DllBase`
-        let size = module.size()?; // `KLDR_DATA_TABLE_ENTRY.SizeOfImage` pointer
+        let size = module.size()?; // `KLDR_DATA_TABLE_ENTRY.SizeOfImage`
         let name = module.name()?; // `KLDR_DATA_TABLE_ENTRY.BaseDllName`
         let full_name = match module.full_name() {
             // `KLDR_DATA_TABLE_ENTRY.FullDllName`

@@ -24,22 +24,22 @@
 //!  INFO injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: step 2: kernel32!WriteFile() handle=0x0000000000000000
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x20)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006358d70, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006358d70, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x6)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006356fb0, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006356fb0, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=0 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x4)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006355eb0, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006355eb0, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x4)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006354db0, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006354db0, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x4)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006353cb0, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006353cb0, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x4)
-//!  WARN injecting page fault pf=AddressContext { address: 0x0000000006352ff0, root: 0x0000000070749000 }
+//!  WARN injecting page fault pf=AddressContext { va: 0x0000000006352ff0, root: 0x0000000070749000 }
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=2 (x8)
 //! DEBUG injector{vcpu=2 rip=0x0000000077c618ca}:memory_access: recipe step index=3
