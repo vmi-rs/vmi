@@ -138,7 +138,9 @@ where
 
     /// Returns the directory object associated with the object name.
     ///
-    /// Shortcut for `self.name_info()?.directory()`.
+    /// Shortcut for [`self.name_info()?.directory()`].
+    ///
+    /// [`self.name_info()?.directory()`]: WindowsObjectHeaderNameInfo::directory
     pub fn directory(&self) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         let name_info = match self.name_info()? {
             Some(name_info) => name_info,
@@ -150,7 +152,9 @@ where
 
     /// Returns the name of the object.
     ///
-    /// Shortcut for `self.name_info()?.name()`.
+    /// Shortcut for [`self.name_info()?.name()`].
+    ///
+    /// [`self.name_info()?.name()`]: WindowsObjectHeaderNameInfo::name
     pub fn name(&self) -> Result<Option<String>, VmiError> {
         let name_info = match self.name_info()? {
             Some(name_info) => name_info,
@@ -162,7 +166,9 @@ where
 
     /// Constructs the full path of a named object from its name information.
     ///
-    /// Shortcut for `self.name_info()?.full_path()`.
+    /// Shortcut for [`self.name_info()?.full_path()`].
+    ///
+    /// [`self.name_info()?.full_path()`]: WindowsObjectHeaderNameInfo::full_path
     pub fn full_path(&self) -> Result<Option<String>, VmiError> {
         match self.kind()? {
             Some(WindowsObjectKind::File(file)) => Ok(Some(file.full_path()?)),
@@ -223,18 +229,18 @@ where
 
     /// Returns the object type name.
     ///
-    /// # Implementation Details
+    /// Shortcut for [`self.object_type()?.name()`].
     ///
-    /// Shortcut for `self.object_type()?.name()`.
+    /// [`self.object_type()?.name()`]: WindowsObjectType::name
     pub fn type_name(&self) -> Result<String, VmiError> {
         self.object_type()?.name()
     }
 
     /// Returns the object type kind.
     ///
-    /// # Implementation Details
+    /// Shortcut for [`self.object_type()?.kind()`].
     ///
-    /// Shortcut for `self.object_type()?.kind()`.
+    /// [`self.object_type()?.kind()`]: WindowsObjectType::kind
     pub fn type_kind(&self) -> Result<Option<WindowsObjectTypeKind>, VmiError> {
         self.object_type()?.kind()
     }

@@ -136,9 +136,9 @@ where
 
     /// Constructs the full path of the file object associated with the section.
     ///
-    /// # Implementation Details
+    /// Shortcut for [`self.file_object()?.full_path()`].
     ///
-    /// Shortcut for `file_object()?.full_path()`.
+    /// [`self.file_object()?.full_path()`]: WindowsFileObject::full_path
     pub fn full_path(&self) -> Result<Option<String>, VmiError> {
         match self.file_object() {
             Ok(Some(file_object)) => Ok(Some(file_object.full_path()?)),
