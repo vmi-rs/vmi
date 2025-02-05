@@ -9,7 +9,13 @@ and this project adheres to **_will adhere to [Semantic Versioning](https://semv
 
 ### Changed
 
+- These functions now return Option:
+    - WindowsProcess::peb()
+    - WindowsProcess::handle_table()
+
 ### Added
+
+- WindowsHandleTable::iter() now returns HandleTableEntryIterator
 
 ### Fixed
 
