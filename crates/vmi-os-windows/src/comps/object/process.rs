@@ -77,7 +77,7 @@ where
     /// if the process is a 32-bit process. If the field is `NULL`, the process
     /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
     /// to get the 32-bit PEB.
-    pub fn peb(&self) -> Result<WindowsPeb<'a, Driver>, VmiError> {
+    pub fn peb(&self) -> Result<Option<WindowsPeb<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
@@ -90,12 +90,16 @@ where
         if wow64.is_null() {
             let peb64 = self.vmi.read_va_native(self.va + EPROCESS.Peb.offset())?;
 
-            Ok(WindowsPeb::new(
+            if peb64.is_null() {
+                return Ok(None);
+            }
+
+            Ok(Some(WindowsPeb::new(
                 self.vmi,
                 peb64,
                 root,
                 WindowsWow64Kind::Native,
-            ))
+            )))
         }
         else {
             let peb32 = match &offsets.ext {
@@ -106,12 +110,16 @@ where
                 None => panic!("OffsetsExt not set"),
             };
 
-            Ok(WindowsPeb::new(
+            if peb32.is_null() {
+                return Ok(None);
+            }
+
+            Ok(Some(WindowsPeb::new(
                 self.vmi,
                 peb32,
                 root,
                 WindowsWow64Kind::X86,
-            ))
+            )))
         }
     }
 
