@@ -116,4 +116,40 @@ where
             self.vmi, va, self.root, self.kind,
         ))
     }
+
+    /// Returns the current directory.
+    ///
+    /// Shortcut for [`self.process_parameters()?.current_directory()`].
+    ///
+    /// [`self.process_parameters()?.current_directory()`]: WindowsProcessParameters::current_directory
+    pub fn current_directory(&self) -> Result<String, VmiError> {
+        self.process_parameters()?.current_directory()
+    }
+
+    /// Returns the DLL search path.
+    ///
+    /// Shortcut for [`self.process_parameters()?.dll_path()`].
+    ///
+    /// [`self.process_parameters()?.dll_path()`]: WindowsProcessParameters::dll_path
+    pub fn dll_path(&self) -> Result<String, VmiError> {
+        self.process_parameters()?.dll_path()
+    }
+
+    /// Returns the full path of the executable image.
+    ///
+    /// Shortcut for [`self.process_parameters()?.image_path_name()`].
+    ///
+    /// [`self.process_parameters()?.image_path_name()`]: WindowsProcessParameters::image_path_name
+    pub fn image_path_name(&self) -> Result<String, VmiError> {
+        self.process_parameters()?.image_path_name()
+    }
+
+    /// Returns the command line used to launch the process.
+    ///
+    /// Shortcut for [`self.process_parameters()?.command_line()`].
+    ///
+    /// [`self.process_parameters()?.command_line()`]: WindowsProcessParameters::command_line
+    pub fn command_line(&self) -> Result<String, VmiError> {
+        self.process_parameters()?.command_line()
+    }
 }
