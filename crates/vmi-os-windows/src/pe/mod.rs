@@ -65,21 +65,21 @@ impl ImageNtHeaders {
 }
 
 impl From<OImageNtHeaders32> for ImageNtHeaders {
-    fn from(nt_headers: OImageNtHeaders32) -> Self {
+    fn from(value: OImageNtHeaders32) -> Self {
         Self {
-            signature: nt_headers.signature.get(LE),
-            file_header: nt_headers.file_header,
-            optional_header: ImageOptionalHeader::ImageOptionalHeader32(nt_headers.optional_header),
+            signature: value.signature.get(LE),
+            file_header: value.file_header,
+            optional_header: ImageOptionalHeader::ImageOptionalHeader32(value.optional_header),
         }
     }
 }
 
 impl From<OImageNtHeaders64> for ImageNtHeaders {
-    fn from(nt_headers: OImageNtHeaders64) -> Self {
+    fn from(value: OImageNtHeaders64) -> Self {
         Self {
-            signature: nt_headers.signature.get(LE),
-            file_header: nt_headers.file_header,
-            optional_header: ImageOptionalHeader::ImageOptionalHeader64(nt_headers.optional_header),
+            signature: value.signature.get(LE),
+            file_header: value.file_header,
+            optional_header: ImageOptionalHeader::ImageOptionalHeader64(value.optional_header),
         }
     }
 }

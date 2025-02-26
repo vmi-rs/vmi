@@ -48,8 +48,8 @@ impl ThreadObject {
 }
 
 impl From<Va> for ThreadObject {
-    fn from(va: Va) -> Self {
-        Self(va)
+    fn from(value: Va) -> Self {
+        Self(value)
     }
 }
 

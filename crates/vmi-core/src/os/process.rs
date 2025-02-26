@@ -48,8 +48,8 @@ impl ProcessObject {
 }
 
 impl From<Va> for ProcessObject {
-    fn from(va: Va) -> Self {
-        Self(va)
+    fn from(value: Va) -> Self {
+        Self(value)
     }
 }
 
