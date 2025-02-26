@@ -34,7 +34,7 @@ where
     Driver: VmiDriver,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let current_directory = self.current_directory();
         let dll_path = self.dll_path();
         let image_path_name = self.image_path_name();
