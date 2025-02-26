@@ -5,11 +5,11 @@ use crate::AddressContext;
 pub enum VmiError {
     /// An error occurred in the VMI driver.
     #[error(transparent)]
-    Driver(Box<dyn std::error::Error>),
+    Driver(Box<dyn std::error::Error + Send + Sync>),
 
     /// An OS-specific error occurred.
     #[error(transparent)]
-    Os(Box<dyn std::error::Error>),
+    Os(Box<dyn std::error::Error + Send + Sync>),
 
     /// An I/O error occurred.
     #[error(transparent)]
