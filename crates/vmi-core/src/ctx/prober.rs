@@ -22,6 +22,14 @@ impl VmiProber {
         }
     }
 
+    /// Probes for safely handling page faults during memory access operations.
+    pub fn probe<T, F>(&self, f: F) -> Result<Option<T>, VmiError>
+    where
+        F: FnOnce() -> Result<T, VmiError>,
+    {
+        self.check_result(f())
+    }
+
     /// Handles a result that may contain page faults, returning the value
     /// if successful.
     pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
