@@ -60,6 +60,7 @@ symbols! {
 
         NtClose: Option<u64>,
 
+        ExNotifyCallback: Option<u64>,
         ExAllocatePool: u64,
         ExAllocatePoolWithTag: u64,
         ExFreePool: u64,
