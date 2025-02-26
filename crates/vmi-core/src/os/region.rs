@@ -28,8 +28,7 @@ where
 pub enum VmiOsRegionKind<'a, Driver, Os>
 where
     Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-    Self: 'a,
+    Os: VmiOs<Driver> + 'a,
 {
     /// A private region of memory.
     ///
@@ -67,6 +66,14 @@ where
 
     /// Returns the mapped region.
     pub fn mapped(&self) -> Option<&Os::Mapped<'a>> {
+        match self {
+            Self::MappedData(mapped) | Self::MappedImage(mapped) => Some(mapped),
+            _ => None,
+        }
+    }
+
+    /// Returns the mapped region.
+    pub fn into_mapped(self) -> Option<Os::Mapped<'a>> {
         match self {
             Self::MappedData(mapped) | Self::MappedImage(mapped) => Some(mapped),
             _ => None,
