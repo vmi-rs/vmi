@@ -109,12 +109,24 @@ where
                 page
             }
             Entry::Vacant(entry) => {
+                // Create a shadow page for the original page.
                 let page = Page {
                     original_gfn,
                     shadow_gfn: vmi.allocate_next_available_gfn()?,
                     view,
                     breakpoints: HashMap::new(),
                 };
+
+                // Copy the content of the original page to the shadow page.
+                let mut content = vec![0u8; Driver::Architecture::PAGE_SIZE as usize];
+                vmi.read(
+                    Driver::Architecture::pa_from_gfn(original_gfn),
+                    &mut content,
+                )?;
+                vmi.write(Driver::Architecture::pa_from_gfn(page.shadow_gfn), &content)?;
+
+                // Change the view of the original page to the shadow page.
+                vmi.change_view_gfn(view, original_gfn, page.shadow_gfn)?;
 
                 tracing::debug!(
                     %address,
@@ -128,24 +140,12 @@ where
             }
         };
 
-        // Read the content of the original page.
-        let mut content = [0u8; 4096_usize]; // FIXME: Driver::Architecture::PAGE_SIZE
-        vmi.read(
-            Driver::Architecture::pa_from_gfn(original_gfn),
-            &mut content,
-        )?;
+        let shadow_address = Driver::Architecture::pa_from_gfn(page.shadow_gfn) + offset as u64;
 
-        // Carve out the fragment of the original page that will be replaced by the
-        // breakpoint.
-        let fragment = &mut content[offset..offset + Driver::Architecture::BREAKPOINT.len()];
-        let original_content = fragment.to_vec();
-
-        // Write the breakpoint to the shadow page.
-        fragment.copy_from_slice(Driver::Architecture::BREAKPOINT);
-        vmi.write(Driver::Architecture::pa_from_gfn(page.shadow_gfn), &content)?;
-
-        // Change the view of the original page to the shadow page.
-        vmi.change_view_gfn(view, original_gfn, page.shadow_gfn)?;
+        // Replace the original content with a breakpoint instruction.
+        let mut original_content = vec![0u8; Driver::Architecture::BREAKPOINT.len()];
+        vmi.read(shadow_address, &mut original_content)?;
+        vmi.write(shadow_address, Driver::Architecture::BREAKPOINT)?;
 
         // Save the original content of the breakpoint.
         let offset = offset as u16;
