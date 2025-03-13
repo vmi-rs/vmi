@@ -9,8 +9,8 @@ pub mod __private {
     }
 
     use vmi_core::{
-        os::{VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion, VmiOsRegionKind},
         Va, VmiDriver, VmiError, VmiOs, VmiState,
+        os::{VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion, VmiOsRegionKind},
     };
 
     use super::super::RecipeContext;

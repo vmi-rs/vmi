@@ -1,7 +1,7 @@
 mod amd64;
 
 use vmi_core::{Architecture, VcpuId, VmiEvent, VmiEventResponse};
-use xen::{ctrl::VmEvent, Architecture as XenArchitecture};
+use xen::{Architecture as XenArchitecture, ctrl::VmEvent};
 
 use crate::{Error, XenDriver};
 

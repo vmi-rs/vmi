@@ -4,8 +4,8 @@ use std::cell::RefCell;
 
 use isr_core::Profile;
 use vmi_core::{
-    os::{ProcessObject, ThreadObject},
     Architecture, Va, VmiCore, VmiDriver, VmiError, VmiOs, VmiState, VmiVa as _,
+    os::{ProcessObject, ThreadObject},
 };
 
 mod arch;

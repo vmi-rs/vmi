@@ -51,10 +51,10 @@
 mod common;
 
 use vmi::{
-    arch::amd64::Amd64,
-    os::{windows::WindowsOs, VmiOsProcess as _},
-    utils::injector::{recipe, InjectorHandler, Recipe, RecipeControlFlow},
     Hex, Va, VcpuId, VmiDriver,
+    arch::amd64::Amd64,
+    os::{VmiOsProcess as _, windows::WindowsOs},
+    utils::injector::{InjectorHandler, Recipe, RecipeControlFlow, recipe},
 };
 
 #[derive(Debug, Default)]

@@ -40,7 +40,7 @@ pub trait VmiDriver: 'static {
 
     /// Sets the memory access permissions for a specific GFN.
     fn set_memory_access(&self, gfn: Gfn, view: View, access: MemoryAccess)
-        -> Result<(), VmiError>;
+    -> Result<(), VmiError>;
 
     /// Sets the memory access permissions for a specific GFN with additional
     /// options.

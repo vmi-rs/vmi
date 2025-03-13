@@ -38,12 +38,12 @@ pub struct ThreadObject(pub Va);
 impl ThreadObject {
     /// Checks if the thread object is a null reference.
     pub fn is_null(&self) -> bool {
-        self.0 .0 == 0
+        self.0.0 == 0
     }
 
     /// Converts the thread object to a 64-bit unsigned integer.
     pub fn to_u64(&self) -> u64 {
-        self.0 .0
+        self.0.0
     }
 }
 

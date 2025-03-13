@@ -1,9 +1,9 @@
 use std::{io::ErrorKind, time::Duration};
 
-use super::{context::VmiContext, VmiState};
+use super::{VmiState, context::VmiContext};
 use crate::{
-    os::{NoOS, VmiOs},
     Architecture, VmiCore, VmiDriver, VmiError, VmiHandler,
+    os::{NoOS, VmiOs},
 };
 
 /// A VMI session.

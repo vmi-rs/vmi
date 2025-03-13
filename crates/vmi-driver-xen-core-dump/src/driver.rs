@@ -5,7 +5,7 @@ use vmi_core::{
     VmiInfo, VmiMappedPage,
 };
 
-use crate::{dump::Dump, ArchAdapter, Error};
+use crate::{ArchAdapter, Error, dump::Dump};
 
 /// VMI driver for Xen core dump.
 pub struct XenCoreDumpDriver<Arch>

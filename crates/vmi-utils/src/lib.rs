@@ -16,4 +16,4 @@ pub mod interceptor;
 pub mod ptm;
 
 mod hexdump;
-pub use self::hexdump::{hexdump, Representation};
+pub use self::hexdump::{Representation, hexdump};

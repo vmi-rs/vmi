@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, LinuxQStr};
+use super::{LinuxQStr, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxOs};
 
 /// A Linux dentry struct.

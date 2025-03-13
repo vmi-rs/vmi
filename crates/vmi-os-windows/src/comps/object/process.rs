@@ -1,19 +1,19 @@
 use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    os::{ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    os::{ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess},
 };
 
 use super::{
     super::{
-        macros::impl_offsets, peb::WindowsWow64Kind, WindowsHandleTable, WindowsPeb, WindowsRegion,
-        WindowsSession,
+        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, macros::impl_offsets,
+        peb::WindowsWow64Kind,
     },
     WindowsObject, WindowsThread,
 };
 use crate::{
-    offsets::{v1, v2},
     ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs,
+    offsets::{v1, v2},
 };
 
 /// A Windows process.

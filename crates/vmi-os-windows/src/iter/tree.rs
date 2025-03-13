@@ -2,7 +2,7 @@ use std::iter::FusedIterator;
 
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
 
-use crate::{offsets::OffsetsExt, ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, WindowsOs, offsets::OffsetsExt};
 
 /// An iterator for traversing tree nodes.
 ///

@@ -1,7 +1,7 @@
 #[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
 pub mod windows;
 
-use vmi_core::{os::VmiOs, Architecture, VmiCore, VmiDriver, VmiError};
+use vmi_core::{Architecture, VmiCore, VmiDriver, VmiError, os::VmiOs};
 
 use super::CallBuilder;
 

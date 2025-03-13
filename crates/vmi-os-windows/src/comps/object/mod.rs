@@ -7,8 +7,8 @@ mod section;
 mod thread;
 
 use vmi_core::{
-    os::{ProcessObject, ThreadObject},
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    os::{ProcessObject, ThreadObject},
 };
 
 pub use self::{
@@ -17,10 +17,10 @@ pub use self::{
     thread::WindowsThread,
 };
 use super::{
-    macros::{impl_offsets, impl_symbols},
     WindowsObjectHeaderNameInfo,
+    macros::{impl_offsets, impl_symbols},
 };
-use crate::{arch::ArchAdapter, WindowsOs, WindowsOsExt};
+use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter};
 
 /// A Windows object.
 ///

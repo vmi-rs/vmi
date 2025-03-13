@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, LinuxDEntry};
+use super::{LinuxDEntry, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxError, LinuxOs};
 
 /// A Linux VFS mount struct.

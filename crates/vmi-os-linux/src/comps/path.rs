@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, LinuxDEntry, LinuxVFSMount};
+use super::{LinuxDEntry, LinuxVFSMount, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxError, LinuxOs};
 
 /// A Linux path struct.

@@ -15,11 +15,11 @@
 //!
 //! [`BreakpointController`]: crate::bpm::BreakpointController
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
 use vmi_core::{
-    arch::{Architecture, EventInterrupt, EventReason, Registers as _},
     Gfn, Pa, Va, View, VmiCore, VmiDriver, VmiError, VmiEvent,
+    arch::{Architecture, EventInterrupt, EventReason, Registers as _},
 };
 
 /// A single breakpoint within a page.

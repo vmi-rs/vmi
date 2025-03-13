@@ -1,20 +1,20 @@
 use object::{
     endian::LittleEndian as LE,
-    pe::{ImageDataDirectory, IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXPORT},
+    pe::{IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXPORT, ImageDataDirectory},
     read::pe::ExportTarget,
 };
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    os::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
 };
 
 use crate::{
+    ArchAdapter, WindowsError, WindowsOs,
     pe::{
         ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, Pe, PeDebugDirectory,
         PeExportDirectory,
     },
-    ArchAdapter, WindowsError, WindowsOs,
 };
 
 /// A Windows executable image (PE).

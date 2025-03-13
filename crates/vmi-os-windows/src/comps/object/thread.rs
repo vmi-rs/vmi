@@ -1,6 +1,6 @@
 use vmi_core::{
-    os::{ProcessObject, ThreadId, ThreadObject, VmiOsThread},
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    os::{ProcessObject, ThreadId, ThreadObject, VmiOsThread},
 };
 
 use super::{super::macros::impl_offsets, WindowsObject, WindowsProcess};

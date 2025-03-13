@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-use elf::{endian::AnyEndian, note::Note, section::SectionHeader, ElfBytes, ParseError};
+use elf::{ElfBytes, ParseError, endian::AnyEndian, note::Note, section::SectionHeader};
 use memmap2::Mmap;
 use xen::sys::vcpu_guest_context;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};

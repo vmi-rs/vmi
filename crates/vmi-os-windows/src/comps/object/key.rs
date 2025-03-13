@@ -2,7 +2,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
 use super::{
-    super::{macros::impl_offsets, WindowsKeyControlBlock},
+    super::{WindowsKeyControlBlock, macros::impl_offsets},
     WindowsObject,
 };
 use crate::{ArchAdapter, WindowsError, WindowsOs};

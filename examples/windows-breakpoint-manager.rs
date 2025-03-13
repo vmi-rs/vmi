@@ -1,26 +1,26 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use isr::{
+    Profile,
     cache::{IsrCache, JsonCodec},
     macros::symbols,
-    Profile,
 };
 use vmi::{
+    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError,
+    VmiEventResponse, VmiHandler, VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::xen::VmiXenDriver,
     os::{
-        windows::{WindowsOs, WindowsOsExt as _},
         ProcessObject, VmiOsProcess as _,
+        windows::{WindowsOs, WindowsOsExt as _},
     },
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
         ptm::{PageTableMonitor, PageTableMonitorEvent},
     },
-    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError,
-    VmiEventResponse, VmiHandler, VmiSession,
 };
 use xen::XenStore;
 
@@ -567,7 +567,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let domain_id = 'x: {
         for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::domain_id_from_name(name)? {
+            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
                 break 'x domain_id;
             }
         }

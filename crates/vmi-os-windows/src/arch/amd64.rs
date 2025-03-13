@@ -1,7 +1,7 @@
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
 use vmi_core::{
-    os::{NoOS, VmiOsImage},
     Architecture as _, Va, VmiCore, VmiDriver, VmiError, VmiSession, VmiState,
+    os::{NoOS, VmiOsImage},
 };
 
 use super::ArchAdapter;

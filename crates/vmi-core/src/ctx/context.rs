@@ -1,5 +1,5 @@
-use super::{state::VmiState, VmiOsState};
-use crate::{os::VmiOs, VmiCore, VmiDriver, VmiEvent};
+use super::{VmiOsState, state::VmiState};
+use crate::{VmiCore, VmiDriver, VmiEvent, os::VmiOs};
 
 /// A VMI context.
 ///

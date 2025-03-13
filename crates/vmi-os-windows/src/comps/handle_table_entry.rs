@@ -1,8 +1,8 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
 use super::{
-    macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
     WindowsObject,
+    macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
 };
 use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 

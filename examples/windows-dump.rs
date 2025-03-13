@@ -78,14 +78,14 @@
 
 use isr::cache::{IsrCache, JsonCodec};
 use vmi::{
+    VcpuId, VmiCore, VmiError, VmiSession, VmiState, VmiVa as _,
     arch::amd64::Amd64,
     driver::kdmp::VmiKdmpDriver,
     os::{
-        windows::{WindowsDirectoryObject, WindowsOs, WindowsOsExt, WindowsProcess},
         VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _, VmiOsRegion as _, VmiOsRegionKind,
         VmiOsThread as _,
+        windows::{WindowsDirectoryObject, WindowsOs, WindowsOsExt, WindowsProcess},
     },
-    VcpuId, VmiCore, VmiError, VmiSession, VmiState, VmiVa as _,
 };
 
 type Arch = Amd64;

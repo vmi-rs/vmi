@@ -3,9 +3,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::session::VmiSession;
 use crate::{
-    os::{NoOS, VmiOs},
     AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver,
     VmiError,
+    os::{NoOS, VmiOs},
 };
 
 /// A VMI state.

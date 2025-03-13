@@ -1,12 +1,12 @@
 use vmi_core::{
+    Architecture, Va, VmiDriver, VmiError, VmiVa,
     os::{
         ThreadId, ThreadObject, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsMapped,
         VmiOsModule, VmiOsThread,
     },
-    Architecture, Va, VmiDriver, VmiError, VmiVa,
 };
 
-use crate::{arch::ArchAdapter, LinuxOs};
+use crate::{LinuxOs, arch::ArchAdapter};
 
 /// Dummy implementation for Linux OS image.
 pub struct LinuxImage;

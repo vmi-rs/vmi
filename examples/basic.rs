@@ -6,7 +6,7 @@ use xen::XenStore;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let domain_id = 'x: {
         for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::domain_id_from_name(name)? {
+            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
                 break 'x domain_id;
             }
         }

@@ -36,7 +36,7 @@ pub use self::breakpoint::{
 };
 
 mod controller;
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, Pa, Registers as _, Va, View, VmiCore, VmiDriver,

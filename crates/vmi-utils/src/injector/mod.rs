@@ -80,8 +80,8 @@
 //! ```
 
 use vmi_core::{
-    os::{ProcessId, ThreadId, VmiOs},
     Pa, Va, View, VmiDriver,
+    os::{ProcessId, ThreadId, VmiOs},
 };
 
 mod arch;

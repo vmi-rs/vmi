@@ -1,6 +1,6 @@
-use vmi_core::{os::ProcessObject, Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::ProcessObject};
 
-use super::{macros::impl_offsets, WindowsObject, WindowsProcess};
+use super::{WindowsObject, WindowsProcess, macros::impl_offsets};
 use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
 
 /// A Windows session space.

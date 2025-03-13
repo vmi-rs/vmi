@@ -1,4 +1,4 @@
-use vmi_core::{os::VmiOsMapped, Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::VmiOsMapped};
 
 use super::{macros::impl_offsets, object::WindowsFileObject};
 use crate::{ArchAdapter, WindowsOs};

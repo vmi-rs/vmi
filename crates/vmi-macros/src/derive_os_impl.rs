@@ -1,6 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, Error, GenericParam, Generics, Ident, ItemImpl, Result, Visibility};
+use syn::{Error, GenericParam, Generics, Ident, ItemImpl, Result, Visibility, parse_macro_input};
 
 use crate::{
     common::{self, __vmi_lifetime},
@@ -80,7 +80,7 @@ fn verify_generics(generics: &Generics) -> Result<()> {
             return Err(Error::new(
                 Span::call_site(),
                 "missing generic `Driver` parameter",
-            ))
+            ));
         }
     };
 

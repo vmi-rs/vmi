@@ -1,15 +1,15 @@
 use isr_core::Profile;
-use isr_macros::{offsets, Field};
+use isr_macros::{Field, offsets};
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt, Registers};
 use vmi_core::{
-    os::{ProcessId, VmiOsProcess, VmiOsThread},
     Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiDriver,
     VmiError, VmiEventResponse, VmiHandler, VmiVa as _,
+    os::{ProcessId, VmiOsProcess, VmiOsThread},
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
 use super::{
-    super::{arch::ArchAdapter as _, CallBuilder, InjectorHandler, Recipe, RecipeExecutor},
+    super::{CallBuilder, InjectorHandler, Recipe, RecipeExecutor, arch::ArchAdapter as _},
     OsAdapter,
 };
 use crate::bridge::{BridgeHandler, BridgePacket};
@@ -573,7 +573,7 @@ where
             None => {
                 return Ok(
                     VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                )
+                );
             }
         };
 

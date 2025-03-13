@@ -1,10 +1,10 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{VmiOsRegion, VmiOsRegionKind},
     Architecture, MemoryAccess, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    os::{VmiOsRegion, VmiOsRegionKind},
 };
 
-use super::{macros::impl_offsets, WindowsControlArea};
+use super::{WindowsControlArea, macros::impl_offsets};
 use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 
 /// A Windows memory region.

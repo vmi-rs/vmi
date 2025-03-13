@@ -1,7 +1,7 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, WindowsObject};
+use super::{WindowsObject, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsError, WindowsOs};
 
 /// A Windows registry key control block.

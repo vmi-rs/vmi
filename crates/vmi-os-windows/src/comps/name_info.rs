@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, WindowsObject};
+use super::{WindowsObject, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 
 /// A name information for a Windows object.

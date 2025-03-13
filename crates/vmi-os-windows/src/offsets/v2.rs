@@ -1,4 +1,4 @@
-use isr_macros::{offsets, Bitfield, Field};
+use isr_macros::{Bitfield, Field, offsets};
 
 offsets! {
     /// Windows 10+ kernel offsets used by the [`WindowsOs`] implementation.

@@ -15,7 +15,7 @@
 #![allow(dead_code)]
 use vmi_core::{Architecture, Registers as _, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use crate::{arch::ArchAdapter, LinuxOs, Offsets};
+use crate::{LinuxOs, Offsets, arch::ArchAdapter};
 
 /// Represents different node types in a Maple Tree.
 #[derive(Debug)]

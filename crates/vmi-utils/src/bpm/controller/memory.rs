@@ -1,6 +1,6 @@
 use vmi_core::{
-    arch::{Architecture as _, EventMemoryAccess as _, EventReason as _},
     Gfn, MemoryAccess, Pa, View, VmiCore, VmiDriver, VmiError, VmiEvent,
+    arch::{Architecture as _, EventMemoryAccess as _, EventReason as _},
 };
 
 use super::TapController;

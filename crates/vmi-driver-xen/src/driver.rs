@@ -10,9 +10,9 @@ use vmi_core::{
     VmiInfo, VmiMappedPage,
 };
 use xen::{
-    ctrl::VmEventRing, XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain,
-    XenDomainId, XenDomainInfo, XenEventChannelPort, XenForeignMemory, XenForeignMemoryProtection,
-    XenMonitor,
+    XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain, XenDomainId, XenDomainInfo,
+    XenEventChannelPort, XenForeignMemory, XenForeignMemoryProtection, XenMonitor,
+    ctrl::VmEventRing,
 };
 
 use crate::{ArchAdapter, Error, IntoExt as _};

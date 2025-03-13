@@ -4,11 +4,11 @@ use vmi_arch_amd64::{
     Interrupt, InterruptType, MemoryAccessFlags,
 };
 use xen::{
+    XenX86EventType, XenX86ExceptionVector,
     ctrl::{
         VmEventCpuid, VmEventCtrlReg, VmEventDebug, VmEventIo, VmEventMemAccess, VmEventReason,
         VmEventSinglestep, VmEventWriteCtrlReg,
     },
-    XenX86EventType, XenX86ExceptionVector,
 };
 
 use crate::{Architecture as _, FromExt, Gfn, IntoExt, MemoryAccess, TryFromExt};

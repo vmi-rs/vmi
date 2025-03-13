@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Ident, ItemTrait};
+use syn::{Ident, ItemTrait, parse_macro_input};
 
 use crate::{
     common::{self, __vmi_lifetime},

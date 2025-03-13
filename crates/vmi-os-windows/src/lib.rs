@@ -53,9 +53,9 @@ use std::{cell::RefCell, collections::HashMap};
 use isr_core::Profile;
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
     AccessContext, Architecture, Gfn, Hex, Registers as _, Va, VmiCore, VmiDriver, VmiError,
     VmiState,
+    os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
 };
 use vmi_macros::derive_trait_from_impl;
 use zerocopy::{FromBytes, IntoBytes};

@@ -1,10 +1,10 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    os::{ProcessId, ProcessObject, VmiOsImageArchitecture, VmiOsProcess},
     Architecture, Pa, Va, VmiDriver, VmiError, VmiOs, VmiState, VmiVa,
+    os::{ProcessId, ProcessObject, VmiOsImageArchitecture, VmiOsProcess},
 };
 
-use super::{macros::impl_offsets, LinuxFsStruct, LinuxMmStruct, LinuxPath, LinuxVmAreaStruct};
+use super::{LinuxFsStruct, LinuxMmStruct, LinuxPath, LinuxVmAreaStruct, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxError, LinuxOs};
 
 /// A Linux task struct.

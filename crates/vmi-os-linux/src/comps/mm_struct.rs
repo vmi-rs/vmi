@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, LinuxFile};
+use super::{LinuxFile, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxOs, MapleTree};
 
 /// A Linux mm struct.

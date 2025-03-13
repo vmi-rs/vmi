@@ -1,4 +1,4 @@
-use vmi_core::{os::VmiOsModule, Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::VmiOsModule};
 
 use super::macros::impl_offsets;
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};

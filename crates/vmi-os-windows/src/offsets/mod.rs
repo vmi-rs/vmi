@@ -2,7 +2,7 @@ pub(crate) mod v1;
 pub(crate) mod v2;
 
 use isr_core::Profile;
-use isr_macros::{offsets, symbols, Bitfield, Error, Field};
+use isr_macros::{Bitfield, Error, Field, offsets, symbols};
 
 symbols! {
     /// Windows kernel symbols used by the [`WindowsOs`] implementation.

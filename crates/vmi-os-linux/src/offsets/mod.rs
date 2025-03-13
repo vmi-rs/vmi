@@ -1,6 +1,6 @@
 #![allow(non_snake_case, dead_code, non_camel_case_types)]
 
-use isr_macros::{offsets, symbols, Field};
+use isr_macros::{Field, offsets, symbols};
 
 symbols! {
     #[derive(Debug)]

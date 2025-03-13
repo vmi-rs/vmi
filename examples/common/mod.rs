@@ -1,12 +1,12 @@
 use isr::{
-    cache::{IsrCache, JsonCodec},
     Profile,
+    cache::{IsrCache, JsonCodec},
 };
 use vmi::{
+    VcpuId, VmiCore, VmiDriver, VmiError, VmiOs, VmiSession, VmiState,
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
-    os::{windows::WindowsOs, VmiOsProcess as _},
-    VcpuId, VmiCore, VmiDriver, VmiError, VmiOs, VmiSession, VmiState,
+    os::{VmiOsProcess as _, windows::WindowsOs},
 };
 use xen::XenStore;
 
@@ -24,7 +24,7 @@ pub fn create_vmi_session() -> Result<
 
     let domain_id = 'x: {
         for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::domain_id_from_name(name)? {
+            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
                 break 'x domain_id;
             }
         }

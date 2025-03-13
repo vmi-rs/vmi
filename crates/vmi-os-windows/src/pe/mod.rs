@@ -11,22 +11,22 @@ pub use object::pe::{ImageDataDirectory, ImageDebugDirectory, ImageDosHeader, Im
 use object::{
     endian::LittleEndian as LE,
     pe::{
+        IMAGE_DEBUG_TYPE_CODEVIEW, IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC,
+        IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
         ImageNtHeaders32 as OImageNtHeaders32, ImageNtHeaders64 as OImageNtHeaders64,
         ImageOptionalHeader32 as OImageOptionalHeader32,
-        ImageOptionalHeader64 as OImageOptionalHeader64, IMAGE_DEBUG_TYPE_CODEVIEW,
-        IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC,
-        IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
+        ImageOptionalHeader64 as OImageOptionalHeader64,
     },
     read::{
-        pe::{
-            optional_header_magic, Export, ExportTable, ImageNtHeaders as OImageNtHeaders,
-            ImageOptionalHeader as _,
-        },
         ReadRef as _,
+        pe::{
+            Export, ExportTable, ImageNtHeaders as OImageNtHeaders, ImageOptionalHeader as _,
+            optional_header_magic,
+        },
     },
     slice_from_all_bytes,
 };
-use vmi_core::{os::VmiOsImage, Architecture, VmiDriver, VmiError};
+use vmi_core::{Architecture, VmiDriver, VmiError, os::VmiOsImage};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 pub use self::error::PeError;

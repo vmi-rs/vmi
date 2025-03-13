@@ -419,7 +419,11 @@ where
                 self.dump();
                 unimplemented!(
                     "large page page-out, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
-                    entry_pa, old_value, old_value.pfn(), new_value, new_value.pfn()
+                    entry_pa,
+                    old_value,
+                    old_value.pfn(),
+                    new_value,
+                    new_value.pfn()
                 );
             }
             else {
@@ -432,7 +436,11 @@ where
                 self.dump();
                 unimplemented!(
                     "large page page-in, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
-                    entry_pa, old_value, old_value.pfn(), new_value, new_value.pfn()
+                    entry_pa,
+                    old_value,
+                    old_value.pfn(),
+                    new_value,
+                    new_value.pfn()
                 );
             }
             else {

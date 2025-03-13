@@ -129,8 +129,12 @@ impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11);
 impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12);
 impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13);
 impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14);
-impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14, B15);
-impl_bridge_dispatch!(B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14, B15, B16);
+impl_bridge_dispatch!(
+    B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14, B15
+);
+impl_bridge_dispatch!(
+    B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14, B15, B16
+);
 
 /// A bridge.
 pub struct Bridge<Driver, Os, B, T = ()>
