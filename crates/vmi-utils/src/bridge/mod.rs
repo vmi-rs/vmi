@@ -70,14 +70,14 @@ where
 macro_rules! impl_bridge_dispatch {
     ($($ty:ident),*) => {
         #[allow(non_snake_case)]
-        impl<Driver, Os, T, $($ty),*> BridgeDispatch<Driver, Os, T> for ($($ty),*,)
+        impl<Driver, Os, T, $($ty),*> BridgeDispatch<Driver, Os, T> for ($($ty),+,)
         where
             Driver: VmiDriver,
             Os: VmiOs<Driver>,
-            $($ty: BridgeHandler<Driver, Os, T>),*
+            $($ty: BridgeHandler<Driver, Os, T>,)+
         {
             fn dispatch(&mut self, vmi: &VmiContext<'_, Driver, Os>, packet: BridgePacket) -> Option<BridgeResponse<T>> {
-                let ($($ty),*,) = self;
+                let ($($ty,)+) = self;
 
                 $(
                     if packet.request() == <$ty as BridgeHandler<Driver, Os, T>>::REQUEST {

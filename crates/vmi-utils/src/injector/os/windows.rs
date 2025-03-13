@@ -9,7 +9,10 @@ use vmi_core::{
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
 use super::{
-    super::{CallBuilder, InjectorHandler, Recipe, RecipeExecutor, arch::ArchAdapter as _},
+    super::{
+        CallBuilder, InjectorHandler, InjectorResultCode, Recipe, RecipeExecutor,
+        arch::ArchAdapter as _,
+    },
     OsAdapter,
 };
 use crate::bridge::{BridgeHandler, BridgePacket};
@@ -186,7 +189,7 @@ where
 impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Creates a new injector handler.
     pub fn with_bridge(
@@ -217,7 +220,7 @@ where
             recipe: RecipeExecutor::new(recipe),
             view,
             bridge,
-            finished: false,
+            finished: None,
         })
     }
 
@@ -279,6 +282,10 @@ where
             Some(result) => result,
             None => {
                 tracing::error!(request, method, "Empty bridge response");
+
+                self.finished = Some(Err(packet));
+                vmi.monitor_disable(EventMonitor::CpuId)?;
+
                 return Ok(VmiEventResponse::set_registers(registers));
             }
         };
@@ -290,8 +297,8 @@ where
             registers.rbx = value2;
         }
 
-        if result.into_result().is_some() {
-            self.finished = true;
+        if let Some(result) = result.into_result() {
+            self.finished = Some(Ok(result));
             vmi.monitor_disable(EventMonitor::CpuId)?;
         };
 
@@ -309,67 +316,6 @@ where
         }
 
         Ok(VmiEventResponse::set_registers(registers))
-
-        /*
-        const BRIDGE_MAGIC: u32 = 0x406e7964; // '@nyd'
-        const BRIDGE_VERIFY: u64 = 0x616e7964; // 'anyd'
-
-        const BRIDGE_REQUEST: u16 = 0x0001;
-
-        // const BRIDGE_METHOD_DOWNLOAD: u16 = 0x0001;
-        const BRIDGE_METHOD_EXECUTE: u16 = 0x0002;
-
-        const BRIDGE_RESPONSE_CONTINUE: u64 = 0x00000000;
-        const BRIDGE_RESPONSE_WAIT: u64 = 0x00000001;
-        const BRIDGE_RESPONSE_ABORT: u64 = 0xFFFFFFFF;
-
-        let cpuid = vmi.event().reason().as_cpuid();
-
-        let mut registers = vmi.registers().gp_registers();
-        registers.rip += cpuid.instruction_length as u64;
-
-        tracing::trace!(
-            rip = %Va(registers.rip),
-            leaf = %Hex(cpuid.leaf),
-            subleaf = %Hex(cpuid.subleaf),
-        );
-
-        if cpuid.leaf != BRIDGE_MAGIC {
-            // tracing::trace!("not the right leaf");
-            return Ok(VmiEventResponse::set_registers(registers));
-        }
-
-        let request = (cpuid.subleaf & 0xFFFF) as u16;
-        let method = (cpuid.subleaf >> 16) as u16;
-
-        match (request, method) {
-            (BRIDGE_REQUEST, BRIDGE_METHOD_EXECUTE) => {
-                tracing::debug!("last phase request");
-                registers.rax = BRIDGE_RESPONSE_WAIT;
-                self.finished = true;
-            }
-
-            (BRIDGE_REQUEST, phase) => {
-                tracing::debug!(phase, "status request");
-                registers.rax = BRIDGE_RESPONSE_CONTINUE;
-            }
-
-            _ => {
-                tracing::error!(request, method, "error request");
-                registers.rax = BRIDGE_RESPONSE_ABORT;
-                self.finished = true;
-            }
-        };
-
-        if self.finished {
-            vmi.monitor_disable(EventMonitor::CpuId)?;
-        };
-
-        registers.rdx = BRIDGE_VERIFY;
-        registers.rcx = BRIDGE_VERIFY;
-
-        Ok(VmiEventResponse::set_registers(registers))
-         */
     }
 
     #[tracing::instrument(name = "write_cr", skip_all, err)]
@@ -595,7 +541,7 @@ where
 
             // If the bridge was not enabled, we're done.
             if Bridge::EMPTY {
-                self.finished = true;
+                self.finished = Some(Ok(0));
             }
         }
 
@@ -609,9 +555,9 @@ impl<Driver, T, Bridge> VmiHandler<Driver, WindowsOs<Driver>>
     for InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
 {
-    type Output = ();
+    type Output = Result<InjectorResultCode, BridgePacket>;
 
     fn handle_event(
         &mut self,
@@ -635,6 +581,6 @@ where
     }
 
     fn check_completion(&self) -> Option<Self::Output> {
-        self.finished.then_some(())
+        self.finished
     }
 }

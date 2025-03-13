@@ -100,12 +100,15 @@ pub use self::call::CallBuilder;
 pub mod macros;
 #[doc(inline)]
 pub use crate::_private_recipe as recipe;
-use crate::bridge::BridgeHandler;
+use crate::bridge::{BridgeHandler, BridgePacket};
 
 mod recipe;
 pub use self::recipe::{
     ImageSymbolCache, Recipe, RecipeContext, RecipeControlFlow, RecipeExecutor,
 };
+
+/// Result code for the injector.
+pub type InjectorResultCode = u64;
 
 /// A handler for managing code injection into a running system.
 ///
@@ -116,7 +119,7 @@ pub struct InjectorHandler<Driver, Os, T, Bridge = ()>
 where
     Driver: VmiDriver,
     Os: VmiOs<Driver> + OsAdapter<Driver>,
-    Bridge: BridgeHandler<Driver, Os>,
+    Bridge: BridgeHandler<Driver, Os, InjectorResultCode>,
 {
     /// Process ID being injected into.
     pub(super) pid: ProcessId,
@@ -146,5 +149,5 @@ where
     pub(super) bridge: Bridge,
 
     /// Whether the injection has completed.
-    pub(super) finished: bool,
+    pub(super) finished: Option<Result<InjectorResultCode, BridgePacket>>,
 }

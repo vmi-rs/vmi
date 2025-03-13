@@ -1,5 +1,5 @@
 /// Bridge packet.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct BridgePacket {
     magic: u32,
     request: u16,
