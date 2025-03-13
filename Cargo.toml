@@ -45,23 +45,23 @@ tracing-subscriber = "0.3"
 # For release.
 #
 
-# isr = "0.3.0"
-# isr-core = "0.3.0"
-# isr-dl-pdb = "0.3.0"
-# isr-macros = "0.3.0"
+isr = "0.3.0"
+isr-core = "0.3.0"
+isr-dl-pdb = "0.3.0"
+isr-macros = "0.3.0"
 
-# xen = { package = "libxen", version = "0.3.0" }
+xen = { package = "libxen", version = "0.3.0" }
 
 #
 # For development.
 #
 
-isr = { path = "../isr", version = "0.3.0" }
-isr-core = { path = "../isr/crates/isr-core", version = "0.3.0" }
-isr-dl-pdb = { path = "../isr/crates/isr-dl-pdb", version = "0.3.0" }
-isr-macros = { path = "../isr/crates/isr-macros", version = "0.3.0" }
+# isr = { path = "../isr", version = "0.3.0" }
+# isr-core = { path = "../isr/crates/isr-core", version = "0.3.0" }
+# isr-dl-pdb = { path = "../isr/crates/isr-dl-pdb", version = "0.3.0" }
+# isr-macros = { path = "../isr/crates/isr-macros", version = "0.3.0" }
 
-xen = { path = "../xen", package = "libxen", version = "0.3.0" }
+# xen = { path = "../xen", package = "libxen", version = "0.3.0" }
 
 # vmi = { path = "./crates/vmi", version = "0.3.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.3.0" }

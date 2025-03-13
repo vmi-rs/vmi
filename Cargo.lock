@@ -79,11 +79,22 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bincode"
-version = "1.3.3"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
 dependencies = [
+ "bincode_derive",
  "serde",
+ "unty",
+]
+
+[[package]]
+name = "bincode_derive"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
+dependencies = [
+ "virtue",
 ]
 
 [[package]]
@@ -784,6 +795,8 @@ checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 [[package]]
 name = "isr"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2efba1ea338536f626f36e17e9d42d91f628ddf9f569f6b58c519ab19174fd70"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -797,6 +810,8 @@ dependencies = [
 [[package]]
 name = "isr-cache"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbc4857895442c898320407003ff471c0384d7187ae2d44ab44fcda5a1b4f6b9"
 dependencies = [
  "bincode",
  "isr-core",
@@ -815,6 +830,8 @@ dependencies = [
 [[package]]
 name = "isr-core"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ebc09bda6fd6cd30f0f988ef99c80ec292ab5fcc49cb31bfc707223dca9d56f"
 dependencies = [
  "indexmap 2.8.0",
  "serde",
@@ -824,6 +841,8 @@ dependencies = [
 [[package]]
 name = "isr-dl-linux"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "904343a366a94168fffe9c95b0901284282a76143574c935eb2d1efbb64d99c7"
 dependencies = [
  "debpkg",
  "flate2",
@@ -838,6 +857,8 @@ dependencies = [
 [[package]]
 name = "isr-dl-pdb"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "808109024253859447221d5fa5a2f4fa03cf2a3102dd22794ab4b724b77198a7"
 dependencies = [
  "object",
  "reqwest",
@@ -848,6 +869,8 @@ dependencies = [
 [[package]]
 name = "isr-dwarf"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c764c0afc32af3b8536df9060baa304cd6ea403cd31377f87dae6324d5fe9bb"
 dependencies = [
  "gimli",
  "indexmap 2.8.0",
@@ -862,6 +885,8 @@ dependencies = [
 [[package]]
 name = "isr-macros"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d621040d6f9a2e750e87efc67f096411c1d78a99e37661313654564a2783a828"
 dependencies = [
  "indexmap 2.8.0",
  "isr-core",
@@ -875,6 +900,8 @@ dependencies = [
 [[package]]
 name = "isr-pdb"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0d68e839f33d1a325e451e12b6789ecbed5e85a16517eea6778092cc271609a"
 dependencies = [
  "indexmap 2.8.0",
  "isr-core",
@@ -963,6 +990,8 @@ dependencies = [
 [[package]]
 name = "libxen"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7c312b1f4acdb3592795e16643d2c2d35d9eb00b5775e7ee95e19ec55fcacb2"
 dependencies = [
  "bitflags",
  "libc",
@@ -974,6 +1003,8 @@ dependencies = [
 [[package]]
 name = "libxen-sys"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38471fa652577518f3bb87547e348f40f9d3db4a1111ad4daf6be9add233c783"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -1910,6 +1941,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "unty"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
 name = "url"
 version = "2.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1949,6 +1986,12 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "virtue"
+version = "0.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "vmi"

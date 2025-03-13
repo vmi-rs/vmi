@@ -3,15 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to **_will adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches 0.3.0_**.
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Changed
 
+### Added
+
+### Fixed
+
+## [0.3.0] - 2025-03-13
+
+### Changed
+
+- Switched to rust edition 2024 and MSRV 1.85
 - These functions now return Option:
     - WindowsProcess::peb()
     - WindowsProcess::handle_table()
+- InjectorHandler::inject() now returns an Result&lt;InjectorResultCode, BridgePacket&gt; instead of ()
 
 ### Added
 
