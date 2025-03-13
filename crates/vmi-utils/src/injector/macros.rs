@@ -20,7 +20,7 @@ pub mod __private {
     /// retrieves the exported symbols from the specified image and caches them.
     /// The filename is case-insensitive. Returns virtual address of the symbol
     /// if found.
-    #[tracing::instrument(skip(ctx))]
+    #[tracing::instrument(skip(ctx), err)]
     pub fn lookup_symbol<Driver, Os, T>(
         ctx: &mut RecipeContext<'_, Driver, Os, T>,
         filename: &str,
@@ -102,7 +102,7 @@ pub mod __private {
     /// process and retrieves the exported symbols from the image. The filename
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
-    #[tracing::instrument(skip(vmi))]
+    #[tracing::instrument(skip(vmi), err)]
     pub fn exported_symbols<Driver, Os>(
         vmi: &VmiState<'_, Driver, Os>,
         filename: &str,

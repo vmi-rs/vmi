@@ -224,6 +224,7 @@ where
     #[tracing::instrument(
         name = "injector",
         skip_all,
+        err,
         fields(
             vcpu = %vmi.event().vcpu_id(),
             rip = %Va(vmi.registers().rip),
@@ -244,7 +245,7 @@ where
         }
     }
 
-    #[tracing::instrument(name = "cpuid", skip_all)]
+    #[tracing::instrument(name = "cpuid", skip_all, err)]
     fn on_cpuid(
         &mut self,
         vmi: &VmiContext<Driver, WindowsOs<Driver>>,
@@ -371,7 +372,7 @@ where
          */
     }
 
-    #[tracing::instrument(name = "write_cr", skip_all)]
+    #[tracing::instrument(name = "write_cr", skip_all, err)]
     fn on_write_cr(
         &mut self,
         vmi: &VmiContext<Driver, WindowsOs<Driver>>,
@@ -485,7 +486,7 @@ where
         Ok(VmiEventResponse::default())
     }
 
-    #[tracing::instrument(name = "memory_access", skip_all)]
+    #[tracing::instrument(name = "memory_access", skip_all, err)]
     fn on_memory_access(
         &mut self,
         vmi: &VmiContext<Driver, WindowsOs<Driver>>,

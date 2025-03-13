@@ -367,6 +367,7 @@ where
 {
     #[tracing::instrument(
         skip_all,
+        err,
         target = "ptm",
         fields(%entry_pa)
     )]
@@ -454,6 +455,7 @@ where
 
     #[tracing::instrument(
         skip_all,
+        err,
         target = "ptm",
         fields(
             new_pfn = %new_value.pfn(),
@@ -514,6 +516,7 @@ where
 
     #[tracing::instrument(
         skip_all,
+        err,
         target = "ptm",
         fields(
             old_pfn = %old_value.pfn(),
@@ -563,6 +566,7 @@ where
 
     #[tracing::instrument(
         skip_all,
+        err,
         target = "ptm",
         fields(
             old_pfn = %old_value.pfn(),
