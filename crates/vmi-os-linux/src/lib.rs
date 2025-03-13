@@ -64,7 +64,6 @@ where
 }
 
 //#[expect(non_snake_case, unused_variables)]
-#[expect(clippy::needless_lifetimes)]
 impl<Driver> LinuxOs<Driver>
 where
     Driver: VmiDriver,

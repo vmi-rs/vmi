@@ -277,7 +277,7 @@ macro_rules! this {
 }
 
 #[derive_trait_from_impl(WindowsOsExt)]
-#[expect(non_snake_case, non_upper_case_globals, clippy::needless_lifetimes)]
+#[expect(non_snake_case, non_upper_case_globals)]
 impl<Driver> WindowsOs<Driver>
 where
     Driver: VmiDriver,

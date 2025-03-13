@@ -17,7 +17,6 @@ impl VmiVa for LinuxImage {
     }
 }
 
-#[expect(clippy::needless_lifetimes)]
 impl<'a, Driver> VmiOsImage<'a, Driver> for LinuxImage
 where
     Driver: VmiDriver,
@@ -97,7 +96,6 @@ impl VmiVa for LinuxThread {
     }
 }
 
-#[expect(clippy::needless_lifetimes)]
 impl<'a, Driver> VmiOsThread<'a, Driver> for LinuxThread
 where
     Driver: VmiDriver,

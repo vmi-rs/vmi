@@ -24,7 +24,6 @@ pub use self::{
 use crate::{Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
-#[expect(clippy::needless_lifetimes)]
 #[derive_os_wrapper(VmiOsState)]
 pub trait VmiOs<Driver>: Sized
 where
