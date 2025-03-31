@@ -22,7 +22,7 @@ bitflags = { workspace = true, features = ["serde"] }
 lru = { workspace = true }
 indexmap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-smallvec = { workspace = true }
+smallvec = { workspace = true, features = ["union"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }

@@ -21,7 +21,7 @@ workspace = true
 
 [dependencies]
 bitflags = { workspace = true }
-smallvec = { workspace = true }
+smallvec = { workspace = true, features = ["union"] }
 zerocopy = { workspace = true, features = ["derive"] }
 
 vmi-core = { workspace = true }
