@@ -24,6 +24,8 @@ symbols! {
         KiSystemServiceStart: u64,
         KiSystemServiceExit: u64,
 
+        KeTerminateThread: Option<u64>,
+
         MmPfnDatabase: u64,
         MmHighestUserAddress: u64,
 
@@ -72,11 +74,19 @@ symbols! {
         ObTypeIndexTable: u64,
         ObpInfoMaskToOffset: u64,
         ObpKernelHandleTable: u64,
+        ObReferenceObjectByPointerWithTag: Option<u64>,
 
         PspInsertProcess: Option<u64>,
         PspUserThreadStartup: Option<u64>,
         PspExitThread: Option<u64>,
         MmCleanProcessAddressSpace: Option<u64>,
+
+        CmKeyObjectType: u64,   // _OBJECT_TYPE*
+        IoFileObjectType: u64,  // _OBJECT_TYPE*
+        PsProcessType: u64,     // _OBJECT_TYPE*
+        PsThreadType: u64,      // _OBJECT_TYPE*
+        PsJobType: u64,         // _OBJECT_TYPE*
+        SeTokenObjectType: u64, // _OBJECT_TYPE*
     }
 }
 
