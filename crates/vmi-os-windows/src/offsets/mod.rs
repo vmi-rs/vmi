@@ -24,6 +24,8 @@ symbols! {
         KiSystemServiceStart: u64,
         KiSystemServiceExit: u64,
 
+        KeInitThread: Option<u64>,
+        KiInitializeContextThread: Option<u64>,
         KeTerminateThread: Option<u64>,
 
         MmPfnDatabase: u64,
@@ -77,8 +79,10 @@ symbols! {
         ObReferenceObjectByPointerWithTag: Option<u64>,
 
         PspInsertProcess: Option<u64>,
+        PspInsertThread: Option<u64>,
         PspUserThreadStartup: Option<u64>,
         PspExitThread: Option<u64>,
+        PspSetContextThreadInternal: Option<u64>,
         MmCleanProcessAddressSpace: Option<u64>,
 
         CmKeyObjectType: u64,   // _OBJECT_TYPE*
