@@ -95,7 +95,7 @@ where
     /// instance.
     pub fn kind(&self) -> Result<Option<WindowsObjectTypeKind>, VmiError> {
         let os = self.vmi.underlying_os();
-        if let Some(object_type) = os.object_type_cache.borrow().get(&self.va).copied() {
+        if let Some(object_type) = os.object_type_rcache.borrow().get(&self.va).copied() {
             return Ok(Some(object_type));
         }
 
@@ -104,7 +104,7 @@ where
             Err(_) => return Ok(None),
         };
 
-        os.object_type_cache
+        os.object_type_rcache
             .borrow_mut()
             .insert(self.va, object_type);
 
