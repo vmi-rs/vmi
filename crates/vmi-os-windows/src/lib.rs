@@ -326,12 +326,12 @@ where
     }
 
     /// Returns a reference to the Windows-specific memory offsets.
-    pub fn offsets(vmi: VmiState<Driver, Self>) -> &Offsets {
+    pub fn offsets(vmi: VmiState<'_, Driver, Self>) -> &Offsets {
         &this!(vmi).offsets
     }
 
     /// Returns a reference to the Windows-specific symbols.
-    pub fn symbols(vmi: VmiState<Driver, Self>) -> &Symbols {
+    pub fn symbols(vmi: VmiState<'_, Driver, Self>) -> &Symbols {
         &this!(vmi).symbols
     }
 
