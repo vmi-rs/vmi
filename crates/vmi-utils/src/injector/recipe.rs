@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use vmi_core::{Architecture, Hex, Registers, Va, VmiContext, VmiDriver, VmiError, os::VmiOs};
+use vmi_core::{Architecture, Hex, Registers, Va, VmiDriver, VmiError, VmiState, os::VmiOs};
 
 /// The control flow of a recipe step.
 pub enum RecipeControlFlow {
@@ -81,8 +81,8 @@ where
     Driver: VmiDriver,
     Os: VmiOs<Driver>,
 {
-    /// The VMI context.
-    pub vmi: &'a VmiContext<'a, Driver, Os>,
+    /// The VMI state.
+    pub vmi: &'a VmiState<'a, Driver, Os>,
 
     /// The CPU registers.
     pub registers: &'a mut <<Driver as VmiDriver>::Architecture as Architecture>::Registers,
@@ -138,7 +138,7 @@ where
     /// If the recipe has finished executing, returns the original registers.
     pub fn execute(
         &mut self,
-        vmi: &VmiContext<Driver, Os>,
+        vmi: &VmiState<Driver, Os>,
     ) -> Result<Option<<<Driver as VmiDriver>::Architecture as Architecture>::Registers>, VmiError>
     {
         // If the stack pointer has decreased, we are likely in a recursive call or APC.
@@ -204,7 +204,7 @@ where
     ///
     /// This is used to detect irrelevant reentrancy in the recipe,
     /// such as recursive calls, interrupts, or APCs.
-    fn has_stack_pointer_decreased(&self, vmi: &VmiContext<Driver, Os>) -> bool {
+    fn has_stack_pointer_decreased(&self, vmi: &VmiState<Driver, Os>) -> bool {
         let previous_stack_pointer = match self.previous_stack_pointer {
             Some(previous_stack_pointer) => previous_stack_pointer,
             None => return false,
