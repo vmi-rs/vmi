@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.0] - 2025-08-15
+
+### Changed
+
+- Updated lifetime annotations to avoid warnings on Rust 1.89
+- `RecipeContext` and `RecipeExecutor` now operate over `VmiState` instead of
+  `VmiContext`
+
+### Added
+
+- WindowsOs::object_type - to return `WindowsObjectType` from
+  `WindowsObjectTypeKind`
+
+### Fixed
+
+- Fixed handling of large page table entries in `PageTableMonitor`
+- Fixed finding of `ntoskrnl` for recent Windows versions
+
 ## [0.3.0] - 2025-03-13
 
 ### Changed
