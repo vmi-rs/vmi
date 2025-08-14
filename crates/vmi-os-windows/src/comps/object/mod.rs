@@ -342,7 +342,7 @@ where
 /// Each variant corresponds to a specific object type string used internally
 /// by the Windows kernel. For example, "Process" for process objects,
 /// "Thread" for thread objects, etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowsObjectTypeKind {
     /// Activation object.
     ///

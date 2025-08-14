@@ -86,6 +86,13 @@ symbols! {
         MmCleanProcessAddressSpace: Option<u64>,
 
         SeAccessCheck: Option<u64>,
+
+        CmKeyObjectType: u64,   // _OBJECT_TYPE*
+        IoFileObjectType: u64,  // _OBJECT_TYPE*
+        PsProcessType: u64,     // _OBJECT_TYPE*
+        PsThreadType: u64,      // _OBJECT_TYPE*
+        PsJobType: u64,         // _OBJECT_TYPE*
+        SeTokenObjectType: u64, // _OBJECT_TYPE*
     }
 }
 

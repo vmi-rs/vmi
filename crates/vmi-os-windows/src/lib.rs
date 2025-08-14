@@ -196,6 +196,7 @@ where
     highest_user_address: OnceCell<Va>,
     object_root_directory: OnceCell<Va>, // _OBJECT_DIRECTORY*
     object_header_cookie: OnceCell<u8>,
+    object_type_cache: RefCell<HashMap<WindowsObjectTypeKind, Va>>,
     object_type_rcache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
@@ -313,6 +314,7 @@ where
             highest_user_address: OnceCell::new(),
             object_root_directory: OnceCell::new(),
             object_header_cookie: OnceCell::new(),
+            object_type_cache: RefCell::new(HashMap::new()),
             object_type_rcache: RefCell::new(HashMap::new()),
             object_type_name_cache: RefCell::new(HashMap::new()),
             ki_kva_shadow: OnceCell::new(),
@@ -785,6 +787,45 @@ where
         va: Va,
     ) -> Result<WindowsObject<'a, Driver>, VmiError> {
         Ok(WindowsObject::new(vmi, va))
+    }
+
+    /// Returns a Windows object type for the given object kind.
+    ///
+    /// # Notes
+    ///
+    /// The object type is cached after the first read.
+    ///
+    /// # Implementation Details
+    ///
+    /// - `File` corresponds to `IoFileObjectType`.
+    /// - `Job` corresponds to `PsJobType`.
+    /// - `Key` corresponds to `CmKeyObjectType`.
+    /// - `Process` corresponds to `PsProcessType`.
+    /// - `Thread` corresponds to `PsThreadType`.
+    /// - `Token` corresponds to `SeTokenObjectType`.
+    /// - Other types are not supported.
+    pub fn object_type<'a>(
+        vmi: VmiState<'a, Driver, Self>,
+        kind: WindowsObjectTypeKind,
+    ) -> Result<WindowsObjectType<'a, Driver>, VmiError> {
+        if let Some(va) = this!(vmi).object_type_cache.borrow().get(&kind).copied() {
+            return Ok(WindowsObjectType::new(vmi, va));
+        }
+
+        let symbol = match kind {
+            WindowsObjectTypeKind::File => symbol!(vmi, IoFileObjectType),
+            WindowsObjectTypeKind::Job => symbol!(vmi, PsJobType),
+            WindowsObjectTypeKind::Key => symbol!(vmi, CmKeyObjectType),
+            WindowsObjectTypeKind::Process => symbol!(vmi, PsProcessType),
+            WindowsObjectTypeKind::Thread => symbol!(vmi, PsThreadType),
+            WindowsObjectTypeKind::Token => symbol!(vmi, SeTokenObjectType),
+            _ => return Err(VmiError::NotSupported),
+        };
+
+        let va = vmi.read_va(Self::kernel_image_base(vmi)? + symbol)?;
+        this!(vmi).object_type_cache.borrow_mut().insert(kind, va);
+
+        Ok(WindowsObjectType::new(vmi, va))
     }
 
     /// Returns the root directory object for the Windows kernel.
