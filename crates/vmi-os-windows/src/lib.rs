@@ -196,7 +196,7 @@ where
     highest_user_address: OnceCell<Va>,
     object_root_directory: OnceCell<Va>, // _OBJECT_DIRECTORY*
     object_header_cookie: OnceCell<u8>,
-    object_type_cache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
+    object_type_rcache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
     ki_kva_shadow: OnceCell<bool>,
@@ -313,7 +313,7 @@ where
             highest_user_address: OnceCell::new(),
             object_root_directory: OnceCell::new(),
             object_header_cookie: OnceCell::new(),
-            object_type_cache: RefCell::new(HashMap::new()),
+            object_type_rcache: RefCell::new(HashMap::new()),
             object_type_name_cache: RefCell::new(HashMap::new()),
             ki_kva_shadow: OnceCell::new(),
             mm_pfn_database: OnceCell::new(),
