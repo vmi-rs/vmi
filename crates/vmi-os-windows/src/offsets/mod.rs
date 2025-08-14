@@ -21,8 +21,12 @@ symbols! {
         KiSystemCall64: u64,
         //KiSystemCall32Shadow: u64,
         //KiSystemCall64Shadow: u64,
-        KiSystemServiceStart: u64,
-        KiSystemServiceExit: u64,
+        KiSystemServiceStart: Option<u64>,
+        KiSystemServiceExit: Option<u64>,
+
+        KeInitThread: Option<u64>,
+        KiInitializeContextThread: Option<u64>,
+        KeTerminateThread: Option<u64>,
 
         MmPfnDatabase: u64,
         MmHighestUserAddress: u64,
@@ -72,11 +76,16 @@ symbols! {
         ObTypeIndexTable: u64,
         ObpInfoMaskToOffset: u64,
         ObpKernelHandleTable: u64,
+        ObReferenceObjectByPointerWithTag: Option<u64>,
 
         PspInsertProcess: Option<u64>,
+        PspInsertThread: Option<u64>,
         PspUserThreadStartup: Option<u64>,
         PspExitThread: Option<u64>,
+        PspSetContextThreadInternal: Option<u64>,
         MmCleanProcessAddressSpace: Option<u64>,
+
+        SeAccessCheck: Option<u64>,
     }
 }
 
