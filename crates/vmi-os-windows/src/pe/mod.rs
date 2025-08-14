@@ -261,7 +261,7 @@ where
     }
 
     /// Returns the list of exported symbols.
-    pub fn exports(&self) -> Result<Vec<Export>, PeError> {
+    pub fn exports(&self) -> Result<Vec<Export<'_>>, PeError> {
         let export_table = ExportTable::parse(&self.data, self.entry.virtual_address.get(LE))
             .map_err(|_| PeError::InvalidExportTable)?;
 

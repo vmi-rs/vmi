@@ -81,7 +81,7 @@ where
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&self) -> VmiOsContext<Driver, Os> {
+    pub fn os(&self) -> VmiOsContext<'_, Driver, Os> {
         VmiOsContext {
             state: self.state.os(),
             event: self.event,
