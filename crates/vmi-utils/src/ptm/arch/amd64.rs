@@ -639,11 +639,10 @@ where
         }
 
         let next_level = match level.next() {
-            Some(next_level) => next_level,
-            None => {
-                debug_assert_eq!(level, PageTableLevel::Pt);
-
-                let pa = Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset(ctx.va);
+            Some(next_level) if !entry.value.large() => next_level,
+            _ => {
+                let pa =
+                    Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset_for(ctx.va, level);
 
                 self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
 
@@ -652,6 +651,8 @@ where
                     va = %ctx.va,
                     root = %ctx.root,
                     %pa,
+                    ?level,
+                    large = entry.value.large(),
                     "monitoring already paged-in entry"
                 );
 
@@ -745,17 +746,18 @@ where
         debug_assert_eq!(level, level2);
 
         let next_level = match level.next() {
-            Some(next_level) => next_level,
-            None => {
-                debug_assert_eq!(level, PageTableLevel::Pt);
-
-                let pa = Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset(ctx.va);
+            Some(next_level) if !entry.value.large() => next_level,
+            _ => {
+                let pa =
+                    Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset_for(ctx.va, level);
 
                 tracing::debug!(
                     %view,
                     va = %ctx.va,
                     root = %ctx.root,
                     %pa,
+                    ?level,
+                    large = entry.value.large(),
                     "unmonitoring paged-in entry"
                 );
 
