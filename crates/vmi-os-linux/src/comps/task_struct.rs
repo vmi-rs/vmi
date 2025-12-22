@@ -305,7 +305,7 @@ where
         impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
         VmiError,
     > {
-        #[expect(unreachable_code)]
+        #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
         }

@@ -187,7 +187,7 @@ where
     fn modules(
         _vmi: VmiState<'_, Driver, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
-        #[expect(unreachable_code)]
+        #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
         }
