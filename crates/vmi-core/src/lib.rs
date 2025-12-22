@@ -37,16 +37,12 @@ struct Cache {
 }
 
 impl Cache {
-    const DEFAULT_SIZE: usize = 8192;
+    const DEFAULT_SIZE: NonZeroUsize = NonZeroUsize::new(8192).unwrap();
 
     pub fn new() -> Self {
         Self {
-            gfn: RefCell::new(LruCache::new(
-                NonZeroUsize::new(Self::DEFAULT_SIZE).unwrap(),
-            )),
-            v2p: RefCell::new(LruCache::new(
-                NonZeroUsize::new(Self::DEFAULT_SIZE).unwrap(),
-            )),
+            gfn: RefCell::new(LruCache::new(Self::DEFAULT_SIZE)),
+            v2p: RefCell::new(LruCache::new(Self::DEFAULT_SIZE)),
         }
     }
 }
