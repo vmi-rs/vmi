@@ -259,7 +259,7 @@ where
         registers.rip += cpuid.instruction_length as u64;
 
         tracing::trace!(
-            rip = %Va::from(registers.rip),
+            rip = %Va(registers.rip),
             leaf = %Hex(cpuid.leaf),
             subleaf = %Hex(cpuid.subleaf),
         );
@@ -458,7 +458,8 @@ where
         // Therefore this event might have been triggered by a different process.
         //
 
-        let current_pid = vmi.os().current_process()?.id()?;
+        let current_process = vmi.os().current_process()?;
+        let current_pid = current_process.id()?;
         if current_pid != self.pid {
             // Too noisy...
             // tracing::trace!(
@@ -473,7 +474,8 @@ where
         // Early exit if the current thread is not the target thread.
         //
 
-        let current_tid = vmi.os().current_thread()?.id()?;
+        let current_thread = vmi.os().current_thread()?;
+        let current_tid = current_thread.id()?;
         if Some(current_tid) != self.tid {
             // Too noisy...
             // tracing::trace!(
@@ -505,7 +507,12 @@ where
         //
 
         if !self.hijacked {
-            tracing::debug!(%current_tid, "thread hijacked");
+            tracing::debug!(
+                %current_pid,
+                %current_tid,
+                filename = current_process.name().unwrap_or_else(|_| String::from("<unknown>")),
+                "thread hijacked"
+            );
             self.hijacked = true;
 
             vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))?;
