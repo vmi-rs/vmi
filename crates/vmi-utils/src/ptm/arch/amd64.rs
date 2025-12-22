@@ -589,7 +589,7 @@ where
         let page_in = self.page_in(vmi, entry_pa, vas, new_value, view)?;
 
         // Combine the results
-        Ok(page_out.into_iter().chain(page_in.into_iter()).collect())
+        Ok(std::iter::chain(page_out, page_in).collect())
     }
 
     /// Recursively monitor a page table entry.
