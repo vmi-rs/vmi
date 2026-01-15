@@ -463,10 +463,10 @@ where
     type Item = Result<Va, VmiError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.initialized {
-            if let Err(e) = self.initialize() {
-                return Some(Err(e));
-            }
+        if !self.initialized
+            && let Err(e) = self.initialize()
+        {
+            return Some(Err(e));
         }
 
         self.walk_next().transpose()

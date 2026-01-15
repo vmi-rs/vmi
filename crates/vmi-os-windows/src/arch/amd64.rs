@@ -151,26 +151,26 @@ where
         let registers = vmi.registers();
 
         let translation = Amd64::translation(vmi.core(), address, registers.cr3.into());
-        if let Some(entry) = translation.entries().last() {
-            if entry.level == PageTableLevel::Pt {
-                if entry.entry.present() {
-                    // The address is valid if the page is present.
-                    return Ok(true);
-                }
-                else if entry.entry.windows_transition() && !entry.entry.windows_prototype() {
-                    // The Transition bit being 1 indicates that the page is in a transitional
-                    // state. This means the page is not currently in the process's working
-                    // set, but it's still resident in physical memory.
-                    //
-                    // If the process tries to access this page, it can be quickly brought
-                    // back into the working set without needing to read from disk. This is
-                    // sometimes called a "soft page fault" or "transition fault".
-                    //
-                    // This state is part of Windows' memory management optimization.
-                    // It allows the system to keep pages in memory that might be needed
-                    // again soon, without consuming the working set quota of processes.
-                    return Ok(true);
-                }
+        if let Some(entry) = translation.entries().last()
+            && entry.level == PageTableLevel::Pt
+        {
+            if entry.entry.present() {
+                // The address is valid if the page is present.
+                return Ok(true);
+            }
+            else if entry.entry.windows_transition() && !entry.entry.windows_prototype() {
+                // The Transition bit being 1 indicates that the page is in a transitional
+                // state. This means the page is not currently in the process's working
+                // set, but it's still resident in physical memory.
+                //
+                // If the process tries to access this page, it can be quickly brought
+                // back into the working set without needing to read from disk. This is
+                // sometimes called a "soft page fault" or "transition fault".
+                //
+                // This state is part of Windows' memory management optimization.
+                // It allows the system to keep pages in memory that might be needed
+                // again soon, without consuming the working set quota of processes.
+                return Ok(true);
             }
         }
 

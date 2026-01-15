@@ -497,23 +497,23 @@ where
                 .read_va_native(entry + __vm_area_struct.vm_file.offset());
             println!("Range: {:X?}-{:X?}", start, end);
 
-            if let Ok(file) = file {
-                if !file.is_null() {
-                    let __dentry = &offsets.dentry;
-                    let __file = &offsets.file;
-                    let __path = &offsets.path;
-                    let __qstr = &offsets.qstr;
+            if let Ok(file) = file
+                && !file.is_null()
+            {
+                let __dentry = &offsets.dentry;
+                let __file = &offsets.file;
+                let __path = &offsets.path;
+                let __qstr = &offsets.qstr;
 
-                    let f_path = file + __file.f_path.offset();
+                let f_path = file + __file.f_path.offset();
 
-                    if let Ok(dentry) = self.vmi.read_va_native(f_path + __path.dentry.offset()) {
-                        if let Ok(d_name) = self.vmi.read_va_native(
-                            dentry + __dentry.d_name.offset() + __qstr.name.offset(),
-                        ) {
-                            let name = self.vmi.read_string(d_name);
-                            println!("    File: {:?}", name);
-                        }
-                    }
+                if let Ok(dentry) = self.vmi.read_va_native(f_path + __path.dentry.offset())
+                    && let Ok(d_name) = self
+                        .vmi
+                        .read_va_native(dentry + __dentry.d_name.offset() + __qstr.name.offset())
+                {
+                    let name = self.vmi.read_string(d_name);
+                    println!("    File: {:?}", name);
                 }
             }
         }
