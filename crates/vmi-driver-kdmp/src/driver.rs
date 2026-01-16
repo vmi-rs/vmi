@@ -1,6 +1,6 @@
 use std::{path::Path, time::Duration};
 
-use kdmp_parser::{Gpa, KernelDumpParser, MappedFileReader};
+use kdmp_parser::{gxa::Gpa, map::MappedFileReader, parse::KernelDumpParser, phys::Reader};
 use vmi_core::{
     Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiEvent, VmiEventResponse,
     VmiInfo, VmiMappedPage,
@@ -79,9 +79,10 @@ where
     }
 
     pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, Error> {
+        let reader = Reader::new(&self.dump);
+
         let mut content = [0u8; 4096];
-        self.dump
-            .phys_read_exact(Gpa::new(gfn.0 << 12), &mut content)?;
+        reader.read_exact(Gpa::new(gfn.0 << 12), &mut content)?;
 
         Ok(VmiMappedPage::new(Vec::from(content)))
     }

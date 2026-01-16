@@ -911,13 +911,9 @@ dependencies = [
 
 [[package]]
 name = "kdmp-parser"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "002906830ced54e4e34bf14a789e730c7c9fd31be04246a6e009654f132393be"
-dependencies = [
- "bitflags",
- "thiserror",
-]
+checksum = "d61e9fa66b82ab0198a5d1d5ab99412aa3c2b7e305ea49480372e59c9c076726"
 
 [[package]]
 name = "lazy_static"
