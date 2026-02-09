@@ -464,9 +464,9 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.initialized
-            && let Err(e) = self.initialize()
+            && let Err(err) = self.initialize()
         {
-            return Some(Err(e));
+            return Some(Err(err));
         }
 
         self.walk_next().transpose()
