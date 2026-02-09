@@ -508,6 +508,13 @@ where
 
         if !self.hijacked {
             tracing::debug!(
+                session_id = current_process
+                    .session()
+                    .ok()
+                    .flatten()
+                    .map(|session| session.id().ok())
+                    .flatten()
+                    .unwrap_or(0),
                 %current_pid,
                 %current_tid,
                 filename = current_process.name().unwrap_or_else(|_| String::from("<unknown>")),
