@@ -1385,7 +1385,7 @@ where
 
     /// Returns the current process.
     fn current_process(vmi: VmiState<'_, Driver, Self>) -> Result<Self::Process<'_>, VmiError> {
-        Self::current_thread(vmi)?.attached_process()
+        Self::current_thread(vmi)?.current_process()
     }
 
     /// Returns the system process.

@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `WindowsThread::attached_process()` renamed to
+  `WindowsThread::current_process()`
+
 ### Added
+
+- `WindowsThread::is_attached()` - checks if a thread is attached to a
+  foreign process (via `_KTHREAD.ApcStateIndex`)
+- `WindowsThread::saved_process()` - returns the thread's home process
+  when attached to a foreign process (via `_KTHREAD.SavedApcState.Process`)
 
 ### Fixed
 

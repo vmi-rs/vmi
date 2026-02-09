@@ -231,6 +231,8 @@ offsets! {
         struct _KTHREAD {
             TrapFrame: Field,
             ApcState: Field,
+            ApcStateIndex: Field,
+            SavedApcState: Field,
             Teb: Field,
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY

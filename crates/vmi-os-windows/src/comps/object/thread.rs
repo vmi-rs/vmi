@@ -74,12 +74,26 @@ where
         Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
     }
 
-    /// Returns the process attached to the thread.
+    /// Returns true if the thread is currently attached to a foreign process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.ApcStateIndex`.
+    pub fn is_attached(&self) -> Result<bool, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let apc_state_index = self.vmi.read_u8(self.va + KTHREAD.ApcStateIndex.offset())?;
+
+        Ok(apc_state_index != 0)
+    }
+
+    /// Returns the process whose address space the thread is currently executing in.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_KTHREAD.ApcState.Process`.
-    pub fn attached_process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
+    pub fn current_process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
         let offsets = self.offsets();
         let KTHREAD = &offsets._KTHREAD;
         let KAPC_STATE = &offsets._KAPC_STATE;
@@ -89,6 +103,27 @@ where
             .read_va_native(self.va + KTHREAD.ApcState.offset() + KAPC_STATE.Process.offset())?;
 
         Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
+    }
+
+    /// Returns the thread's saved home process, or NULL if the thread is not attached.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.SavedApcState.Process`.
+    pub fn saved_process(&self) -> Result<Option<WindowsProcess<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+        let KAPC_STATE = &offsets._KAPC_STATE;
+
+        let process = self.vmi.read_va_native(
+            self.va + KTHREAD.SavedApcState.offset() + KAPC_STATE.Process.offset(),
+        )?;
+
+        if process.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsProcess::new(self.vmi, ProcessObject(process))))
     }
 }
 
