@@ -512,8 +512,7 @@ where
                     .session()
                     .ok()
                     .flatten()
-                    .map(|session| session.id().ok())
-                    .flatten()
+                    .and_then(|session| session.id().ok())
                     .unwrap_or(0),
                 %current_pid,
                 %current_tid,
