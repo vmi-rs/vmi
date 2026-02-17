@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   foreign process (via `_KTHREAD.ApcStateIndex`)
 - `WindowsThread::saved_process()` - returns the thread's home process
   when attached to a foreign process (via `_KTHREAD.SavedApcState.Process`)
+- `WindowsThread::trap_frame()` + `struct WindowsTrapFrame` - returns the thread's trap frame
 
 ### Fixed
 

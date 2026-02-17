@@ -1,9 +1,7 @@
-use isr_core::Profile;
-use isr_macros::{Field, offsets};
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt, Registers};
 use vmi_core::{
     Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiDriver,
-    VmiError, VmiEventResponse, VmiHandler, VmiVa as _,
+    VmiError, VmiEventResponse, VmiHandler,
     os::{ProcessId, VmiOsProcess, VmiOsThread},
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
@@ -21,26 +19,10 @@ const INVALID_VIEW: View = View(0xffff);
 // const INVALID_TID: ThreadId = ThreadId(0xffff_ffff);
 // const INVALID_PID: ProcessId = ProcessId(0xffff_ffff);
 
-offsets! {
-    #[derive(Debug)]
-    pub struct Offsets {
-        struct _KTRAP_FRAME {
-            Rip: Field,
-            Rsp: Field,
-        }
-
-        struct _KTHREAD {
-            TrapFrame: Field,
-        }
-    }
-}
-
 impl<Driver> OsAdapter<Driver> for WindowsOs<Driver>
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
-    type Offsets = Offsets;
-
     fn prepare_function_call(
         &self,
         vmi: &VmiCore<Driver>,
@@ -177,15 +159,13 @@ where
     /// Creates a new injector handler.
     pub fn new(
         vmi: &VmiCore<Driver>,
-        profile: &Profile,
         pid: ProcessId,
         recipe: Recipe<Driver, WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
-        Self::with_bridge(vmi, profile, pid, (), recipe)
+        Self::with_bridge(vmi, pid, (), recipe)
     }
 }
 
-#[expect(non_snake_case)]
 impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>,
@@ -194,13 +174,10 @@ where
     /// Creates a new injector handler.
     pub fn with_bridge(
         vmi: &VmiCore<Driver>,
-        profile: &Profile,
         pid: ProcessId,
         bridge: Bridge,
         recipe: Recipe<Driver, WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
-        let offsets = Offsets::new(profile)?;
-
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
         vmi.monitor_enable(EventMonitor::Register(ControlRegister::Cr3))?;
@@ -216,7 +193,6 @@ where
             hijacked: false,
             ip_va: None,
             ip_pa: None,
-            offsets,
             recipe: RecipeExecutor::new(recipe),
             view,
             bridge,
@@ -336,7 +312,8 @@ where
         // Early exit if the current process is not the target process.
         //
 
-        let current_pid = vmi.os().current_process()?.id()?;
+        let current_process = vmi.os().current_process()?;
+        let current_pid = current_process.id()?;
         if current_pid != self.pid {
             return Ok(VmiEventResponse::default());
         }
@@ -347,17 +324,20 @@ where
         // trap frame of the current thread.
         //
 
-        let KTHREAD_TrapFrame = self.offsets._KTHREAD.TrapFrame.offset();
-        let KTRAP_FRAME_Rsp = self.offsets._KTRAP_FRAME.Rsp.offset();
-        let KTRAP_FRAME_Rip = self.offsets._KTRAP_FRAME.Rip.offset();
-
         let current_thread = vmi.os().current_thread()?;
         let current_tid = current_thread.id()?;
-        let current_thread = current_thread.va();
 
-        let trap_frame = vmi.read_va(current_thread + KTHREAD_TrapFrame)?;
-        let sp_va = vmi.read_va(trap_frame + KTRAP_FRAME_Rsp)?;
-        let ip_va = vmi.read_va(trap_frame + KTRAP_FRAME_Rip)?;
+        let trap_frame = match current_thread.trap_frame()? {
+            Some(trap_frame) => trap_frame,
+            None => {
+                tracing::trace!(%current_tid, "no trap frame");
+
+                return Ok(VmiEventResponse::default());
+            }
+        };
+
+        let ip_va = trap_frame.instruction_pointer()?;
+        let sp_va = trap_frame.stack_pointer()?;
 
         //
         // Verify that the next instruction of this thread is in a user-mode

@@ -12,6 +12,7 @@ mod peb;
 mod process_parameters;
 mod region;
 mod session;
+mod trap_frame;
 
 pub use self::{
     control_area::WindowsControlArea,
@@ -31,4 +32,5 @@ pub use self::{
     process_parameters::WindowsProcessParameters,
     region::WindowsRegion,
     session::WindowsSession,
+    trap_frame::WindowsTrapFrame,
 };

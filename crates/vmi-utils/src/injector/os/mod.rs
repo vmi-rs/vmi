@@ -10,9 +10,6 @@ pub trait OsAdapter<Driver>: VmiOs<Driver>
 where
     Driver: VmiDriver,
 {
-    /// Operating system specific offset information.
-    type Offsets;
-
     /// Prepares registers and stack for a function call according to OS conventions.
     fn prepare_function_call(
         &self,

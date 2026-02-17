@@ -21,9 +21,6 @@ workspace = true
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
-isr-core = { workspace = true, optional = true }
-isr-macros = { workspace = true, optional = true }
-
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
@@ -45,8 +42,6 @@ default = [
 arch-amd64 = ["vmi-arch-amd64"]
 os-windows = [
     "vmi-os-windows",
-    "isr-core",
-    "isr-macros"
 ]
 
 bpm = []

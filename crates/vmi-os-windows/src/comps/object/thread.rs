@@ -3,7 +3,10 @@ use vmi_core::{
     os::{ProcessObject, ThreadId, ThreadObject, VmiOsThread},
 };
 
-use super::{super::macros::impl_offsets, WindowsObject, WindowsProcess};
+use super::{
+    super::{WindowsTrapFrame, macros::impl_offsets},
+    WindowsObject, WindowsProcess,
+};
 use crate::{ArchAdapter, WindowsOs};
 
 /// A Windows thread.
@@ -124,6 +127,33 @@ where
         }
 
         Ok(Some(WindowsProcess::new(self.vmi, ProcessObject(process))))
+    }
+
+    /// Returns the thread's trap frame.
+    ///
+    /// Points to the most recent user-to-kernel transition trap frame for the thread.
+    /// It records the user-mode register state that was captured when the thread
+    /// entered the kernel via a syscall, interrupt, or exception.
+    ///
+    /// Can be NULL when the thread is executing purely in kernel mode and has not
+    /// entered via a user-mode trap.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.TrapFrame`.
+    pub fn trap_frame(&self) -> Result<Option<WindowsTrapFrame<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let trap_frame = self
+            .vmi
+            .read_va_native(self.va + KTHREAD.TrapFrame.offset())?;
+
+        if trap_frame.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsTrapFrame::new(self.vmi, trap_frame)))
     }
 }
 

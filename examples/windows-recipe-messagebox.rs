@@ -62,7 +62,7 @@ where
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (session, profile) = common::create_vmi_session()?;
+    let (session, _profile) = common::create_vmi_session()?;
 
     let explorer_pid = {
         // This block is used to drop the pause guard after the PID is found.
@@ -93,7 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     session.handle(|session| {
         InjectorHandler::new(
             session,
-            &profile,
             explorer_pid,
             recipe_factory(MessageBox::new(
                 "Hello, World!",

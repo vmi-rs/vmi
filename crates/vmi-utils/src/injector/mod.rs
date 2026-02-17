@@ -136,9 +136,6 @@ where
     /// Physical address of the instruction pointer in the hijacked thread.
     pub(super) ip_pa: Option<Pa>,
 
-    /// OS-specific offsets for accessing kernel structures.
-    pub(super) offsets: <Os as OsAdapter<Driver>>::Offsets,
-
     /// Executor for running the injection recipe.
     pub(super) recipe: RecipeExecutor<Driver, Os, T>,
 
