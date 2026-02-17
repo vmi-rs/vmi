@@ -77,11 +77,11 @@ where
         Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
     }
 
-    /// Returns true if the thread is currently attached to a foreign process.
+    /// Checks if the thread is currently attached to foreign process context.
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KTHREAD.ApcStateIndex`.
+    /// Corresponds to `_KTHREAD.ApcStateIndex != 0`.
     pub fn is_attached(&self) -> Result<bool, VmiError> {
         let offsets = self.offsets();
         let KTHREAD = &offsets._KTHREAD;
