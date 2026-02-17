@@ -69,6 +69,22 @@ where
         Self { vmi, va: process.0 }
     }
 
+    /// Checks if the process is a WoW64 process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.WoW64Process != NULL`.
+    pub fn is_wow64(&self) -> Result<bool, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let wow64process = self
+            .vmi
+            .read_va_native(self.va + EPROCESS.WoW64Process.offset())?;
+
+        Ok(!wow64process.is_null())
+    }
+
     /// Returns the process environment block (PEB).
     ///
     /// # Implementation Details
