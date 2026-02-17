@@ -81,46 +81,59 @@ where
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
 
-        let root = self.translation_root()?;
-
         let wow64 = self
             .vmi
             .read_va_native(self.va + EPROCESS.WoW64Process.offset())?;
 
         if wow64.is_null() {
-            let peb64 = self.vmi.read_va_native(self.va + EPROCESS.Peb.offset())?;
-
-            if peb64.is_null() {
-                return Ok(None);
-            }
-
-            Ok(Some(WindowsPeb::new(
-                self.vmi,
-                peb64,
-                root,
-                WindowsWow64Kind::Native,
-            )))
+            return self.native_peb();
         }
-        else {
-            let peb32 = match &offsets.ext {
-                Some(OffsetsExt::V1(_)) => wow64,
-                Some(OffsetsExt::V2(v2)) => self
-                    .vmi
-                    .read_va_native(wow64 + v2._EWOW64PROCESS.Peb.offset())?,
-                None => panic!("OffsetsExt not set"),
-            };
 
-            if peb32.is_null() {
-                return Ok(None);
-            }
+        let va = match &offsets.ext {
+            Some(OffsetsExt::V1(_)) => wow64,
+            Some(OffsetsExt::V2(v2)) => self
+                .vmi
+                .read_va_native(wow64 + v2._EWOW64PROCESS.Peb.offset())?,
+            None => panic!("OffsetsExt not set"),
+        };
 
-            Ok(Some(WindowsPeb::new(
-                self.vmi,
-                peb32,
-                root,
-                WindowsWow64Kind::X86,
-            )))
+        if va.is_null() {
+            return Ok(None);
         }
+
+        let root = self.translation_root()?;
+
+        Ok(Some(WindowsPeb::new(
+            self.vmi,
+            va,
+            root,
+            WindowsWow64Kind::X86,
+        )))
+    }
+
+    /// Returns the native process environment block (PEB).
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.Peb`.
+    pub fn native_peb(&self) -> Result<Option<WindowsPeb<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let va = self.vmi.read_va_native(self.va + EPROCESS.Peb.offset())?;
+
+        if va.is_null() {
+            return Ok(None);
+        }
+
+        let root = self.translation_root()?;
+
+        Ok(Some(WindowsPeb::new(
+            self.vmi,
+            va,
+            root,
+            WindowsWow64Kind::Native,
+        )))
     }
 
     /// Returns the session of the process.
