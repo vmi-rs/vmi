@@ -145,15 +145,15 @@ where
         let offsets = self.offsets();
         let KTHREAD = &offsets._KTHREAD;
 
-        let trap_frame = self
+        let va = self
             .vmi
             .read_va_native(self.va + KTHREAD.TrapFrame.offset())?;
 
-        if trap_frame.is_null() {
+        if va.is_null() {
             return Ok(None);
         }
 
-        Ok(Some(WindowsTrapFrame::new(self.vmi, trap_frame)))
+        Ok(Some(WindowsTrapFrame::new(self.vmi, va)))
     }
 }
 
