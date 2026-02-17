@@ -12,7 +12,9 @@ mod peb;
 mod process_parameters;
 mod region;
 mod session;
+mod teb;
 mod trap_frame;
+mod wow64;
 
 pub use self::{
     control_area::WindowsControlArea,
@@ -28,9 +30,11 @@ pub use self::{
         WindowsThread,
     },
     object_attributes::WindowsObjectAttributes,
-    peb::{WindowsPeb, WindowsWow64Kind},
+    peb::WindowsPeb,
     process_parameters::WindowsProcessParameters,
     region::WindowsRegion,
     session::WindowsSession,
+    teb::WindowsTeb,
     trap_frame::WindowsTrapFrame,
+    wow64::WindowsWow64Kind,
 };

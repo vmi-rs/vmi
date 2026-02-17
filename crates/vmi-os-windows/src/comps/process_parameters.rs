@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{macros::impl_offsets, peb::WindowsWow64Kind};
+use super::{WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 
 /// A Windows process parameters structure.

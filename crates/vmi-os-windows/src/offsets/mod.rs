@@ -267,6 +267,7 @@ offsets! {
             ThreadListHead: Field,          // _LIST_ENTRY
         }
 
+        // Unfortunately, _PEB32 and _PEB64 are not defined in 32-bit ntoskrnl.
         struct _PEB {
             ImageBaseAddress: Field,        // PVOID
             Ldr: Field,                     // _PEB_LDR_DATA*
@@ -274,8 +275,21 @@ offsets! {
         }
 
         struct _TEB {
-            LastErrorValue: Field,
-            LastStatusValue: Field,
+            ProcessEnvironmentBlock: Field, // _PEB*
+            LastErrorValue: Field,          // ULONG
+            LastStatusValue: Field,         // NTSTATUS
+        }
+
+        struct _TEB32 {
+            ProcessEnvironmentBlock: Field, // _PEB*
+            LastErrorValue: Field,          // ULONG
+            LastStatusValue: Field,         // NTSTATUS
+        }
+
+        struct _TEB64 {
+            ProcessEnvironmentBlock: Field, // _PEB*
+            LastErrorValue: Field,          // ULONG
+            LastStatusValue: Field,         // NTSTATUS
         }
 
         struct _RTL_USER_PROCESS_PARAMETERS {

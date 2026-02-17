@@ -6,8 +6,8 @@ use vmi_core::{
 
 use super::{
     super::{
-        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, macros::impl_offsets,
-        peb::WindowsWow64Kind,
+        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind,
+        macros::impl_offsets,
     },
     WindowsObject, WindowsThread,
 };

@@ -1,10 +1,10 @@
 use vmi_core::{
     Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
-    os::{ProcessObject, ThreadId, ThreadObject, VmiOsThread},
+    os::{ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread},
 };
 
 use super::{
-    super::{WindowsTrapFrame, macros::impl_offsets},
+    super::{WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets},
     WindowsObject, WindowsProcess,
 };
 use crate::{ArchAdapter, WindowsOs};
@@ -127,6 +127,65 @@ where
         }
 
         Ok(Some(WindowsProcess::new(self.vmi, ProcessObject(process))))
+    }
+
+    /// Returns the thread's TEB.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.Teb` for the native TEB, and
+    /// `Teb64 + ROUND_TO_PAGES(sizeof(TEB))` for the WoW64 TEB.
+    pub fn teb(&self) -> Result<Option<WindowsTeb<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let TEB = &offsets._TEB;
+
+        let teb = match self.native_teb()? {
+            Some(teb) => teb,
+            None => return Ok(None),
+        };
+
+        let owning_process = self.process()?;
+        if !owning_process.is_wow64()? {
+            return Ok(Some(teb));
+        }
+
+        // #define WOW64_GET_TEB32_SAFE(teb64) \
+        //         ((PTEB32) ((ULONGLONG)teb64 + WOW64_ROUND_TO_PAGES (sizeof (TEB))))
+
+        let va = teb.va() + Driver::Architecture::va_align_up(Va(TEB.len() as u64));
+        let root = owning_process.translation_root()?;
+
+        Ok(Some(WindowsTeb::new(
+            self.vmi,
+            va,
+            root,
+            WindowsWow64Kind::X86,
+        )))
+    }
+
+    /// Returns the thread's native TEB.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.Teb`.
+    pub fn native_teb(&self) -> Result<Option<WindowsTeb<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let va = self.vmi.read_va_native(self.va + KTHREAD.Teb.offset())?;
+
+        if va.is_null() {
+            return Ok(None);
+        }
+
+        let root = self.process()?.translation_root()?;
+
+        Ok(Some(WindowsTeb::new(
+            self.vmi,
+            va,
+            root,
+            WindowsWow64Kind::Native,
+        )))
     }
 
     /// Returns the thread's trap frame.
