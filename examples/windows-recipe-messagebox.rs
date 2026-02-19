@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! DEBUG domain_id=XenDomainId(102)
-//! DEBUG found MZ base_address=0xfffff80002861000
+//! DEBUG found kernel image base_address=0xfffff80002861000
 //!  INFO profile already exists profile_path="cache/windows/ntkrnlmp.pdb/3844dbb920174967be7aa4a2c20430fa2/profile.json"
 //!  INFO Creating VMI session
 //!  INFO found explorer.exe pid=1248 object=0xfffffa80030e9060

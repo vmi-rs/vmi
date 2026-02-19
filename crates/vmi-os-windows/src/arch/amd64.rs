@@ -155,7 +155,7 @@ where
                 continue;
             }
 
-            tracing::debug!(%base_address, "found MZ");
+            tracing::trace!(%base_address, "found MZ");
 
             let image = WindowsImage::new_without_os(vmi, base_address);
             match image_codeview(&image) {
@@ -163,17 +163,18 @@ where
                     let path = &result.codeview.path;
 
                     if path.starts_with("nt") {
+                        tracing::debug!(%base_address, "found kernel image");
                         return Ok(Some(result));
                     }
 
-                    tracing::debug!(%path, "found non-kernel image");
+                    tracing::trace!(%path, "found non-kernel image");
                 }
-                Ok(None) => tracing::debug!("No codeview found"),
-                Err(err) => tracing::debug!(%err, "Error parsing PE"),
+                Ok(None) => tracing::trace!("No codeview found"),
+                Err(err) => tracing::trace!(%err, "Error parsing PE"),
             };
         }
 
-        tracing::warn!(
+        tracing::trace!(
             "No codeview found within {} MB",
             MAX_BACKWARD_SEARCH / 1024 / 1024
         );
@@ -248,7 +249,7 @@ fn find_kernel_slow<Driver>(
 where
     Driver: VmiDriver<Architecture = Amd64>,
 {
-    tracing::debug!("performing slow kernel search");
+    tracing::trace!("performing slow kernel search");
 
     let info = vmi.info()?;
 
