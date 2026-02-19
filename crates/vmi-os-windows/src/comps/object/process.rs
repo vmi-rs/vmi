@@ -9,7 +9,7 @@ use super::{
         WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind,
         macros::impl_offsets,
     },
-    WindowsObject, WindowsThread,
+    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread,
 };
 use crate::{
     ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs,
@@ -44,6 +44,21 @@ where
 {
     fn from(value: WindowsProcess<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
+    }
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsProcess<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        match object.type_kind()? {
+            Some(WindowsObjectTypeKind::Process) => {
+                Ok(Some(Self::new(object.vmi, ProcessObject(object.va))))
+            }
+            _ => Ok(None),
+        }
     }
 }
 
@@ -186,6 +201,41 @@ where
         }
 
         Ok(Some(WindowsHandleTable::new(self.vmi, handle_table)))
+    }
+
+    /// Looks up the object associated with the given handle and attempts
+    /// to convert it to the specified type.
+    ///
+    /// Resolves a handle value through the process handle table
+    /// and converts the resulting [`WindowsObject`] using the
+    /// [`FromWindowsObject`] trait.
+    ///
+    /// Returns `Ok(None)` if the handle table is unavailable,
+    /// the handle is invalid, the entry has no associated object,
+    /// or the object is not of the requested type.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // Look up the raw object.
+    /// let object = process.lookup_object::<WindowsObject>(handle)?;
+    ///
+    /// // Look up and convert to a specific type.
+    /// let process = current_process.lookup_object::<WindowsProcess>(handle)?;
+    /// let file = current_process.lookup_object::<WindowsFileObject>(handle)?;
+    /// ```
+    pub fn lookup_object<T>(&self, handle: u64) -> Result<Option<T>, VmiError>
+    where
+        T: FromWindowsObject<'a, Driver>,
+    {
+        if let Some(handle_table) = self.handle_table()?
+            && let Some(entry) = handle_table.lookup(handle)?
+            && let Some(object) = entry.object()?
+        {
+            return T::from_object(object);
+        }
+
+        Ok(None)
     }
 
     /// Returns the root of the virtual address descriptor (VAD) tree.

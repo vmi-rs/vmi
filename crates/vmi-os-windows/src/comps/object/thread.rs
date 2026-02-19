@@ -5,7 +5,7 @@ use vmi_core::{
 
 use super::{
     super::{WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets},
-    WindowsObject, WindowsProcess,
+    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess,
 };
 use crate::{ArchAdapter, WindowsOs};
 
@@ -36,6 +36,21 @@ where
 {
     fn from(value: WindowsThread<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
+    }
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsThread<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        match object.type_kind()? {
+            Some(WindowsObjectTypeKind::Thread) => {
+                Ok(Some(Self::new(object.vmi, ThreadObject(object.va))))
+            }
+            _ => Ok(None),
+        }
     }
 }
 

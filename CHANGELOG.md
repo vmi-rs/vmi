@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `KiDeliverApc` kernel symbol
 - `WindowsTeb::tls_slot()` for reading thread-local storage slots
 - WoW64 TLS slot constants (`WOW64_TLS_CPURESERVED`, ...)
+- `FromWindowsObject` trait for typed conversion from `WindowsObject`
+- `WindowsProcess::lookup_object()` method for typed handle lookup
 
 ### Fixed
 

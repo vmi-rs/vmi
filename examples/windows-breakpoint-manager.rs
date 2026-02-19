@@ -15,7 +15,7 @@ use vmi::{
     driver::xen::VmiXenDriver,
     os::{
         ProcessObject, VmiOsProcess as _,
-        windows::{WindowsOs, WindowsOsExt as _},
+        windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
     },
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
@@ -402,34 +402,14 @@ where
 
         let FileHandle = vmi.os().function_argument(0)?;
 
-        let handle_table = match vmi.os().current_process()?.handle_table()? {
-            Some(handle_table) => handle_table,
-            None => {
-                tracing::warn!("No handle table found");
-                return Ok(());
-            }
-        };
-
-        let handle_table_entry = match handle_table.lookup(FileHandle)? {
-            Some(handle_table_entry) => handle_table_entry,
-            None => {
-                tracing::warn!(FileHandle = %Hex(FileHandle), "No handle table entry found");
-                return Ok(());
-            }
-        };
-
-        let object = match handle_table_entry.object()? {
-            Some(object) => object,
-            None => {
-                tracing::warn!(FileHandle = %Hex(FileHandle), "No object found");
-                return Ok(());
-            }
-        };
-
-        let file_object = match object.as_file()? {
+        let file_object = match vmi
+            .os()
+            .current_process()?
+            .lookup_object::<WindowsFileObject<_>>(FileHandle)?
+        {
             Some(file_object) => file_object,
             None => {
-                tracing::warn!(FileHandle = %Hex(FileHandle), "Not a file object");
+                tracing::warn!(FileHandle = %Hex(FileHandle), "No object found");
                 return Ok(());
             }
         };

@@ -6,7 +6,7 @@ use super::{
         WindowsControlArea,
         macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
     },
-    WindowsFileObject, WindowsObject,
+    FromWindowsObject, WindowsFileObject, WindowsObject, WindowsObjectTypeKind,
 };
 use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 
@@ -39,6 +39,19 @@ where
         };
 
         Self::new(vmi, va)
+    }
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsSectionObject<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        match object.type_kind()? {
+            Some(WindowsObjectTypeKind::Section) => Ok(Some(Self::new(object.vmi, object.va))),
+            _ => Ok(None),
+        }
     }
 }
 

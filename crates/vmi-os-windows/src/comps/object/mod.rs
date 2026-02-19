@@ -22,6 +22,16 @@ use super::{
 };
 use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter};
 
+/// Trait for types that can be converted from a [`WindowsObject`].
+pub trait FromWindowsObject<'a, Driver>: Sized
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    /// Attempts to convert a [`WindowsObject`] into a specific object type.
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError>;
+}
+
 /// A Windows object.
 ///
 /// A Windows object is a kernel-managed entity that can be referenced
@@ -41,6 +51,17 @@ where
 
     /// The virtual address of the object.
     va: Va,
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsObject<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        // Any object can be converted to itself.
+        Ok(Some(object))
+    }
 }
 
 impl<Driver> VmiVa for WindowsObject<'_, Driver>

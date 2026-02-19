@@ -3,7 +3,7 @@ use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
 use super::{
     super::{WindowsKeyControlBlock, macros::impl_offsets},
-    WindowsObject,
+    FromWindowsObject, WindowsObject, WindowsObjectTypeKind,
 };
 use crate::{ArchAdapter, WindowsError, WindowsOs};
 
@@ -41,6 +41,19 @@ where
 {
     fn from(value: WindowsKey<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
+    }
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsKey<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        match object.type_kind()? {
+            Some(WindowsObjectTypeKind::Key) => Ok(Some(Self::new(object.vmi, object.va))),
+            _ => Ok(None),
+        }
     }
 }
 

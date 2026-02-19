@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{super::macros::impl_offsets, WindowsObject};
+use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
 use crate::{ArchAdapter, WindowsOs};
 
 /// A Windows directory object.
@@ -30,6 +30,19 @@ where
 {
     fn from(value: WindowsDirectoryObject<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
+    }
+}
+
+impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsDirectoryObject<'a, Driver>
+where
+    Driver: VmiDriver,
+    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+{
+    fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
+        match object.type_kind()? {
+            Some(WindowsObjectTypeKind::Directory) => Ok(Some(Self::new(object.vmi, object.va))),
+            _ => Ok(None),
+        }
     }
 }
 
