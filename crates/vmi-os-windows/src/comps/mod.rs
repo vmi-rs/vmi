@@ -36,5 +36,8 @@ pub use self::{
     session::WindowsSession,
     teb::WindowsTeb,
     trap_frame::WindowsTrapFrame,
-    wow64::WindowsWow64Kind,
+    wow64::{
+        WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST,
+        WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsWow64Kind,
+    },
 };

@@ -279,18 +279,21 @@ offsets! {
             ProcessEnvironmentBlock: Field, // _PEB*
             LastErrorValue: Field,          // ULONG
             LastStatusValue: Field,         // NTSTATUS
+            TlsSlots: Field,                // PVOID[64]
         }
 
         struct _TEB32 {
             ProcessEnvironmentBlock: Field, // _PEB*
             LastErrorValue: Field,          // ULONG
             LastStatusValue: Field,         // NTSTATUS
+            TlsSlots: Field,                // PVOID[64]
         }
 
         struct _TEB64 {
             ProcessEnvironmentBlock: Field, // _PEB*
             LastErrorValue: Field,          // ULONG
             LastStatusValue: Field,         // NTSTATUS
+            TlsSlots: Field,                // PVOID[64]
         }
 
         struct _RTL_USER_PROCESS_PARAMETERS {

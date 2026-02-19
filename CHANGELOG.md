@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsInterrupt` trait for creating Windows-specific interrupts
 - `WindowsPageTableEntry` trait made public
 - `KiDeliverApc` kernel symbol
+- `WindowsTeb::tls_slot()` for reading thread-local storage slots
+- WoW64 TLS slot constants (`WOW64_TLS_CPURESERVED`, ...)
 
 ### Fixed
 

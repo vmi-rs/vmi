@@ -78,11 +78,13 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod comps;
 pub use self::comps::{
-    ParseObjectTypeError, WindowsControlArea, WindowsDirectoryObject, WindowsFileObject,
-    WindowsHandleTable, WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject,
-    WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind,
-    WindowsPeb, WindowsProcess, WindowsProcessParameters, WindowsRegion, WindowsSectionObject,
-    WindowsSession, WindowsTeb, WindowsThread, WindowsTrapFrame, WindowsWow64Kind,
+    ParseObjectTypeError, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR,
+    WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsControlArea,
+    WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable, WindowsHandleTableEntry,
+    WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
+    WindowsProcess, WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsSession,
+    WindowsTeb, WindowsThread, WindowsTrapFrame, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

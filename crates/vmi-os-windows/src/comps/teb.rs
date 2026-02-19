@@ -149,4 +149,36 @@ where
 
         self.vmi.read_u32_in((self.va + offset, self.root))
     }
+
+    /// Returns the value of the specified thread-local storage (TLS) slot.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_TEB.TlsSlots[index]`.
+    pub fn tls_slot(&self, index: usize) -> Result<u64, VmiError> {
+        const TLS_MINIMUM_AVAILABLE: usize = 64;
+        debug_assert!(
+            index < TLS_MINIMUM_AVAILABLE,
+            "TLS slot index out of bounds: {index}"
+        );
+
+        let field = match self.kind {
+            WindowsWow64Kind::Native => {
+                let offsets = self.offsets();
+                let TEB = &offsets.common._TEB;
+                TEB.TlsSlots
+            }
+            WindowsWow64Kind::X86 => {
+                let offsets = self.offsets();
+                let TEB = &offsets.common._TEB32;
+                TEB.TlsSlots
+            }
+        };
+
+        let size = (field.size() as usize) / TLS_MINIMUM_AVAILABLE;
+        debug_assert!(size == 4 || size == 8, "Unexpected TLS slot size: {size}");
+
+        let offset = field.offset() + (index * size) as u64;
+        self.vmi.read_uint_in((self.va + offset, self.root), size)
+    }
 }
