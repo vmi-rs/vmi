@@ -2,6 +2,7 @@ mod amd64;
 
 use vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError, VmiState};
 
+pub use self::amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
 use crate::{WindowsKernelInformation, WindowsOs};
 
 /// Architecture-specific Windows functionality.

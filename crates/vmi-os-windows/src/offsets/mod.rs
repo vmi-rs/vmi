@@ -13,6 +13,7 @@ symbols! {
         PsActiveProcessHead: u64,
         PsInitialSystemProcess: u64,
         PsLoadedModuleList: u64,
+        KiDeliverApc: Option<u64>,
         KiDispatchException: Option<u64>,
         DbgkpSendErrorMessage: Option<u64>,
 

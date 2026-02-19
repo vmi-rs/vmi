@@ -1,4 +1,6 @@
-use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel, Registers};
+use vmi_arch_amd64::{
+    Amd64, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel, Registers,
+};
 use vmi_core::{
     Architecture as _, Va, VmiCore, VmiDriver, VmiError, VmiSession, VmiState,
     os::{NoOS, VmiOsImage},
@@ -9,7 +11,7 @@ use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// An extension trait for [`PageTableEntry`] that provides access to
 /// Windows-specific fields.
-trait WindowsPageTableEntry {
+pub trait WindowsPageTableEntry {
     /// Returns whether the page is a prototype.
     fn windows_prototype(self) -> bool;
 
@@ -24,6 +26,53 @@ impl WindowsPageTableEntry for PageTableEntry {
 
     fn windows_transition(self) -> bool {
         (self.0 >> 11) & 1 != 0
+    }
+}
+
+/// An extension trait for [`ExceptionVector`] that provides access to
+/// Windows-specific exception vectors.
+pub trait WindowsExceptionVector {
+    /// Asynchronous Procedure Call (APC) interrupt.
+    const Apc: Self;
+
+    /// Deferred Procedure Call (DPC) interrupt.
+    const Dpc: Self;
+}
+
+impl WindowsExceptionVector for ExceptionVector {
+    const Apc: Self = Self(31); // 0x1F
+    const Dpc: Self = Self(47); // 0x2F
+}
+
+/// An extension trait for [`Interrupt`] that provides access to
+/// Windows-specific interrupts.
+pub trait WindowsInterrupt {
+    /// Creates a new APC interrupt.
+    fn apc() -> Self;
+
+    /// Creates a new DPC interrupt.
+    fn dpc() -> Self;
+}
+
+impl WindowsInterrupt for Interrupt {
+    fn apc() -> Self {
+        Self {
+            vector: ExceptionVector::Apc,
+            typ: InterruptType::ExternalInterrupt,
+            error_code: 0xffff_ffff,
+            instruction_length: 0,
+            extra: 0,
+        }
+    }
+
+    fn dpc() -> Self {
+        Self {
+            vector: ExceptionVector::Dpc,
+            typ: InterruptType::ExternalInterrupt,
+            error_code: 0xffff_ffff,
+            instruction_length: 0,
+            extra: 0,
+        }
     }
 }
 
