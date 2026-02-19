@@ -1,7 +1,7 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
-use super::{WindowsObject, macros::impl_offsets};
+use super::macros::impl_offsets;
 use crate::{ArchAdapter, WindowsError, WindowsOs};
 
 /// A Windows registry key control block.
@@ -26,16 +26,6 @@ where
 
     /// Cached virtual address of the `_CM_NAME_CONTROL_BLOCK` structure.
     name_block: OnceCell<Va>,
-}
-
-impl<'a, Driver> From<WindowsKeyControlBlock<'a, Driver>> for WindowsObject<'a, Driver>
-where
-    Driver: VmiDriver,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
-{
-    fn from(value: WindowsKeyControlBlock<'a, Driver>) -> Self {
-        Self::new(value.vmi, value.va)
-    }
 }
 
 impl<Driver> VmiVa for WindowsKeyControlBlock<'_, Driver>

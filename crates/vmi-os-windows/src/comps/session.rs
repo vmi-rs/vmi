@@ -1,6 +1,6 @@
 use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::ProcessObject};
 
-use super::{WindowsObject, WindowsProcess, macros::impl_offsets};
+use super::{WindowsProcess, macros::impl_offsets};
 use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
 
 /// A Windows session space.
@@ -24,16 +24,6 @@ where
 
     /// The virtual address of the `_MM_SESSION_SPACE` structure.
     va: Va,
-}
-
-impl<'a, Driver> From<WindowsSession<'a, Driver>> for WindowsObject<'a, Driver>
-where
-    Driver: VmiDriver,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
-{
-    fn from(value: WindowsSession<'a, Driver>) -> Self {
-        Self::new(value.vmi, value.va)
-    }
 }
 
 impl<Driver> VmiVa for WindowsSession<'_, Driver>
