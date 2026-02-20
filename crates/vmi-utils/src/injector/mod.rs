@@ -18,9 +18,9 @@
 //! ```no_run
 //! use vmi::{
 //!     arch::amd64::Amd64,
+//!     driver::VmiMemory,
 //!     os::windows::WindowsOs,
 //!     utils::injector::{recipe, InjectorHandler, Recipe},
-//!     VcpuId, VmiDriver, VmiSession,
 //! };
 //!
 //! struct MessageBox {
@@ -39,12 +39,12 @@
 //!
 //! fn recipe_factory<Driver>(data: MessageBox) -> Recipe<Driver, WindowsOs<Driver>, MessageBox>
 //! where
-//!     Driver: VmiDriver<Architecture = Amd64>,
+//!     Driver: VmiMemory<Architecture = Amd64>,
 //! {
 //!     recipe![
 //!         Recipe::<_, WindowsOs<Driver>, _>::new(data),
 //!         {
-//!             inj! {
+//!             inject! {
 //!                 user32!MessageBoxA(
 //!                     0,                          // hWnd
 //!                     data![text],                // lpText
@@ -58,15 +58,13 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # use vmi::driver::xen::VmiXenDriver;
-//! # let vmi: VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
-//! # let profile = unimplemented!();
+//! # let vmi: vmi::VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //! # let pid = unimplemented!();
 //! #
 //! // Create and execute the injection handler
 //! vmi.handle(|vmi| {
 //!     InjectorHandler::new(
 //!         vmi,
-//!         &profile,
 //!         pid,
 //!         recipe_factory(MessageBox::new(
 //!             "Hello from VMI",

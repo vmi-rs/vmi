@@ -218,12 +218,32 @@ where
     /// # Examples
     ///
     /// ```no_run
+    /// # use vmi::{
+    /// #     VmiState,
+    /// #     arch::amd64::Amd64,
+    /// #     driver::VmiRead,
+    /// #     os::windows::{
+    /// #         WindowsFileObject, WindowsObject, WindowsOs, WindowsProcess,
+    /// #     },
+    /// # };
+    /// #
+    /// # fn example<Driver>(
+    /// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
+    /// #     handle: u64,
+    /// # ) -> Result<(), Box<dyn std::error::Error>>
+    /// # where
+    /// #     Driver: VmiRead<Architecture = Amd64>,
+    /// # {
+    /// # let process = vmi.os().current_process()?;
+    /// # let current_process = vmi.os().current_process()?;
     /// // Look up the raw object.
-    /// let object = process.lookup_object::<WindowsObject>(handle)?;
+    /// let object = process.lookup_object::<WindowsObject<_>>(handle)?;
     ///
     /// // Look up and convert to a specific type.
-    /// let process = current_process.lookup_object::<WindowsProcess>(handle)?;
-    /// let file = current_process.lookup_object::<WindowsFileObject>(handle)?;
+    /// let process = current_process.lookup_object::<WindowsProcess<_>>(handle)?;
+    /// let file = current_process.lookup_object::<WindowsFileObject<_>>(handle)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn lookup_object<T>(&self, handle: u64) -> Result<Option<T>, VmiError>
     where

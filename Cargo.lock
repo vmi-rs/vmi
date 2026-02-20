@@ -2142,6 +2142,7 @@ dependencies = [
  "once_cell",
  "thiserror",
  "tracing",
+ "vmi",
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-macros",
@@ -2153,6 +2154,7 @@ name = "vmi-utils"
 version = "0.4.0"
 dependencies = [
  "tracing",
+ "vmi",
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-os-windows",

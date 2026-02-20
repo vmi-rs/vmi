@@ -26,12 +26,20 @@
 //! ## Example
 //!
 //! ```no_run
-//! # use vmi::{VmiCore, VmiDriver, os::windows::WindowsOs};
+//! # use vmi::{
+//! #     VmiCore,
+//! #     arch::amd64::Amd64,
+//! #     driver::VmiVmControl,
+//! #     os::windows::WindowsOs,
+//! # };
 //! #
-//! # fn example<Driver: VmiDriver>(
+//! # fn example<Driver>(
 //! #     vmi: &VmiCore<Driver>,
 //! #     _os: &WindowsOs<Driver>
-//! # ) -> Result<(), Box<dyn std::error::Error>> {
+//! # ) -> Result<(), Box<dyn std::error::Error>>
+//! # where
+//! #     Driver: VmiVmControl<Architecture = Amd64>,
+//! # {
 //! let _guard = vmi.pause_guard()?;
 //! // Perform introspection operations here
 //! // VM automatically resumes when `_guard` goes out of scope
@@ -101,13 +109,20 @@ pub use self::comps::{
 ///
 /// ```no_run
 /// use isr::cache::{IsrCache, JsonCodec};
-/// use vmi::{VcpuId, VmiCore, VmiDriver, VmiError, os::windows::WindowsOs};
+/// use vmi::{
+///     VcpuId, VmiCore,
+///     arch::amd64::Amd64,
+///     driver::{VmiQueryRegisters, VmiRead, VmiVmControl},
+///     os::windows::WindowsOs,
+/// };
 ///
-/// # fn example<Driver: VmiDriver>(
+/// # fn example<Driver>(
 /// #     driver: Driver
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
-/// #     Driver: VmiDriver<Architecture = vmi_arch_amd64::Amd64>,
+/// #     Driver: VmiRead<Architecture = Amd64>
+/// #           + VmiQueryRegisters<Architecture = Amd64>
+/// #           + VmiVmControl<Architecture = Amd64>,
 /// # {
 /// // Setup VMI.
 /// let core = VmiCore::new(driver)?;
@@ -147,13 +162,18 @@ pub use self::comps::{
 /// Retrieving information about the current process:
 ///
 /// ```no_run
-/// # use vmi::{VcpuId, VmiDriver, VmiState, os::windows::WindowsOs};
+/// # use vmi::{
+/// #     VmiState,
+/// #     arch::amd64::Amd64,
+/// #     driver::VmiRead,
+/// #     os::{VmiOsProcess as _, windows::WindowsOs},
+/// # };
 /// #
-/// # fn example<Driver: VmiDriver>(
+/// # fn example<Driver>(
 /// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
-/// #     Driver: VmiDriver<Architecture = vmi_arch_amd64::Amd64>,
+/// #     Driver: VmiRead<Architecture = Amd64>,
 /// # {
 /// let process = vmi.os().current_process()?;
 /// let process_id = process.id()?;
@@ -166,15 +186,21 @@ pub use self::comps::{
 /// Enumerating all processes:
 ///
 /// ```no_run
-/// # use vmi::{VcpuId, VmiDriver, VmiState, os::windows::WindowsOs};
+/// # use vmi::{
+/// #     VmiState,
+/// #     arch::amd64::Amd64,
+/// #     driver::VmiRead,
+/// #     os::{VmiOsProcess as _, windows::WindowsOs},
+/// # };
 /// #
-/// # fn example<Driver: VmiDriver>(
+/// # fn example<Driver>(
 /// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
-/// #     Driver: VmiDriver<Architecture = vmi_arch_amd64::Amd64>,
+/// #     Driver: VmiRead<Architecture = Amd64>,
 /// # {
 /// for process in vmi.os().processes()? {
+///     let process = process?;
 ///     println!("Process: {} (PID: {})", process.name()?, process.id()?);
 /// }
 /// # Ok(())

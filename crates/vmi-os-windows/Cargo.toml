@@ -35,4 +35,4 @@ vmi-macros = { workspace = true }
 
 [dev-dependencies]
 isr = { workspace = true }
-# vmi = { workspace = true }
+vmi = { workspace = true }

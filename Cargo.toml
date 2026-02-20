@@ -64,7 +64,7 @@ xen = { package = "libxen", version = "0.4.0" }
 
 # xen = { path = "../xen", package = "libxen", version = "0.4.0" }
 
-# vmi = { path = "./crates/vmi", version = "0.4.0" }
+vmi = { path = ".", version = "0.4.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.4.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.4.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.4.0" }

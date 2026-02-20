@@ -347,10 +347,27 @@
 //!
 //!   Currently, the framework includes an [`Amd64`] implementation.
 //!
-//! - [`VmiDriver`]: A trait defining the interface for interacting with the
-//!   hypervisor. This allows the framework to support multiple hypervisors.
+//! - [`VmiDriver`]: A composable trait hierarchy defining the interface for
+//!   interacting with the hypervisor.
 //!
-//!   Currently, the framework includes a [`VmiXenDriver`] for Xen.
+//!   The base [`VmiDriver`] trait carries the [`Architecture`] type and
+//!   VM metadata, while independent sub-traits represent individual capabilities:
+//!   - [`VmiRead`]
+//!   - [`VmiWrite`]
+//!   - [`VmiQueryProtection`]
+//!   - [`VmiSetProtection`]
+//!   - [`VmiQueryRegisters`]
+//!   - [`VmiSetRegisters`]
+//!   - [`VmiViewControl`]
+//!   - [`VmiEventControl`]
+//!   - [`VmiVmControl`]
+//!
+//!   Drivers implement only the traits they support. For example, dump drivers
+//!   implement just `VmiRead` and `VmiQueryRegisters`, while full hypervisor
+//!   drivers implement [`VmiFullDriver`] (all traits).
+//!
+//!   Currently, the framework includes a [`VmiXenDriver`] for Xen, and
+//!   offline dump drivers [`VmiKdmpDriver`] and [`VmiXenCoreDumpDriver`].
 //!
 //! - [`VmiCore`]: Provides raw VMI operations, interacting directly with
 //!   the [`VmiDriver`] and leveraging the [`Architecture`]. It handles
@@ -605,6 +622,8 @@
 //!
 //! [`Amd64`]: crate::arch::amd64::Amd64
 //! [`VmiXenDriver`]: crate::driver::xen::VmiXenDriver
+//! [`VmiKdmpDriver`]: crate::driver::kdmp::VmiKdmpDriver
+//! [`VmiXenCoreDumpDriver`]: crate::driver::xen_core_dump::VmiXenCoreDumpDriver
 //! [`LinuxOs`]: crate::os::linux::LinuxOs
 //! [`WindowsOs`]: crate::os::windows::WindowsOs
 //! [`Translation`]: crate::VmiError::Translation
