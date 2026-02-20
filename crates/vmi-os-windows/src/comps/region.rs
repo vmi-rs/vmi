@@ -53,7 +53,7 @@ where
         let protection = self.protection();
         //let kind = self.kind();
 
-        f.debug_struct("WindowsOsRegion")
+        f.debug_struct("WindowsRegion")
             .field("start", &start)
             .field("end", &end)
             .field("protection", &protection)

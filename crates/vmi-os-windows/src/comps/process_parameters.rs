@@ -40,7 +40,7 @@ where
         let image_path_name = self.image_path_name();
         let command_line = self.command_line();
 
-        f.debug_struct("WindowsOsProcessParameters")
+        f.debug_struct("WindowsProcessParameters")
             .field("current_directory", &current_directory)
             .field("dll_path", &dll_path)
             .field("image_path_name", &image_path_name)

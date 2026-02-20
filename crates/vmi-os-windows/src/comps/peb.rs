@@ -48,7 +48,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let process_parameters = self.process_parameters();
 
-        f.debug_struct("WindowsOsPeb")
+        f.debug_struct("WindowsPeb")
             .field("process_parameters", &process_parameters)
             .finish()
     }
