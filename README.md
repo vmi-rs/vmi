@@ -3,6 +3,7 @@
 [![Docs](https://docs.rs/vmi/badge.svg)](https://docs.rs/vmi/latest/vmi/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vmi-rs/vmi/blob/master/LICENSE)
 
+<!-- readme start -->
 # Virtual Machine Introspection
 
 A comprehensive framework for Virtual Machine Introspection (VMI)
@@ -571,20 +572,7 @@ amazing projects and resources:
 # License
 
 This project is licensed under the MIT license.
-
-[physical page lookups]: crate::VmiCore::with_gfn_cache
-[Virtual-to-Physical address translations]: crate::VmiCore::with_v2p_cache
-
-
-
-[KVM-VMI]: https://github.com/KVM-VMI/kvm-vmi
-
-[`basic-process-list.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list.rs
-[`windows-breakpoint-manager.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-breakpoint-manager.rs
-[`windows-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-dump.rs
-[`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs
-[`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
-[`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
+<!-- readme end -->
 
 [`AccessContext`]: https://docs.rs/vmi/latest/vmi/struct.AccessContext.html
 [`AddressContext`]: https://docs.rs/vmi/latest/vmi/struct.AddressContext.html

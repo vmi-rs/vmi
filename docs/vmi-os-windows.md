@@ -1,3 +1,4 @@
+<!-- readme start -->
 # Windows OS-specific VMI operations
 
 This crate provides functionality for introspecting Windows-based
@@ -33,3 +34,4 @@ let _guard = vmi.pause_guard()?;
 
 Always consider the potential for race conditions and ensure you're
 working with a consistent state of the guest OS.
+<!-- readme end -->
