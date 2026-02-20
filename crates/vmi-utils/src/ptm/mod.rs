@@ -28,11 +28,6 @@
 //!
 //! Each event includes the affected virtual address context, physical address,
 //! and associated view.
-//!
-//! # Limitations
-//!
-//! The monitor currently does not support monitoring of large pages (e.g., 2MB
-//! or 1GB pages on AMD64).
 
 mod arch;
 
