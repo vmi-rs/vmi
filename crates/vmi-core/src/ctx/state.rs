@@ -249,17 +249,17 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_bytes_limited(
+    pub fn read_string_utf16_bytes_limited(
         &self,
         address: Va,
         limit: usize,
     ) -> Result<Vec<u16>, VmiError> {
-        self.read_wstring_bytes_limited_in(self.access_context(address), limit)
+        self.read_string_utf16_bytes_limited_in(self.access_context(address), limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring_bytes(&self, address: Va) -> Result<Vec<u16>, VmiError> {
-        self.read_wstring_bytes_in(self.access_context(address))
+    pub fn read_string_utf16_bytes(&self, address: Va) -> Result<Vec<u16>, VmiError> {
+        self.read_string_utf16_bytes_in(self.access_context(address))
     }
 
     /// Reads a null-terminated string from the virtual machine with a specified
@@ -275,13 +275,13 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_limited(&self, address: Va, limit: usize) -> Result<String, VmiError> {
-        self.read_wstring_limited_in(self.access_context(address), limit)
+    pub fn read_string_utf16_limited(&self, address: Va, limit: usize) -> Result<String, VmiError> {
+        self.read_string_utf16_limited_in(self.access_context(address), limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring(&self, address: Va) -> Result<String, VmiError> {
-        self.read_wstring_in(self.access_context(address))
+    pub fn read_string_utf16(&self, address: Va) -> Result<String, VmiError> {
+        self.read_string_utf16_in(self.access_context(address))
     }
 
     /// Reads a struct from the virtual machine.
@@ -416,20 +416,20 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_bytes_limited_in(
+    pub fn read_string_utf16_bytes_limited_in(
         &self,
         ctx: impl Into<AccessContext>,
         limit: usize,
     ) -> Result<Vec<u16>, VmiError> {
-        self.core().read_wstring_bytes_limited(ctx, limit)
+        self.core().read_string_utf16_bytes_limited(ctx, limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring_bytes_in(
+    pub fn read_string_utf16_bytes_in(
         &self,
         ctx: impl Into<AccessContext>,
     ) -> Result<Vec<u16>, VmiError> {
-        self.core().read_wstring_bytes(ctx)
+        self.core().read_string_utf16_bytes(ctx)
     }
 
     /// Reads a null-terminated string from the virtual machine with a specified
@@ -449,17 +449,17 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_limited_in(
+    pub fn read_string_utf16_limited_in(
         &self,
         ctx: impl Into<AccessContext>,
         limit: usize,
     ) -> Result<String, VmiError> {
-        self.core().read_wstring_limited(ctx, limit)
+        self.core().read_string_utf16_limited(ctx, limit)
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring_in(&self, ctx: impl Into<AccessContext>) -> Result<String, VmiError> {
-        self.core().read_wstring(ctx)
+    pub fn read_string_utf16_in(&self, ctx: impl Into<AccessContext>) -> Result<String, VmiError> {
+        self.core().read_string_utf16(ctx)
     }
 
     /// Reads a struct from the virtual machine.

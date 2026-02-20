@@ -105,7 +105,7 @@ where
             )
         }
         else {
-            self.vmi.read_wstring_limited(
+            self.vmi.read_string_utf16_limited(
                 name_block + CM_NAME_CONTROL_BLOCK.Name.offset(),
                 name_length as usize,
             )

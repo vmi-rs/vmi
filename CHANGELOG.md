@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `read_wstring*` methods renamed to `read_string_utf16*`
+  (`read_wstring` -> `read_string_utf16`, `read_wstring_bytes` ->
+  `read_string_utf16_bytes`, and their `_limited` / `_in` variants)
 - **Breaking:** `VmiDriver` split into a base trait and composable sub-traits
     - `VmiRead`, `VmiWrite`, `VmiQueryProtection`, `VmiSetProtection`,
       `VmiQueryRegisters`, `VmiSetRegisters`, `VmiViewControl`,

@@ -509,7 +509,7 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_bytes_limited(
+    pub fn read_string_utf16_bytes_limited(
         &self,
         ctx: impl Into<AccessContext>,
         limit: usize,
@@ -571,8 +571,11 @@ where
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring_bytes(&self, ctx: impl Into<AccessContext>) -> Result<Vec<u16>, VmiError> {
-        self.read_wstring_bytes_limited(
+    pub fn read_string_utf16_bytes(
+        &self,
+        ctx: impl Into<AccessContext>,
+    ) -> Result<Vec<u16>, VmiError> {
+        self.read_string_utf16_bytes_limited(
             ctx,
             self.read_string_length_limit.borrow().unwrap_or(usize::MAX),
         )
@@ -598,19 +601,19 @@ where
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine
     /// with a specified limit.
-    pub fn read_wstring_limited(
+    pub fn read_string_utf16_limited(
         &self,
         ctx: impl Into<AccessContext>,
         limit: usize,
     ) -> Result<String, VmiError> {
         Ok(String::from_utf16_lossy(
-            &self.read_wstring_bytes_limited(ctx, limit)?,
+            &self.read_string_utf16_bytes_limited(ctx, limit)?,
         ))
     }
 
     /// Reads a null-terminated wide string (UTF-16) from the virtual machine.
-    pub fn read_wstring(&self, ctx: impl Into<AccessContext>) -> Result<String, VmiError> {
-        self.read_wstring_limited(
+    pub fn read_string_utf16(&self, ctx: impl Into<AccessContext>) -> Result<String, VmiError> {
+        self.read_string_utf16_limited(
             ctx,
             self.read_string_length_limit.borrow().unwrap_or(usize::MAX),
         )
