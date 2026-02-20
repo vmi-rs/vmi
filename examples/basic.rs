@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
     let vmi = VmiCore::new(driver)?;
 
-    // Get the interrupt descriptor table for each VCPU and print it.
+    // Get the interrupt descriptor table for each vCPU and print it.
     let _pause_guard = vmi.pause_guard()?;
     let info = vmi.info()?;
     for vcpu_id in 0..info.vcpus {

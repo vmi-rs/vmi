@@ -135,10 +135,10 @@
 //!     // Try to find the kernel information.
 //!     // This is necessary in order to load the profile.
 //!     let kernel_info = {
-//!         // Pause the VCPU to get consistent state.
+//!         // Pause the vCPU to get consistent state.
 //!         let _pause_guard = core.pause_guard()?;
 //!
-//!         // Get the register state for the first VCPU.
+//!         // Get the register state for the first vCPU.
 //!         let registers = core.registers(VcpuId(0))?;
 //!
 //!         // On AMD64 architecture, the kernel is usually found using the

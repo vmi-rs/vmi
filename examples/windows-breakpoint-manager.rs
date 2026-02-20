@@ -65,7 +65,7 @@ where
         profile: &Profile,
         terminate_flag: Arc<AtomicBool>,
     ) -> Result<Self, VmiError> {
-        // Capture the current state of the VCPU and get the base address of
+        // Capture the current state of the vCPU and get the base address of
         // the kernel.
         //
         // This base address is essential to correctly offset monitored
@@ -133,12 +133,12 @@ where
         // This way, the guest will be able to execute the code, but attempts to
         // read or write the memory will trigger the `memory_access` callback.
         //
-        // When a VCPU tries to execute the breakpoint instruction:
+        // When a vCPU tries to execute the breakpoint instruction:
         // - an `interrupt` callback will be triggered
         // - the breakpoint will be handled (e.g., log the function call)
         // - a fast-singlestep[1] will be performed over the INT3 instruction
         //
-        // When a VCPU tries to read from this page (e.g., a PatchGuard check):
+        // When a vCPU tries to read from this page (e.g., a PatchGuard check):
         // - `memory_access` callback will be triggered (with the `MemoryAccess::R`
         //   access type)
         // - fast-singlestep[1] will be performed over the instruction that tried to
@@ -146,7 +146,7 @@ where
         //
         // This way, the instruction will read the original memory content.
         //
-        // [1] Fast-singlestep is a VMI feature that allows to switch the VCPU
+        // [1] Fast-singlestep is a VMI feature that allows to switch the vCPU
         //     to a different view, execute a single instruction, and then
         //     switch back to the original view. In this case, the view is
         //     switched to the `default_view` (which is unmodified).

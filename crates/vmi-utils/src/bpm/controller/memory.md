@@ -5,7 +5,7 @@ When a breakpoint is inserted, the page is marked as non-executable - the guest
 can read or write to the page but cannot execute code from it without triggering
 an exception.
 
-When a VCPU tries to execute code from the protected page, a [`VmiEvent`] is
+When a vCPU tries to execute code from the protected page, a [`VmiEvent`] is
 generated with a [memory access] reason. As with the [`BreakpointController`],
 you can check if the event came from a breakpoint manager using
 [`BreakpointManager::contains_by_event`] or [`BreakpointManager::get_by_event`].

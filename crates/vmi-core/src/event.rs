@@ -105,10 +105,10 @@ where
     /// Flags associated with the response.
     pub flags: VmiEventResponseFlags,
 
-    /// The view to set for the VCPU.
+    /// The view to set for the vCPU.
     pub view: Option<View>,
 
-    /// The VCPU registers to set.
+    /// The vCPU registers to set.
     pub registers: Option<<Arch::Registers as Registers>::GpRegisters>,
 }
 
