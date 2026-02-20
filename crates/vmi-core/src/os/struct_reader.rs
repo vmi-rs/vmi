@@ -13,8 +13,8 @@ use crate::{AccessContext, Registers, Va, VmiCore, VmiDriver, VmiError, VmiState
 ///
 /// ```no_run
 /// # use isr_macros::{offsets, Field};
-/// # use vmi_core::{AccessContext, VmiCore, VmiDriver, VmiError};
-/// # use vmi_core::os::StructReader;
+/// # use vmi_core::{Va, VmiDriver, VmiError, VmiState};
+/// # use vmi_core::os::{StructReader, VmiOs};
 ///
 /// offsets! {
 ///     #[derive(Debug)]
@@ -27,9 +27,9 @@ use crate::{AccessContext, Registers, Va, VmiCore, VmiDriver, VmiError, VmiState
 ///     }
 /// }
 ///
-/// # fn example<Driver: VmiDriver>(
-/// #     vmi: &VmiCore<Driver>,
-/// #     ctx: impl Into<AccessContext>,
+/// # fn example<Driver: VmiDriver, Os: VmiOs<Driver>>(
+/// #     vmi: &VmiState<Driver, Os>,
+/// #     va: Va,
 /// # ) -> Result<(), VmiError> {
 /// # let profile = unimplemented!();
 ///
@@ -37,7 +37,7 @@ use crate::{AccessContext, Registers, Va, VmiCore, VmiDriver, VmiError, VmiState
 /// let UNICODE_STRING = &offsets._UNICODE_STRING;
 ///
 /// // Read the structure from memory.
-/// let us = StructReader::new(vmi, ctx, UNICODE_STRING.effective_len())?;
+/// let us = StructReader::new(vmi, va, UNICODE_STRING.effective_len())?;
 ///
 /// // Access the field values.
 /// let length = us.read(UNICODE_STRING.Length)?;
