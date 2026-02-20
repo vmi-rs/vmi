@@ -291,11 +291,9 @@ where
             // entry.cached_pte = pte;
             entry.va_levels.insert(va_key, level);
 
-            self.vas
-                .get_mut(&va_key)
-                .unwrap()
-                .entry_keys
-                .push(entry_key);
+            if let Some(va) = self.vas.get_mut(&va_key) {
+                va.entry_keys.push(entry_key);
+            }
 
             if !pte.present() {
                 break;
@@ -303,9 +301,10 @@ where
 
             if is_leaf(level, pte) {
                 let pa = leaf_pa(ctx.va, level, pte.pfn());
-                let va = self.vas.get_mut(&va_key).unwrap();
-                va.paged_in = true;
-                va.resolved_pa = Some(pa);
+                if let Some(va) = self.vas.get_mut(&va_key) {
+                    va.paged_in = true;
+                    va.resolved_pa = Some(pa);
+                }
                 events.push(PageTableMonitorEvent::PageIn(PageEntryUpdate {
                     view,
                     ctx,
@@ -508,7 +507,10 @@ where
         for key in dirty_keys {
             if let Some(entry) = self.entries.get(&key) {
                 // Use the highest level across all VAs for sort priority.
-                let max_level = entry.va_levels.values().copied().max().unwrap();
+                let max_level = match entry.va_levels.values().copied().max() {
+                    Some(level) => level,
+                    None => continue,
+                };
                 to_process.push((key, max_level));
             }
         }
@@ -536,7 +538,9 @@ where
             }
 
             // Update cached PTE.
-            self.entries.get_mut(&entry_key).unwrap().cached_pte = new_pte;
+            if let Some(entry) = self.entries.get_mut(&entry_key) {
+                entry.cached_pte = new_pte;
+            }
 
             let old_present = old_pte.present();
             let new_present = new_pte.present();
@@ -566,16 +570,16 @@ where
 
                 // ── Teardown old mapping ─────────────────────────────────
                 if need_teardown {
-                    if let Some(va) = self.vas.get(&va_key)
+                    if let Some(va) = self.vas.get_mut(&va_key)
                         && va.paged_in
                     {
-                        let pa = va.resolved_pa.unwrap();
-                        events.push(PageTableMonitorEvent::PageOut(PageEntryUpdate {
-                            view,
-                            ctx,
-                            pa,
-                        }));
-                        let va = self.vas.get_mut(&va_key).unwrap();
+                        if let Some(pa) = va.resolved_pa {
+                            events.push(PageTableMonitorEvent::PageOut(PageEntryUpdate {
+                                view,
+                                ctx,
+                                pa,
+                            }));
+                        }
                         va.paged_in = false;
                         va.resolved_pa = None;
                     }
