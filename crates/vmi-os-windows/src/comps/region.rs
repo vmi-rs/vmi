@@ -1,6 +1,7 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    Architecture, MemoryAccess, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    Architecture, MemoryAccess, Va, VmiError, VmiState, VmiVa,
+    driver::VmiRead,
     os::{VmiOsRegion, VmiOsRegionKind},
 };
 
@@ -18,7 +19,7 @@ use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 /// Corresponds to `_MMVAD`.
 pub struct WindowsRegion<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -33,7 +34,7 @@ where
 
 impl<Driver> VmiVa for WindowsRegion<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -43,7 +44,7 @@ where
 
 impl<Driver> std::fmt::Debug for WindowsRegion<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -63,7 +64,7 @@ where
 
 impl<'a, Driver> WindowsRegion<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -250,7 +251,7 @@ where
 
 impl<'a, Driver> VmiOsRegion<'a, Driver> for WindowsRegion<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

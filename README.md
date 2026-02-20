@@ -339,10 +339,27 @@ The core components of the framework are:
 
   Currently, the framework includes an [`Amd64`] implementation.
 
-- [`VmiDriver`]: A trait defining the interface for interacting with the
-  hypervisor. This allows the framework to support multiple hypervisors.
+- [`VmiDriver`]: A composable trait hierarchy defining the interface for
+  interacting with the hypervisor.
 
-  Currently, the framework includes a [`VmiXenDriver`] for Xen.
+  The base [`VmiDriver`] trait carries the [`Architecture`] type and
+  VM metadata, while independent sub-traits represent individual capabilities:
+  - [`VmiRead`]
+  - [`VmiWrite`]
+  - [`VmiQueryProtection`]
+  - [`VmiSetProtection`]
+  - [`VmiQueryRegisters`]
+  - [`VmiSetRegisters`]
+  - [`VmiViewControl`]
+  - [`VmiEventControl`]
+  - [`VmiVmControl`]
+
+  Drivers implement only the traits they support. For example, dump drivers
+  implement just `VmiRead` and `VmiQueryRegisters`, while full hypervisor
+  drivers implement [`VmiFullDriver`] (all traits).
+
+  Currently, the framework includes a [`VmiXenDriver`] for Xen, and
+  offline dump drivers [`VmiKdmpDriver`] and [`VmiXenCoreDumpDriver`].
 
 - [`VmiCore`]: Provides raw VMI operations, interacting directly with
   the [`VmiDriver`] and leveraging the [`Architecture`]. It handles
@@ -580,6 +597,18 @@ This project is licensed under the MIT license.
 [`VmiContext`]: https://docs.rs/vmi/latest/vmi/struct.VmiContext.html
 [`VmiCore`]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html
 [`VmiDriver`]: https://docs.rs/vmi/latest/vmi/trait.VmiDriver.html
+[`VmiRead`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiRead.html
+[`VmiWrite`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiWrite.html
+[`VmiQueryProtection`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiQueryProtection.html
+[`VmiSetProtection`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiSetProtection.html
+[`VmiQueryRegisters`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiQueryRegisters.html
+[`VmiSetRegisters`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiSetRegisters.html
+[`VmiViewControl`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiViewControl.html
+[`VmiEventControl`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiEventControl.html
+[`VmiVmControl`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiVmControl.html
+[`VmiFullDriver`]: https://docs.rs/vmi/latest/vmi/driver/trait.VmiFullDriver.html
+[`VmiKdmpDriver`]: https://docs.rs/vmi/latest/vmi/driver/kdmp/struct.VmiKdmpDriver.html
+[`VmiXenCoreDumpDriver`]: https://docs.rs/vmi/latest/vmi/driver/xen_core_dump/struct.VmiXenCoreDumpDriver.html
 [`VmiError`]: https://docs.rs/vmi/latest/vmi/enum.VmiError.html
 [`VmiEvent`]: https://docs.rs/vmi/latest/vmi/struct.VmiEvent.html
 [`VmiEventResponse`]: https://docs.rs/vmi/latest/vmi/struct.VmiEventResponse.html

@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Va, VmiRead, VmiError, VmiState};
 
 use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
 
@@ -10,7 +10,7 @@ use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
 /// (Windows 7) and `RTL_BALANCED_NODE` (Windows 8.1+).
 pub struct TreeNodeIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state.
@@ -37,7 +37,7 @@ where
 
 impl<'a, Driver> TreeNodeIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new tree node iterator.
@@ -168,7 +168,7 @@ where
 
 impl<Driver> Iterator for TreeNodeIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;
@@ -180,7 +180,7 @@ where
 
 impl<Driver> FusedIterator for TreeNodeIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
 }

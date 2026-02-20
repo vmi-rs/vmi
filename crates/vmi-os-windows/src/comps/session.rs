@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::ProcessObject};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::ProcessObject};
 
 use super::{WindowsProcess, macros::impl_offsets};
 use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
@@ -16,7 +16,7 @@ use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
 /// Corresponds to `_MM_SESSION_SPACE`.
 pub struct WindowsSession<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -28,7 +28,7 @@ where
 
 impl<Driver> VmiVa for WindowsSession<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -38,7 +38,7 @@ where
 
 impl<'a, Driver> WindowsSession<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -10,7 +10,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 /// **32-bit and 64-bit** structures.
 pub struct WindowsProcessParameters<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
@@ -18,7 +18,7 @@ where
 
 impl<Driver> VmiVa for WindowsProcessParameters<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -31,7 +31,7 @@ where
 
 impl<Driver> std::fmt::Debug for WindowsProcessParameters<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -51,7 +51,7 @@ where
 
 impl<'a, Driver> WindowsProcessParameters<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new Windows process parameters structure.
@@ -135,7 +135,7 @@ where
 /// Inner representation of a Windows process parameters object.
 enum Inner<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// A native (non-WoW64) process.
@@ -147,7 +147,7 @@ where
 
 struct WindowsProcessParametersNative<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -162,7 +162,7 @@ where
 
 impl<'a, Driver> WindowsProcessParametersNative<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -217,7 +217,7 @@ where
 
 struct WindowsProcessParameters32<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -232,7 +232,7 @@ where
 
 impl<'a, Driver> WindowsProcessParameters32<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {

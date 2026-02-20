@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{Error, GenericParam, Generics, Ident, ItemImpl, Result, Visibility, parse_macro_input};
 
 use crate::{
@@ -12,7 +12,7 @@ struct TraitFn {
     os_context_fn: TokenStream,
 }
 
-fn generate_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
+fn generate_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
     let generics = &sig.generics;
@@ -36,7 +36,7 @@ fn generate_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
         fn #ident #generics(&self, #(#args),*) #return_type
             #where_clause
         {
-            <<Self as VmiOsStateExt>::Os>::#ident(self.state(), #(#arg_names),*)
+            <<Self as #helper_trait_name>::Os>::#ident(self.state(), #(#arg_names),*)
         }
     };
 
@@ -53,7 +53,7 @@ fn filter_pub(item: impl ItemFnExt) -> Option<impl ItemFnExt> {
     }
 }
 
-fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
+fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let mut inputs = sig.inputs.iter();
 
@@ -69,7 +69,7 @@ fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt) -> Option<TraitFn> {
         return None;
     }
 
-    generate_trait_fn(item_fn)
+    generate_trait_fn(item_fn, helper_trait_name)
 }
 
 fn verify_generics(generics: &Generics) -> Result<()> {
@@ -118,15 +118,17 @@ pub fn derive_trait_from_impl(
         None => &struct_type_raw,
     };
     let where_clause = input.generics.where_clause.as_ref();
+    let helper_trait_name = format_ident!("__{os_context_name}VmiOsStateExt");
     let fns = input
         .items
         .iter()
         .filter_map(ItemExt::as_fn)
         .filter_map(filter_pub)
-        .filter_map(transform_fn_to_trait_fn);
+        .filter_map(|item_fn| transform_fn_to_trait_fn(item_fn, &helper_trait_name))
+        .collect::<Vec<_>>();
 
-    let os_context_sigs = fns.clone().map(|m| m.os_context_sig);
-    let os_context_fns = fns.clone().map(|m| m.os_context_fn);
+    let os_context_sigs = fns.iter().map(|m| &m.os_context_sig);
+    let os_context_fns = fns.iter().map(|m| &m.os_context_fn);
 
     let vmi_lifetime = __vmi_lifetime();
 
@@ -134,14 +136,14 @@ pub fn derive_trait_from_impl(
         #input
 
         // A helper trait to expose the Os type from VmiOsState
-        trait VmiOsStateExt {
+        trait #helper_trait_name {
             type Os;
         }
 
-        impl<'__vmi, TDriver, TOs> VmiOsStateExt for vmi_core::VmiOsState<'__vmi, TDriver, TOs>
+        impl<'__vmi, TDriver, TOs> #helper_trait_name for vmi_core::VmiOsState<'__vmi, TDriver, TOs>
         where
-            TDriver: VmiDriver,
-            TOs: VmiOs<TDriver>,
+            TDriver: vmi_core::VmiDriver,
+            TOs: vmi_core::VmiOs<TDriver>,
         {
             type Os = TOs;
         }

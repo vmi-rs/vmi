@@ -13,7 +13,7 @@
 //! - [Kernel Documentation - Maple Tree](https://docs.kernel.org/core-api/maple_tree.html)
 
 #![allow(dead_code)]
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Va, VmiError, VmiState, driver::VmiRead};
 
 use crate::{LinuxOs, arch::ArchAdapter};
 
@@ -155,7 +155,7 @@ const fn mte_is_leaf(entry: Va /* maple_enode */) -> bool {
 /// An iterator for traversing entries in a MapleTree
 pub struct MapleTreeIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state
@@ -191,7 +191,7 @@ where
 
 impl<'a, Driver> MapleTreeIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Create a new MapleTreeIterator
@@ -457,7 +457,7 @@ where
 
 impl<Driver> Iterator for MapleTreeIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;

@@ -1,11 +1,14 @@
 use vmi_arch_amd64::Amd64;
-use vmi_core::{Va, VmiCore, VmiDriver, VmiError};
+use vmi_core::{
+    Va, VmiCore, VmiError,
+    driver::{VmiRead, VmiWrite},
+};
 
 use super::ArchAdapter;
 
 impl<Driver> ArchAdapter<Driver> for Amd64
 where
-    Driver: VmiDriver<Architecture = Self>,
+    Driver: VmiRead<Architecture = Self> + VmiWrite<Architecture = Self>,
 {
     fn copy_bytes_to_stack(
         vmi: &VmiCore<Driver>,

@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
     super::{WindowsKeyControlBlock, macros::impl_offsets},
@@ -21,7 +21,7 @@ use crate::{ArchAdapter, WindowsError, WindowsOs};
 /// Corresponds to `_CM_KEY_BODY`.
 pub struct WindowsKey<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -36,7 +36,7 @@ where
 
 impl<'a, Driver> From<WindowsKey<'a, Driver>> for WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from(value: WindowsKey<'a, Driver>) -> Self {
@@ -46,7 +46,7 @@ where
 
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsKey<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
@@ -59,7 +59,7 @@ where
 
 impl<Driver> VmiVa for WindowsKey<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -69,7 +69,7 @@ where
 
 impl<'a, Driver> WindowsKey<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

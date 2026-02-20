@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsPeb};
@@ -14,7 +14,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsPeb};
 /// Corresponds to `_TEB`.
 pub struct WindowsTeb<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -32,7 +32,7 @@ where
 
 impl<Driver> VmiVa for WindowsTeb<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -42,7 +42,7 @@ where
 
 impl<'a, Driver> WindowsTeb<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

@@ -3,9 +3,9 @@ use isr::{
     cache::{IsrCache, JsonCodec},
 };
 use vmi::{
-    VcpuId, VmiCore, VmiDriver, VmiError, VmiOs, VmiSession, VmiState,
+    VcpuId, VmiCore, VmiError, VmiOs, VmiSession, VmiState,
     arch::amd64::Amd64,
-    driver::xen::VmiXenDriver,
+    driver::{VmiRead, xen::VmiXenDriver},
     os::{VmiOsProcess as _, windows::WindowsOs},
 };
 use xen::XenStore;
@@ -82,7 +82,7 @@ pub fn find_process<'a, Driver, Os>(
     name: &str,
 ) -> Result<Option<Os::Process<'a>>, VmiError>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Os: VmiOs<Driver>,
 {
     for process in vmi.os().processes()? {

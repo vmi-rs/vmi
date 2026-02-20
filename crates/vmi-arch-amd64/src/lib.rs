@@ -14,8 +14,8 @@ mod segment;
 mod translation;
 
 use vmi_core::{
-    AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver,
-    VmiError,
+    AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError,
+    driver::VmiRead,
 };
 use zerocopy::FromBytes;
 
@@ -135,7 +135,7 @@ impl Architecture for Amd64 {
 
     fn translate_address<Driver>(vmi: &VmiCore<Driver>, va: Va, root: Pa) -> Result<Pa, VmiError>
     where
-        Driver: VmiDriver<Architecture = Self>,
+        Driver: VmiRead<Architecture = Self>,
     {
         // Read the PML4 table
         let buffer = vmi.read_page(Self::gfn_from_pa(root))?;
@@ -249,7 +249,7 @@ impl Amd64 {
         registers: &Registers,
     ) -> Result<Idt, VmiError>
     where
-        Driver: VmiDriver<Architecture = Self>,
+        Driver: VmiRead<Architecture = Self>,
     {
         let idtr_base = registers.idtr.base.into();
         vmi.read_struct::<Idt>((idtr_base, registers.cr3.into()))
@@ -296,7 +296,7 @@ impl Amd64 {
     ///   analysis of the translation process.
     pub fn translation<Driver>(vmi: &VmiCore<Driver>, va: Va, root: Pa) -> VaTranslation
     where
-        Driver: VmiDriver<Architecture = Self>,
+        Driver: VmiRead<Architecture = Self>,
     {
         let mut entries = TranslationEntries::new();
         let va = Self::va_canonical(va);
@@ -529,7 +529,7 @@ impl vmi_core::arch::Registers for Registers {
 
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
     where
-        Driver: VmiDriver,
+        Driver: VmiRead,
     {
         vmi.read_va(
             (self.rsp.into(), self.cr3.into()),

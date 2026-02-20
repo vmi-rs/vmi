@@ -1,5 +1,6 @@
 use vmi_core::{
-    Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    Architecture, Va, VmiError, VmiState, VmiVa,
+    driver::VmiRead,
     os::{ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread},
 };
 
@@ -19,7 +20,7 @@ use crate::{ArchAdapter, WindowsOs};
 /// Corresponds to `_ETHREAD`.
 pub struct WindowsThread<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -31,7 +32,7 @@ where
 
 impl<'a, Driver> From<WindowsThread<'a, Driver>> for WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from(value: WindowsThread<'a, Driver>) -> Self {
@@ -41,7 +42,7 @@ where
 
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsThread<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
@@ -56,7 +57,7 @@ where
 
 impl<Driver> VmiVa for WindowsThread<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -66,7 +67,7 @@ where
 
 impl<'a, Driver> WindowsThread<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -233,7 +234,7 @@ where
 
 impl<'a, Driver> VmiOsThread<'a, Driver> for WindowsThread<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

@@ -21,8 +21,9 @@
 mod common;
 
 use vmi::{
-    VcpuId, VmiDriver,
+    VcpuId,
     arch::amd64::Amd64,
+    driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
     utils::injector::{InjectorHandler, Recipe, recipe},
 };
@@ -44,7 +45,7 @@ impl MessageBox {
 #[rustfmt::skip]
 fn recipe_factory<Driver>(data: MessageBox) -> Recipe<Driver, WindowsOs<Driver>, MessageBox>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiFullDriver<Architecture = Amd64>,
 {
     recipe![
         Recipe::<_, WindowsOs<Driver>, _>::new(data),

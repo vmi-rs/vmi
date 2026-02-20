@@ -1,7 +1,7 @@
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, Pa, Registers as _, Va, View, VmiCore, VmiDriver, VmiError,
-    VmiEvent,
+    Architecture, Gfn, MemoryAccess, Pa, Registers as _, Va, View, VmiCore, VmiError, VmiEvent,
     arch::{EventInterrupt as _, EventReason},
+    driver::{VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
 };
 
 use super::TapController;
@@ -10,7 +10,7 @@ use crate::interceptor::Interceptor;
 #[doc = include_str!("breakpoint.md")]
 pub struct BreakpointController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {
@@ -19,7 +19,7 @@ where
 
 impl<Driver> BreakpointController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {
@@ -46,7 +46,7 @@ where
 
 impl<Driver> TapController for BreakpointController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiWrite + VmiSetProtection + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {

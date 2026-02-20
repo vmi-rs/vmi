@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use isr_core::Profile;
 use vmi_core::{
     Architecture, Va, VmiCore, VmiDriver, VmiError, VmiOs, VmiState, VmiVa as _,
+    driver::VmiRead,
     os::{ProcessObject, ThreadObject},
 };
 
@@ -40,7 +41,7 @@ macro_rules! symbol {
 
 fn __self<'a, Driver>(vmi: &VmiState<'a, Driver, LinuxOs<Driver>>) -> &'a LinuxOs<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     vmi.underlying_os()
@@ -66,7 +67,7 @@ where
 //#[expect(non_snake_case, unused_variables)]
 impl<Driver> LinuxOs<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new `LinuxOs` instance.
@@ -162,7 +163,7 @@ where
 //#[expect(non_snake_case, unused_variables)]
 impl<Driver> VmiOs<Driver> for LinuxOs<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Process<'a> = LinuxTaskStruct<'a, Driver>;

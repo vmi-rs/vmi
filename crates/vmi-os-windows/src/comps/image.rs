@@ -5,7 +5,8 @@ use object::{
 };
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    Architecture, Va, VmiError, VmiState, VmiVa,
+    driver::VmiRead,
     os::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
 };
 
@@ -22,7 +23,7 @@ use crate::{
 /// A Windows image is an executable or DLL mapped into memory.
 pub struct WindowsImage<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state (without the OS context).
@@ -41,7 +42,7 @@ where
 
 impl<Driver> VmiVa for WindowsImage<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -51,7 +52,7 @@ where
 
 impl<'a, Driver> WindowsImage<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     const MAX_DATA_DIRECTORY_SIZE: u32 = 1024 * 1024; // 1MB
@@ -150,7 +151,7 @@ where
 
 impl<'a, Driver> VmiOsImage<'a, Driver> for WindowsImage<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

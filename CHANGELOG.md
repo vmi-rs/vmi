@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiDriver` split into a base trait and composable sub-traits
+    - `VmiRead`, `VmiWrite`, `VmiQueryProtection`, `VmiSetProtection`,
+      `VmiQueryRegisters`, `VmiSetRegisters`, `VmiViewControl`,
+      `VmiEventControl`, `VmiVmControl`
+    - Context types (`VmiOs`, `VmiSession`, `VmiState`, `VmiContext`,
+      `VmiHandler`) relaxed to `VmiDriver`, with methods gated behind the
+      minimal bounds they require
+    - Dump drivers now only implement `VmiDriver`, `VmiRead`, and
+      `VmiQueryRegisters`
 - **Breaking:** `WindowsThread::attached_process()` renamed to
   `WindowsThread::current_process()`
 

@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsObject, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -13,7 +13,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 /// Corresponds to `_OBJECT_HEADER_NAME_INFO`.
 pub struct WindowsObjectHeaderNameInfo<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -25,7 +25,7 @@ where
 
 impl<Driver> VmiVa for WindowsObjectHeaderNameInfo<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -35,7 +35,7 @@ where
 
 impl<Driver> std::fmt::Debug for WindowsObjectHeaderNameInfo<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -51,7 +51,7 @@ where
 
 impl<'a, Driver> WindowsObjectHeaderNameInfo<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

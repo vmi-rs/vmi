@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
     WindowsObject,
@@ -16,7 +16,7 @@ use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 /// Corresponds to `_HANDLE_TABLE_ENTRY`.
 pub struct WindowsHandleTableEntry<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
@@ -24,7 +24,7 @@ where
 
 impl<Driver> VmiVa for WindowsHandleTableEntry<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -37,7 +37,7 @@ where
 
 impl<'a, Driver> WindowsHandleTableEntry<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new Windows handle table entry.
@@ -90,7 +90,7 @@ where
 
 enum Inner<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     V1(WindowsHandleTableEntryV1<'a, Driver>),
@@ -104,7 +104,7 @@ const OBJ_HANDLE_ATTRIBUTES: u64 = OBJ_PROTECT_CLOSE | OBJ_INHERIT | OBJ_AUDIT_O
 
 struct WindowsHandleTableEntryV1<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -116,7 +116,7 @@ where
 
 impl<'a, Driver> WindowsHandleTableEntryV1<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -169,7 +169,7 @@ where
 
 struct WindowsHandleTableEntryV2<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -181,7 +181,7 @@ where
 
 impl<'a, Driver> WindowsHandleTableEntryV2<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

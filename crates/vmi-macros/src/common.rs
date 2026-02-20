@@ -34,7 +34,7 @@ pub fn build_args(sig: &Signature) -> Option<(Vec<TokenStream>, Vec<TokenStream>
 }
 
 pub fn build_where_clause(sig: &Signature) -> Option<TokenStream> {
-    let mut lifetime_params = Vec::new();
+    let mut predicates = Vec::new();
     let vmi_lifetime = __vmi_lifetime();
 
     for param in &sig.generics.params {
@@ -44,12 +44,18 @@ pub fn build_where_clause(sig: &Signature) -> Option<TokenStream> {
         };
 
         let lifetime = &lifetime.lifetime;
-        lifetime_params.push(quote! { #vmi_lifetime: #lifetime });
+        predicates.push(quote! { #vmi_lifetime: #lifetime });
     }
 
-    if lifetime_params.is_empty() {
+    if let Some(where_clause) = &sig.generics.where_clause {
+        for predicate in &where_clause.predicates {
+            predicates.push(quote! { #predicate });
+        }
+    }
+
+    if predicates.is_empty() {
         return None;
     }
 
-    Some(quote! { where #(#lifetime_params),* })
+    Some(quote! { where #(#predicates),* })
 }

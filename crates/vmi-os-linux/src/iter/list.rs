@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Va, VmiError, VmiState, driver::VmiRead};
 
 use crate::{ArchAdapter, LinuxOs};
 
@@ -9,7 +9,7 @@ use crate::{ArchAdapter, LinuxOs};
 /// Iterate over entries in a linked list structure, specifically `LIST_ENTRY`.
 pub struct ListEntryIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state.
@@ -37,7 +37,7 @@ where
 
 impl<'a, Driver> ListEntryIterator<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new list entry iterator.
@@ -104,7 +104,7 @@ where
 
 impl<Driver> Iterator for ListEntryIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;
@@ -116,7 +116,7 @@ where
 
 impl<Driver> DoubleEndedIterator for ListEntryIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
@@ -126,7 +126,7 @@ where
 
 impl<Driver> FusedIterator for ListEntryIterator<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
 }

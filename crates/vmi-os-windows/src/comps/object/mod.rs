@@ -7,7 +7,8 @@ mod section;
 mod thread;
 
 use vmi_core::{
-    Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    Architecture, Va, VmiError, VmiState, VmiVa,
+    driver::VmiRead,
     os::{ProcessObject, ThreadObject},
 };
 
@@ -25,7 +26,7 @@ use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter};
 /// Trait for types that can be converted from a [`WindowsObject`].
 pub trait FromWindowsObject<'a, Driver>: Sized
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Attempts to convert a [`WindowsObject`] into a specific object type.
@@ -43,7 +44,7 @@ where
 /// Corresponds to `_OBJECT_HEADER.Body`.
 pub struct WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -55,7 +56,7 @@ where
 
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
@@ -66,7 +67,7 @@ where
 
 impl<Driver> VmiVa for WindowsObject<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -76,7 +77,7 @@ where
 
 impl<Driver> std::fmt::Debug for WindowsObject<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -92,7 +93,7 @@ where
 
 impl<'a, Driver> WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_symbols!();
@@ -821,7 +822,7 @@ impl std::str::FromStr for WindowsObjectTypeKind {
 /// Represents a specific kind of Windows object.
 pub enum WindowsObjectKind<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// A directory object (`_OBJECT_DIRECTORY`).

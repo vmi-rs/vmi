@@ -1,6 +1,7 @@
 use vmi_arch_amd64::Cr3;
 use vmi_core::{
-    Architecture, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa,
+    Architecture, Pa, Va, VmiError, VmiState, VmiVa,
+    driver::VmiRead,
     os::{ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess},
 };
 
@@ -27,7 +28,7 @@ use crate::{
 /// Corresponds to `_EPROCESS`.
 pub struct WindowsProcess<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -39,7 +40,7 @@ where
 
 impl<'a, Driver> From<WindowsProcess<'a, Driver>> for WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from(value: WindowsProcess<'a, Driver>) -> Self {
@@ -49,7 +50,7 @@ where
 
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsProcess<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
@@ -64,7 +65,7 @@ where
 
 impl<Driver> VmiVa for WindowsProcess<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -74,7 +75,7 @@ where
 
 impl<'a, Driver> WindowsProcess<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -330,7 +331,7 @@ where
 
 impl<'a, Driver> VmiOsProcess<'a, Driver> for WindowsProcess<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

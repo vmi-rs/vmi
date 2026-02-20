@@ -1,4 +1,4 @@
-use vmi_core::{AccessContext, VmiCore, VmiDriver, VmiError};
+use vmi_core::{AccessContext, VmiCore, VmiError, driver::VmiRead};
 
 /// Representation of memory for hexdump.
 pub enum Representation {
@@ -20,7 +20,7 @@ pub fn hexdump<Driver>(
     representation: Representation,
 ) -> Result<(), VmiError>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
 {
     let ctx = ctx.into();
 

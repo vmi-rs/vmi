@@ -9,10 +9,10 @@ use isr::{
     macros::symbols,
 };
 use vmi::{
-    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiDriver, VmiError,
-    VmiEventResponse, VmiHandler, VmiSession,
+    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse,
+    VmiHandler, VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
-    driver::xen::VmiXenDriver,
+    driver::{VmiFullDriver, xen::VmiXenDriver},
     os::{
         ProcessObject, VmiOsProcess as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
@@ -47,7 +47,7 @@ symbols! {
 
 pub struct Monitor<Driver>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiFullDriver<Architecture = Amd64>,
 {
     terminate_flag: Arc<AtomicBool>,
     view: View,
@@ -58,7 +58,7 @@ where
 #[expect(non_snake_case)]
 impl<Driver> Monitor<Driver>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiFullDriver<Architecture = Amd64>,
 {
     pub fn new(
         session: &VmiSession<Driver, WindowsOs<Driver>>,
@@ -521,7 +521,7 @@ where
 
 impl<Driver> VmiHandler<Driver, WindowsOs<Driver>> for Monitor<Driver>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiFullDriver<Architecture = Amd64>,
 {
     type Output = ();
 

@@ -1,6 +1,7 @@
 use vmi_core::{
-    Gfn, MemoryAccess, Pa, View, VmiCore, VmiDriver, VmiError, VmiEvent,
+    Gfn, MemoryAccess, Pa, View, VmiCore, VmiError, VmiEvent,
     arch::{Architecture as _, EventMemoryAccess as _, EventReason as _},
+    driver::VmiSetProtection,
 };
 
 use super::TapController;
@@ -8,14 +9,14 @@ use super::TapController;
 #[doc = include_str!("memory.md")]
 pub struct MemoryController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiSetProtection,
 {
     _marker: std::marker::PhantomData<Driver>,
 }
 
 impl<Driver> TapController for MemoryController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiSetProtection,
 {
     type Driver = Driver;
 

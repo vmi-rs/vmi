@@ -55,6 +55,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{
     AccessContext, Architecture, Gfn, Hex, Registers as _, Va, VmiCore, VmiDriver, VmiError,
     VmiState,
+    driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
 };
 use vmi_macros::derive_trait_from_impl;
@@ -284,7 +285,7 @@ macro_rules! this {
 #[expect(non_snake_case, non_upper_case_globals)]
 impl<Driver> WindowsOs<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// 32-bit current process pseudo-handle (-1).
@@ -567,221 +568,6 @@ where
                 vmi.read_va_native(kernel_image_base + MmPfnDatabase)
             })
             .copied()
-    }
-
-    fn modify_pfn_reference_count(
-        vmi: VmiState<Driver, Self>,
-        pfn: Gfn,
-        increment: i16,
-    ) -> Result<Option<u16>, VmiError> {
-        let MMPFN = offset!(vmi, _MMPFN);
-
-        // const ZeroedPageList: u16 = 0;
-        // const FreePageList: u16 = 1;
-        const StandbyPageList: u16 = 2; //this list and before make up available pages.
-        const ModifiedPageList: u16 = 3;
-        const ModifiedNoWritePageList: u16 = 4;
-        // const BadPageList: u16 = 5;
-        const ActiveAndValid: u16 = 6;
-        // const TransitionPage: u16 = 7;
-
-        let pfn = Self::pfn_database(vmi)? + u64::from(pfn) * MMPFN.len() as u64;
-
-        //
-        // In the _MMPFN structure, the fields are like this:
-        //
-        // ```c
-        // struct _MMPFN {
-        //     ...
-        //     union {
-        //         USHORT ReferenceCount;
-        //         struct {
-        //             UCHAR PageLocation : 3;
-        //             ...
-        //         } e1;
-        //         ...
-        //     } u3;
-        // };
-        // ```
-        //
-        // On the systems tested (Win7 - Win11), the `PageLocation` is right
-        // after `ReferenceCount`. We can read the value of both fields at once.
-        //
-
-        debug_assert_eq!(MMPFN.ReferenceCount.size(), 2);
-        debug_assert_eq!(
-            MMPFN.ReferenceCount.offset() + MMPFN.ReferenceCount.size(),
-            MMPFN.PageLocation.offset()
-        );
-        debug_assert_eq!(MMPFN.PageLocation.bit_position(), 0);
-        debug_assert_eq!(MMPFN.PageLocation.bit_length(), 3);
-
-        let pfn_value = vmi.read_u32(pfn + MMPFN.ReferenceCount.offset())?;
-        let flags = (pfn_value >> 16) as u16;
-        let ref_count = (pfn_value & 0xFFFF) as u16;
-
-        let page_location = flags & 7;
-
-        tracing::debug!(
-            %pfn,
-            ref_count,
-            flags = %Hex(flags),
-            page_location,
-            increment,
-            "Modifying PFN reference count"
-        );
-
-        //
-        // Make sure the page is good (when coming from hibernate/standby pages
-        // can be in modified state).
-        //
-
-        if !matches!(
-            page_location,
-            StandbyPageList | ModifiedPageList | ModifiedNoWritePageList | ActiveAndValid
-        ) {
-            tracing::warn!(
-                %pfn,
-                ref_count,
-                flags = %Hex(flags),
-                page_location,
-                increment,
-                "Page is not active and valid"
-            );
-            return Ok(None);
-        }
-
-        if ref_count == 0 {
-            tracing::warn!(
-                %pfn,
-                ref_count,
-                flags = %Hex(flags),
-                page_location,
-                increment,
-                "Page is not initialized"
-            );
-            return Ok(None);
-        }
-
-        let new_ref_count = match ref_count.checked_add_signed(increment) {
-            Some(new_ref_count) => new_ref_count,
-            None => {
-                tracing::warn!(
-                    %pfn,
-                    ref_count,
-                    flags = %Hex(flags),
-                    page_location,
-                    increment,
-                    "Page is at maximum reference count"
-                );
-                return Ok(None);
-            }
-        };
-
-        vmi.write_u16(pfn + MMPFN.ReferenceCount.offset(), new_ref_count)?;
-
-        Ok(Some(new_ref_count))
-    }
-
-    /// Increments the reference count of a Page Frame Number (PFN).
-    ///
-    /// This method is used to "lock" a physical page by increasing its
-    /// reference count, preventing it from being paged out or reallocated.
-    ///
-    /// Returns the new reference count if successful, or `None` if the
-    /// operation failed (e.g., if the page is not in a valid state).
-    ///
-    /// # Implementation Details
-    ///
-    /// The method works by:
-    /// 1. Locating the `_MMPFN` structure for the given PFN within the `MmPfnDatabase`.
-    /// 2. Incrementing the `ReferenceCount` member of the `_MMPFN` structure.
-    ///
-    /// # Warning
-    ///
-    /// This function can potentially cause race conditions if the virtual machine
-    /// is not paused during its execution. It is strongly recommended to pause
-    /// the virtual machine before calling this function and resume it afterwards.
-    ///
-    /// Failure to pause the VM may result in inconsistent state or potential
-    /// crashes if the page is concurrently modified by the guest OS.
-    ///
-    /// # Examples:
-    ///
-    /// ```no_run
-    /// # use vmi::{
-    /// #     arch::amd64::{Amd64, Registers},
-    /// #     os::windows::WindowsOs,
-    /// #     Architecture, Gfn, VmiCore, VmiDriver, VmiError,
-    /// # };
-    /// #
-    /// # fn example<Driver>(
-    /// #     vmi: &VmiCore<Driver>,
-    /// #     os: &WindowsOs<Driver>,
-    /// #     registers: &Registers,
-    /// #     pfn: Gfn,
-    /// # ) -> Result<(), VmiError>
-    /// # where
-    /// #   Driver: VmiDriver<Architecture = Amd64>,
-    /// # {
-    /// let _pause_guard = vmi.pause_guard()?;
-    /// os.lock_pfn(pfn)?;
-    /// // The VM will automatically resume when `_guard` goes out of scope
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn lock_pfn(vmi: VmiState<Driver, Self>, pfn: Gfn) -> Result<Option<u16>, VmiError> {
-        Self::modify_pfn_reference_count(vmi, pfn, 1)
-    }
-
-    /// Decrements the reference count of a Page Frame Number (PFN).
-    ///
-    /// This method is used to "unlock" a physical page by decreasing its
-    /// reference count, potentially allowing it to be paged out or reallocated
-    /// if the count reaches zero.
-    ///
-    /// Returns the new reference count if successful, or `None` if the
-    /// operation failed (e.g., if the page is not in a valid state).
-    ///
-    /// # Implementation Details
-    ///
-    /// The method works by:
-    /// 1. Locating the `_MMPFN` structure for the given PFN within the `MmPfnDatabase`.
-    /// 2. Decrementing the `ReferenceCount` member of the `_MMPFN` structure.
-    ///
-    /// # Warning
-    ///
-    /// This function can potentially cause race conditions if the virtual machine
-    /// is not paused during its execution. It is strongly recommended to pause
-    /// the virtual machine before calling this function and resume it afterwards.
-    ///
-    /// Failure to pause the VM may result in inconsistent state or potential
-    /// crashes if the page is concurrently modified by the guest OS.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use vmi_arch_amd64::{Amd64, Registers};
-    /// # use vmi_core::{Architecture, Gfn, VmiCore, VmiDriver, VmiError, VmiOs};
-    /// # use vmi_os_windows::WindowsOs;
-    /// #
-    /// # fn example<Driver>(
-    /// #     vmi: &VmiCore<Driver>,
-    /// #     os: &WindowsOs<Driver>,
-    /// #     registers: &Registers,
-    /// #     pfn: Gfn,
-    /// # ) -> Result<(), VmiError>
-    /// # where
-    /// #     Driver: VmiDriver<Architecture = Amd64>,
-    /// # {
-    /// let _pause_guard = vmi.pause_guard()?;
-    /// os.unlock_pfn(pfn)?;
-    /// // The VM will automatically resume when `_guard` goes out of scope
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn unlock_pfn(vmi: VmiState<Driver, Self>, pfn: Gfn) -> Result<Option<u16>, VmiError> {
-        Self::modify_pfn_reference_count(vmi, pfn, -1)
     }
 
     /// Returns the Windows object.
@@ -1279,12 +1065,149 @@ where
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
         Ok(ListEntryIterator::new(vmi, list_head, offset))
     }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // VmiRead + VmiWrite
+    ///////////////////////////////////////////////////////////////////////////
+
+    fn modify_pfn_reference_count(
+        vmi: VmiState<Driver, Self>,
+        pfn: Gfn,
+        increment: i16,
+    ) -> Result<Option<u16>, VmiError>
+    where
+        Driver: VmiWrite,
+    {
+        let MMPFN = offset!(vmi, _MMPFN);
+
+        // const ZeroedPageList: u16 = 0;
+        // const FreePageList: u16 = 1;
+        const StandbyPageList: u16 = 2; //this list and before make up available pages.
+        const ModifiedPageList: u16 = 3;
+        const ModifiedNoWritePageList: u16 = 4;
+        // const BadPageList: u16 = 5;
+        const ActiveAndValid: u16 = 6;
+        // const TransitionPage: u16 = 7;
+
+        let pfn = Self::pfn_database(vmi)? + u64::from(pfn) * MMPFN.len() as u64;
+
+        //
+        // In the _MMPFN structure, the fields are like this:
+        //
+        // ```c
+        // struct _MMPFN {
+        //     ...
+        //     union {
+        //         USHORT ReferenceCount;
+        //         struct {
+        //             UCHAR PageLocation : 3;
+        //             ...
+        //         } e1;
+        //         ...
+        //     } u3;
+        // };
+        // ```
+        //
+        // On the systems tested (Win7 - Win11), the `PageLocation` is right
+        // after `ReferenceCount`. We can read the value of both fields at once.
+        //
+
+        debug_assert_eq!(MMPFN.ReferenceCount.size(), 2);
+        debug_assert_eq!(
+            MMPFN.ReferenceCount.offset() + MMPFN.ReferenceCount.size(),
+            MMPFN.PageLocation.offset()
+        );
+        debug_assert_eq!(MMPFN.PageLocation.bit_position(), 0);
+        debug_assert_eq!(MMPFN.PageLocation.bit_length(), 3);
+
+        let pfn_value = vmi.read_u32(pfn + MMPFN.ReferenceCount.offset())?;
+        let flags = (pfn_value >> 16) as u16;
+        let ref_count = (pfn_value & 0xFFFF) as u16;
+
+        let page_location = flags & 7;
+
+        tracing::debug!(
+            %pfn,
+            ref_count,
+            flags = %Hex(flags),
+            page_location,
+            increment,
+            "Modifying PFN reference count"
+        );
+
+        //
+        // Make sure the page is good (when coming from hibernate/standby pages
+        // can be in modified state).
+        //
+
+        if !matches!(
+            page_location,
+            StandbyPageList | ModifiedPageList | ModifiedNoWritePageList | ActiveAndValid
+        ) {
+            tracing::warn!(
+                %pfn,
+                ref_count,
+                flags = %Hex(flags),
+                page_location,
+                increment,
+                "Page is not active and valid"
+            );
+            return Ok(None);
+        }
+
+        if ref_count == 0 {
+            tracing::warn!(
+                %pfn,
+                ref_count,
+                flags = %Hex(flags),
+                page_location,
+                increment,
+                "Page is not initialized"
+            );
+            return Ok(None);
+        }
+
+        let new_ref_count = match ref_count.checked_add_signed(increment) {
+            Some(new_ref_count) => new_ref_count,
+            None => {
+                tracing::warn!(
+                    %pfn,
+                    ref_count,
+                    flags = %Hex(flags),
+                    page_location,
+                    increment,
+                    "Page is at maximum reference count"
+                );
+                return Ok(None);
+            }
+        };
+
+        vmi.write_u16(pfn + MMPFN.ReferenceCount.offset(), new_ref_count)?;
+
+        Ok(Some(new_ref_count))
+    }
+
+    /// Increments the reference count of a Page Frame Number (PFN).
+    pub fn lock_pfn(vmi: VmiState<Driver, Self>, pfn: Gfn) -> Result<Option<u16>, VmiError>
+    where
+        Driver: VmiWrite,
+    {
+        Self::modify_pfn_reference_count(vmi, pfn, 1)
+    }
+
+    /// Decrements the reference count of a Page Frame Number (PFN).
+    pub fn unlock_pfn(vmi: VmiState<Driver, Self>, pfn: Gfn) -> Result<Option<u16>, VmiError>
+    where
+        Driver: VmiWrite,
+    {
+        Self::modify_pfn_reference_count(vmi, pfn, -1)
+    }
 }
 
 #[expect(non_snake_case)]
 impl<Driver> VmiOs<Driver> for WindowsOs<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Process<'a> = WindowsProcess<'a, Driver>;

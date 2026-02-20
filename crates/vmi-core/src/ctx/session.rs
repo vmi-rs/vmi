@@ -2,7 +2,7 @@ use std::{io::ErrorKind, time::Duration};
 
 use super::{VmiState, context::VmiContext};
 use crate::{
-    Architecture, VmiCore, VmiDriver, VmiError, VmiHandler,
+    Architecture, VmiCore, VmiDriver, VmiError, VmiEventControl, VmiHandler, VmiVmControl,
     os::{NoOS, VmiOs},
 };
 
@@ -87,7 +87,17 @@ where
     pub fn underlying_os(&self) -> &'a Os {
         self.os
     }
+}
 
+///////////////////////////////////////////////////////////////////////////////
+// VmiEventControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
+where
+    Driver: VmiEventControl,
+    Os: VmiOs<Driver>,
+{
     /// Waits for an event to occur and processes it with the provided handler.
     ///
     /// This method blocks until an event occurs or the specified timeout is
@@ -103,7 +113,17 @@ where
             handler.handle_event(VmiContext::new(&state, event))
         })
     }
+}
 
+///////////////////////////////////////////////////////////////////////////////
+// VmiEventControl + VmiVmControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
+where
+    Driver: VmiEventControl + VmiVmControl,
+    Os: VmiOs<Driver>,
+{
     /// Enters the main event handling loop that processes VMI events until
     /// finished.
     pub fn handle<Handler>(

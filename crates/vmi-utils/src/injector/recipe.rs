@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use vmi_core::{Architecture, Hex, Registers, Va, VmiDriver, VmiError, VmiState, os::VmiOs};
+use vmi_core::{Architecture, Hex, Registers, Va, VmiDriver, VmiError, VmiOs, VmiState};
 
 /// The control flow of a recipe step.
 pub enum RecipeControlFlow {

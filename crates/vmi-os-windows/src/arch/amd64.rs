@@ -2,7 +2,8 @@ use vmi_arch_amd64::{
     Amd64, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel, Registers,
 };
 use vmi_core::{
-    Architecture as _, Va, VmiCore, VmiDriver, VmiError, VmiSession, VmiState,
+    Architecture as _, Va, VmiCore, VmiError, VmiSession, VmiState,
+    driver::VmiRead,
     os::{NoOS, VmiOsImage},
 };
 
@@ -78,7 +79,7 @@ impl WindowsInterrupt for Interrupt {
 
 impl<Driver> ArchAdapter<Driver> for Amd64
 where
-    Driver: VmiDriver<Architecture = Self>,
+    Driver: VmiRead<Architecture = Self>,
 {
     fn syscall_argument(
         vmi: VmiState<Driver, WindowsOs<Driver>>,
@@ -247,7 +248,7 @@ fn find_kernel_slow<Driver>(
     vmi: VmiState<Driver>,
 ) -> Result<Option<WindowsKernelInformation>, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     tracing::trace!("performing slow kernel search");
 
@@ -287,7 +288,7 @@ fn image_codeview<Driver>(
     image: &WindowsImage<Driver>,
 ) -> Result<Option<WindowsKernelInformation>, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     let debug_directory = match image.debug_directory()? {
         Some(debug_directory) => debug_directory,
@@ -314,7 +315,7 @@ fn function_argument_x86<Driver>(
     index: u64,
 ) -> Result<u64, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     let registers = vmi.registers();
 
@@ -328,7 +329,7 @@ fn function_argument_x64<Driver>(
     index: u64,
 ) -> Result<u64, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     let registers = vmi.registers();
 

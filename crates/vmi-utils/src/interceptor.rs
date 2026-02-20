@@ -18,8 +18,9 @@
 use std::collections::{HashMap, hash_map::Entry};
 
 use vmi_core::{
-    Gfn, Pa, Va, View, VmiCore, VmiDriver, VmiError, VmiEvent,
+    Gfn, Pa, Va, View, VmiCore, VmiError, VmiEvent,
     arch::{Architecture, EventInterrupt, EventReason, Registers as _},
+    driver::{VmiRead, VmiViewControl, VmiVmControl, VmiWrite},
 };
 
 /// A single breakpoint within a page.
@@ -48,7 +49,7 @@ struct Page {
 #[derive(Default)]
 pub struct Interceptor<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {
@@ -58,7 +59,7 @@ where
 
 impl<Driver> Interceptor<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {

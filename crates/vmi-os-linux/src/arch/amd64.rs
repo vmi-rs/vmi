@@ -1,5 +1,5 @@
 use vmi_arch_amd64::Amd64;
-use vmi_core::{Architecture, Registers as _, Va, VmiCore, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Registers as _, Va, VmiCore, VmiError, VmiState, driver::VmiRead};
 
 use super::ArchAdapter;
 use crate::LinuxOs;
@@ -7,7 +7,7 @@ use crate::LinuxOs;
 #[expect(non_snake_case)]
 impl<Driver> ArchAdapter<Driver> for Amd64
 where
-    Driver: VmiDriver<Architecture = Self>,
+    Driver: VmiRead<Architecture = Self>,
 {
     fn syscall_argument(
         vmi: VmiState<Driver, LinuxOs<Driver>>,
@@ -150,7 +150,7 @@ fn function_argument_x86<Driver>(
     index: u64,
 ) -> Result<u64, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     let index = index + 1;
     let stack = vmi.registers().rsp + index * size_of::<u32>() as u64;
@@ -162,7 +162,7 @@ fn function_argument_x64<Driver>(
     index: u64,
 ) -> Result<u64, VmiError>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
 {
     match index {
         0 => Ok(vmi.registers().rdi),

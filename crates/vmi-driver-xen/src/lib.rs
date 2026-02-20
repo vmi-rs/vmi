@@ -11,6 +11,10 @@ use std::time::Duration;
 use vmi_core::{
     Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError,
     VmiEvent, VmiEventResponse, VmiInfo, VmiMappedPage,
+    driver::{
+        VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead, VmiSetProtection,
+        VmiSetRegisters, VmiViewControl, VmiVmControl, VmiWrite,
+    },
 };
 use xen::XenDomainId;
 
@@ -50,27 +54,39 @@ where
     fn info(&self) -> Result<VmiInfo, VmiError> {
         Ok(self.inner.info()?)
     }
+}
 
-    fn pause(&self) -> Result<(), VmiError> {
-        Ok(self.inner.pause()?)
+impl<Arch> VmiRead for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
+    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+        Ok(self.inner.read_page(gfn)?)
     }
+}
 
-    fn resume(&self) -> Result<(), VmiError> {
-        Ok(self.inner.resume()?)
+impl<Arch> VmiWrite for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
+    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
+        Ok(self.inner.write_page(gfn, offset, content)?)
     }
+}
 
-    fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, VmiError> {
-        Ok(self.inner.registers(vcpu)?)
-    }
-
-    fn set_registers(&self, vcpu: VcpuId, registers: Arch::Registers) -> Result<(), VmiError> {
-        Ok(self.inner.set_registers(vcpu, registers)?)
-    }
-
+impl<Arch> VmiQueryProtection for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
         Ok(self.inner.memory_access(gfn, view)?)
     }
+}
 
+impl<Arch> VmiSetProtection for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
     fn set_memory_access(
         &self,
         gfn: Gfn,
@@ -91,23 +107,30 @@ where
             .inner
             .set_memory_access_with_options(gfn, view, access, options)?)
     }
+}
 
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        Ok(self.inner.read_page(gfn)?)
+impl<Arch> VmiQueryRegisters for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
+    fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, VmiError> {
+        Ok(self.inner.registers(vcpu)?)
     }
+}
 
-    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
-        Ok(self.inner.write_page(gfn, offset, content)?)
+impl<Arch> VmiSetRegisters for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
+    fn set_registers(&self, vcpu: VcpuId, registers: Arch::Registers) -> Result<(), VmiError> {
+        Ok(self.inner.set_registers(vcpu, registers)?)
     }
+}
 
-    fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        Ok(self.inner.allocate_gfn(gfn)?)
-    }
-
-    fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        Ok(self.inner.free_gfn(gfn)?)
-    }
-
+impl<Arch> VmiViewControl for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
     fn default_view(&self) -> View {
         self.inner.default_view()
     }
@@ -131,17 +154,18 @@ where
     fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
         Ok(self.inner.reset_view_gfn(view, gfn)?)
     }
+}
 
+impl<Arch> VmiEventControl for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
     fn monitor_enable(&self, option: Arch::EventMonitor) -> Result<(), VmiError> {
         Ok(self.inner.monitor_enable(option)?)
     }
 
     fn monitor_disable(&self, option: Arch::EventMonitor) -> Result<(), VmiError> {
         Ok(self.inner.monitor_disable(option)?)
-    }
-
-    fn inject_interrupt(&self, vcpu: VcpuId, interrupt: Arch::Interrupt) -> Result<(), VmiError> {
-        Ok(self.inner.inject_interrupt(vcpu, interrupt)?)
     }
 
     fn events_pending(&self) -> usize {
@@ -158,6 +182,31 @@ where
         handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
     ) -> Result<(), VmiError> {
         Ok(self.inner.wait_for_event(timeout, handler)?)
+    }
+}
+
+impl<Arch> VmiVmControl for VmiXenDriver<Arch>
+where
+    Arch: Architecture + ArchAdapter,
+{
+    fn pause(&self) -> Result<(), VmiError> {
+        Ok(self.inner.pause()?)
+    }
+
+    fn resume(&self) -> Result<(), VmiError> {
+        Ok(self.inner.resume()?)
+    }
+
+    fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        Ok(self.inner.allocate_gfn(gfn)?)
+    }
+
+    fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        Ok(self.inner.free_gfn(gfn)?)
+    }
+
+    fn inject_interrupt(&self, vcpu: VcpuId, interrupt: Arch::Interrupt) -> Result<(), VmiError> {
+        Ok(self.inner.inject_interrupt(vcpu, interrupt)?)
     }
 
     fn reset_state(&self) -> Result<(), VmiError> {

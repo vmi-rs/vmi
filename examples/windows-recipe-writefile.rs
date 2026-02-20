@@ -26,8 +26,9 @@
 mod common;
 
 use vmi::{
-    Hex, Va, VcpuId, VmiDriver,
+    Hex, Va, VcpuId,
     arch::amd64::Amd64,
+    driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
     utils::injector::{InjectorHandler, Recipe, RecipeControlFlow, recipe},
 };
@@ -92,7 +93,7 @@ impl GuestFile {
 /// ```
 fn recipe_factory<Driver>(data: GuestFile) -> Recipe<Driver, WindowsOs<Driver>, GuestFile>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiFullDriver<Architecture = Amd64>,
 {
     recipe![
         Recipe::<_, WindowsOs<Driver>, _>::new(data),

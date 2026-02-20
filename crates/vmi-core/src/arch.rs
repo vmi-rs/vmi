@@ -2,9 +2,7 @@
 
 use std::fmt::Debug;
 
-use crate::{
-    AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiDriver, VmiError,
-};
+use crate::{AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///
@@ -145,7 +143,7 @@ pub trait Architecture {
     /// physical address.
     fn translate_address<Driver>(vmi: &VmiCore<Driver>, va: Va, root: Pa) -> Result<Pa, VmiError>
     where
-        Driver: VmiDriver<Architecture = Self>;
+        Driver: VmiRead<Architecture = Self>;
 }
 
 /// Complete set of CPU registers for a specific architecture.
@@ -251,7 +249,7 @@ where
     /// - **AMD64**: Value at the top of the stack (i.e. `RSP`)
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
     where
-        Driver: VmiDriver;
+        Driver: VmiRead;
 }
 
 /// A memory access event, providing details about the accessed memory.

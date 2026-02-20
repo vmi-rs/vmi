@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::macros::impl_offsets;
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -10,7 +10,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 /// Corresponds to `_OBJECT_ATTRIBUTES`.
 pub struct WindowsObjectAttributes<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -22,7 +22,7 @@ where
 
 impl<Driver> VmiVa for WindowsObjectAttributes<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -32,7 +32,7 @@ where
 
 impl<'a, Driver> WindowsObjectAttributes<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

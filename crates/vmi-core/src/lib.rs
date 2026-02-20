@@ -3,7 +3,7 @@
 pub mod arch;
 mod core;
 mod ctx;
-mod driver;
+pub mod driver;
 mod error;
 mod event;
 mod handler;
@@ -23,7 +23,11 @@ pub use self::{
         TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
     },
     ctx::{VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiState},
-    driver::VmiDriver,
+    driver::{
+        VmiDriver, VmiEventControl, VmiFullDriver, VmiMemory, VmiProtection, VmiQueryProtection,
+        VmiQueryRegisters, VmiRead, VmiReadAccess, VmiRegisters, VmiSetProtection, VmiSetRegisters,
+        VmiViewControl, VmiVmControl, VmiWrite, VmiWriteAccess,
+    },
     error::{PageFaults, VmiError},
     event::{VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags},
     handler::VmiHandler,
@@ -61,9 +65,32 @@ where
     read_string_length_limit: RefCell<Option<usize>>,
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// VmiDriver
+///////////////////////////////////////////////////////////////////////////////
+
 impl<Driver> VmiCore<Driver>
 where
     Driver: VmiDriver,
+{
+    /// Returns the driver used by this `VmiCore` instance.
+    pub fn driver(&self) -> &Driver {
+        &self.driver
+    }
+
+    /// Retrieves information about the virtual machine.
+    pub fn info(&self) -> Result<VmiInfo, VmiError> {
+        self.driver.info()
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiRead
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiRead,
 {
     /// Creates a new `VmiCore` instance with the given driver.
     ///
@@ -288,303 +315,6 @@ where
         *self.read_string_length_limit.borrow_mut() = Some(limit);
     }
 
-    /// Returns the driver used by this `VmiCore` instance.
-    pub fn driver(&self) -> &Driver {
-        &self.driver
-    }
-
-    /// Retrieves information about the virtual machine.
-    pub fn info(&self) -> Result<VmiInfo, VmiError> {
-        self.driver.info()
-    }
-
-    /// Pauses the virtual machine.
-    pub fn pause(&self) -> Result<(), VmiError> {
-        self.driver.pause()
-    }
-
-    /// Resumes the virtual machine.
-    pub fn resume(&self) -> Result<(), VmiError> {
-        self.driver.resume()
-    }
-
-    /// Pauses the virtual machine and returns a guard that will resume it when
-    /// dropped.
-    pub fn pause_guard(&self) -> Result<VmiPauseGuard<'_, Driver>, VmiError> {
-        VmiPauseGuard::new(&self.driver)
-    }
-
-    /// Retrieves the current state of CPU registers for a specified virtual
-    /// CPU.
-    ///
-    /// This method allows you to access the current values of CPU registers,
-    /// which is crucial for understanding the state of the virtual machine
-    /// at a given point in time.
-    ///
-    /// # Notes
-    ///
-    /// The exact structure and content of the returned registers depend on the
-    /// specific architecture of the VM being introspected. Refer to the
-    /// documentation of your [`Architecture`] implementation for details on
-    /// how to interpret the register values.
-    pub fn registers(
-        &self,
-        vcpu: VcpuId,
-    ) -> Result<<Driver::Architecture as Architecture>::Registers, VmiError> {
-        self.driver.registers(vcpu)
-    }
-
-    /// Sets the registers of a virtual CPU.
-    pub fn set_registers(
-        &self,
-        vcpu: VcpuId,
-        registers: <Driver::Architecture as Architecture>::Registers,
-    ) -> Result<(), VmiError> {
-        self.driver.set_registers(vcpu, registers)
-    }
-
-    /// Retrieves the memory access permissions for a specific guest frame
-    /// number (GFN).
-    ///
-    /// The returned `MemoryAccess` indicates the current read, write, and
-    /// execute permissions for the specified memory page in the given view.
-    pub fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
-        self.driver.memory_access(gfn, view)
-    }
-
-    /// Sets the memory access permissions for a specific guest frame number
-    /// (GFN).
-    ///
-    /// This method allows you to modify the read, write, and execute
-    /// permissions for a given memory page in the specified view.
-    pub fn set_memory_access(
-        &self,
-        gfn: Gfn,
-        view: View,
-        access: MemoryAccess,
-    ) -> Result<(), VmiError> {
-        self.driver.set_memory_access(gfn, view, access)
-    }
-
-    /// Sets the memory access permissions for a specific guest frame number
-    /// (GFN) with additional options.
-    ///
-    /// In addition to the basic read, write, and execute permissions, this
-    /// method allows you to specify additional options for the memory access.
-    pub fn set_memory_access_with_options(
-        &self,
-        gfn: Gfn,
-        view: View,
-        access: MemoryAccess,
-        options: MemoryAccessOptions,
-    ) -> Result<(), VmiError> {
-        self.driver
-            .set_memory_access_with_options(gfn, view, access, options)
-    }
-
-    /// Allocates the next available guest frame number (GFN).
-    ///
-    /// This method finds and allocates the next free GFN after the current
-    /// maximum GFN. It's useful when you need to allocate new memory pages
-    /// for the VM.
-    pub fn allocate_next_available_gfn(&self) -> Result<Gfn, VmiError> {
-        let info = self.info()?;
-
-        let next_available_gfn = info.max_gfn + 1;
-        self.allocate_gfn(next_available_gfn)?;
-        Ok(next_available_gfn)
-    }
-
-    /// Allocates a specific guest frame number (GFN).
-    ///
-    /// This method allows you to allocate a particular GFN. It's useful when
-    /// you need to allocate a specific memory page for the VM.
-    pub fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.allocate_gfn(gfn)
-    }
-
-    /// Frees a previously allocated guest frame number (GFN).
-    ///
-    /// This method deallocates a GFN that was previously allocated. It's
-    /// important to free GFNs when they're no longer needed to prevent
-    /// memory leaks in the VM.
-    pub fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.free_gfn(gfn)
-    }
-
-    /// Returns the default view for the virtual machine.
-    ///
-    /// The default view typically represents the normal, unmodified state of
-    /// the VM's memory.
-    pub fn default_view(&self) -> View {
-        self.driver.default_view()
-    }
-
-    /// Creates a new view with the specified default access permissions.
-    ///
-    /// Views allow for creating different perspectives of the VM's memory,
-    /// which can be useful for analysis or isolation purposes. The default
-    /// access permissions apply to memory pages not explicitly modified
-    /// within this view.
-    pub fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
-        self.driver.create_view(default_access)
-    }
-
-    /// Destroys a previously created view.
-    ///
-    /// This method removes a view and frees associated resources. It should be
-    /// called when a view is no longer needed to prevent resource leaks.
-    pub fn destroy_view(&self, view: View) -> Result<(), VmiError> {
-        self.driver.destroy_view(view)
-    }
-
-    /// Switches to a different view for all virtual CPUs.
-    ///
-    /// This method changes the current active view for all vCPUs, affecting
-    /// subsequent memory operations across the entire VM. It allows for
-    /// quick transitions between different memory perspectives globally.
-    ///
-    /// Note the difference between this method and
-    /// [`VmiEventResponse::set_view()`]:
-    /// - `switch_to_view()` changes the view for all vCPUs immediately.
-    /// - `VmiEventResponse::set_view()` sets the view only for the specific
-    ///   vCPU that received the event, and the change is applied when the event
-    ///   handler returns.
-    ///
-    /// Use `switch_to_view()` for global view changes, and
-    /// `VmiEventResponse::set_view()` for targeted, event-specific view
-    /// modifications on individual vCPUs.
-    pub fn switch_to_view(&self, view: View) -> Result<(), VmiError> {
-        self.driver.switch_to_view(view)
-    }
-
-    /// Changes the mapping of a guest frame number (GFN) in a specific view.
-    ///
-    /// This method allows for remapping a GFN to a different physical frame
-    /// within a view, enabling fine-grained control over memory layout in
-    /// different views.
-    ///
-    /// A notable use case for this method is implementing "stealth hooks":
-    /// 1. Create a new GFN and copy the contents of the original page to it.
-    /// 2. Modify the new page by installing a breakpoint (e.g., 0xcc on AMD64)
-    ///    at a strategic location.
-    /// 3. Use this method to change the mapping of the original GFN to the new
-    ///    one.
-    /// 4. Set the memory access of the new GFN to non-readable.
-    ///
-    /// When a read access occurs:
-    /// - The handler should enable single-stepping.
-    /// - Switch to an unmodified view (e.g., `default_view`) to execute the
-    ///   read instruction, which will read the original non-breakpoint byte.
-    /// - Re-enable single-stepping afterwards.
-    ///
-    /// This technique allows for transparent breakpoints that are difficult to
-    /// detect by the guest OS or applications.
-    pub fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.change_view_gfn(view, old_gfn, new_gfn)
-    }
-
-    /// Resets the mapping of a guest frame number (GFN) in a specific view to
-    /// its original state.
-    ///
-    /// This method reverts any custom mapping for the specified GFN in the
-    /// given view, restoring it to the default mapping.
-    pub fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.reset_view_gfn(view, gfn)
-    }
-
-    /// Enables monitoring of specific events.
-    ///
-    /// This method allows you to enable monitoring of specific events, such as
-    /// control register writes, interrupts, or single-step execution.
-    /// Monitoring events can be useful for tracking specific guest behavior or
-    /// for implementing custom analysis tools.
-    ///
-    /// The type of event to monitor is defined by the architecture-specific
-    /// [`Architecture::EventMonitor`] type.
-    ///
-    /// When an event occurs, it will be passed to the event callback function
-    /// for processing.
-    pub fn monitor_enable(
-        &self,
-        option: <Driver::Architecture as Architecture>::EventMonitor,
-    ) -> Result<(), VmiError> {
-        self.driver.monitor_enable(option)
-    }
-
-    /// Disables monitoring of specific events.
-    ///
-    /// This method allows you to disable monitoring of specific events that
-    /// were previously enabled. It can be used to stop tracking certain
-    /// hardware events or to reduce the overhead of event processing.
-    ///
-    /// The type of event to disable is defined by the architecture-specific
-    /// [`Architecture::EventMonitor`] type.
-    pub fn monitor_disable(
-        &self,
-        option: <Driver::Architecture as Architecture>::EventMonitor,
-    ) -> Result<(), VmiError> {
-        self.driver.monitor_disable(option)
-    }
-
-    /// Injects an interrupt into a specific virtual CPU.
-    ///
-    /// This method allows for the injection of architecture-specific interrupts
-    /// into a given vCPU. It can be used to simulate hardware events or to
-    /// manipulate the guest's execution flow for analysis purposes.
-    ///
-    /// The type of interrupt and its parameters are defined by the
-    /// architecture-specific [`Architecture::Interrupt`] type.
-    pub fn inject_interrupt(
-        &self,
-        vcpu: VcpuId,
-        interrupt: <Driver::Architecture as Architecture>::Interrupt,
-    ) -> Result<(), VmiError> {
-        self.driver.inject_interrupt(vcpu, interrupt)
-    }
-
-    /// Returns the number of pending events.
-    ///
-    /// This method provides a count of events that have occurred but have not
-    /// yet been processed.
-    pub fn events_pending(&self) -> usize {
-        self.driver.events_pending()
-    }
-
-    /// Returns the time spent processing events by the driver.
-    ///
-    /// This method provides a measure of the overhead introduced by event
-    /// processing. It can be useful for performance tuning and
-    /// understanding the impact of VMI operations on overall system
-    /// performance.
-    pub fn event_processing_overhead(&self) -> Duration {
-        self.driver.event_processing_overhead()
-    }
-
-    /// Waits for an event to occur and processes it with the provided handler.
-    ///
-    /// This method blocks until an event occurs or the specified timeout is
-    /// reached. When an event occurs, it is passed to the provided callback
-    /// function for processing.
-    pub fn wait_for_event(
-        &self,
-        timeout: Duration,
-        handler: impl FnMut(&VmiEvent<Driver::Architecture>) -> VmiEventResponse<Driver::Architecture>,
-    ) -> Result<(), VmiError> {
-        self.driver.wait_for_event(timeout, handler)
-    }
-
-    /// Resets the state of the VMI system.
-    ///
-    /// This method clears all event monitors, caches, and any other stateful
-    /// data maintained by the VMI system. It's useful for bringing the VMI
-    /// system back to a known clean state, which can be necessary when
-    /// switching between different analysis tasks or recovering from error
-    /// conditions.
-    pub fn reset_state(&self) -> Result<(), VmiError> {
-        self.driver.reset_state()
-    }
-
     /// Reads memory from the virtual machine.
     pub fn read(&self, ctx: impl Into<AccessContext>, buffer: &mut [u8]) -> Result<(), VmiError> {
         let ctx = ctx.into();
@@ -601,31 +331,6 @@ where
 
             let size = std::cmp::min(remaining, page.len());
             buffer[position..position + size].copy_from_slice(&page[..size]);
-
-            position += size;
-            remaining -= size;
-        }
-
-        Ok(())
-    }
-
-    /// Writes memory to the virtual machine.
-    pub fn write(&self, ctx: impl Into<AccessContext>, buffer: &[u8]) -> Result<(), VmiError> {
-        let ctx = ctx.into();
-        let mut position = 0usize;
-        let mut remaining = buffer.len();
-
-        let page_size = self.info()?.page_size;
-
-        while remaining > 0 {
-            let address = self.translate_access_context(ctx + position as u64)?;
-            let gfn = Driver::Architecture::gfn_from_pa(address);
-            let offset = Driver::Architecture::pa_offset(address);
-
-            let size = std::cmp::min(remaining, (page_size - offset) as usize);
-            let content = &buffer[position..position + size];
-
-            self.driver.write_page(gfn, offset, content)?;
 
             position += size;
             remaining -= size;
@@ -921,34 +626,6 @@ where
         Ok(result)
     }
 
-    /// Writes a single byte to the virtual machine.
-    pub fn write_u8(&self, ctx: impl Into<AccessContext>, value: u8) -> Result<(), VmiError> {
-        self.write(ctx, &value.to_le_bytes())
-    }
-
-    /// Writes a 16-bit unsigned integer to the virtual machine.
-    pub fn write_u16(&self, ctx: impl Into<AccessContext>, value: u16) -> Result<(), VmiError> {
-        self.write(ctx, &value.to_le_bytes())
-    }
-
-    /// Writes a 32-bit unsigned integer to the virtual machine.
-    pub fn write_u32(&self, ctx: impl Into<AccessContext>, value: u32) -> Result<(), VmiError> {
-        self.write(ctx, &value.to_le_bytes())
-    }
-
-    /// Writes a 64-bit unsigned integer to the virtual machine.
-    pub fn write_u64(&self, ctx: impl Into<AccessContext>, value: u64) -> Result<(), VmiError> {
-        self.write(ctx, &value.to_le_bytes())
-    }
-
-    /// Writes a struct to the virtual machine.
-    pub fn write_struct<T>(&self, ctx: impl Into<AccessContext>, value: T) -> Result<(), VmiError>
-    where
-        T: IntoBytes + Immutable,
-    {
-        self.write(ctx, value.as_bytes())
-    }
-
     /// Translates a virtual address to a physical address.
     pub fn translate_address(&self, ctx: impl Into<AddressContext>) -> Result<Pa, VmiError> {
         self.translate_access_context(AccessContext::from(ctx.into()))
@@ -1010,17 +687,430 @@ where
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// VmiRead + VmiWrite
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiRead + VmiWrite,
+{
+    /// Writes memory to the virtual machine.
+    pub fn write(&self, ctx: impl Into<AccessContext>, buffer: &[u8]) -> Result<(), VmiError> {
+        let ctx = ctx.into();
+        let mut position = 0usize;
+        let mut remaining = buffer.len();
+
+        while remaining > 0 {
+            let address = self.translate_access_context(ctx + position as u64)?;
+            let gfn = Driver::Architecture::gfn_from_pa(address);
+            let offset = Driver::Architecture::pa_offset(address);
+
+            let size = std::cmp::min(
+                remaining,
+                (Driver::Architecture::PAGE_SIZE - offset) as usize,
+            );
+            let content = &buffer[position..position + size];
+
+            self.driver.write_page(gfn, offset, content)?;
+
+            position += size;
+            remaining -= size;
+        }
+
+        Ok(())
+    }
+
+    /// Writes a single byte to the virtual machine.
+    pub fn write_u8(&self, ctx: impl Into<AccessContext>, value: u8) -> Result<(), VmiError> {
+        self.write(ctx, &value.to_le_bytes())
+    }
+
+    /// Writes a 16-bit unsigned integer to the virtual machine.
+    pub fn write_u16(&self, ctx: impl Into<AccessContext>, value: u16) -> Result<(), VmiError> {
+        self.write(ctx, &value.to_le_bytes())
+    }
+
+    /// Writes a 32-bit unsigned integer to the virtual machine.
+    pub fn write_u32(&self, ctx: impl Into<AccessContext>, value: u32) -> Result<(), VmiError> {
+        self.write(ctx, &value.to_le_bytes())
+    }
+
+    /// Writes a 64-bit unsigned integer to the virtual machine.
+    pub fn write_u64(&self, ctx: impl Into<AccessContext>, value: u64) -> Result<(), VmiError> {
+        self.write(ctx, &value.to_le_bytes())
+    }
+
+    /// Writes a struct to the virtual machine.
+    pub fn write_struct<T>(&self, ctx: impl Into<AccessContext>, value: T) -> Result<(), VmiError>
+    where
+        T: IntoBytes + Immutable,
+    {
+        self.write(ctx, value.as_bytes())
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiQueryProtection
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiQueryProtection,
+{
+    /// Retrieves the memory access permissions for a specific guest frame
+    /// number (GFN).
+    ///
+    /// The returned `MemoryAccess` indicates the current read, write, and
+    /// execute permissions for the specified memory page in the given view.
+    pub fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
+        self.driver.memory_access(gfn, view)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiSetProtection
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiSetProtection,
+{
+    /// Sets the memory access permissions for a specific guest frame number
+    /// (GFN).
+    ///
+    /// This method allows you to modify the read, write, and execute
+    /// permissions for a given memory page in the specified view.
+    pub fn set_memory_access(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+    ) -> Result<(), VmiError> {
+        self.driver.set_memory_access(gfn, view, access)
+    }
+
+    /// Sets the memory access permissions for a specific guest frame number
+    /// (GFN) with additional options.
+    ///
+    /// In addition to the basic read, write, and execute permissions, this
+    /// method allows you to specify additional options for the memory access.
+    pub fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), VmiError> {
+        self.driver
+            .set_memory_access_with_options(gfn, view, access, options)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiQueryRegisters
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiQueryRegisters,
+{
+    /// Retrieves the current state of CPU registers for a specified virtual
+    /// CPU.
+    ///
+    /// This method allows you to access the current values of CPU registers,
+    /// which is crucial for understanding the state of the virtual machine
+    /// at a given point in time.
+    ///
+    /// # Notes
+    ///
+    /// The exact structure and content of the returned registers depend on the
+    /// specific architecture of the VM being introspected. Refer to the
+    /// documentation of your [`Architecture`] implementation for details on
+    /// how to interpret the register values.
+    pub fn registers(
+        &self,
+        vcpu: VcpuId,
+    ) -> Result<<Driver::Architecture as Architecture>::Registers, VmiError> {
+        self.driver.registers(vcpu)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiSetRegisters
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiSetRegisters,
+{
+    /// Sets the registers of a virtual CPU.
+    pub fn set_registers(
+        &self,
+        vcpu: VcpuId,
+        registers: <Driver::Architecture as Architecture>::Registers,
+    ) -> Result<(), VmiError> {
+        self.driver.set_registers(vcpu, registers)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiViewControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiViewControl,
+{
+    /// Returns the default view for the virtual machine.
+    ///
+    /// The default view typically represents the normal, unmodified state of
+    /// the VM's memory.
+    pub fn default_view(&self) -> View {
+        self.driver.default_view()
+    }
+
+    /// Creates a new view with the specified default access permissions.
+    ///
+    /// Views allow for creating different perspectives of the VM's memory,
+    /// which can be useful for analysis or isolation purposes. The default
+    /// access permissions apply to memory pages not explicitly modified
+    /// within this view.
+    pub fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
+        self.driver.create_view(default_access)
+    }
+
+    /// Destroys a previously created view.
+    ///
+    /// This method removes a view and frees associated resources. It should be
+    /// called when a view is no longer needed to prevent resource leaks.
+    pub fn destroy_view(&self, view: View) -> Result<(), VmiError> {
+        self.driver.destroy_view(view)
+    }
+
+    /// Switches to a different view for all virtual CPUs.
+    ///
+    /// This method changes the current active view for all vCPUs, affecting
+    /// subsequent memory operations across the entire VM. It allows for
+    /// quick transitions between different memory perspectives globally.
+    ///
+    /// Note the difference between this method and
+    /// [`VmiEventResponse::set_view()`]:
+    /// - `switch_to_view()` changes the view for all vCPUs immediately.
+    /// - `VmiEventResponse::set_view()` sets the view only for the specific
+    ///   vCPU that received the event, and the change is applied when the event
+    ///   handler returns.
+    ///
+    /// Use `switch_to_view()` for global view changes, and
+    /// `VmiEventResponse::set_view()` for targeted, event-specific view
+    /// modifications on individual vCPUs.
+    pub fn switch_to_view(&self, view: View) -> Result<(), VmiError> {
+        self.driver.switch_to_view(view)
+    }
+
+    /// Changes the mapping of a guest frame number (GFN) in a specific view.
+    ///
+    /// This method allows for remapping a GFN to a different physical frame
+    /// within a view, enabling fine-grained control over memory layout in
+    /// different views.
+    ///
+    /// A notable use case for this method is implementing "stealth hooks":
+    /// 1. Create a new GFN and copy the contents of the original page to it.
+    /// 2. Modify the new page by installing a breakpoint (e.g., 0xcc on AMD64)
+    ///    at a strategic location.
+    /// 3. Use this method to change the mapping of the original GFN to the new
+    ///    one.
+    /// 4. Set the memory access of the new GFN to non-readable.
+    ///
+    /// When a read access occurs:
+    /// - The handler should enable single-stepping.
+    /// - Switch to an unmodified view (e.g., `default_view`) to execute the
+    ///   read instruction, which will read the original non-breakpoint byte.
+    /// - Re-enable single-stepping afterwards.
+    ///
+    /// This technique allows for transparent breakpoints that are difficult to
+    /// detect by the guest OS or applications.
+    pub fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.change_view_gfn(view, old_gfn, new_gfn)
+    }
+
+    /// Resets the mapping of a guest frame number (GFN) in a specific view to
+    /// its original state.
+    ///
+    /// This method reverts any custom mapping for the specified GFN in the
+    /// given view, restoring it to the default mapping.
+    pub fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.reset_view_gfn(view, gfn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiEventControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiEventControl,
+{
+    /// Enables monitoring of specific events.
+    ///
+    /// This method allows you to enable monitoring of specific events, such as
+    /// control register writes, interrupts, or single-step execution.
+    /// Monitoring events can be useful for tracking specific guest behavior or
+    /// for implementing custom analysis tools.
+    ///
+    /// The type of event to monitor is defined by the architecture-specific
+    /// [`Architecture::EventMonitor`] type.
+    ///
+    /// When an event occurs, it will be passed to the event callback function
+    /// for processing.
+    pub fn monitor_enable(
+        &self,
+        option: <Driver::Architecture as Architecture>::EventMonitor,
+    ) -> Result<(), VmiError> {
+        self.driver.monitor_enable(option)
+    }
+
+    /// Disables monitoring of specific events.
+    ///
+    /// This method allows you to disable monitoring of specific events that
+    /// were previously enabled. It can be used to stop tracking certain
+    /// hardware events or to reduce the overhead of event processing.
+    ///
+    /// The type of event to disable is defined by the architecture-specific
+    /// [`Architecture::EventMonitor`] type.
+    pub fn monitor_disable(
+        &self,
+        option: <Driver::Architecture as Architecture>::EventMonitor,
+    ) -> Result<(), VmiError> {
+        self.driver.monitor_disable(option)
+    }
+
+    /// Returns the number of pending events.
+    ///
+    /// This method provides a count of events that have occurred but have not
+    /// yet been processed.
+    pub fn events_pending(&self) -> usize {
+        self.driver.events_pending()
+    }
+
+    /// Returns the time spent processing events by the driver.
+    ///
+    /// This method provides a measure of the overhead introduced by event
+    /// processing. It can be useful for performance tuning and
+    /// understanding the impact of VMI operations on overall system
+    /// performance.
+    pub fn event_processing_overhead(&self) -> Duration {
+        self.driver.event_processing_overhead()
+    }
+
+    /// Waits for an event to occur and processes it with the provided handler.
+    ///
+    /// This method blocks until an event occurs or the specified timeout is
+    /// reached. When an event occurs, it is passed to the provided callback
+    /// function for processing.
+    pub fn wait_for_event(
+        &self,
+        timeout: Duration,
+        handler: impl FnMut(&VmiEvent<Driver::Architecture>) -> VmiEventResponse<Driver::Architecture>,
+    ) -> Result<(), VmiError> {
+        self.driver.wait_for_event(timeout, handler)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiVmControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<Driver> VmiCore<Driver>
+where
+    Driver: VmiVmControl,
+{
+    /// Pauses the virtual machine.
+    pub fn pause(&self) -> Result<(), VmiError> {
+        self.driver.pause()
+    }
+
+    /// Resumes the virtual machine.
+    pub fn resume(&self) -> Result<(), VmiError> {
+        self.driver.resume()
+    }
+
+    /// Pauses the virtual machine and returns a guard that will resume it when
+    /// dropped.
+    pub fn pause_guard(&self) -> Result<VmiPauseGuard<'_, Driver>, VmiError> {
+        VmiPauseGuard::new(&self.driver)
+    }
+
+    /// Allocates the next available guest frame number (GFN).
+    ///
+    /// This method finds and allocates the next free GFN after the current
+    /// maximum GFN. It's useful when you need to allocate new memory pages
+    /// for the VM.
+    pub fn allocate_next_available_gfn(&self) -> Result<Gfn, VmiError> {
+        let info = self.info()?;
+
+        let next_available_gfn = info.max_gfn + 1;
+        self.allocate_gfn(next_available_gfn)?;
+        Ok(next_available_gfn)
+    }
+
+    /// Allocates a specific guest frame number (GFN).
+    ///
+    /// This method allows you to allocate a particular GFN. It's useful when
+    /// you need to allocate a specific memory page for the VM.
+    pub fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.allocate_gfn(gfn)
+    }
+
+    /// Frees a previously allocated guest frame number (GFN).
+    ///
+    /// This method deallocates a GFN that was previously allocated. It's
+    /// important to free GFNs when they're no longer needed to prevent
+    /// memory leaks in the VM.
+    pub fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.free_gfn(gfn)
+    }
+
+    /// Injects an interrupt into a specific virtual CPU.
+    ///
+    /// This method allows for the injection of architecture-specific interrupts
+    /// into a given vCPU. It can be used to simulate hardware events or to
+    /// manipulate the guest's execution flow for analysis purposes.
+    ///
+    /// The type of interrupt and its parameters are defined by the
+    /// architecture-specific [`Architecture::Interrupt`] type.
+    pub fn inject_interrupt(
+        &self,
+        vcpu: VcpuId,
+        interrupt: <Driver::Architecture as Architecture>::Interrupt,
+    ) -> Result<(), VmiError> {
+        self.driver.inject_interrupt(vcpu, interrupt)
+    }
+
+    /// Resets the state of the VMI system.
+    ///
+    /// This method clears all event monitors, caches, and any other stateful
+    /// data maintained by the VMI system. It's useful for bringing the VMI
+    /// system back to a known clean state, which can be necessary when
+    /// switching between different analysis tasks or recovering from error
+    /// conditions.
+    pub fn reset_state(&self) -> Result<(), VmiError> {
+        self.driver.reset_state()
+    }
+}
+
 /// A guard that pauses the virtual machine on creation and resumes it on drop.
 pub struct VmiPauseGuard<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiVmControl,
 {
     driver: &'a Driver,
 }
 
 impl<'a, Driver> VmiPauseGuard<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiVmControl,
 {
     /// Creates a new pause guard.
     pub fn new(driver: &'a Driver) -> Result<Self, VmiError> {
@@ -1031,7 +1121,7 @@ where
 
 impl<Driver> Drop for VmiPauseGuard<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiVmControl,
 {
     fn drop(&mut self) {
         if let Err(err) = self.driver.resume() {

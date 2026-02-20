@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsHandleTableEntry, macros::impl_offsets};
 use crate::{ArchAdapter, HandleTableEntryIterator, WindowsOs};
@@ -14,7 +14,7 @@ use crate::{ArchAdapter, HandleTableEntryIterator, WindowsOs};
 /// Corresponds to `_HANDLE_TABLE`.
 pub struct WindowsHandleTable<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -32,7 +32,7 @@ where
 
 impl<Driver> VmiVa for WindowsHandleTable<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -42,7 +42,7 @@ where
 
 impl<'a, Driver> WindowsHandleTable<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

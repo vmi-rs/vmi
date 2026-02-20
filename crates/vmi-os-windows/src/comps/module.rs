@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::VmiOsModule};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsModule};
 
 use super::macros::impl_offsets;
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -13,7 +13,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 /// Corresponds to `_KLDR_DATA_TABLE_ENTRY`.
 pub struct WindowsModule<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -25,7 +25,7 @@ where
 
 impl<Driver> VmiVa for WindowsModule<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -35,7 +35,7 @@ where
 
 impl<'a, Driver> WindowsModule<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -75,7 +75,7 @@ where
 
 impl<'a, Driver> VmiOsModule<'a, Driver> for WindowsModule<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

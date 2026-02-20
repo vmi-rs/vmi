@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View,
-    VmiCore, VmiDriver, VmiError,
+    VmiCore, VmiError,
+    driver::{VmiRead, VmiSetProtection},
 };
 
 use super::{
@@ -82,7 +83,7 @@ where
 
 struct PageTableController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
 {
     monitored_gfns: HashSet<(View, Gfn)>,
     _marker: std::marker::PhantomData<Driver>,
@@ -90,7 +91,7 @@ where
 
 impl<Driver> PageTableController<Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
 {
     fn new() -> Self {
         Self {
@@ -151,7 +152,7 @@ where
 
 impl<Driver, Tag> ArchAdapter<Driver, Tag> for Amd64
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
     type Impl = PageTableMonitorAmd64<Driver, Tag>;
@@ -160,7 +161,7 @@ where
 /// A page table monitor for the AMD64 architecture.
 pub struct PageTableMonitorAmd64<Driver, Tag>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
     controller: PageTableController<Driver>,
@@ -184,7 +185,7 @@ where
 
 impl<Driver, Tag> PageTableMonitorArchAdapter<Driver, Tag> for PageTableMonitorAmd64<Driver, Tag>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
     fn new() -> Self {
@@ -362,7 +363,7 @@ where
 
 impl<Driver, Tag> PageTableMonitorAmd64<Driver, Tag>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
     #[tracing::instrument(

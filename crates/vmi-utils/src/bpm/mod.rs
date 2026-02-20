@@ -40,7 +40,7 @@ use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, Pa, Registers as _, Va, View, VmiCore, VmiDriver,
-    VmiError, VmiEvent,
+    VmiError, VmiEvent, driver::VmiRead,
 };
 
 pub use self::controller::{BreakpointController, MemoryController, TapController};
@@ -50,7 +50,7 @@ use crate::ptm::{PageEntryUpdate, PageTableMonitorEvent};
 pub struct BreakpointManager<Controller, Key = (), Tag = &'static str>
 where
     Controller: TapController,
-    Controller::Driver: VmiDriver,
+    Controller::Driver: VmiRead,
     Key: KeyType,
     Tag: TagType,
 {
@@ -150,7 +150,7 @@ where
 impl<Interface, Key, Tag> BreakpointManager<Interface, Key, Tag>
 where
     Interface: TapController,
-    Interface::Driver: VmiDriver,
+    Interface::Driver: VmiRead,
     Key: KeyType,
     Tag: TagType,
 {

@@ -1,7 +1,8 @@
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt, Registers};
 use vmi_core::{
-    Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiDriver,
-    VmiError, VmiEventResponse, VmiHandler,
+    Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiError,
+    VmiEventResponse, VmiHandler,
+    driver::{VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
     os::{ProcessId, VmiOsProcess, VmiOsThread},
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
@@ -21,7 +22,7 @@ const INVALID_VIEW: View = View(0xffff);
 
 impl<Driver> OsAdapter<Driver> for WindowsOs<Driver>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64> + VmiWrite<Architecture = Amd64>,
 {
     fn prepare_function_call(
         &self,
@@ -154,7 +155,11 @@ where
 
 impl<Driver, T> InjectorHandler<Driver, WindowsOs<Driver>, T, ()>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>,
 {
     /// Creates a new injector handler.
     pub fn new(
@@ -168,7 +173,11 @@ where
 
 impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>,
     Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Creates a new injector handler.
@@ -547,7 +556,12 @@ where
 impl<Driver, T, Bridge> VmiHandler<Driver, WindowsOs<Driver>>
     for InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
 where
-    Driver: VmiDriver<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>
+        + VmiVmControl<Architecture = Amd64>,
     Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
 {
     type Output = Result<InjectorResultCode, BridgePacket>;

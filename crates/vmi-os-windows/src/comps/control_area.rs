@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa, os::VmiOsMapped};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsMapped};
 
 use super::{macros::impl_offsets, object::WindowsFileObject};
 use crate::{ArchAdapter, WindowsOs};
@@ -14,7 +14,7 @@ use crate::{ArchAdapter, WindowsOs};
 /// Corresponds to `_CONTROL_AREA`.
 pub struct WindowsControlArea<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -26,7 +26,7 @@ where
 
 impl<Driver> VmiVa for WindowsControlArea<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -36,7 +36,7 @@ where
 
 impl<'a, Driver> WindowsControlArea<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
@@ -77,7 +77,7 @@ where
 
 impl<'a, Driver> VmiOsMapped<'a, Driver> for WindowsControlArea<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;

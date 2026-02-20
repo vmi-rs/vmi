@@ -4,7 +4,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 use super::session::VmiSession;
 use crate::{
     AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver,
-    VmiError,
+    VmiError, VmiRead, VmiWrite,
     os::{NoOS, VmiOs},
 };
 
@@ -121,7 +121,17 @@ where
     pub fn translation_root(&self, va: Va) -> Pa {
         self.registers().translation_root(va)
     }
+}
 
+///////////////////////////////////////////////////////////////////////////////
+// VmiRead
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+where
+    Driver: VmiRead,
+    Os: VmiOs<Driver>,
+{
     /// Returns the return address from the current stack frame.
     pub fn return_address(&self) -> Result<Va, VmiError> {
         self.registers().return_address(self.core())
@@ -137,11 +147,6 @@ where
     /// Reads memory from the virtual machine.
     pub fn read(&self, address: Va, buffer: &mut [u8]) -> Result<(), VmiError> {
         self.read_in(self.access_context(address), buffer)
-    }
-
-    /// Writes memory to the virtual machine.
-    pub fn write(&self, address: Va, buffer: &[u8]) -> Result<(), VmiError> {
-        self.write_in(self.access_context(address), buffer)
     }
 
     /// Reads a single byte from the virtual machine.
@@ -298,11 +303,6 @@ where
         buffer: &mut [u8],
     ) -> Result<(), VmiError> {
         self.core().read(ctx, buffer)
-    }
-
-    /// Writes memory to the virtual machine.
-    pub fn write_in(&self, ctx: impl Into<AccessContext>, buffer: &[u8]) -> Result<(), VmiError> {
-        self.core().write(ctx, buffer)
     }
 
     /// Reads a single byte from the virtual machine.
@@ -471,6 +471,26 @@ where
     }
 
     // endregion: Read in
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiRead + VmiWrite
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+where
+    Driver: VmiRead + VmiWrite,
+    Os: VmiOs<Driver>,
+{
+    /// Writes memory to the virtual machine.
+    pub fn write(&self, address: Va, buffer: &[u8]) -> Result<(), VmiError> {
+        self.write_in(self.access_context(address), buffer)
+    }
+
+    /// Writes memory to the virtual machine.
+    pub fn write_in(&self, ctx: impl Into<AccessContext>, buffer: &[u8]) -> Result<(), VmiError> {
+        self.core().write(ctx, buffer)
+    }
 
     /// Writes a single byte to the virtual machine.
     pub fn write_u8(&self, address: Va, value: u8) -> Result<(), VmiError> {

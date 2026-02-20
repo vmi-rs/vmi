@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::macros::impl_offsets;
 use crate::{ArchAdapter, LinuxOs};
@@ -15,7 +15,7 @@ use crate::{ArchAdapter, LinuxOs};
 /// Corresponds to `qstr`.
 pub struct LinuxQStr<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -29,7 +29,7 @@ where
 
 impl<Driver> VmiVa for LinuxQStr<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -39,7 +39,7 @@ where
 
 impl<'a, Driver> LinuxQStr<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();

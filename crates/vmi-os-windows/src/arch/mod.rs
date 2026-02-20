@@ -1,6 +1,6 @@
 mod amd64;
 
-use vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError, VmiState};
+use vmi_core::{Architecture, Va, VmiCore, VmiError, VmiState, driver::VmiRead};
 
 pub use self::amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
 use crate::{WindowsKernelInformation, WindowsOs};
@@ -8,7 +8,7 @@ use crate::{WindowsKernelInformation, WindowsOs};
 /// Architecture-specific Windows functionality.
 pub trait ArchAdapter<Driver>: Architecture
 where
-    Driver: VmiDriver<Architecture = Self>,
+    Driver: VmiRead<Architecture = Self>,
 {
     fn syscall_argument(
         vmi: VmiState<Driver, WindowsOs<Driver>>,

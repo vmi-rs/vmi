@@ -1,14 +1,17 @@
 #[cfg(feature = "arch-amd64")]
 pub mod amd64;
 
-use vmi_core::{AddressContext, Architecture, Pa, VcpuId, View, VmiCore, VmiDriver, VmiError};
+use vmi_core::{
+    AddressContext, Architecture, Pa, VcpuId, View, VmiCore, VmiError,
+    driver::{VmiRead, VmiSetProtection},
+};
 
 use super::{PageTableMonitorEvent, TagType};
 
 /// Adapter type trait for architecture-specific page table monitor implementations.
 pub trait ArchAdapter<Driver, Tag>: Architecture
 where
-    Driver: VmiDriver<Architecture = Self>,
+    Driver: VmiRead + VmiSetProtection<Architecture = Self>,
     Tag: TagType,
 {
     /// Architecture-specific page table monitor implementation.
@@ -18,7 +21,7 @@ where
 /// Adapter implementation trait for architecture-specific page table monitor implementations.
 pub trait PageTableMonitorArchAdapter<Driver, Tag>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead + VmiSetProtection,
 {
     fn new() -> Self;
 

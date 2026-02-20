@@ -663,6 +663,8 @@ pub mod arch {
 pub mod driver {
     //! VMI drivers
 
+    pub use vmi_core::driver::*;
+
     #[cfg(feature = "driver-kdmp")]
     pub mod kdmp {
         #![doc = include_str!("../docs/vmi-driver-kdmp.md")]

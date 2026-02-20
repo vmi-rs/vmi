@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsObject, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs};
@@ -14,7 +14,7 @@ use crate::{ArchAdapter, WindowsOs};
 /// Corresponds to `_KTRAP_FRAME`.
 pub struct WindowsTrapFrame<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
@@ -26,7 +26,7 @@ where
 
 impl<'a, Driver> From<WindowsTrapFrame<'a, Driver>> for WindowsObject<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn from(value: WindowsTrapFrame<'a, Driver>) -> Self {
@@ -36,7 +36,7 @@ where
 
 impl<Driver> VmiVa for WindowsTrapFrame<'_, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
@@ -46,7 +46,7 @@ where
 
 impl<'a, Driver> WindowsTrapFrame<'a, Driver>
 where
-    Driver: VmiDriver,
+    Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     impl_offsets!();
