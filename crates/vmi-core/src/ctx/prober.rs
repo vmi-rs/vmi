@@ -167,6 +167,6 @@ impl VmiProber {
 #[macro_export]
 macro_rules! vmi_probe {
     ($prober:expr, $expr:expr) => {
-        $prober.check_result(|| -> Result<_, VmiError> { $expr }())
+        $prober.check_result(|| -> Result<_, $crate::VmiError> { $expr }())
     };
 }
