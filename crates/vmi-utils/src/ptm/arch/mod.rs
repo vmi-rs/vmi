@@ -1,6 +1,9 @@
 #[cfg(feature = "arch-amd64")]
 pub mod amd64;
 
+#[cfg(all(test, feature = "arch-amd64"))]
+mod amd64_tests;
+
 use vmi_core::{
     AddressContext, Architecture, Pa, VcpuId, View, VmiCore, VmiError,
     driver::{VmiRead, VmiSetProtection},

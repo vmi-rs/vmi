@@ -1,10 +1,44 @@
-//! Page table monitor for the AMD64 architecture.
+//! AMD64 page table monitor implementation.
+//!
+//! Implements page table monitoring for the AMD64 4-level paging hierarchy
+//! (PML4 → PDPT → PD → PT → Data), including support for 2MB (PD-level)
+//! and 1GB (PDPT-level) large pages.
+//!
+//! # Architecture
+//!
+//! The implementation maintains three indexes:
+//!
+//! - **VA index** (`vas`): Maps each monitored virtual address (identified by
+//!   [`AddressContext`] and [`View`]) to its state: the tag, walk chain of
+//!   entry keys, paged-in status, and resolved physical address.
+//!
+//! - **Entry index** (`entries`): Maps each monitored page table entry
+//!   (identified by its physical address and [`View`]) to the cached PTE
+//!   value and a map of dependent VAs to their page table levels. The
+//!   level is stored per-VA because different roots can map the same
+//!   physical page at different hierarchy levels. Entries back-reference
+//!   VAs for efficient dirty processing.
+//!
+//! - **Table index** (`tables`): Maps each write-protected page table page
+//!   (identified by [`Gfn`] and [`View`]) to a reference count of monitored
+//!   entries within it. Write protection is applied when the first entry on a
+//!   page is monitored, and removed when the last is unmonitored.
+//!
+//! # Dirty Processing Order
+//!
+//! When a write to a monitored page table page is detected via an EPT
+//! violation, the affected entry is marked dirty. During processing, dirty
+//! entries are sorted by page table level (highest first) to correctly handle
+//! cascading invalidations: when a PD entry becomes not-present, the entire
+//! PT subtree below it is invalidated. Processing the PD entry first removes
+//! the PT monitoring, so the stale PT dirty entry is safely skipped.
+
 use std::collections::{HashMap, HashSet};
 
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View,
-    VmiCore, VmiError,
+    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
+    View, VmiCore, VmiError,
     driver::{VmiRead, VmiSetProtection},
 };
 
@@ -13,187 +47,293 @@ use super::{
     ArchAdapter, PageTableMonitorArchAdapter,
 };
 
-#[derive(Debug, Clone, Copy)]
-struct MonitoredPageTableOffset<Tag>
-where
-    Tag: TagType,
-{
-    offset: u16,
-    #[expect(unused)]
+// ─── Key Types ───────────────────────────────────────────────────────────────
+
+/// Identifies a monitored virtual address within a specific view: `(View, AddressContext)`.
+type VaKey = (View, AddressContext);
+
+/// Identifies a monitored page table entry within a specific view: `(View, Pa)`.
+type EntryKey = (View, Pa);
+
+/// Identifies a write-protected page table page within a specific view: `(View, Gfn)`.
+type TableKey = (View, Gfn);
+
+// ─── Internal State ─────────────────────────────────────────────────────────
+
+/// Per-VA monitoring state.
+struct MonitoredVa<Tag> {
     tag: Tag,
+    /// Whether the full translation chain resolves to a data page.
+    paged_in: bool,
+    /// Resolved physical address (valid when `paged_in` is true).
+    resolved_pa: Option<Pa>,
+    /// Entry chain from PML4 down to the deepest monitored level.
+    entry_keys: Vec<EntryKey>,
 }
 
-#[derive(Debug)]
-struct MonitoredPageTable<Tag>
+/// Per-entry monitoring state.
+struct MonitoredEntry {
+    /// Last-known PTE value read from guest memory.
+    cached_pte: PageTableEntry,
+    /// VAs that traverse this entry, each with its page table level.
+    ///
+    /// The level is stored per-VA rather than per-entry because different
+    /// page table hierarchies (different roots) can map the same physical
+    /// address at different levels (e.g., one root uses a page as a PD
+    /// table while another uses it as a PT table).
+    va_levels: HashMap<VaKey, PageTableLevel>,
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Returns `true` if this PTE terminates the page walk (leaf PT level or
+/// large page at a higher level).
+fn is_leaf(level: PageTableLevel, pte: PageTableEntry) -> bool {
+    level == PageTableLevel::Pt || pte.large()
+}
+
+/// Computes the resolved physical address for a leaf PTE.
+fn leaf_pa(va: Va, level: PageTableLevel, pfn: Gfn) -> Pa {
+    Amd64::pa_from_gfn(pfn) + Amd64::va_offset_for(va, level)
+}
+
+/// Reads a single page table entry from guest physical memory.
+fn read_pte<Driver>(vmi: &VmiCore<Driver>, pa: Pa) -> Result<PageTableEntry, VmiError>
 where
-    Tag: TagType,
+    Driver: VmiRead,
 {
-    vas: HashMap<AddressContext, MonitoredPageTableOffset<Tag>>,
+    vmi.read_struct(pa)
 }
 
-impl<Tag> Default for MonitoredPageTable<Tag>
-where
-    Tag: TagType,
-{
-    fn default() -> Self {
-        Self {
-            vas: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct MonitoredPageTableLevel<Tag>
-where
-    Tag: TagType,
-{
-    level: PageTableLevel,
-    tag: Tag,
-}
-
-#[derive(Debug)]
-struct MonitoredPageTableEntry<Tag>
-where
-    Tag: TagType,
-{
-    value: PageTableEntry,
-    vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
-}
-
-impl<Tag> Default for MonitoredPageTableEntry<Tag>
-where
-    Tag: TagType,
-{
-    fn default() -> Self {
-        Self {
-            value: PageTableEntry::default(),
-            vas: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct PagedInEntry<Tag>
-where
-    Tag: TagType,
-{
-    pa: Pa,
-    tag: Tag,
-}
-
-struct PageTableController<Driver>
-where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
-{
-    monitored_gfns: HashSet<(View, Gfn)>,
-    _marker: std::marker::PhantomData<Driver>,
-}
-
-impl<Driver> PageTableController<Driver>
-where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
-{
-    fn new() -> Self {
-        Self {
-            monitored_gfns: HashSet::new(),
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    /// Read a page table entry from the guest physical address.
-    fn read_page_table_entry(
-        &self,
-        vmi: &VmiCore<Driver>,
-        pa: Pa,
-    ) -> Result<PageTableEntry, VmiError> {
-        vmi.read_struct(pa)
-    }
-
-    /// Monitor a guest frame number for write access.
-    fn monitor(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View) -> Result<(), VmiError> {
-        self.monitored_gfns.insert((view, gfn));
-        vmi.set_memory_access_with_options(
-            gfn,
-            view,
-            MemoryAccess::R,
-            MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
-        )
-    }
-
-    /// Unmonitor a guest frame number.
-    fn unmonitor(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View) -> Result<(), VmiError> {
-        let gfn_was_present = self.monitored_gfns.remove(&(view, gfn));
-        debug_assert!(
-            gfn_was_present,
-            "trying to unmonitor an unmonitored (gfn, view)"
-        );
-
-        match vmi.set_memory_access(gfn, view, MemoryAccess::RW) {
-            Ok(()) => Ok(()),
-            Err(VmiError::ViewNotFound) => {
-                // The view was not found. This can happen if the view was
-                // destroyed before unmonitoring.
-                tracing::debug!(%gfn, %view, "view not found");
-                Ok(())
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    /// Unmonitor all monitored guest frame numbers.
-    fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
-        for &(view, gfn) in &self.monitored_gfns {
-            let _ = vmi.set_memory_access(gfn, view, MemoryAccess::RW);
-        }
-
-        self.monitored_gfns.clear();
-    }
-}
+// ─── ArchAdapter ────────────────────────────────────────────────────────────
 
 impl<Driver, Tag> ArchAdapter<Driver, Tag> for Amd64
 where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
+    Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
-    type Impl = PageTableMonitorAmd64<Driver, Tag>;
+    type Impl = Amd64PageTableMonitor<Tag>;
 }
 
-/// A page table monitor for the AMD64 architecture.
-pub struct PageTableMonitorAmd64<Driver, Tag>
+// ─── AMD64 Page Table Monitor ───────────────────────────────────────────────
+
+/// AMD64 page table monitor.
+///
+/// Tracks page table entry changes across the 4-level paging hierarchy and
+/// generates [`PageTableMonitorEvent`]s when monitored virtual addresses gain
+/// or lose physical memory backing.
+pub struct Amd64PageTableMonitor<Tag>
 where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
-    controller: PageTableController<Driver>,
-
-    /// Monitored page tables.
-    /// Each GFN is monitored for write access.
-    tables: HashMap<(View, Gfn), MonitoredPageTable<Tag>>,
-
-    /// Monitored page table entries.
-    /// Each PA is monitored for write access.
-    entries: HashMap<(View, Pa), MonitoredPageTableEntry<Tag>>,
-
-    /// Paged-in entries.
-    /// VAs that are currently resolved to a PAs.
-    paged_in: HashMap<(View, AddressContext), PagedInEntry<Tag>>,
-
-    /// Dirty page tables.
-    /// Addresses of page table entries that have been modified.
-    dirty: HashMap<VcpuId, HashSet<(View, Pa)>>,
+    /// Monitored virtual addresses.
+    vas: HashMap<VaKey, MonitoredVa<Tag>>,
+    /// Monitored page table entries with bidirectional VA references.
+    entries: HashMap<EntryKey, MonitoredEntry>,
+    /// Write-protected page table pages with reference counts.
+    tables: HashMap<TableKey, usize>,
+    /// Dirty entries pending processing, tracked per-vCPU.
+    ///
+    /// Dirty entries must be per-vCPU because the singlestep mechanism is
+    /// per-vCPU: when vCPU A writes to a page table page, only vCPU A is
+    /// singlestepped and only vCPU A's write is guaranteed to be committed
+    /// by the time `process_dirty_entries` runs. If a global collection
+    /// were used, vCPU B could steal vCPU A's dirty entry and re-read the
+    /// PTE before vCPU A's write completes, producing stale or partially-
+    /// written GFN values.
+    dirty: HashMap<VcpuId, HashSet<EntryKey>>,
 }
 
-impl<Driver, Tag> PageTableMonitorArchAdapter<Driver, Tag> for PageTableMonitorAmd64<Driver, Tag>
+// ─── Private Implementation ─────────────────────────────────────────────────
+
+impl<Tag> Amd64PageTableMonitor<Tag>
 where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
+    Tag: TagType,
+{
+    /// Begins write-protecting a table page or increments its reference count.
+    fn add_table_ref<Driver>(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<(), VmiError>
+    where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let table_key = (view, gfn);
+        let refcount = self.tables.entry(table_key).or_insert(0);
+        if *refcount == 0 {
+            vmi.set_memory_access_with_options(
+                gfn,
+                view,
+                MemoryAccess::R,
+                MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
+            )?;
+        }
+        *refcount += 1;
+        Ok(())
+    }
+
+    /// Decrements a table page's reference count, restoring full memory
+    /// access when the count reaches zero. Handles `ViewNotFound` gracefully
+    /// in case the view was destroyed before unmonitoring.
+    fn remove_table_ref<Driver>(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View)
+    where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let table_key = (view, gfn);
+        if let Some(refcount) = self.tables.get_mut(&table_key) {
+            *refcount -= 1;
+            if *refcount == 0 {
+                self.tables.remove(&table_key);
+                match vmi.set_memory_access(gfn, view, MemoryAccess::RW) {
+                    Ok(()) | Err(VmiError::ViewNotFound) => {}
+                    Err(err) => {
+                        tracing::warn!(%gfn, %view, %err, "failed to restore memory access");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Removes a VA's dependency from an entry. If the entry has no more
+    /// dependents, removes it and decrements the table reference count.
+    fn detach_va_from_entry<Driver>(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        va_key: VaKey,
+        (view, pa): EntryKey,
+    ) where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let entry_key = (view, pa);
+        let entry = match self.entries.get_mut(&entry_key) {
+            Some(entry) => entry,
+            None => return,
+        };
+
+        entry.va_levels.remove(&va_key);
+
+        if entry.va_levels.is_empty() {
+            self.entries.remove(&entry_key);
+            self.remove_table_ref(vmi, Amd64::gfn_from_pa(pa), view);
+        }
+    }
+
+    /// Removes all entries below the anchor entry in a VA's walk chain.
+    /// Used when a higher-level entry changes and invalidates the subtree.
+    fn tear_down_subtree<Driver>(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        va_key: VaKey,
+        anchor_key: EntryKey,
+    ) where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let va = match self.vas.get_mut(&va_key) {
+            Some(va) => va,
+            None => return,
+        };
+
+        let pos = match va.entry_keys.iter().position(|k| *k == anchor_key) {
+            Some(pos) => pos,
+            None => {
+                debug_assert!(
+                    false,
+                    "tear_down_subtree: anchor {anchor_key:?} not found in VA {va_key:?} entry_keys"
+                );
+                return;
+            }
+        };
+
+        let removed: Vec<EntryKey> = va.entry_keys.drain(pos + 1..).collect();
+        for ek in removed {
+            self.detach_va_from_entry(vmi, va_key, ek);
+        }
+    }
+
+    /// Walks page table levels below `parent_level`, starting from
+    /// `start_gfn`. Registers new entries and emits a PageIn event if the
+    /// walk resolves to a leaf.
+    fn walk_subtree<Driver>(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        (view, ctx): VaKey,
+        start_gfn: Gfn,
+        parent_level: PageTableLevel,
+        events: &mut Vec<PageTableMonitorEvent>,
+    ) -> Result<(), VmiError>
+    where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let va_key = (view, ctx);
+        let mut current_gfn = start_gfn;
+        let mut level_opt = parent_level.next();
+
+        while let Some(level) = level_opt {
+            let index = Amd64::va_index_for(ctx.va, level);
+            let entry_pa = Amd64::pa_from_gfn(current_gfn) + index * 8;
+            let entry_key = (view, entry_pa);
+
+            if !self.entries.contains_key(&entry_key) {
+                self.add_table_ref(vmi, current_gfn, view)?;
+            }
+
+            let pte = read_pte(vmi, entry_pa)?;
+
+            let entry = self.entries.entry(entry_key).or_insert(MonitoredEntry {
+                cached_pte: pte,
+                va_levels: HashMap::new(),
+            });
+            // Don't overwrite cached_pte if the entry already existed — another
+            // VA may have a pending dirty entry for it, and overwriting would
+            // mask the old→new PTE change during dirty processing.
+            // entry.cached_pte = pte;
+            entry.va_levels.insert(va_key, level);
+
+            self.vas
+                .get_mut(&va_key)
+                .unwrap()
+                .entry_keys
+                .push(entry_key);
+
+            if !pte.present() {
+                break;
+            }
+
+            if is_leaf(level, pte) {
+                let pa = leaf_pa(ctx.va, level, pte.pfn());
+                let va = self.vas.get_mut(&va_key).unwrap();
+                va.paged_in = true;
+                va.resolved_pa = Some(pa);
+                events.push(PageTableMonitorEvent::PageIn(PageEntryUpdate {
+                    view,
+                    ctx,
+                    pa,
+                }));
+                break;
+            }
+
+            current_gfn = pte.pfn();
+            level_opt = level.next();
+        }
+
+        Ok(())
+    }
+}
+
+// ─── PageTableMonitorArchAdapter ────────────────────────────────────────────
+
+impl<Driver, Tag> PageTableMonitorArchAdapter<Driver, Tag> for Amd64PageTableMonitor<Tag>
+where
+    Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
     fn new() -> Self {
         Self {
-            controller: PageTableController::new(),
-            tables: HashMap::new(),
+            vas: HashMap::new(),
             entries: HashMap::new(),
-            paged_in: HashMap::new(),
+            tables: HashMap::new(),
             dirty: HashMap::new(),
         }
     }
@@ -207,69 +347,29 @@ where
     }
 
     fn paged_in_entries(&self) -> usize {
-        self.paged_in.len()
+        self.vas.values().filter(|va| va.paged_in).count()
     }
 
     fn dump(&self) {
-        println!("==================== <DUMP> ====================");
-        let mut tables = self.tables.iter().collect::<Vec<_>>();
-        tables.sort_by_key(|&(&(_view, gfn), _)| gfn);
-
-        let mut entries_remaining = self.entries.keys().collect::<HashSet<_>>();
-
-        for (&(view_table, gfn), table) in tables {
-            println!("Table {:#x?}", gfn);
-
-            let mut entries = self
-                .entries
-                .iter()
-                .filter(|&(&(view_entry, pa), _)| {
-                    Amd64::gfn_from_pa(pa) == gfn && view_table == view_entry
-                })
-                .collect::<Vec<_>>();
-            entries.sort_by_key(|&(&(view, pa), _)| (Amd64::pa_offset(pa), view));
-
-            let mut vas_in_table = HashSet::new();
-            let mut vas_in_entries = HashSet::new();
-
-            for (&(view_entry, pa), entry) in entries {
-                println!(
-                    "  Entry {:#x?} (view: {})",
-                    Amd64::pa_offset(pa),
-                    view_entry,
-                );
-
-                let mut vas = entry.vas.iter().collect::<Vec<_>>();
-                vas.sort_by_key(|&(&ctx, _)| (ctx.va, ctx.root));
-
-                for (&ctx, &MonitoredPageTableLevel { level, tag }) in vas {
-                    println!(
-                        "    VA: {:#x?}, Root: {:#x?}, Level: {:?}, Tag: {:?}",
-                        ctx.va, ctx.root, level, tag
-                    );
-
-                    vas_in_entries.insert(ctx);
-                }
-
-                entries_remaining.remove(&(view_entry, pa));
-            }
-
-            for &ctx in table.vas.keys() {
-                vas_in_table.insert(ctx);
-            }
-
-            if vas_in_entries != vas_in_table {
-                println!("  --- xxx MISMATCH xxx ---");
-                println!("  VAs in entries: {:#x?}", vas_in_entries);
-                println!("  VAs in table  : {:#x?}", vas_in_table);
-            }
+        tracing::debug!(
+            tables = self.tables.len(),
+            entries = self.entries.len(),
+            vas = self.vas.len(),
+            paged_in = self.vas.values().filter(|va| va.paged_in).count(),
+            "page table monitor state"
+        );
+        for (&(view, ctx), va) in &self.vas {
+            tracing::debug!(
+                va = %ctx.va,
+                root = %ctx.root,
+                view = %view,
+                tag = ?va.tag,
+                paged_in = va.paged_in,
+                resolved_pa = ?va.resolved_pa,
+                chain_len = va.entry_keys.len(),
+                "  monitored VA"
+            );
         }
-
-        if !entries_remaining.is_empty() {
-            println!("--- xxx MISMATCH xxx ---");
-            println!("PAs in entries remaining: {:#x?}", entries_remaining);
-        }
-        println!("==================== </DUMP> ====================");
     }
 
     fn monitor(
@@ -280,8 +380,62 @@ where
         tag: Tag,
     ) -> Result<(), VmiError> {
         let ctx = ctx.into();
-        let gfn = Amd64::gfn_from_pa(ctx.root);
-        self.monitor_entry(vmi, ctx, view, tag, gfn, PageTableLevel::Pml4)?;
+        let va_key = (view, ctx);
+
+        // Re-monitoring: tear down existing state first.
+        if self.vas.contains_key(&va_key) {
+            self.unmonitor(vmi, ctx, view)?;
+        }
+
+        let mut entry_keys = Vec::new();
+        let mut current_gfn = Amd64::gfn_from_pa(ctx.root);
+        let mut paged_in = false;
+        let mut resolved_pa = None;
+
+        let mut level_opt = Some(PageTableLevel::Pml4);
+        while let Some(level) = level_opt {
+            let index = Amd64::va_index_for(ctx.va, level);
+            let entry_pa = Amd64::pa_from_gfn(current_gfn) + index * 8;
+            let entry_key = (view, entry_pa);
+
+            if !self.entries.contains_key(&entry_key) {
+                self.add_table_ref(vmi, current_gfn, view)?;
+            }
+
+            let pte = read_pte(vmi, entry_pa)?;
+
+            let entry = self.entries.entry(entry_key).or_insert(MonitoredEntry {
+                cached_pte: pte,
+                va_levels: HashMap::new(),
+            });
+            entry.cached_pte = pte;
+            entry.va_levels.insert(va_key, level);
+
+            entry_keys.push(entry_key);
+
+            if !pte.present() {
+                break;
+            }
+
+            if is_leaf(level, pte) {
+                resolved_pa = Some(leaf_pa(ctx.va, level, pte.pfn()));
+                paged_in = true;
+                break;
+            }
+
+            current_gfn = pte.pfn();
+            level_opt = level.next();
+        }
+
+        self.vas.insert(
+            va_key,
+            MonitoredVa {
+                tag,
+                paged_in,
+                resolved_pa,
+                entry_keys,
+            },
+        );
 
         Ok(())
     }
@@ -293,47 +447,52 @@ where
         view: View,
     ) -> Result<(), VmiError> {
         let ctx = ctx.into();
-        let gfn = Amd64::gfn_from_pa(ctx.root);
+        let va_key = (view, ctx);
 
-        let mut orphaned = HashSet::new();
-        self.unmonitor_entry(vmi, ctx, view, gfn, PageTableLevel::Pml4, &mut orphaned)?;
+        let va = match self.vas.remove(&va_key) {
+            Some(va) => va,
+            None => return Ok(()),
+        };
 
-        for pa in orphaned {
-            self.entries.remove(&(view, pa));
+        for entry_key in va.entry_keys {
+            self.detach_va_from_entry(vmi, va_key, entry_key);
         }
 
         Ok(())
     }
 
-    fn unmonitor_view(&mut self, _vmi: &VmiCore<Driver>, _view: View) {
-        unimplemented!("unmonitor view not implemented");
-    }
-
     fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
-        self.controller.unmonitor_all(vmi);
+        for &(view, gfn) in self.tables.keys() {
+            let _ = vmi.set_memory_access(gfn, view, MemoryAccess::RW);
+        }
         self.tables.clear();
         self.entries.clear();
+        self.vas.clear();
         self.dirty.clear();
     }
 
+    fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View) {
+        let va_keys: Vec<VaKey> = self
+            .vas
+            .keys()
+            .filter(|&&(v, _)| v == view)
+            .copied()
+            .collect();
+
+        for (v, ctx) in va_keys {
+            debug_assert_eq!(v, view);
+            let _ = self.unmonitor(vmi, ctx, view);
+        }
+    }
+
     fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool {
-        if !self.entries.contains_key(&(view, entry_pa)) {
-            //tracing::trace!(
-            //    %entry_pa, %view, %vcpu_id, found = false,
-            //    "marking dirty page table entry"
-            //);
+        let entry_key = (view, entry_pa);
+
+        if !self.entries.contains_key(&entry_key) {
             return false;
         }
 
-        tracing::trace!(
-            %entry_pa, %view, %vcpu_id, found = true,
-            "marking dirty page table entry"
-        );
-
-        self.dirty
-            .entry(vcpu_id)
-            .or_default()
-            .insert((view, entry_pa))
+        self.dirty.entry(vcpu_id).or_default().insert(entry_key)
     }
 
     fn process_dirty_entries(
@@ -341,432 +500,112 @@ where
         vmi: &VmiCore<Driver>,
         vcpu_id: VcpuId,
     ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
-        let dirty = match self.dirty.remove(&vcpu_id) {
-            Some(dirty) => dirty,
-            None => {
-                tracing::trace!(%vcpu_id, "no dirty entries");
-                return Ok(Vec::new());
-            }
-        };
+        let dirty_keys = self.dirty.remove(&vcpu_id).unwrap_or_default();
 
-        let mut result = Vec::new();
+        // Resolve levels.
+        let mut to_process: Vec<(EntryKey, PageTableLevel)> = Vec::new();
 
-        for (view, entry_pa) in dirty {
-            if let Some(resolved) = self.update_entry(vmi, entry_pa, view)? {
-                result.extend(resolved);
+        for key in dirty_keys {
+            if let Some(entry) = self.entries.get(&key) {
+                // Use the highest level across all VAs for sort priority.
+                let max_level = entry.va_levels.values().copied().max().unwrap();
+                to_process.push((key, max_level));
             }
         }
 
-        Ok(result)
-    }
-}
+        // Sort by level descending (PML4 first, PT last) to ensure
+        // higher-level changes invalidate subtrees before lower-level
+        // entries are processed.
+        to_process.sort_by(|a, b| b.1.cmp(&a.1));
 
-impl<Driver, Tag> PageTableMonitorAmd64<Driver, Tag>
-where
-    Driver: VmiRead<Architecture = Amd64> + VmiSetProtection<Architecture = Amd64>,
-    Tag: TagType,
-{
-    #[tracing::instrument(
-        skip_all,
-        err,
-        target = "ptm",
-        fields(%entry_pa)
-    )]
-    fn update_entry(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        entry_pa: Pa,
-        view: View,
-    ) -> Result<Option<Vec<PageTableMonitorEvent>>, VmiError> {
-        let entry = match self.entries.get_mut(&(view, entry_pa)) {
-            Some(entry) => entry,
-            None => {
-                //tracing::trace!(
-                //    %entry_pa, %view, found = false,
-                //    "update page table entry"
-                //);
-                return Ok(None);
+        let mut events = Vec::new();
+
+        for (entry_key, _) in to_process {
+            // Re-check: a higher-level change may have removed this entry.
+            let entry = match self.entries.get(&entry_key) {
+                Some(entry) => entry,
+                None => continue,
+            };
+
+            let old_pte = entry.cached_pte;
+            let (_, entry_pa) = entry_key;
+            let new_pte = read_pte(vmi, entry_pa)?;
+
+            if old_pte == new_pte {
+                continue;
             }
-        };
 
-        let old_value = entry.value;
-        let new_value = self.controller.read_page_table_entry(vmi, entry_pa)?;
+            // Update cached PTE.
+            self.entries.get_mut(&entry_key).unwrap().cached_pte = new_pte;
 
-        //tracing::trace!(
-        //    %entry_pa, %view, found = true,
-        //    same = old_value == new_value,
-        //    old_present = old_value.present(),
-        //    new_present = new_value.present(),
-        //    old_large = old_value.large(),
-        //    new_large = new_value.large(),
-        //    old_pfn = %old_value.pfn(),
-        //    new_pfn = %new_value.pfn(),
-        //    "update page table entry"
-        //);
+            let old_present = old_pte.present();
+            let new_present = new_pte.present();
 
-        if old_value == new_value {
-            return Ok(None);
-        }
+            // Snapshot affected VAs with their per-VA levels before mutating.
+            let va_levels: Vec<(VaKey, PageTableLevel)> = self.entries[&entry_key]
+                .va_levels
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect();
 
-        entry.value = new_value;
+            for ((view, ctx), level) in va_levels {
+                let va_key = (view, ctx);
 
-        if old_value.present() && new_value.present() && old_value.pfn() != new_value.pfn() {
-            let vas = entry.vas.clone();
-            return Ok(Some(
-                self.page_change(vmi, entry_pa, vas, old_value, new_value, view)?,
-            ));
-        }
-        else if old_value.present() && !new_value.present() {
-            if old_value.large() {
-                self.dump();
-                unimplemented!(
-                    "large page page-out, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
-                    entry_pa,
-                    old_value,
-                    old_value.pfn(),
-                    new_value,
-                    new_value.pfn()
-                );
-            }
-            else {
-                let vas = entry.vas.clone();
-                return Ok(Some(self.page_out(vmi, entry_pa, vas, old_value, view)?));
-            }
-        }
-        else if !old_value.present() && new_value.present() {
-            if new_value.large() {
-                self.dump();
-                unimplemented!(
-                    "large page page-in, entry PA: {:?} old: {:#x?} (PFN: {}), new: {:#x?} (PFN: {})",
-                    entry_pa,
-                    old_value,
-                    old_value.pfn(),
-                    new_value,
-                    new_value.pfn()
-                );
-            }
-            else {
-                let vas = entry.vas.clone();
-                return Ok(Some(self.page_in(vmi, entry_pa, vas, new_value, view)?));
-            }
-        }
+                let old_leaf = old_present && is_leaf(level, old_pte);
+                let new_leaf = new_present && is_leaf(level, new_pte);
 
-        Ok(None)
-    }
+                let need_teardown = old_present
+                    && (!new_present || old_pte.pfn() != new_pte.pfn() || old_leaf != new_leaf);
 
-    #[tracing::instrument(
-        skip_all,
-        err,
-        target = "ptm",
-        fields(
-            new_pfn = %new_value.pfn(),
-            vas_len = %entry_vas.len(),
-        )
-    )]
-    fn page_in(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        entry_pa: Pa,
-        entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
-        new_value: PageTableEntry,
-        view: View,
-    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
-        let mut result = Vec::new();
+                let need_setup = new_present
+                    && (!old_present || old_pte.pfn() != new_pte.pfn() || old_leaf != new_leaf);
 
-        for (ctx, MonitoredPageTableLevel { level, tag }) in entry_vas {
-            let index = Amd64::va_index_for(ctx.va, level) * 8;
-            debug_assert_eq!(index, Amd64::pa_offset(entry_pa));
+                if !need_teardown && !need_setup {
+                    continue;
+                }
 
-            match level.next() {
-                Some(next_level) => {
-                    // If this is a page-in at a higher level than the PT (e.g., PML4, PDPT, PD),
-                    // we need to monitor the next level. If the monitor_entry function returns
-                    // an update, it means that the whole chain of page tables has been resolved.
-                    // In that case, we add the update to the result.
-                    if let Some(pa) =
-                        self.monitor_entry(vmi, ctx, view, tag, new_value.pfn(), next_level)?
+                // ── Teardown old mapping ─────────────────────────────────
+                if need_teardown {
+                    if let Some(va) = self.vas.get(&va_key)
+                        && va.paged_in
                     {
-                        let update = PageEntryUpdate { view, ctx, pa };
-                        result.push(PageTableMonitorEvent::PageIn(update));
+                        let pa = va.resolved_pa.unwrap();
+                        events.push(PageTableMonitorEvent::PageOut(PageEntryUpdate {
+                            view,
+                            ctx,
+                            pa,
+                        }));
+                        let va = self.vas.get_mut(&va_key).unwrap();
+                        va.paged_in = false;
+                        va.resolved_pa = None;
+                    }
+
+                    if !old_leaf {
+                        self.tear_down_subtree(vmi, va_key, entry_key);
                     }
                 }
 
-                None => {
-                    debug_assert_eq!(level, PageTableLevel::Pt);
-
-                    let pa = Amd64::pa_from_gfn(new_value.pfn()) + Amd64::va_offset(ctx.va);
-
-                    tracing::debug!(
-                        va = %ctx.va,
-                        root = %ctx.root,
-                        %pa,
-                        ?tag,
-                    );
-
-                    debug_assert!(!self.paged_in.contains_key(&(view, ctx)));
-                    self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
-
-                    let update = PageEntryUpdate { view, ctx, pa };
-                    result.push(PageTableMonitorEvent::PageIn(update));
+                // ── Setup new mapping ────────────────────────────────────
+                if need_setup {
+                    if new_leaf {
+                        let pa = leaf_pa(ctx.va, level, new_pte.pfn());
+                        if let Some(va) = self.vas.get_mut(&va_key) {
+                            va.paged_in = true;
+                            va.resolved_pa = Some(pa);
+                        }
+                        events.push(PageTableMonitorEvent::PageIn(PageEntryUpdate {
+                            view,
+                            ctx,
+                            pa,
+                        }));
+                    }
+                    else {
+                        self.walk_subtree(vmi, va_key, new_pte.pfn(), level, &mut events)?;
+                    }
                 }
             }
         }
 
-        Ok(result)
-    }
-
-    #[tracing::instrument(
-        skip_all,
-        err,
-        target = "ptm",
-        fields(
-            old_pfn = %old_value.pfn(),
-            vas_len = %entry_vas.len(),
-        )
-    )]
-    fn page_out(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        entry_pa: Pa,
-        entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
-        old_value: PageTableEntry,
-        view: View,
-    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
-        let mut result = Vec::new();
-        let mut orphaned = HashSet::new();
-
-        for (ctx, MonitoredPageTableLevel { level, .. }) in entry_vas {
-            let index = Amd64::va_index_for(ctx.va, level) * 8;
-            debug_assert_eq!(index, Amd64::pa_offset(entry_pa));
-
-            if let Some(paged_in_entry) = self.paged_in.remove(&(view, ctx)) {
-                let PagedInEntry { pa, tag } = paged_in_entry;
-
-                tracing::debug!(
-                    va = %ctx.va,
-                    root = %ctx.root,
-                    %pa,
-                    ?tag,
-                );
-
-                let update = PageEntryUpdate { view, ctx, pa };
-                result.push(PageTableMonitorEvent::PageOut(update));
-            }
-
-            if let Some(next_level) = level.next() {
-                self.unmonitor_entry(vmi, ctx, view, old_value.pfn(), next_level, &mut orphaned)?;
-            }
-        }
-
-        for pa in orphaned {
-            self.entries.remove(&(view, pa));
-        }
-
-        Ok(result)
-    }
-
-    #[tracing::instrument(
-        skip_all,
-        err,
-        target = "ptm",
-        fields(
-            old_pfn = %old_value.pfn(),
-            new_pfn = %new_value.pfn(),
-        )
-    )]
-    fn page_change(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        entry_pa: Pa,
-        entry_vas: HashMap<AddressContext, MonitoredPageTableLevel<Tag>>,
-        old_value: PageTableEntry,
-        new_value: PageTableEntry,
-        view: View,
-    ) -> Result<Vec<PageTableMonitorEvent>, VmiError> {
-        let vas = entry_vas.clone();
-        let page_out = self.page_out(vmi, entry_pa, vas, old_value, view)?;
-
-        let vas = entry_vas; // No need to clone here
-        let page_in = self.page_in(vmi, entry_pa, vas, new_value, view)?;
-
-        // Combine the results
-        Ok(std::iter::chain(page_out, page_in).collect())
-    }
-
-    /// Recursively monitor a page table entry.
-    ///
-    /// Returns the resolved PA if the entry is already paged-in.
-    fn monitor_entry(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        ctx: AddressContext,
-        view: View,
-        tag: Tag,
-        table_gfn: Gfn,
-        level: PageTableLevel,
-    ) -> Result<Option<Pa>, VmiError> {
-        let table = self.tables.entry((view, table_gfn)).or_default();
-
-        // Monitor the table if this is the first VA in it.
-        if table.vas.is_empty() {
-            self.controller.monitor(vmi, table_gfn, view)?;
-        }
-
-        let offset = (Amd64::va_index_for(ctx.va, level) * 8) as u16;
-        let previous = table
-            .vas
-            .insert(ctx, MonitoredPageTableOffset { offset, tag });
-        debug_assert!(match previous {
-            Some(previous) => previous.offset == offset,
-            None => true,
-        });
-
-        let entry_pa = Amd64::pa_from_gfn(table_gfn) + Amd64::va_index_for(ctx.va, level) * 8;
-
-        let entry = self.entries.entry((view, entry_pa)).or_default();
-        entry.value = self.controller.read_page_table_entry(vmi, entry_pa)?;
-        let previous = entry
-            .vas
-            .insert(ctx, MonitoredPageTableLevel { level, tag });
-        debug_assert!(match previous {
-            Some(previous) => previous.level == level,
-            None => true,
-        });
-
-        // If the entry is not present, there is no need to monitor the next
-        // level.
-        if !entry.value.present() {
-            return Ok(None);
-        }
-
-        let next_level = match level.next() {
-            Some(next_level) if !entry.value.large() => next_level,
-            _ => {
-                let pa =
-                    Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset_for(ctx.va, level);
-
-                self.paged_in.insert((view, ctx), PagedInEntry { pa, tag });
-
-                tracing::debug!(
-                    %view,
-                    va = %ctx.va,
-                    root = %ctx.root,
-                    %pa,
-                    ?level,
-                    large = entry.value.large(),
-                    "monitoring already paged-in entry"
-                );
-
-                return Ok(Some(pa));
-            }
-        };
-
-        let next_table_gfn = entry.value.pfn();
-        self.monitor_entry(vmi, ctx, view, tag, next_table_gfn, next_level)
-    }
-
-    /// Recursively unmonitor a page table entry.
-    ///
-    /// Returns the resolved PA if the entry is paged-in.
-    fn unmonitor_entry(
-        &mut self,
-        vmi: &VmiCore<Driver>,
-        ctx: AddressContext,
-        view: View,
-        table_gfn: Gfn,
-        level: PageTableLevel,
-        orphaned: &mut HashSet<Pa>,
-    ) -> Result<Option<Pa>, VmiError> {
-        self.paged_in.remove(&(view, ctx));
-
-        let table = match self.tables.get_mut(&(view, table_gfn)) {
-            Some(table) => table,
-            None => {
-                //
-                // Allow unmonitoring a root table that was not monitored.
-                //
-
-                if level == PageTableLevel::Pml4 {
-                    return Ok(None);
-                }
-
-                tracing::error!(%view, %table_gfn, "Table not found");
-                panic!("table not found");
-            }
-        };
-
-        let MonitoredPageTableOffset { offset, .. } = match table.vas.remove(&ctx) {
-            Some(offset) => offset,
-            None => {
-                if level == PageTableLevel::Pml4 {
-                    return Ok(None);
-                }
-
-                tracing::error!(%view, %table_gfn, va = %ctx.va, "VA not found in table");
-                panic!("VA not found");
-            }
-        };
-
-        debug_assert_eq!(offset, (Amd64::va_index_for(ctx.va, level) * 8) as u16);
-
-        if table.vas.is_empty() {
-            self.controller.unmonitor(vmi, table_gfn, view)?;
-            self.tables.remove(&(view, table_gfn));
-        }
-
-        let entry_pa = Amd64::pa_from_gfn(table_gfn) + offset as u64;
-
-        let entry = match self.entries.get_mut(&(view, entry_pa)) {
-            Some(entry) => entry,
-            None => {
-                tracing::error!(%view, %entry_pa, "Child entry not found");
-                debug_assert!(false, "child entry not found");
-                return Ok(None);
-            }
-        };
-
-        if !entry.value.present() {
-            tracing::debug!(%view, %entry_pa, "child entry is not present, unmonitoring");
-            orphaned.insert(entry_pa);
-            return Ok(None);
-        }
-
-        let MonitoredPageTableLevel { level: level2, .. } = match entry.vas.remove(&ctx) {
-            Some(next_level) => next_level,
-            None => {
-                tracing::error!(%view, %entry_pa, va = %ctx.va, "Child entry not found");
-                panic!("child entry not found");
-            }
-        };
-
-        if entry.vas.is_empty() {
-            tracing::debug!(%view, %entry_pa, "no more VAs for child entry, unmonitoring");
-            orphaned.insert(entry_pa);
-        }
-
-        debug_assert_eq!(level, level2);
-
-        let next_level = match level.next() {
-            Some(next_level) if !entry.value.large() => next_level,
-            _ => {
-                let pa =
-                    Amd64::pa_from_gfn(entry.value.pfn()) + Amd64::va_offset_for(ctx.va, level);
-
-                tracing::debug!(
-                    %view,
-                    va = %ctx.va,
-                    root = %ctx.root,
-                    %pa,
-                    ?level,
-                    large = entry.value.large(),
-                    "unmonitoring paged-in entry"
-                );
-
-                return Ok(Some(pa));
-            }
-        };
-
-        let next_table_gfn = entry.value.pfn();
-        self.unmonitor_entry(vmi, ctx, view, next_table_gfn, next_level, orphaned)
+        Ok(events)
     }
 }
