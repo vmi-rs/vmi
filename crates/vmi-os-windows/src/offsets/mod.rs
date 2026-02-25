@@ -202,7 +202,7 @@ offsets! {
         }
 
         struct _CM_NAME_CONTROL_BLOCK {
-            Compressed: Bitfield,
+            Compressed: Bitfield,           // BOOLEAN in Win7, ULONG: 1 in Win8+
             NameLength: Field,
             Name: Field,
         }
