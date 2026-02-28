@@ -93,7 +93,7 @@ pub use self::comps::{
     WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
     WindowsProcess, WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsSession,
-    WindowsTeb, WindowsThread, WindowsTrapFrame, WindowsWow64Kind,
+    WindowsTeb, WindowsThread, WindowsThreadState, WindowsTrapFrame, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

@@ -10,6 +10,51 @@ use super::{
 };
 use crate::{ArchAdapter, WindowsOs};
 
+/// Windows kernel thread state (`KTHREAD_STATE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsThreadState {
+    /// Thread has been initialized but not yet started.
+    Initialized,
+    /// Thread is ready to run.
+    Ready,
+    /// Thread is currently running.
+    Running,
+    /// Thread is selected to run next on a processor.
+    Standby,
+    /// Thread has terminated.
+    Terminated,
+    /// Thread is waiting for an event.
+    Waiting,
+    /// Thread is transitioning between states.
+    Transition,
+    /// Thread is ready to run but deferred.
+    DeferredReady,
+    /// Obsolete gate wait state.
+    GateWaitObsolete,
+    /// Thread is waiting for process in swap.
+    WaitingForProcessInSwap,
+    /// Unknown state value not covered by known variants.
+    Unknown(u8),
+}
+
+impl From<u8> for WindowsThreadState {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Initialized,
+            1 => Self::Ready,
+            2 => Self::Running,
+            3 => Self::Standby,
+            4 => Self::Terminated,
+            5 => Self::Waiting,
+            6 => Self::Transition,
+            7 => Self::DeferredReady,
+            8 => Self::GateWaitObsolete,
+            9 => Self::WaitingForProcessInSwap,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
 /// A Windows thread.
 ///
 /// A thread in Windows is represented by the `_ETHREAD` structure,
@@ -229,6 +274,19 @@ where
         }
 
         Ok(Some(WindowsTrapFrame::new(self.vmi, va)))
+    }
+
+    /// Returns the thread's scheduling state.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.State`.
+    pub fn state(&self) -> Result<WindowsThreadState, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let value = self.vmi.read_u8(self.va + KTHREAD.State.offset())?;
+        Ok(WindowsThreadState::from(value))
     }
 }
 

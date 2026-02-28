@@ -13,9 +13,13 @@ use vmi_core::{
 };
 
 pub use self::{
-    directory::WindowsDirectoryObject, file::WindowsFileObject, key::WindowsKey,
-    object_type::WindowsObjectType, process::WindowsProcess, section::WindowsSectionObject,
-    thread::WindowsThread,
+    directory::WindowsDirectoryObject,
+    file::WindowsFileObject,
+    key::WindowsKey,
+    object_type::WindowsObjectType,
+    process::WindowsProcess,
+    section::WindowsSectionObject,
+    thread::{WindowsThread, WindowsThreadState},
 };
 use super::{
     WindowsObjectHeaderNameInfo,

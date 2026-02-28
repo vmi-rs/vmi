@@ -27,7 +27,7 @@ pub use self::{
     object::{
         FromWindowsObject, ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject,
         WindowsObject, WindowsObjectType, WindowsObjectTypeKind, WindowsProcess,
-        WindowsSectionObject, WindowsThread,
+        WindowsSectionObject, WindowsThread, WindowsThreadState,
     },
     object_attributes::WindowsObjectAttributes,
     peb::WindowsPeb,

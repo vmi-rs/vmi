@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WoW64 TLS slot constants (`WOW64_TLS_CPURESERVED`, ...)
 - `FromWindowsObject` trait for typed conversion from `WindowsObject`
 - `WindowsProcess::lookup_object()` method for typed handle lookup
+- `WindowsThreadState` enum representing `KTHREAD_STATE` scheduling states
+- `WindowsThread::state()` - returns the thread's scheduling state (via `_KTHREAD.State`)
 
 ### Fixed
 

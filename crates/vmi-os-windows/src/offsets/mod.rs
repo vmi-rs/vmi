@@ -237,6 +237,7 @@ offsets! {
             Teb: Field,
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY
+            State: Field,                   // UCHAR - KTHREAD_STATE enum
         }
 
         struct _ETHREAD {
