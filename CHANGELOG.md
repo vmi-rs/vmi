@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsProcess::lookup_object()` method for typed handle lookup
 - `WindowsThreadState` enum representing `KTHREAD_STATE` scheduling states
 - `WindowsThread::state()` - returns the thread's scheduling state (via `_KTHREAD.State`)
+- `BreakpointManager::handle_ptm_events()` - batch processing for page table monitor events
 
 ### Fixed
 

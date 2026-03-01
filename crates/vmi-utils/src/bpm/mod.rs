@@ -480,6 +480,27 @@ where
         }
     }
 
+    /// Handles a batch of page table monitor events.
+    ///
+    /// Convenience method that processes multiple [`PageTableMonitorEvent`]s
+    /// by delegating each to [`handle_ptm_event`](Self::handle_ptm_event).
+    ///
+    /// Returns `true` if any breakpoints were updated, `false` otherwise.
+    /// Short-circuits on the first error.
+    pub fn handle_ptm_events(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        events: impl IntoIterator<Item = PageTableMonitorEvent>,
+    ) -> Result<bool, VmiError> {
+        let mut updated = false;
+
+        for event in events {
+            updated |= self.handle_ptm_event(vmi, &event)?;
+        }
+
+        Ok(updated)
+    }
+
     /// Handles a page-in event.
     ///
     /// This function should be called when a page-in event is received.
@@ -492,6 +513,8 @@ where
         vmi: &VmiCore<Interface::Driver>,
         update: &PageEntryUpdate,
     ) -> Result<bool, VmiError> {
+        tracing::trace!(?update, "page-in");
+
         let ctx = update.ctx;
         let view = update.view;
         let pa = update.pa;
@@ -520,6 +543,8 @@ where
         vmi: &VmiCore<Interface::Driver>,
         update: &PageEntryUpdate,
     ) -> Result<bool, VmiError> {
+        tracing::trace!(?update, "page-out");
+
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(update.pa);
         let view = update.view;
 

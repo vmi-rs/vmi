@@ -19,7 +19,7 @@ use vmi::{
     },
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
-        ptm::{PageTableMonitor, PageTableMonitorEvent},
+        ptm::PageTableMonitor,
     },
 };
 use xen::XenStore;
@@ -327,16 +327,8 @@ where
         // entries.
         let ptm_events = self.ptm.process_dirty_entries(vmi, vmi.event().vcpu_id())?;
 
-        for event in &ptm_events {
-            // Log the page table modifications.
-            match &event {
-                PageTableMonitorEvent::PageIn(update) => tracing::debug!(?update, "page-in"),
-                PageTableMonitorEvent::PageOut(update) => tracing::debug!(?update, "page-out"),
-            }
-
-            // Let the breakpoint controller handle the page table modifications.
-            self.bpm.handle_ptm_event(vmi, event)?;
-        }
+        // Let the breakpoint controller handle the page table modifications.
+        self.bpm.handle_ptm_events(vmi, ptm_events)?;
 
         // Disable singlestep and switch back to our view.
         Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
