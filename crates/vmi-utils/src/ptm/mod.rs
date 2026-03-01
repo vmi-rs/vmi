@@ -29,18 +29,21 @@
 //! Each event includes the affected virtual address context, physical address,
 //! and associated view.
 
-mod arch;
+pub mod arch;
 
 use std::{fmt::Debug, hash::Hash};
 
 use vmi_core::{
     AddressContext, Pa, VcpuId, View, VmiCore, VmiError,
-    driver::{VmiRead, VmiSetProtection},
+    driver::{VmiDriver, VmiRead, VmiSetProtection},
 };
 
-use self::arch::{ArchAdapter, PageTableMonitorArchAdapter};
+pub use self::arch::ArchAdapter;
 
-/// Tag Type.
+/// Trait bound for tag values attached to monitored addresses.
+///
+/// Tags allow callers to identify monitored addresses in debug output
+/// and event handling without inspecting the address itself.
 pub trait TagType: Debug + Copy + Eq + Hash {}
 impl<T> TagType for T where T: Debug + Copy + Eq + Hash {}
 
@@ -78,14 +81,74 @@ pub enum PageTableMonitorEvent {
     PageOut(PageEntryUpdate),
 }
 
-/// Page Table Monitor.
+/// Architecture-independent page table monitor.
+///
+/// Thin wrapper that delegates to an architecture-specific implementation
+/// selected via [`ArchAdapter`].
 pub struct PageTableMonitor<Driver, Tag = &'static str>
 where
     Driver: VmiRead + VmiSetProtection,
     Driver::Architecture: ArchAdapter<Driver, Tag>,
     Tag: TagType,
 {
-    inner: <Driver::Architecture as ArchAdapter<Driver, Tag>>::Impl,
+    inner: <Driver::Architecture as ArchAdapter<Driver, Tag>>::Monitor,
+}
+
+/// Interface that architecture-specific page table monitors must implement.
+///
+/// See [`PageTableMonitor`](super::PageTableMonitor) for the public API that
+/// delegates to these methods.
+pub trait PageTableMonitorAdapter<Driver, Tag>
+where
+    Driver: VmiDriver,
+{
+    /// Creates a new monitor instance.
+    fn new() -> Self;
+
+    /// Returns the number of write-protected page table pages.
+    fn monitored_tables(&self) -> usize;
+
+    /// Returns the number of monitored page table entries.
+    fn monitored_entries(&self) -> usize;
+
+    /// Returns the number of monitored addresses currently backed by physical memory.
+    fn paged_in_entries(&self) -> usize;
+
+    /// Logs the monitor state for debugging.
+    fn dump(&self);
+
+    /// Begins monitoring a virtual address for page table changes.
+    fn monitor(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+        tag: Tag,
+    ) -> Result<(), VmiError>;
+
+    /// Stops monitoring a virtual address.
+    fn unmonitor(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+    ) -> Result<(), VmiError>;
+
+    /// Stops monitoring all virtual addresses and restores memory access.
+    fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>);
+
+    /// Stops monitoring all virtual addresses associated with a view.
+    fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View);
+
+    /// Marks a page table entry as dirty after a write to a monitored page.
+    fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool;
+
+    /// Processes dirty entries for a vCPU, returning page-in/page-out events.
+    fn process_dirty_entries(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        vcpu_id: VcpuId,
+    ) -> Result<Vec<PageTableMonitorEvent>, VmiError>;
 }
 
 impl<Driver, Tag> PageTableMonitor<Driver, Tag>
@@ -98,11 +161,11 @@ where
     /// Creates a new page table monitor.
     pub fn new() -> Self {
         Self {
-            inner: <Driver::Architecture as ArchAdapter<Driver, Tag>>::Impl::new(),
+            inner: <Driver::Architecture as ArchAdapter<Driver, Tag>>::Monitor::new(),
         }
     }
 
-    /// Returns the number of monitored tables.
+    /// Returns the number of write-protected page table pages.
     pub fn monitored_tables(&self) -> usize {
         self.inner.monitored_tables()
     }
@@ -112,17 +175,19 @@ where
         self.inner.monitored_entries()
     }
 
-    /// Returns the number of paged-in entries.
+    /// Returns the number of monitored addresses currently backed by physical memory.
     pub fn paged_in_entries(&self) -> usize {
         self.inner.paged_in_entries()
     }
 
-    /// Dumps the monitor state.
+    /// Logs the monitor state for debugging.
     pub fn dump(&self) {
         self.inner.dump();
     }
 
-    /// Monitors a virtual address.
+    /// Begins monitoring a virtual address for page table changes.
+    ///
+    /// Walks the page table hierarchy and write-protects the relevant pages.
     pub fn monitor(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -133,7 +198,10 @@ where
         self.inner.monitor(vmi, ctx, view, tag)
     }
 
-    /// Unmonitors a virtual address.
+    /// Stops monitoring a virtual address.
+    ///
+    /// Removes write protection from page table pages that no longer have
+    /// any monitored entries.
     pub fn unmonitor(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -143,22 +211,28 @@ where
         self.inner.unmonitor(vmi, ctx, view)
     }
 
-    /// Unmonitors all virtual addresses.
+    /// Stops monitoring all virtual addresses and restores memory access.
     pub fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
         self.inner.unmonitor_all(vmi);
     }
 
-    /// Unmonitors all virtual addresses associated with a view.
+    /// Stops monitoring all virtual addresses associated with a view.
     pub fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View) {
         self.inner.unmonitor_view(vmi, view);
     }
 
-    /// Marks a page table entry as dirty.
+    /// Marks a page table entry as dirty after a write to a monitored page.
+    ///
+    /// Returns `true` if the entry is being monitored (and was marked),
+    /// `false` otherwise.
     pub fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool {
         self.inner.mark_dirty_entry(entry_pa, view, vcpu_id)
     }
 
-    /// Processes dirty entries.
+    /// Processes dirty entries for a vCPU, returning page-in/page-out events.
+    ///
+    /// Should be called after singlestepping past the write that triggered
+    /// the dirty marking, so the new PTE value is committed to memory.
     pub fn process_dirty_entries(
         &mut self,
         vmi: &VmiCore<Driver>,

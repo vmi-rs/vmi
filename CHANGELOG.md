@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsExceptionVector` trait for Windows-specific exception vectors (APC, DPC)
 - `WindowsInterrupt` trait for creating Windows-specific interrupts
 - `WindowsPageTableEntry` trait made public
+- `ptm::arch` module made public, exposing `ArchAdapter`
 - `KiDeliverApc` kernel symbol
 - `WindowsTeb::tls_slot()` for reading thread-local storage slots
 - WoW64 TLS slot constants (`WOW64_TLS_CPURESERVED`, ...)

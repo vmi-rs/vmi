@@ -1,7 +1,7 @@
 //! AMD64 page table monitor implementation.
 //!
 //! Implements page table monitoring for the AMD64 4-level paging hierarchy
-//! (PML4 → PDPT → PD → PT → Data), including support for 2MB (PD-level)
+//! (PML4 -> PDPT -> PD -> PT -> Data), including support for 2MB (PD-level)
 //! and 1GB (PDPT-level) large pages.
 //!
 //! # Architecture
@@ -42,9 +42,8 @@ use vmi_core::{
     driver::{VmiRead, VmiSetProtection},
 };
 
-use super::{
-    super::{PageEntryUpdate, PageTableMonitorEvent, TagType},
-    ArchAdapter, PageTableMonitorArchAdapter,
+use super::super::{
+    ArchAdapter, PageEntryUpdate, PageTableMonitorAdapter, PageTableMonitorEvent, TagType,
 };
 
 // ─── Key Types ───────────────────────────────────────────────────────────────
@@ -112,7 +111,7 @@ where
     Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
 {
-    type Impl = Amd64PageTableMonitor<Tag>;
+    type Monitor = PageTableMonitorAmd64<Tag>;
 }
 
 // ─── AMD64 Page Table Monitor ───────────────────────────────────────────────
@@ -122,7 +121,7 @@ where
 /// Tracks page table entry changes across the 4-level paging hierarchy and
 /// generates [`PageTableMonitorEvent`]s when monitored virtual addresses gain
 /// or lose physical memory backing.
-pub struct Amd64PageTableMonitor<Tag>
+pub struct PageTableMonitorAmd64<Tag>
 where
     Tag: TagType,
 {
@@ -146,7 +145,7 @@ where
 
 // ─── Private Implementation ─────────────────────────────────────────────────
 
-impl<Tag> Amd64PageTableMonitor<Tag>
+impl<Tag> PageTableMonitorAmd64<Tag>
 where
     Tag: TagType,
 {
@@ -246,7 +245,7 @@ where
             }
         };
 
-        let removed: Vec<EntryKey> = va.entry_keys.drain(pos + 1..).collect();
+        let removed = va.entry_keys.drain(pos + 1..).collect::<Vec<_>>();
         for ek in removed {
             self.detach_va_from_entry(vmi, va_key, ek);
         }
@@ -285,9 +284,9 @@ where
                 cached_pte: pte,
                 va_levels: HashMap::new(),
             });
-            // Don't overwrite cached_pte if the entry already existed — another
+            // Don't overwrite cached_pte if the entry already existed - another
             // VA may have a pending dirty entry for it, and overwriting would
-            // mask the old→new PTE change during dirty processing.
+            // mask the old -> new PTE change during dirty processing.
             // entry.cached_pte = pte;
             entry.va_levels.insert(va_key, level);
 
@@ -323,7 +322,7 @@ where
 
 // ─── PageTableMonitorArchAdapter ────────────────────────────────────────────
 
-impl<Driver, Tag> PageTableMonitorArchAdapter<Driver, Tag> for Amd64PageTableMonitor<Tag>
+impl<Driver, Tag> PageTableMonitorAdapter<Driver, Tag> for PageTableMonitorAmd64<Tag>
 where
     Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
     Tag: TagType,
@@ -502,7 +501,7 @@ where
         let dirty_keys = self.dirty.remove(&vcpu_id).unwrap_or_default();
 
         // Resolve levels.
-        let mut to_process: Vec<(EntryKey, PageTableLevel)> = Vec::new();
+        let mut to_process = Vec::new();
 
         for key in dirty_keys {
             if let Some(entry) = self.entries.get(&key) {
@@ -546,11 +545,11 @@ where
             let new_present = new_pte.present();
 
             // Snapshot affected VAs with their per-VA levels before mutating.
-            let va_levels: Vec<(VaKey, PageTableLevel)> = self.entries[&entry_key]
+            let va_levels = self.entries[&entry_key]
                 .va_levels
                 .iter()
                 .map(|(&k, &v)| (k, v))
-                .collect();
+                .collect::<Vec<_>>();
 
             for ((view, ctx), level) in va_levels {
                 let va_key = (view, ctx);
