@@ -3,8 +3,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::session::VmiSession;
 use crate::{
-    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VmiCore, VmiDriver,
-    VmiError, VmiRead, VmiWrite,
+    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VcpuId, VmiCore,
+    VmiDriver, VmiError, VmiRead, VmiWrite,
+    driver::VmiSetRegisters,
     os::{NoOS, VmiOs},
 };
 
@@ -519,6 +520,25 @@ where
     {
         self.core()
             .write_struct(self.access_context(address), value)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiSetRegisters
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+where
+    Driver: VmiSetRegisters,
+    Os: VmiOs<Driver>,
+{
+    /// Sets the registers of a virtual CPU.
+    pub fn set_registers(
+        &self,
+        vcpu: VcpuId,
+        registers: <Driver::Architecture as Architecture>::Registers,
+    ) -> Result<(), VmiError> {
+        self.core().set_registers(vcpu, registers)
     }
 }
 
