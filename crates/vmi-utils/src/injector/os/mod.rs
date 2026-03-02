@@ -1,5 +1,5 @@
 #[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
-pub mod windows;
+mod windows;
 
 use vmi_core::{Architecture, VmiCore, VmiDriver, VmiError, VmiOs};
 
