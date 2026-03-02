@@ -16,7 +16,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
+    vmi: VmiState<'a, LinuxOs<Driver>>,
 
     /// The virtual address of the `file` structure.
     va: Va,
@@ -40,7 +40,7 @@ where
     impl_offsets!();
 
     /// Creates a new `file`.
-    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, va: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 

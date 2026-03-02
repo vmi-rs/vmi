@@ -13,7 +13,7 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, Copy)]
 pub struct VmiEvent<Arch>
 where
-    Arch: Architecture + ?Sized,
+    Arch: Architecture,
 {
     /// The ID of the virtual CPU where the event occurred.
     vcpu_id: VcpuId,
@@ -33,7 +33,7 @@ where
 
 impl<Arch> VmiEvent<Arch>
 where
-    Arch: Architecture + ?Sized,
+    Arch: Architecture,
 {
     /// Creates a new VMI event.
     pub fn new(
@@ -100,7 +100,7 @@ bitflags::bitflags! {
 #[derive(Debug)]
 pub struct VmiEventResponse<Arch>
 where
-    Arch: Architecture + ?Sized,
+    Arch: Architecture,
 {
     /// Flags associated with the response.
     pub flags: VmiEventResponseFlags,
@@ -114,7 +114,7 @@ where
 
 impl<Arch> Default for VmiEventResponse<Arch>
 where
-    Arch: Architecture + ?Sized,
+    Arch: Architecture,
 {
     fn default() -> Self {
         Self {
@@ -127,7 +127,7 @@ where
 
 impl<Arch> VmiEventResponse<Arch>
 where
-    Arch: Architecture + ?Sized,
+    Arch: Architecture,
 {
     /// Creates a response to reinject an interrupt.
     pub fn reinject_interrupt() -> Self {

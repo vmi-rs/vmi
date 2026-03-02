@@ -22,7 +22,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
+    vmi: VmiState<'a, LinuxOs<Driver>>,
 
     /// The virtual address of the `vm_area_struct` structure.
     va: Va,
@@ -69,7 +69,7 @@ where
     impl_offsets!();
 
     /// Creates a new VM area struct.
-    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, vad: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, vad: Va) -> Self {
         Self {
             vmi,
             va: vad,
@@ -161,7 +161,7 @@ where
     }
 
     /// Returns the memory region's kind.
-    fn kind(&self) -> Result<VmiOsRegionKind<'a, Driver, Self::Os>, VmiError> {
+    fn kind(&self) -> Result<VmiOsRegionKind<'a, Self::Os>, VmiError> {
         let offsets = self.offsets();
         let __vm_area_struct = &offsets.vm_area_struct;
 

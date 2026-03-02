@@ -74,7 +74,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new Windows section object.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         let inner = match vmi.underlying_os().offsets.ext() {
             Some(OffsetsExt::V1(_)) => Inner::V1(WindowsSectionObjectV1::new(vmi, va)),
             Some(OffsetsExt::V2(_)) => Inner::V2(WindowsSectionObjectV2::new(vmi, va)),
@@ -177,7 +177,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_SECTION_OBJECT` structure.
     va: Va,
@@ -194,7 +194,7 @@ where
     impl_offsets!();
     impl_offsets_ext_v1!();
 
-    fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
+    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self {
             vmi,
             va,
@@ -282,7 +282,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_SECTION` structure.
     va: Va,
@@ -296,7 +296,7 @@ where
     impl_offsets!();
     impl_offsets_ext_v2!();
 
-    fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
+    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 

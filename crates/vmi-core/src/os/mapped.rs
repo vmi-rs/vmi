@@ -9,7 +9,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver>;
+    type Os: VmiOs<Driver = Driver>;
 
     /// Returns the path to the file backing the region.
     ///

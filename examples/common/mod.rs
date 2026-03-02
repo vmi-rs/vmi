@@ -12,7 +12,7 @@ use xen::XenStore;
 
 pub fn create_vmi_session() -> Result<
     (
-        VmiSession<'static, VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>>,
+        VmiSession<'static, WindowsOs<VmiXenDriver<Amd64>>>,
         Profile<'static>,
     ),
     Box<dyn std::error::Error>,
@@ -77,13 +77,13 @@ pub fn create_vmi_session() -> Result<
     Ok((VmiSession::new(core, os), profile))
 }
 
-pub fn find_process<'a, Driver, Os>(
-    vmi: &VmiState<'a, Driver, Os>,
+pub fn find_process<'a, Os>(
+    vmi: &VmiState<'a, Os>,
     name: &str,
 ) -> Result<Option<Os::Process<'a>>, VmiError>
 where
-    Driver: VmiRead,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiRead,
 {
     for process in vmi.os().processes()? {
         let process = process?;

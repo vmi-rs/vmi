@@ -18,7 +18,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_PEB` structure.
     va: Va,
@@ -63,7 +63,7 @@ where
 
     /// Creates a new Windows PEB object.
     pub fn new(
-        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+        vmi: VmiState<'a, WindowsOs<Driver>>,
         va: Va,
         root: Pa,
         kind: WindowsWow64Kind,

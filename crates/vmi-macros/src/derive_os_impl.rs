@@ -140,10 +140,9 @@ pub fn derive_trait_from_impl(
             type Os;
         }
 
-        impl<'__vmi, TDriver, TOs> #helper_trait_name for vmi_core::VmiOsState<'__vmi, TDriver, TOs>
+        impl<'__vmi, TOs> #helper_trait_name for vmi_core::VmiOsState<'__vmi, TOs>
         where
-            TDriver: vmi_core::VmiDriver,
-            TOs: vmi_core::VmiOs<TDriver>,
+            TOs: vmi_core::VmiOs,
         {
             type Os = TOs;
         }
@@ -162,7 +161,7 @@ pub fn derive_trait_from_impl(
         }
 
         impl<#vmi_lifetime, Driver> #os_context_name <#vmi_lifetime, Driver>
-            for vmi_core::VmiOsState<#vmi_lifetime, Driver, #struct_type>
+            for vmi_core::VmiOsState<#vmi_lifetime, #struct_type>
             #where_clause
         {
             #(#os_context_fns)*

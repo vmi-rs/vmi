@@ -18,7 +18,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_KTRAP_FRAME` structure.
     va: Va,
@@ -52,7 +52,7 @@ where
     impl_offsets!();
 
     /// Creates a new Windows trap frame.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 

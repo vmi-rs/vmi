@@ -19,7 +19,7 @@ const INVALID_VIEW: View = View(0xffff);
 pub struct UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiRead<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Process ID being injected into.
     pid: Option<ProcessId>,
@@ -37,7 +37,7 @@ where
     ip_pa: Option<Pa>,
 
     /// Executor for running the injection recipe.
-    recipe: RecipeExecutor<Driver, WindowsOs<Driver>, T>,
+    recipe: RecipeExecutor<WindowsOs<Driver>, T>,
 
     /// Memory view used for injection operations.
     view: View,
@@ -49,7 +49,7 @@ where
     finished: Option<Result<InjectorResultCode, BridgePacket>>,
 }
 
-impl<Driver, T, Bridge> InjectorHandlerAdapter<Driver, WindowsOs<Driver>, UserMode, T, Bridge>
+impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, UserMode, T, Bridge>
     for UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiRead<Architecture = Amd64>
@@ -58,12 +58,12 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
 {
     fn with_bridge(
-        vmi: &VmiSession<Driver, WindowsOs<Driver>>,
+        vmi: &VmiSession<WindowsOs<Driver>>,
         bridge: Bridge,
-        recipe: Recipe<Driver, WindowsOs<Driver>, T>,
+        recipe: Recipe<WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
@@ -101,7 +101,7 @@ where
         + VmiSetProtection<Architecture = Amd64>
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
 {
     #[tracing::instrument(
         name = "injector",
@@ -114,7 +114,7 @@ where
     )]
     fn dispatch(
         &mut self,
-        vmi: &VmiContext<Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         match vmi.event().reason() {
             EventReason::MemoryAccess(_) => self.on_memory_access(vmi),
@@ -130,7 +130,7 @@ where
     #[tracing::instrument(name = "cpuid", skip_all, err)]
     fn on_cpuid(
         &mut self,
-        vmi: &VmiContext<Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let cpuid = vmi.event().reason().as_cpuid();
 
@@ -200,7 +200,7 @@ where
     #[tracing::instrument(name = "write_cr", skip_all, err)]
     fn on_write_cr(
         &mut self,
-        vmi: &VmiContext<Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         //
         // Early exit if the thread has already been hijacked.
@@ -321,7 +321,7 @@ where
     #[tracing::instrument(name = "memory_access", skip_all, err)]
     fn on_memory_access(
         &mut self,
-        vmi: &VmiContext<Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         //
         // Early exit if the memory view is not the target view.
@@ -452,22 +452,18 @@ where
     }
 }
 
-impl<Driver, T, Bridge> VmiHandler<Driver, WindowsOs<Driver>>
-    for UserInjectorHandler<Driver, T, Bridge>
+impl<Driver, T, Bridge> VmiHandler<WindowsOs<Driver>> for UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiRead<Architecture = Amd64>
         + VmiSetProtection<Architecture = Amd64>
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
 {
     type Output = Result<InjectorResultCode, BridgePacket>;
 
-    fn handle_event(
-        &mut self,
-        vmi: VmiContext<Driver, WindowsOs<Driver>>,
-    ) -> VmiEventResponse<Amd64> {
+    fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
 
         match self.dispatch(&vmi) {

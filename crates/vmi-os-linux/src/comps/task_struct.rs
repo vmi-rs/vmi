@@ -22,7 +22,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
+    vmi: VmiState<'a, LinuxOs<Driver>>,
 
     /// The virtual address of the `task_struct` structure.
     va: Va,
@@ -49,7 +49,7 @@ where
     impl_offsets!();
 
     /// Creates a new Linux task struct.
-    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, process: ProcessObject) -> Self {
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, process: ProcessObject) -> Self {
         Self {
             vmi,
             va: process.0,
@@ -270,10 +270,8 @@ where
 
     fn regions(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Region<'a>, VmiError>>,
-        VmiError,
-    > {
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>>, VmiError>
+    {
         let mut result = Vec::new();
 
         let mm = match self.mm()? {
@@ -296,16 +294,14 @@ where
     fn find_region(
         &self,
         _address: Va,
-    ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError> {
+    ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError> {
         unimplemented!()
     }
 
     fn threads(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
-        VmiError,
-    > {
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>

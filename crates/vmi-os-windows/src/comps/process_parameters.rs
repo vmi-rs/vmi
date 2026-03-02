@@ -56,7 +56,7 @@ where
 {
     /// Creates a new Windows process parameters structure.
     pub(crate) fn new(
-        vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+        vmi: VmiState<'a, WindowsOs<Driver>>,
         va: Va,
         root: Pa,
         kind: WindowsWow64Kind,
@@ -151,7 +151,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
     va: Va,
@@ -167,7 +167,7 @@ where
 {
     impl_offsets!();
 
-    fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }
     }
 
@@ -221,7 +221,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS32` structure.
     va: Va,
@@ -235,7 +235,7 @@ where
     Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
-    fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }
     }
 

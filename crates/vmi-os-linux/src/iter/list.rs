@@ -13,7 +13,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state.
-    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
+    vmi: VmiState<'a, LinuxOs<Driver>>,
 
     /// Current entry.
     current: Option<Va>,
@@ -41,7 +41,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new list entry iterator.
-    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, list_head: Va, offset: u64) -> Self {
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, list_head: Va, offset: u64) -> Self {
         let __list_head = &vmi.underlying_os().offsets.list_head;
         let (offset_next, offset_prev) = (__list_head.next.offset(), __list_head.prev.offset());
 

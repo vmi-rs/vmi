@@ -6,39 +6,47 @@ use super::{
 use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
 
 /// Marker type for a missing OS implementation.
-pub struct NoOS;
+pub struct NoOS<Driver>(pub std::marker::PhantomData<Driver>)
+where
+    Driver: VmiDriver;
 
-impl VmiVa for NoOS {
+impl<Driver> VmiVa for NoOS<Driver>
+where
+    Driver: VmiDriver,
+{
     fn va(&self) -> Va {
         unimplemented!()
     }
 }
 
-impl<Driver> VmiOs<Driver> for NoOS
+impl<Driver> VmiOs for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Process<'a> = NoOS;
-    type Thread<'a> = NoOS;
-    type Image<'a> = NoOS;
-    type Module<'a> = NoOS;
-    type Region<'a> = NoOS;
-    type Mapped<'a> = NoOS;
+    type Architecture = Driver::Architecture;
+    type Driver = Driver;
 
-    fn kernel_image_base(_vmi: VmiState<Driver, Self>) -> Result<Va, VmiError> {
+    type Process<'a> = NoOS<Driver>;
+    type Thread<'a> = NoOS<Driver>;
+    type Image<'a> = NoOS<Driver>;
+    type Module<'a> = NoOS<Driver>;
+    type Region<'a> = NoOS<Driver>;
+    type Mapped<'a> = NoOS<Driver>;
+
+    fn kernel_image_base(_vmi: VmiState<Self>) -> Result<Va, VmiError> {
         unimplemented!()
     }
 
-    fn kernel_information_string(_vmi: VmiState<Driver, Self>) -> Result<String, VmiError> {
+    fn kernel_information_string(_vmi: VmiState<Self>) -> Result<String, VmiError> {
         unimplemented!()
     }
 
-    fn kpti_enabled(_vmi: VmiState<Driver, Self>) -> Result<bool, VmiError> {
+    fn kpti_enabled(_vmi: VmiState<Self>) -> Result<bool, VmiError> {
         unimplemented!()
     }
 
     fn modules(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
         #[allow(unreachable_code)]
         {
@@ -47,7 +55,7 @@ where
     }
 
     fn processes(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Process<'_>, VmiError>> + '_, VmiError> {
         #[allow(unreachable_code)]
         {
@@ -56,76 +64,65 @@ where
     }
 
     fn process<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
         _process: ProcessObject,
     ) -> Result<Self::Process<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn current_process<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
-    ) -> Result<Self::Process<'_>, VmiError> {
+    fn current_process<'a>(_vmi: VmiState<'_, Self>) -> Result<Self::Process<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn system_process<'a>(_vmi: VmiState<'_, Driver, Self>) -> Result<Self::Process<'_>, VmiError> {
+    fn system_process<'a>(_vmi: VmiState<'_, Self>) -> Result<Self::Process<'_>, VmiError> {
         unimplemented!()
     }
 
     fn thread<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
         _thread: ThreadObject,
     ) -> Result<Self::Thread<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn current_thread(_vmi: VmiState<'_, Driver, Self>) -> Result<Self::Thread<'_>, VmiError> {
+    fn current_thread(_vmi: VmiState<'_, Self>) -> Result<Self::Thread<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn image<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
-        _image_base: Va,
-    ) -> Result<Self::Image<'_>, VmiError> {
+    fn image<'a>(_vmi: VmiState<'_, Self>, _image_base: Va) -> Result<Self::Image<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn module<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
-        _module: Va,
-    ) -> Result<Self::Module<'_>, VmiError> {
+    fn module<'a>(_vmi: VmiState<'_, Self>, _module: Va) -> Result<Self::Module<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn region<'a>(
-        _vmi: VmiState<'_, Driver, Self>,
-        _region: Va,
-    ) -> Result<Self::Region<'_>, VmiError> {
+    fn region<'a>(_vmi: VmiState<'_, Self>, _region: Va) -> Result<Self::Region<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn syscall_argument(_vmi: VmiState<Driver, Self>, _index: u64) -> Result<u64, VmiError> {
+    fn syscall_argument(_vmi: VmiState<Self>, _index: u64) -> Result<u64, VmiError> {
         unimplemented!()
     }
 
-    fn function_argument(_vmi: VmiState<Driver, Self>, _index: u64) -> Result<u64, VmiError> {
+    fn function_argument(_vmi: VmiState<Self>, _index: u64) -> Result<u64, VmiError> {
         unimplemented!()
     }
 
-    fn function_return_value(_vmi: VmiState<Driver, Self>) -> Result<u64, VmiError> {
+    fn function_return_value(_vmi: VmiState<Self>) -> Result<u64, VmiError> {
         unimplemented!()
     }
 
-    fn last_error(_vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
+    fn last_error(_vmi: VmiState<Self>) -> Result<Option<u32>, VmiError> {
         unimplemented!()
     }
 }
 
-impl<Driver> VmiOsImage<'_, Driver> for NoOS
+impl<Driver> VmiOsImage<'_, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn base_address(&self) -> Va {
         unimplemented!()
@@ -140,22 +137,22 @@ where
     }
 }
 
-impl<Driver> VmiOsMapped<'_, Driver> for NoOS
+impl<Driver> VmiOsMapped<'_, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn path(&self) -> Result<Option<String>, VmiError> {
         unimplemented!()
     }
 }
 
-impl<Driver> VmiOsModule<'_, Driver> for NoOS
+impl<Driver> VmiOsModule<'_, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn base_address(&self) -> Result<Va, VmiError> {
         unimplemented!()
@@ -170,11 +167,11 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsProcess<'a, Driver> for NoOS
+impl<'a, Driver> VmiOsProcess<'a, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn id(&self) -> Result<ProcessId, VmiError> {
         unimplemented!()
@@ -210,10 +207,8 @@ where
 
     fn regions(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Region<'_>, VmiError>>,
-        VmiError,
-    > {
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'_>, VmiError>>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
@@ -223,16 +218,14 @@ where
     fn find_region(
         &self,
         _address: Va,
-    ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError> {
+    ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError> {
         unimplemented!()
     }
 
     fn threads(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
-        VmiError,
-    > {
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
@@ -244,11 +237,11 @@ where
     }
 }
 
-impl<'a, Driver> VmiOsRegion<'a, Driver> for NoOS
+impl<'a, Driver> VmiOsRegion<'a, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn start(&self) -> Result<Va, VmiError> {
         unimplemented!()
@@ -262,16 +255,16 @@ where
         unimplemented!()
     }
 
-    fn kind(&self) -> Result<VmiOsRegionKind<'a, Driver, Self::Os>, VmiError> {
+    fn kind(&self) -> Result<VmiOsRegionKind<'a, Self::Os>, VmiError> {
         unimplemented!()
     }
 }
 
-impl<Driver> VmiOsThread<'_, Driver> for NoOS
+impl<Driver> VmiOsThread<'_, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {
-    type Os = NoOS;
+    type Os = NoOS<Driver>;
 
     fn id(&self) -> Result<ThreadId, VmiError> {
         unimplemented!()

@@ -61,7 +61,7 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     pub fn new(
-        session: &VmiSession<Driver, WindowsOs<Driver>>,
+        session: &VmiSession<WindowsOs<Driver>>,
         profile: &Profile,
         terminate_flag: Arc<AtomicBool>,
     ) -> Result<Self, VmiError> {
@@ -236,7 +236,7 @@ where
     #[tracing::instrument(skip_all)]
     fn memory_access(
         &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let memory_access = vmi.event().reason().as_memory_access();
 
@@ -272,7 +272,7 @@ where
     #[tracing::instrument(skip_all, fields(pid, process))]
     fn interrupt(
         &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let tag = match self.bpm.get_by_event(vmi.event(), ()) {
             Some(breakpoints) => {
@@ -321,7 +321,7 @@ where
     #[tracing::instrument(skip_all)]
     fn singlestep(
         &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         // Get the page table modifications by processing the dirty page table
         // entries.
@@ -335,10 +335,7 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    fn NtCreateFile(
-        &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
-    ) -> Result<(), VmiError> {
+    fn NtCreateFile(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // NtCreateFile (
@@ -373,10 +370,7 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    fn NtWriteFile(
-        &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
-    ) -> Result<(), VmiError> {
+    fn NtWriteFile(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // NtWriteFile (
@@ -413,10 +407,7 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    fn PspInsertProcess(
-        &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
-    ) -> Result<(), VmiError> {
+    fn PspInsertProcess(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // PspInsertProcess (
@@ -461,7 +452,7 @@ where
     #[tracing::instrument(skip_all)]
     fn MmCleanProcessAddressSpace(
         &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<(), VmiError> {
         //
         // VOID
@@ -485,7 +476,7 @@ where
 
     fn dispatch(
         &mut self,
-        vmi: &VmiContext<'_, Driver, WindowsOs<Driver>>,
+        vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let event = vmi.event();
         let result = match event.reason() {
@@ -511,16 +502,13 @@ where
     }
 }
 
-impl<Driver> VmiHandler<Driver, WindowsOs<Driver>> for Monitor<Driver>
+impl<Driver> VmiHandler<WindowsOs<Driver>> for Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     type Output = ();
 
-    fn handle_event(
-        &mut self,
-        vmi: VmiContext<'_, Driver, WindowsOs<Driver>>,
-    ) -> VmiEventResponse<Amd64> {
+    fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         // Flush the V2P cache on every event to avoid stale translations.
         vmi.flush_v2p_cache();
 

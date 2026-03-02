@@ -99,7 +99,7 @@ fn handle_error(err: VmiError) -> Result<String, VmiError> {
 }
 
 // Enumerate processes in the system.
-fn enumerate_kernel_modules(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result<(), VmiError> {
+fn enumerate_kernel_modules(vmi: &VmiState<WindowsOs<Driver>>) -> Result<(), VmiError> {
     for module in vmi.os().modules()? {
         let module = module?;
 
@@ -359,7 +359,7 @@ fn print_process_parameters(process: &WindowsProcess<Driver>) -> Result<(), VmiE
 }
 
 // Enumerate processes in the system.
-fn enumerate_processes(vmi: &VmiState<Driver, WindowsOs<Driver>>) -> Result<(), VmiError> {
+fn enumerate_processes(vmi: &VmiState<WindowsOs<Driver>>) -> Result<(), VmiError> {
     for process in vmi.os().processes()? {
         let process = process?;
 

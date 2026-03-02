@@ -81,10 +81,7 @@ impl<Driver> ArchAdapter<Driver> for Amd64
 where
     Driver: VmiRead<Architecture = Self>,
 {
-    fn syscall_argument(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        index: u64,
-    ) -> Result<u64, VmiError> {
+    fn syscall_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
         let registers = vmi.registers();
 
         match index {
@@ -100,10 +97,7 @@ where
         }
     }
 
-    fn function_argument(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        index: u64,
-    ) -> Result<u64, VmiError> {
+    fn function_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
         let registers = vmi.registers();
 
         if registers.cs.access.long_mode() {
@@ -114,7 +108,7 @@ where
         }
     }
 
-    fn function_return_value(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<u64, VmiError> {
+    fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError> {
         let registers = vmi.registers();
 
         Ok(registers.rax)
@@ -127,7 +121,7 @@ where
         /// Maximum backward search distance for the kernel image base.
         const MAX_BACKWARD_SEARCH: u64 = 32 * 1024 * 1024;
 
-        let session = VmiSession::new(vmi, &NoOS);
+        let session = VmiSession::new(vmi, const { &NoOS(std::marker::PhantomData) });
         let vmi = session.with_registers(registers);
 
         // Align MSR_LSTAR to 4KB.
@@ -183,7 +177,7 @@ where
         Ok(None)
     }
 
-    fn kernel_image_base(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<Va, VmiError> {
+    fn kernel_image_base(vmi: VmiState<WindowsOs<Driver>>) -> Result<Va, VmiError> {
         vmi.underlying_os()
             .kernel_image_base
             .get_or_try_init(|| {
@@ -196,7 +190,7 @@ where
     }
 
     fn is_page_present_or_transition(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
+        vmi: VmiState<WindowsOs<Driver>>,
         address: Va,
     ) -> Result<bool, VmiError> {
         let registers = vmi.registers();
@@ -228,7 +222,7 @@ where
         Ok(false)
     }
 
-    fn current_kpcr(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Va {
+    fn current_kpcr(vmi: VmiState<WindowsOs<Driver>>) -> Va {
         let registers = vmi.registers();
 
         if registers.cs.selector.request_privilege_level() != 0
@@ -245,7 +239,7 @@ where
 /*
 
 fn find_kernel_slow<Driver>(
-    vmi: VmiState<Driver>,
+    vmi: VmiState<NoOS<Driver>>,
 ) -> Result<Option<WindowsKernelInformation>, VmiError>
 where
     Driver: VmiRead<Architecture = Amd64>,
@@ -311,7 +305,7 @@ where
 }
 
 fn function_argument_x86<Driver>(
-    vmi: VmiState<Driver, WindowsOs<Driver>>,
+    vmi: VmiState<WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where
@@ -325,7 +319,7 @@ where
 }
 
 fn function_argument_x64<Driver>(
-    vmi: VmiState<Driver, WindowsOs<Driver>>,
+    vmi: VmiState<WindowsOs<Driver>>,
     index: u64,
 ) -> Result<u64, VmiError>
 where

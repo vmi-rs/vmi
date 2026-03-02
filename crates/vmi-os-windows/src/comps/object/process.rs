@@ -32,7 +32,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_EPROCESS` structure.
     va: Va,
@@ -81,7 +81,7 @@ where
     impl_offsets!();
 
     /// Creates a new Windows process.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, process: ProcessObject) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, process: ProcessObject) -> Self {
         Self { vmi, va: process.0 }
     }
 
@@ -228,7 +228,7 @@ where
     /// # };
     /// #
     /// # fn example<Driver>(
-    /// #     vmi: &VmiState<Driver, WindowsOs<Driver>>,
+    /// #     vmi: &VmiState<WindowsOs<Driver>>,
     /// #     handle: u64,
     /// # ) -> Result<(), Box<dyn std::error::Error>>
     /// # where
@@ -563,7 +563,7 @@ where
     fn threads(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as vmi_core::VmiOs<Driver>>::Thread<'a>, VmiError>>,
+        impl Iterator<Item = Result<<Self::Os as vmi_core::VmiOs>::Thread<'a>, VmiError>>,
         VmiError,
     > {
         let offsets = self.offsets();

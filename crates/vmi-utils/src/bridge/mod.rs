@@ -3,29 +3,27 @@
 mod packet;
 mod response;
 
-use vmi_core::{VmiContext, VmiDriver, VmiOs};
+use vmi_core::{VmiContext, VmiOs};
 
 pub use self::{packet::BridgePacket, response::BridgeResponse};
 
 /// A bridge dispatcher.
-pub trait BridgeDispatch<Driver, Os, T = ()>
+pub trait BridgeDispatch<Os, T = ()>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Dispatch the request.
     fn dispatch(
         &mut self,
-        vmi: &VmiContext<'_, Driver, Os>,
+        vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
     ) -> Option<BridgeResponse<T>>;
 }
 
 /// A bridge handler.
-pub trait BridgeHandler<Driver, Os, T = ()>: BridgeDispatch<Driver, Os, T>
+pub trait BridgeHandler<Os, T = ()>: BridgeDispatch<Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Marker for an empty handler.
     ///
@@ -70,17 +68,16 @@ where
 macro_rules! impl_bridge_dispatch {
     ($($ty:ident),*) => {
         #[allow(non_snake_case)]
-        impl<Driver, Os, T, $($ty),*> BridgeDispatch<Driver, Os, T> for ($($ty),+,)
+        impl<Os, T, $($ty),*> BridgeDispatch<Os, T> for ($($ty),+,)
         where
-            Driver: VmiDriver,
-            Os: VmiOs<Driver>,
-            $($ty: BridgeHandler<Driver, Os, T>,)+
+            Os: VmiOs,
+            $($ty: BridgeHandler<Os, T>,)+
         {
-            fn dispatch(&mut self, vmi: &VmiContext<'_, Driver, Os>, packet: BridgePacket) -> Option<BridgeResponse<T>> {
+            fn dispatch(&mut self, vmi: &VmiContext<'_, Os>, packet: BridgePacket) -> Option<BridgeResponse<T>> {
                 let ($($ty,)+) = self;
 
                 $(
-                    if packet.request() == <$ty as BridgeHandler<Driver, Os, T>>::REQUEST {
+                    if packet.request() == <$ty as BridgeHandler<Os, T>>::REQUEST {
                         return $ty.dispatch(vmi, packet);
                     }
                 )*
@@ -91,24 +88,22 @@ macro_rules! impl_bridge_dispatch {
     };
 }
 
-impl<Driver, Os, T> BridgeDispatch<Driver, Os, T> for ()
+impl<Os, T> BridgeDispatch<Os, T> for ()
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     fn dispatch(
         &mut self,
-        _vmi: &VmiContext<'_, Driver, Os>,
+        _vmi: &VmiContext<'_, Os>,
         _packet: BridgePacket,
     ) -> Option<BridgeResponse<T>> {
         None
     }
 }
 
-impl<Driver, Os, T> BridgeHandler<Driver, Os, T> for ()
+impl<Os, T> BridgeHandler<Os, T> for ()
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     const EMPTY: bool = true;
     const MAGIC: u32 = 0;
@@ -137,21 +132,19 @@ impl_bridge_dispatch!(
 );
 
 /// A bridge.
-pub struct Bridge<Driver, Os, B, T = ()>
+pub struct Bridge<Os, B, T = ()>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-    B: BridgeDispatch<Driver, Os, T>,
+    Os: VmiOs,
+    B: BridgeDispatch<Os, T>,
 {
     handlers: B,
-    _phantom: std::marker::PhantomData<(Driver, Os, T)>,
+    _phantom: std::marker::PhantomData<(Os, T)>,
 }
 
-impl<Driver, Os, B, T> Bridge<Driver, Os, B, T>
+impl<Os, B, T> Bridge<Os, B, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-    B: BridgeDispatch<Driver, Os, T>,
+    Os: VmiOs,
+    B: BridgeDispatch<Os, T>,
 {
     /// Creates a new bridge.
     pub fn new(handlers: B) -> Self {
@@ -162,15 +155,14 @@ where
     }
 }
 
-impl<Driver, Os, B, T> BridgeDispatch<Driver, Os, T> for Bridge<Driver, Os, B, T>
+impl<Os, B, T> BridgeDispatch<Os, T> for Bridge<Os, B, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-    B: BridgeDispatch<Driver, Os, T>,
+    Os: VmiOs,
+    B: BridgeDispatch<Os, T>,
 {
     fn dispatch(
         &mut self,
-        vmi: &VmiContext<'_, Driver, Os>,
+        vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
     ) -> Option<BridgeResponse<T>> {
         self.handlers.dispatch(vmi, packet)

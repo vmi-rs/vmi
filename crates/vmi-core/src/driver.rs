@@ -59,7 +59,7 @@ use crate::{
 /// [`VmiOs`](crate::VmiOs) enumerators.
 pub trait VmiDriver: 'static {
     /// The architecture supported by the driver.
-    type Architecture: Architecture + ?Sized;
+    type Architecture: Architecture;
 
     /// Returns information about the virtual machine.
     fn info(&self) -> Result<VmiInfo, VmiError>;

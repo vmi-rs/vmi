@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use vmi_core::{Architecture, Hex, Registers, Va, VmiDriver, VmiError, VmiOs, VmiState};
+use vmi_core::{Architecture, Hex, Registers, Va, VmiError, VmiOs, VmiState};
 
 /// The control flow of a recipe step.
 pub enum RecipeControlFlow {
@@ -21,8 +21,8 @@ pub enum RecipeControlFlow {
 }
 
 /// A function that executes a single step in an injection recipe.
-pub type RecipeStepFn<Driver, Os, T> = Box<
-    dyn Fn(&mut RecipeContext<'_, Driver, Os, T>) -> Result<RecipeControlFlow, VmiError>
+pub type RecipeStepFn<Os, T> = Box<
+    dyn Fn(&mut RecipeContext<'_, Os, T>) -> Result<RecipeControlFlow, VmiError>
         + Send
         + Sync
         + 'static,
@@ -37,22 +37,20 @@ pub type SymbolCache = HashMap<String, Va>;
 pub type ImageSymbolCache = HashMap<String, SymbolCache>;
 
 /// A sequence of injection steps to be executed in order.
-pub struct Recipe<Driver, Os, T>
+pub struct Recipe<Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The ordered list of steps to execute.
-    pub(super) steps: Vec<RecipeStepFn<Driver, Os, T>>,
+    pub(super) steps: Vec<RecipeStepFn<Os, T>>,
 
     /// User-provided data shared between steps.
     pub(super) data: T,
 }
 
-impl<Driver, Os, T> Recipe<Driver, Os, T>
+impl<Os, T> Recipe<Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Creates a new recipe with the given data.
     pub fn new(data: T) -> Self {
@@ -65,7 +63,7 @@ where
     /// Adds a new step to the recipe.
     pub fn step<F>(mut self, f: F) -> Self
     where
-        F: Fn(&mut RecipeContext<'_, Driver, Os, T>) -> Result<RecipeControlFlow, VmiError>
+        F: Fn(&mut RecipeContext<'_, Os, T>) -> Result<RecipeControlFlow, VmiError>
             + Send
             + Sync
             + 'static,
@@ -76,16 +74,15 @@ where
 }
 
 /// Context provided to each recipe step during execution.
-pub struct RecipeContext<'a, Driver, Os, T>
+pub struct RecipeContext<'a, Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The VMI state.
-    pub vmi: &'a VmiState<'a, Driver, Os>,
+    pub vmi: &'a VmiState<'a, Os>,
 
     /// The CPU registers.
-    pub registers: &'a mut <<Driver as VmiDriver>::Architecture as Architecture>::Registers,
+    pub registers: &'a mut <Os::Architecture as Architecture>::Registers,
 
     /// User-provided data shared between steps.
     pub data: &'a mut T,
@@ -95,19 +92,18 @@ where
 }
 
 /// Manages the execution of a recipe's steps.
-pub struct RecipeExecutor<Driver, Os, T>
+pub struct RecipeExecutor<Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The recipe being executed.
-    recipe: Recipe<Driver, Os, T>,
+    recipe: Recipe<Os, T>,
 
     /// Cache of resolved symbols per module.
     cache: ImageSymbolCache,
 
     /// Original state of CPU registers to restore after completion.
-    original_registers: Option<<Driver::Architecture as Architecture>::Registers>,
+    original_registers: Option<<Os::Architecture as Architecture>::Registers>,
 
     /// Index of the current step being executed.
     index: Option<usize>,
@@ -116,13 +112,12 @@ where
     previous_stack_pointer: Option<Va>,
 }
 
-impl<Driver, Os, T> RecipeExecutor<Driver, Os, T>
+impl<Os, T> RecipeExecutor<Os, T>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Creates a new recipe executor with the given recipe.
-    pub fn new(recipe: Recipe<Driver, Os, T>) -> Self {
+    pub fn new(recipe: Recipe<Os, T>) -> Self {
         Self {
             recipe,
             cache: ImageSymbolCache::new(),
@@ -138,9 +133,8 @@ where
     /// If the recipe has finished executing, returns the original registers.
     pub fn execute(
         &mut self,
-        vmi: &VmiState<Driver, Os>,
-    ) -> Result<Option<<<Driver as VmiDriver>::Architecture as Architecture>::Registers>, VmiError>
-    {
+        vmi: &VmiState<Os>,
+    ) -> Result<Option<<Os::Architecture as Architecture>::Registers>, VmiError> {
         // If the stack pointer has decreased, we are likely in a recursive call or APC.
         // In this case, we should not execute the recipe.
         if self.has_stack_pointer_decreased(vmi) {
@@ -204,7 +198,7 @@ where
     ///
     /// This is used to detect irrelevant reentrancy in the recipe,
     /// such as recursive calls, interrupts, or APCs.
-    fn has_stack_pointer_decreased(&self, vmi: &VmiState<Driver, Os>) -> bool {
+    fn has_stack_pointer_decreased(&self, vmi: &VmiState<Os>) -> bool {
         let previous_stack_pointer = match self.previous_stack_pointer {
             Some(previous_stack_pointer) => previous_stack_pointer,
             None => return false,

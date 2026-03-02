@@ -9,7 +9,7 @@ pub mod __private {
     }
 
     use vmi_core::{
-        Va, VmiDriver, VmiError, VmiOs, VmiState,
+        Va, VmiError, VmiOs, VmiState,
         os::{
             VmiOsImage as _, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _,
             VmiOsRegion as _, VmiOsRegionKind,
@@ -31,13 +31,9 @@ pub mod __private {
 
     /// Finds a first kernel module with the specified filename. The filename
     /// is case-insensitive. Returns the base address of the module if found.
-    pub fn find_module<Driver, Os>(
-        vmi: &VmiState<'_, Driver, Os>,
-        filename: &str,
-    ) -> Result<Option<Va>, VmiError>
+    pub fn find_module<Os>(vmi: &VmiState<'_, Os>, filename: &str) -> Result<Option<Va>, VmiError>
     where
-        Driver: VmiDriver,
-        Os: VmiOs<Driver>,
+        Os: VmiOs,
     {
         for module in vmi.os().modules()? {
             let module = module?;
@@ -53,13 +49,9 @@ pub mod __private {
     /// Finds a first mapped region with the specified filename in the current
     /// process. The filename is case-insensitive. Returns the base address of
     /// the region if found.
-    pub fn find_region<Driver, Os>(
-        vmi: &VmiState<'_, Driver, Os>,
-        filename: &str,
-    ) -> Result<Option<Va>, VmiError>
+    pub fn find_region<Os>(vmi: &VmiState<'_, Os>, filename: &str) -> Result<Option<Va>, VmiError>
     where
-        Driver: VmiDriver,
-        Os: VmiOs<Driver>,
+        Os: VmiOs,
     {
         let current_process = vmi.os().current_process()?;
 
@@ -89,14 +81,13 @@ pub mod __private {
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
     #[tracing::instrument(skip(vmi), err)]
-    pub fn exported_symbols<Driver, Os>(
-        vmi: &VmiState<'_, Driver, Os>,
+    pub fn exported_symbols<Os>(
+        vmi: &VmiState<'_, Os>,
         filename: &str,
         kind: SearchKind,
     ) -> Result<Option<SymbolCache>, VmiError>
     where
-        Driver: VmiDriver,
-        Os: VmiOs<Driver>,
+        Os: VmiOs,
     {
         let image_base = match kind {
             SearchKind::Module => find_module(vmi, filename)?,
@@ -131,15 +122,14 @@ pub mod __private {
     /// The filename is case-insensitive. Returns virtual address of the symbol
     /// if found.
     #[tracing::instrument(skip(ctx), err)]
-    pub fn lookup_symbol<Driver, Os, T>(
-        ctx: &mut RecipeContext<'_, Driver, Os, T>,
+    pub fn lookup_symbol<Os, T>(
+        ctx: &mut RecipeContext<'_, Os, T>,
         filename: &str,
         symbol: &str,
         kind: SearchKind,
     ) -> Result<Option<Va>, VmiError>
     where
-        Driver: VmiDriver,
-        Os: VmiOs<Driver>,
+        Os: VmiOs,
     {
         use std::collections::hash_map::Entry;
 

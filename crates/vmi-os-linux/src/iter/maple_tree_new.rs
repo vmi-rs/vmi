@@ -159,7 +159,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state
-    vmi: VmiState<'a, Driver, LinuxOs<Driver>>,
+    vmi: VmiState<'a, LinuxOs<Driver>>,
 
     /// The maple tree root VA
     root: Va,
@@ -195,7 +195,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Create a new MapleTreeIterator
-    pub fn new(vmi: VmiState<'a, Driver, LinuxOs<Driver>>, root: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, root: Va) -> Self {
         Self {
             vmi,
             root,

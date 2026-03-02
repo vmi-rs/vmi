@@ -27,8 +27,8 @@ use crate::{AccessContext, Registers, Va, VmiCore, VmiError, VmiRead, VmiState};
 ///     }
 /// }
 ///
-/// # fn example<Driver: VmiRead, Os: VmiOs<Driver>>(
-/// #     vmi: &VmiState<Driver, Os>,
+/// # fn example<Os: VmiOs>(
+/// #     vmi: &VmiState<Os>,
 /// #     va: Va,
 /// # ) -> Result<(), VmiError> {
 /// # let profile = unimplemented!();
@@ -56,10 +56,10 @@ impl StructReader {
     /// [`read`] method with appropriate field descriptors.
     ///
     /// [`read`]: Self::read
-    pub fn new<Driver, Os>(vmi: &VmiState<Driver, Os>, va: Va, len: usize) -> Result<Self, VmiError>
+    pub fn new<Os>(vmi: &VmiState<Os>, va: Va, len: usize) -> Result<Self, VmiError>
     where
-        Driver: VmiRead,
-        Os: VmiOs<Driver>,
+        Os: VmiOs,
+        Os::Driver: VmiRead,
     {
         Self::new_in(vmi, vmi.registers().address_context(va), len)
     }

@@ -13,7 +13,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// Current entry.
     current: Option<Va>,
@@ -44,7 +44,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new list entry iterator.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, list_head: Va, offset: u64) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, list_head: Va, offset: u64) -> Self {
         let LIST_ENTRY = &vmi.underlying_os().offsets._LIST_ENTRY;
         let offset_flink = LIST_ENTRY.Flink.offset();
         let offset_blink = LIST_ENTRY.Blink.offset();
@@ -61,7 +61,7 @@ where
     }
 
     /// Creates an empty tree node iterator.
-    pub fn empty(vmi: VmiState<'a, Driver, WindowsOs<Driver>>) -> Self {
+    pub fn empty(vmi: VmiState<'a, WindowsOs<Driver>>) -> Self {
         Self {
             vmi,
             current: None,

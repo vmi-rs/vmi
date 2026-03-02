@@ -3,8 +3,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::session::VmiSession;
 use crate::{
-    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VcpuId, VmiCore,
-    VmiDriver, VmiError, VmiRead, VmiWrite,
+    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VcpuId, VmiCore, VmiError,
+    VmiRead, VmiWrite,
     driver::VmiSetRegisters,
     os::{NoOS, VmiOs},
 };
@@ -14,56 +14,47 @@ use crate::{
 /// The state combines access to a [`VmiSession`] with [`Architecture::Registers`]
 /// to provide unified access to VMI operations in the context of a specific
 /// virtual machine state.
-pub struct VmiState<'a, Driver, Os = NoOS>
+pub struct VmiState<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The VMI session.
-    session: VmiSession<'a, Driver, Os>,
+    session: VmiSession<'a, Os>,
 
     /// The CPU registers associated with the current VM state.
-    registers: &'a <Driver::Architecture as Architecture>::Registers,
+    registers: &'a <Os::Architecture as Architecture>::Registers,
 }
 
-impl<Driver, Os> Clone for VmiState<'_, Driver, Os>
+impl<Os> Clone for VmiState<'_, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Driver, Os> Copy for VmiState<'_, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-}
+impl<Os> Copy for VmiState<'_, Os> where Os: VmiOs {}
 
-impl<'a, Driver, Os> std::ops::Deref for VmiState<'a, Driver, Os>
+impl<'a, Os> std::ops::Deref for VmiState<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
-    type Target = VmiSession<'a, Driver, Os>;
+    type Target = VmiSession<'a, Os>;
 
     fn deref(&self) -> &Self::Target {
         &self.session
     }
 }
 
-impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+impl<'a, Os> VmiState<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Creates a new VMI state.
     pub fn new(
-        session: &'a VmiSession<'a, Driver, Os>,
-        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        session: &'a VmiSession<'a, Os>,
+        registers: &'a <Os::Architecture as Architecture>::Registers,
     ) -> Self {
         Self {
             session: *session,
@@ -74,7 +65,7 @@ where
     /// Creates a new VMI state with the specified registers.
     pub fn with_registers(
         &'a self,
-        registers: &'a <Driver::Architecture as Architecture>::Registers,
+        registers: &'a <Os::Architecture as Architecture>::Registers,
     ) -> Self {
         Self {
             session: self.session,
@@ -83,7 +74,7 @@ where
     }
 
     /// Creates a new VMI state without an OS-specific implementation.
-    pub fn without_os(&self) -> VmiState<'a, Driver, NoOS> {
+    pub fn without_os(&self) -> VmiState<'a, NoOS<Os::Driver>> {
         VmiState {
             session: self.session.without_os(),
             registers: self.registers,
@@ -93,17 +84,17 @@ where
     // Note that `core()` and `underlying_os()` are delegated to the `VmiSession`.
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<'a, Driver, Os> {
+    pub fn session(&self) -> &VmiSession<'a, Os> {
         &self.session
     }
 
     /// Returns the CPU registers associated with the current event.
-    pub fn registers(&self) -> &'a <Driver::Architecture as Architecture>::Registers {
+    pub fn registers(&self) -> &'a <Os::Architecture as Architecture>::Registers {
         self.registers
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&self) -> VmiOsState<'a, Driver, Os> {
+    pub fn os(&self) -> VmiOsState<'a, Os> {
         VmiOsState(*self)
     }
 
@@ -128,10 +119,10 @@ where
 // VmiRead
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+impl<'a, Os> VmiState<'a, Os>
 where
-    Driver: VmiRead,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiRead,
 {
     /// Returns the return address from the current stack frame.
     pub fn return_address(&self) -> Result<Va, VmiError> {
@@ -478,10 +469,10 @@ where
 // VmiRead + VmiWrite
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+impl<'a, Os> VmiState<'a, Os>
 where
-    Driver: VmiRead + VmiWrite,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiRead + VmiWrite,
 {
     /// Writes memory to the virtual machine.
     pub fn write(&self, address: Va, buffer: &[u8]) -> Result<(), VmiError> {
@@ -527,34 +518,32 @@ where
 // VmiSetRegisters
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a, Driver, Os> VmiState<'a, Driver, Os>
+impl<'a, Os> VmiState<'a, Os>
 where
-    Driver: VmiSetRegisters,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiSetRegisters,
 {
     /// Sets the registers of a virtual CPU.
     pub fn set_registers(
         &self,
         vcpu: VcpuId,
-        registers: <Driver::Architecture as Architecture>::Registers,
+        registers: <Os::Architecture as Architecture>::Registers,
     ) -> Result<(), VmiError> {
         self.core().set_registers(vcpu, registers)
     }
 }
 
 /// Wrapper providing access to OS-specific operations.
-pub struct VmiOsState<'a, Driver, Os>(VmiState<'a, Driver, Os>)
+pub struct VmiOsState<'a, Os>(VmiState<'a, Os>)
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>;
+    Os: VmiOs;
 
-impl<'a, Driver, Os> VmiOsState<'a, Driver, Os>
+impl<'a, Os> VmiOsState<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Returns the VMI core.
-    pub fn core(&self) -> &'a VmiCore<Driver> {
+    pub fn core(&self) -> &'a VmiCore<Os::Driver> {
         self.0.core()
     }
 
@@ -564,17 +553,17 @@ where
     }
 
     /// Returns the VMI session.
-    pub fn session(&self) -> &VmiSession<'a, Driver, Os> {
+    pub fn session(&self) -> &VmiSession<'a, Os> {
         self.0.session()
     }
 
     /// Returns the VMI state.
-    pub fn state(&self) -> VmiState<'a, Driver, Os> {
+    pub fn state(&self) -> VmiState<'a, Os> {
         self.0
     }
 
     /// Returns the CPU registers associated with the current event.
-    pub fn registers(&self) -> &<Driver::Architecture as Architecture>::Registers {
+    pub fn registers(&self) -> &<Os::Architecture as Architecture>::Registers {
         self.0.registers()
     }
 
@@ -582,7 +571,7 @@ where
     /// convention of the operating system.
     pub fn function_argument_for_registers(
         &self,
-        registers: &<Driver::Architecture as Architecture>::Registers,
+        registers: &<Os::Architecture as Architecture>::Registers,
         index: u64,
     ) -> Result<u64, VmiError> {
         Os::function_argument(self.0.with_registers(registers), index)
@@ -591,7 +580,7 @@ where
     /// Retrieves the return value of a function.
     pub fn function_return_value_for_registers(
         &self,
-        registers: &<Driver::Architecture as Architecture>::Registers,
+        registers: &<Os::Architecture as Architecture>::Registers,
     ) -> Result<u64, VmiError> {
         Os::function_return_value(self.0.with_registers(registers))
     }

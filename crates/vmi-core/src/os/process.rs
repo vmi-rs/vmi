@@ -73,7 +73,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver>;
+    type Os: VmiOs<Driver = Driver>;
 
     /// Returns the process ID.
     fn id(&self) -> Result<ProcessId, VmiError>;
@@ -110,16 +110,11 @@ where
     /// Returns an iterator over the process's memory regions.
     fn regions(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Region<'a>, VmiError>>,
-        VmiError,
-    >;
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>>, VmiError>;
 
     /// Finds the memory region containing the given address.
-    fn find_region(
-        &self,
-        address: Va,
-    ) -> Result<Option<<Self::Os as VmiOs<Driver>>::Region<'a>>, VmiError>;
+    fn find_region(&self, address: Va)
+    -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError>;
 
     /// Returns an iterator over the threads in the process.
     ///
@@ -128,10 +123,7 @@ where
     /// - **Windows**: `_EPROCESS.ThreadListHead`.
     fn threads(
         &self,
-    ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as VmiOs<Driver>>::Thread<'a>, VmiError>>,
-        VmiError,
-    >;
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>;
 
     /// Checks whether the given virtual address is valid in the process.
     ///

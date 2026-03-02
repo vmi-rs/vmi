@@ -7,7 +7,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{
     Architecture, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
-    os::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
+    os::{NoOS, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
 };
 
 use crate::{
@@ -31,7 +31,7 @@ where
     /// The OS context is omitted so that the image can be used
     /// in [`ArchAdapter::find_kernel`], where the OS context is
     /// not available.
-    pub(crate) vmi: VmiState<'a, Driver>,
+    pub(crate) vmi: VmiState<'a, NoOS<Driver>>,
 
     /// The base address of the image.
     va: Va,
@@ -58,12 +58,12 @@ where
     const MAX_DATA_DIRECTORY_SIZE: u32 = 1024 * 1024; // 1MB
 
     /// Creates a new Windows image.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, va: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self::new_without_os(vmi.without_os(), va)
     }
 
     /// Creates a new Windows image without the OS context.
-    pub(crate) fn new_without_os(vmi: VmiState<'a, Driver>, va: Va) -> Self {
+    pub(crate) fn new_without_os(vmi: VmiState<'a, NoOS<Driver>>, va: Va) -> Self {
         Self {
             vmi,
             va,

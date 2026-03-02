@@ -14,7 +14,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// Current node.
     current: Option<Va>,
@@ -47,7 +47,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// Creates a new tree node iterator.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, root: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, root: Va) -> Self {
         let offsets = &vmi.underlying_os().offsets;
 
         let (offset_left, offset_right, offset_parent) = match &offsets.ext {
@@ -84,7 +84,7 @@ where
     }
 
     /// Creates an empty tree node iterator.
-    pub fn empty(vmi: VmiState<'a, Driver, WindowsOs<Driver>>) -> Self {
+    pub fn empty(vmi: VmiState<'a, WindowsOs<Driver>>) -> Self {
         Self {
             vmi,
             current: None,

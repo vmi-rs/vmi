@@ -10,7 +10,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver>;
+    type Os: VmiOs<Driver = Driver>;
 
     /// Returns the base address of the module.
     ///

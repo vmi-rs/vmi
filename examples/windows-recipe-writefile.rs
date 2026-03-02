@@ -91,12 +91,12 @@ impl GuestFile {
 ///
 /// CloseHandle(handle);
 /// ```
-fn recipe_factory<Driver>(data: GuestFile) -> Recipe<Driver, WindowsOs<Driver>, GuestFile>
+fn recipe_factory<Driver>(data: GuestFile) -> Recipe<WindowsOs<Driver>, GuestFile>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     recipe![
-        Recipe::<_, WindowsOs<Driver>, _>::new(data),
+        Recipe::<WindowsOs<Driver>, _>::new(data),
         //
         // Step 1:
         // - Create a file

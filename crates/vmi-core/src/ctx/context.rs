@@ -1,5 +1,5 @@
 use super::{VmiOsState, state::VmiState};
-use crate::{VmiCore, VmiDriver, VmiEvent, VmiOs};
+use crate::{VmiCore, VmiEvent, VmiOs};
 
 /// A VMI context.
 ///
@@ -11,57 +11,45 @@ use crate::{VmiCore, VmiDriver, VmiEvent, VmiOs};
 /// passed to the [`VmiHandler::handle_event`] method to handle VMI events.
 ///
 /// [`VmiHandler::handle_event`]: crate::VmiHandler::handle_event
-pub struct VmiContext<'a, Driver, Os>
+pub struct VmiContext<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The VMI session.
-    state: &'a VmiState<'a, Driver, Os>,
+    state: &'a VmiState<'a, Os>,
 
     /// The VMI event.
-    event: &'a VmiEvent<Driver::Architecture>,
+    event: &'a VmiEvent<Os::Architecture>,
 }
 
-impl<Driver, Os> Clone for VmiContext<'_, Driver, Os>
+impl<Os> Clone for VmiContext<'_, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Driver, Os> Copy for VmiContext<'_, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-}
+impl<Os> Copy for VmiContext<'_, Os> where Os: VmiOs {}
 
-impl<'a, Driver, Os> std::ops::Deref for VmiContext<'a, Driver, Os>
+impl<'a, Os> std::ops::Deref for VmiContext<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
-    type Target = VmiState<'a, Driver, Os>;
+    type Target = VmiState<'a, Os>;
 
     fn deref(&self) -> &Self::Target {
         self.state
     }
 }
 
-impl<'a, Driver, Os> VmiContext<'a, Driver, Os>
+impl<'a, Os> VmiContext<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Creates a new VMI context.
-    pub fn new(
-        state: &'a VmiState<'a, Driver, Os>,
-        event: &'a VmiEvent<Driver::Architecture>,
-    ) -> Self {
+    pub fn new(state: &'a VmiState<'a, Os>, event: &'a VmiEvent<Os::Architecture>) -> Self {
         debug_assert_eq!(state.registers() as *const _, event.registers() as *const _);
 
         Self { state, event }
@@ -71,17 +59,17 @@ where
     // to the `VmiState`.
 
     /// Returns the VMI session.
-    pub fn state(&self) -> VmiState<'a, Driver, Os> {
+    pub fn state(&self) -> VmiState<'a, Os> {
         *self.state
     }
 
     /// Returns the current VMI event.
-    pub fn event(&self) -> &VmiEvent<Driver::Architecture> {
+    pub fn event(&self) -> &VmiEvent<Os::Architecture> {
         self.event
     }
 
     /// Returns a wrapper providing access to OS-specific operations.
-    pub fn os(&self) -> VmiOsContext<'_, Driver, Os> {
+    pub fn os(&self) -> VmiOsContext<'_, Os> {
         VmiOsContext {
             state: self.state.os(),
             event: self.event,
@@ -90,37 +78,34 @@ where
 }
 
 /// Wrapper providing access to OS-specific operations.
-pub struct VmiOsContext<'a, Driver, Os>
+pub struct VmiOsContext<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The VMI OS state.
-    state: VmiOsState<'a, Driver, Os>,
+    state: VmiOsState<'a, Os>,
 
     /// The VMI event.
-    event: &'a VmiEvent<Driver::Architecture>,
+    event: &'a VmiEvent<Os::Architecture>,
 }
 
-impl<'a, Driver, Os> std::ops::Deref for VmiOsContext<'a, Driver, Os>
+impl<'a, Os> std::ops::Deref for VmiOsContext<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
-    type Target = VmiOsState<'a, Driver, Os>;
+    type Target = VmiOsState<'a, Os>;
 
     fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
 
-impl<Driver, Os> VmiOsContext<'_, Driver, Os>
+impl<Os> VmiOsContext<'_, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Returns the VMI context.
-    pub fn core(&self) -> &VmiCore<Driver> {
+    pub fn core(&self) -> &VmiCore<Os::Driver> {
         self.state.core()
     }
 
@@ -130,7 +115,7 @@ where
     }
 
     /// Returns the current VMI event.
-    pub fn event(&self) -> &VmiEvent<Driver::Architecture> {
+    pub fn event(&self) -> &VmiEvent<Os::Architecture> {
         self.event
     }
 }

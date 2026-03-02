@@ -2,7 +2,7 @@ use std::{io::ErrorKind, time::Duration};
 
 use super::{VmiState, context::VmiContext};
 use crate::{
-    Architecture, VmiCore, VmiDriver, VmiError, VmiEventControl, VmiHandler, VmiVmControl,
+    Architecture, VmiCore, VmiError, VmiEventControl, VmiHandler, VmiVmControl,
     os::{NoOS, VmiOs},
 };
 
@@ -11,75 +11,66 @@ use crate::{
 /// The session combines a [`VmiCore`] with an OS-specific [`VmiOs`]
 /// implementation to provide unified access to both low-level VMI operations
 /// and higher-level OS abstractions.
-pub struct VmiSession<'a, Driver, Os = NoOS>
+pub struct VmiSession<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// The VMI core providing low-level VM introspection capabilities.
-    core: &'a VmiCore<Driver>,
+    core: &'a VmiCore<Os::Driver>,
 
     /// The OS-specific operations and abstractions.
     os: &'a Os,
 }
 
-impl<Driver, Os> Clone for VmiSession<'_, Driver, Os>
+impl<Os> Clone for VmiSession<'_, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Driver, Os> Copy for VmiSession<'_, Driver, Os>
-where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
-{
-}
+impl<Os> Copy for VmiSession<'_, Os> where Os: VmiOs {}
 
-impl<Driver, Os> std::ops::Deref for VmiSession<'_, Driver, Os>
+impl<Os> std::ops::Deref for VmiSession<'_, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
-    type Target = VmiCore<Driver>;
+    type Target = VmiCore<Os::Driver>;
 
     fn deref(&self) -> &Self::Target {
         self.core
     }
 }
 
-impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
+impl<'a, Os> VmiSession<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Creates a new VMI session.
-    pub fn new(core: &'a VmiCore<Driver>, os: &'a Os) -> Self {
+    pub fn new(core: &'a VmiCore<Os::Driver>, os: &'a Os) -> Self {
         Self { core, os }
     }
 
     /// Creates a new VMI state with the specified registers.
     pub fn with_registers(
         &'a self,
-        registers: &'a <Driver::Architecture as Architecture>::Registers,
-    ) -> VmiState<'a, Driver, Os> {
+        registers: &'a <Os::Architecture as Architecture>::Registers,
+    ) -> VmiState<'a, Os> {
         VmiState::new(self, registers)
     }
 
     /// Creates a new VMI session without an OS-specific implementation.
-    pub fn without_os(&self) -> VmiSession<'a, Driver, NoOS> {
+    pub fn without_os(&self) -> VmiSession<'a, NoOS<Os::Driver>> {
         VmiSession {
             core: self.core,
-            os: &NoOS,
+            os: const { &NoOS(std::marker::PhantomData) },
         }
     }
 
     /// Returns the VMI core.
-    pub fn core(&self) -> &'a VmiCore<Driver> {
+    pub fn core(&self) -> &'a VmiCore<Os::Driver> {
         self.core
     }
 
@@ -93,10 +84,10 @@ where
 // VmiEventControl
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
+impl<'a, Os> VmiSession<'a, Os>
 where
-    Driver: VmiEventControl,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiEventControl,
 {
     /// Waits for an event to occur and processes it with the provided handler.
     ///
@@ -106,7 +97,7 @@ where
     pub fn wait_for_event(
         &self,
         timeout: Duration,
-        handler: &mut impl VmiHandler<Driver, Os>,
+        handler: &mut impl VmiHandler<Os>,
     ) -> Result<(), VmiError> {
         self.core.wait_for_event(timeout, |event| {
             let state = VmiState::new(self, event.registers());
@@ -119,19 +110,19 @@ where
 // VmiEventControl + VmiVmControl
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a, Driver, Os> VmiSession<'a, Driver, Os>
+impl<'a, Os> VmiSession<'a, Os>
 where
-    Driver: VmiEventControl + VmiVmControl,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
+    Os::Driver: VmiEventControl + VmiVmControl,
 {
     /// Enters the main event handling loop that processes VMI events until
     /// finished.
     pub fn handle<Handler>(
         &self,
-        handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
+        handler_factory: impl FnOnce(&VmiSession<Os>) -> Result<Handler, VmiError>,
     ) -> Result<Option<Handler::Output>, VmiError>
     where
-        Handler: VmiHandler<Driver, Os>,
+        Handler: VmiHandler<Os>,
     {
         self.handle_with_timeout(Duration::from_millis(5000), handler_factory)
     }
@@ -141,10 +132,10 @@ where
     pub fn handle_with_timeout<Handler>(
         &self,
         timeout: Duration,
-        handler_factory: impl FnOnce(&VmiSession<Driver, Os>) -> Result<Handler, VmiError>,
+        handler_factory: impl FnOnce(&VmiSession<Os>) -> Result<Handler, VmiError>,
     ) -> Result<Option<Handler::Output>, VmiError>
     where
-        Handler: VmiHandler<Driver, Os>,
+        Handler: VmiHandler<Os>,
     {
         let mut result;
         let mut handler = handler_factory(self)?;

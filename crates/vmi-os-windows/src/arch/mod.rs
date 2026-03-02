@@ -10,29 +10,23 @@ pub trait ArchAdapter<Driver>: Architecture
 where
     Driver: VmiRead<Architecture = Self>,
 {
-    fn syscall_argument(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        index: u64,
-    ) -> Result<u64, VmiError>;
+    fn syscall_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError>;
 
-    fn function_argument(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
-        index: u64,
-    ) -> Result<u64, VmiError>;
+    fn function_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError>;
 
-    fn function_return_value(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<u64, VmiError>;
+    fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError>;
 
     fn find_kernel(
         vmi: &VmiCore<Driver>,
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<WindowsKernelInformation>, VmiError>;
 
-    fn kernel_image_base(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Result<Va, VmiError>;
+    fn kernel_image_base(vmi: VmiState<WindowsOs<Driver>>) -> Result<Va, VmiError>;
 
     fn is_page_present_or_transition(
-        vmi: VmiState<Driver, WindowsOs<Driver>>,
+        vmi: VmiState<WindowsOs<Driver>>,
         address: Va,
     ) -> Result<bool, VmiError>;
 
-    fn current_kpcr(vmi: VmiState<Driver, WindowsOs<Driver>>) -> Va;
+    fn current_kpcr(vmi: VmiState<WindowsOs<Driver>>) -> Va;
 }

@@ -154,7 +154,7 @@ where
     Self: Debug + Default + Clone + Copy,
 {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture + ?Sized;
+    type Architecture: Architecture;
 
     /// General-purpose registers of the architecture.
     ///
@@ -258,7 +258,7 @@ where
     Self: Debug + Clone + Copy,
 {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture + ?Sized;
+    type Architecture: Architecture;
 
     /// Returns the physical address of the memory access.
     fn pa(&self) -> Pa;
@@ -276,7 +276,7 @@ where
     Self: Debug + Clone + Copy,
 {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture + ?Sized;
+    type Architecture: Architecture;
 
     /// Returns the guest frame number where the interrupt occurred.
     /// Effectively, this is GFN of the current instruction pointer.
@@ -290,7 +290,7 @@ where
     Self: Debug + Clone + Copy,
 {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture + ?Sized;
+    type Architecture: Architecture;
 
     /// If the event was caused by a memory access, returns the details
     /// of that access.

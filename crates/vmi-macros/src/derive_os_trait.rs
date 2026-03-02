@@ -81,10 +81,9 @@ pub fn derive_os_wrapper(
         // OS Context
         //
 
-        impl<#vmi_lifetime, Driver, Os> #os_context_name<#vmi_lifetime, Driver, Os>
+        impl<#vmi_lifetime, Os> #os_context_name<#vmi_lifetime, Os>
         where
-            Driver: crate::VmiDriver,
-            Os: #trait_name<Driver>,
+            Os: #trait_name,
         {
             #(#os_context_methods)*
         }

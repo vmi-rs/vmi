@@ -20,8 +20,7 @@ use super::{
     OsAdapter,
 };
 
-impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, KernelMode, T, Bridge>
-    for WindowsOs<Driver>
+impl<Driver, T, Bridge> InjectorExecutionAdapter<KernelMode, T, Bridge> for WindowsOs<Driver>
 where
     Driver: VmiRead<Architecture = Amd64>
         + VmiWrite<Architecture = Amd64>
@@ -30,12 +29,12 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+    Bridge: BridgeHandler<Self, InjectorResultCode>,
 {
     type Handler = KernelInjectorHandler<Driver, T, Bridge>;
 }
 
-impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, UserMode, T, Bridge> for WindowsOs<Driver>
+impl<Driver, T, Bridge> InjectorExecutionAdapter<UserMode, T, Bridge> for WindowsOs<Driver>
 where
     Driver: VmiRead<Architecture = Amd64>
         + VmiWrite<Architecture = Amd64>
@@ -43,18 +42,18 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+    Bridge: BridgeHandler<Self, InjectorResultCode>,
 {
     type Handler = UserInjectorHandler<Driver, T, Bridge>;
 }
 
-impl<Driver> OsAdapter<Driver> for WindowsOs<Driver>
+impl<Driver> OsAdapter for WindowsOs<Driver>
 where
     Driver: VmiRead<Architecture = Amd64> + VmiWrite<Architecture = Amd64>,
 {
     fn prepare_function_call(
         &self,
-        vmi: &VmiCore<Driver>,
+        vmi: &VmiCore<Self::Driver>,
         registers: &mut Registers,
         builder: CallBuilder,
     ) -> Result<(), VmiError> {

@@ -23,7 +23,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_MMVAD` structure.
     va: Va,
@@ -70,7 +70,7 @@ where
     impl_offsets!();
 
     /// Creates a new Windows memory region.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, vad: Va) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, vad: Va) -> Self {
         Self {
             vmi,
             va: vad,
@@ -305,7 +305,7 @@ where
     }
 
     /// Returns the memory region's kind.
-    fn kind(&self) -> Result<VmiOsRegionKind<'a, Driver, Self::Os>, VmiError> {
+    fn kind(&self) -> Result<VmiOsRegionKind<'a, Self::Os>, VmiError> {
         let offsets = self.offsets();
         let MMVAD = &offsets._MMVAD;
         let SUBSECTION = &offsets._SUBSECTION;

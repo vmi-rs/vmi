@@ -37,12 +37,12 @@
 //!     }
 //! }
 //!
-//! fn recipe_factory<Driver>(data: MessageBox) -> Recipe<Driver, WindowsOs<Driver>, MessageBox>
+//! fn recipe_factory<Driver>(data: MessageBox) -> Recipe<WindowsOs<Driver>, MessageBox>
 //! where
 //!     Driver: VmiMemory<Architecture = Amd64>,
 //! {
 //!     recipe![
-//!         Recipe::<_, WindowsOs<Driver>, _>::new(data),
+//!         Recipe::<WindowsOs<Driver>, _>::new(data),
 //!         {
 //!             inject! {
 //!                 user32!MessageBoxA(
@@ -58,7 +58,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # use vmi::driver::xen::VmiXenDriver;
-//! # let vmi: vmi::VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
+//! # let vmi: vmi::VmiSession<WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //! # let pid = unimplemented!();
 //! #
 //! // Create and execute the injection handler
@@ -77,9 +77,7 @@
 //! # }
 //! ```
 
-use vmi_core::{
-    VmiContext, VmiDriver, VmiError, VmiEventResponse, VmiHandler, VmiSession, os::ProcessId,
-};
+use vmi_core::{VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession, os::ProcessId};
 
 mod arch;
 pub use self::arch::ArchAdapter;
@@ -124,33 +122,30 @@ impl ExecutionMode for UserMode {}
 ///
 /// Each OS implements this trait once per [`ExecutionMode`], providing
 /// the concrete handler type that performs the actual injection.
-pub trait InjectorExecutionAdapter<Driver, Mode, T, Bridge>: OsAdapter<Driver>
+pub trait InjectorExecutionAdapter<Mode, T, Bridge>: OsAdapter
 where
-    Driver: VmiDriver,
     Mode: ExecutionMode,
-    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+    Bridge: BridgeHandler<Self, InjectorResultCode>,
 {
     /// The concrete handler type for this OS and execution mode.
-    type Handler: InjectorHandlerAdapter<Driver, Self, Mode, T, Bridge>;
+    type Handler: InjectorHandlerAdapter<Self, Mode, T, Bridge>;
 }
 
 /// Interface that mode-specific injector handlers must implement.
 ///
 /// Provides construction and configuration methods for the concrete
 /// handler selected by [`InjectorExecutionAdapter`].
-pub trait InjectorHandlerAdapter<Driver, Os, Mode, T, Bridge>:
-    VmiHandler<Driver, Os> + Sized
+pub trait InjectorHandlerAdapter<Os, Mode, T, Bridge>: VmiHandler<Os> + Sized
 where
-    Driver: VmiDriver,
-    Os: InjectorExecutionAdapter<Driver, Mode, T, Bridge>,
+    Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeHandler<Driver, Os, InjectorResultCode>,
+    Bridge: BridgeHandler<Os, InjectorResultCode>,
 {
     /// Creates a new handler with a bridge for guest-host communication.
     fn with_bridge(
-        vmi: &VmiSession<Driver, Os>,
+        vmi: &VmiSession<Os>,
         bridge: Bridge,
-        recipe: Recipe<Driver, Os, T>,
+        recipe: Recipe<Os, T>,
     ) -> Result<Self, VmiError>;
 
     /// Restricts injection to a specific process.
@@ -164,29 +159,24 @@ where
 /// aliases for the common case without a bridge. When a custom
 /// [`BridgeHandler`] is needed, use this type directly with an explicit
 /// `Bridge` parameter.
-pub struct InjectorHandler<Driver, Os, Mode, T, Bridge = ()>
+pub struct InjectorHandler<Os, Mode, T, Bridge = ()>
 where
-    Driver: VmiDriver,
-    Os: InjectorExecutionAdapter<Driver, Mode, T, Bridge>,
+    Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeHandler<Driver, Os, InjectorResultCode>,
+    Bridge: BridgeHandler<Os, InjectorResultCode>,
 {
-    inner: <Os as InjectorExecutionAdapter<Driver, Mode, T, Bridge>>::Handler,
-    _marker: std::marker::PhantomData<(Driver, Os, Mode, T, Bridge)>,
+    inner: <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler,
+    _marker: std::marker::PhantomData<(Os, Mode, T, Bridge)>,
 }
 
-impl<Driver, Os, Mode, T, Bridge> InjectorHandler<Driver, Os, Mode, T, Bridge>
+impl<Os, Mode, T, Bridge> InjectorHandler<Os, Mode, T, Bridge>
 where
-    Driver: VmiDriver,
-    Os: InjectorExecutionAdapter<Driver, Mode, T, Bridge>,
+    Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeHandler<Driver, Os, InjectorResultCode>,
+    Bridge: BridgeHandler<Os, InjectorResultCode>,
 {
     /// Creates a new injector handler with a default (no-op) bridge.
-    pub fn new(
-        vmi: &VmiSession<Driver, Os>,
-        recipe: Recipe<Driver, Os, T>,
-    ) -> Result<Self, VmiError>
+    pub fn new(vmi: &VmiSession<Os>, recipe: Recipe<Os, T>) -> Result<Self, VmiError>
     where
         Bridge: Default,
     {
@@ -196,12 +186,12 @@ where
     /// Creates a new injector handler with a custom bridge for
     /// guest-host communication.
     pub fn with_bridge(
-        vmi: &VmiSession<Driver, Os>,
+        vmi: &VmiSession<Os>,
         bridge: Bridge,
-        recipe: Recipe<Driver, Os, T>,
+        recipe: Recipe<Os, T>,
     ) -> Result<Self, VmiError> {
         Ok(Self {
-            inner: <Os as InjectorExecutionAdapter<Driver, Mode, T, Bridge>>::Handler::with_bridge(
+            inner: <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler::with_bridge(
                 vmi, bridge, recipe,
             )?,
             _marker: std::marker::PhantomData,
@@ -217,24 +207,16 @@ where
     }
 }
 
-impl<Driver, Os, Mode, T, Bridge> VmiHandler<Driver, Os>
-    for InjectorHandler<Driver, Os, Mode, T, Bridge>
+impl<Os, Mode, T, Bridge> VmiHandler<Os> for InjectorHandler<Os, Mode, T, Bridge>
 where
-    Driver: VmiDriver,
-    Os: InjectorExecutionAdapter<Driver, Mode, T, Bridge>,
+    Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeHandler<Driver, Os, InjectorResultCode>,
+    Bridge: BridgeHandler<Os, InjectorResultCode>,
 {
     type Output =
-        <<Os as InjectorExecutionAdapter<Driver, Mode, T, Bridge>>::Handler as VmiHandler<
-            Driver,
-            Os,
-        >>::Output;
+        <<Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler as VmiHandler<Os>>::Output;
 
-    fn handle_event(
-        &mut self,
-        vmi: VmiContext<Driver, Os>,
-    ) -> VmiEventResponse<<Driver as VmiDriver>::Architecture> {
+    fn handle_event(&mut self, vmi: VmiContext<Os>) -> VmiEventResponse<Os::Architecture> {
         self.inner.handle_event(vmi)
     }
 
@@ -246,11 +228,11 @@ where
 /// Kernel-mode injector handler without a bridge.
 ///
 /// For injection with a custom [`BridgeHandler`], use
-/// [`InjectorHandler<Driver, Os, KernelMode, T, Bridge>`] directly.
-pub type KernelInjectorHandler<Driver, Os, T> = InjectorHandler<Driver, Os, KernelMode, T>;
+/// [`InjectorHandler<Os, KernelMode, T, Bridge>`] directly.
+pub type KernelInjectorHandler<Os, T> = InjectorHandler<Os, KernelMode, T>;
 
 /// User-mode injector handler without a bridge.
 ///
 /// For injection with a custom [`BridgeHandler`], use
-/// [`InjectorHandler<Driver, Os, UserMode, T, Bridge>`] directly.
-pub type UserInjectorHandler<Driver, Os, T> = InjectorHandler<Driver, Os, UserMode, T>;
+/// [`InjectorHandler<Os, UserMode, T, Bridge>`] directly.
+pub type UserInjectorHandler<Os, T> = InjectorHandler<Os, UserMode, T>;

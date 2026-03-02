@@ -69,7 +69,7 @@ where
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
     /// The VMI state.
-    vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
+    vmi: VmiState<'a, WindowsOs<Driver>>,
 
     /// The virtual address of the `_ETHREAD` structure.
     va: Va,
@@ -118,7 +118,7 @@ where
     impl_offsets!();
 
     /// Creates a new Windows thread.
-    pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, thread: ThreadObject) -> Self {
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, thread: ThreadObject) -> Self {
         Self { vmi, va: thread.0 }
     }
 

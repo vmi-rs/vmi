@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiOs` trait no longer takes a `Driver` generic parameter;
+  `Driver` is now an associated type (`type Driver: VmiDriver`), along with
+  `type Architecture: Architecture`. This eliminates the redundant
+  `<Driver, Os>` pair from all context types (`VmiSession`, `VmiState`,
+  `VmiContext`, `VmiHandler`), which now only require `<Os>`.
 - **Breaking:** `read_wstring*` methods renamed to `read_string_utf16*`
   (`read_wstring` -> `read_string_utf16`, `read_wstring_bytes` ->
   `read_string_utf16_bytes`, and their `_limited` / `_in` variants)

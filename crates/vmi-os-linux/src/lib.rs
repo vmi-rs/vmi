@@ -39,7 +39,7 @@ macro_rules! symbol {
     };
 }
 
-fn __self<'a, Driver>(vmi: &VmiState<'a, Driver, LinuxOs<Driver>>) -> &'a LinuxOs<Driver>
+fn __self<'a, Driver>(vmi: &VmiState<'a, LinuxOs<Driver>>) -> &'a LinuxOs<Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
@@ -95,7 +95,7 @@ where
     ///
     /// This value represents the randomized offset applied to the kernel's base address
     /// when KASLR is enabled.
-    pub fn kaslr_offset(vmi: VmiState<Driver, Self>) -> Result<u64, VmiError> {
+    pub fn kaslr_offset(vmi: VmiState<Self>) -> Result<u64, VmiError> {
         Driver::Architecture::kaslr_offset(vmi)
     }
 
@@ -103,7 +103,7 @@ where
     ///
     /// Linux maintains per-CPU data structures, and this method returns the base
     /// address for accessing such data on the current processor.
-    pub fn per_cpu(vmi: VmiState<Driver, Self>) -> Va {
+    pub fn per_cpu(vmi: VmiState<Self>) -> Va {
         Driver::Architecture::per_cpu(vmi)
     }
 
@@ -113,7 +113,7 @@ where
     /// structures in memory. It returns an iterator that yields the virtual
     /// addresses of each `LIST_ENTRY` structure in the list.
     pub fn linked_list<'a>(
-        vmi: VmiState<'a, Driver, Self>,
+        vmi: VmiState<'a, Self>,
         list_head: Va,
         offset: u64,
     ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
@@ -126,7 +126,7 @@ where
     /// mount points and filesystem boundaries appropriately. Both the `path`
     /// and `root` arguments should be pointers to `struct path` objects.
     pub fn construct_path(
-        _vmi: VmiState<Driver, Self>,
+        _vmi: VmiState<Self>,
         path: &LinuxPath<Driver>,
         root: &LinuxPath<Driver>,
     ) -> Result<String, VmiError> {
@@ -161,11 +161,14 @@ where
 }
 
 //#[expect(non_snake_case, unused_variables)]
-impl<Driver> VmiOs<Driver> for LinuxOs<Driver>
+impl<Driver> VmiOs for LinuxOs<Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: Architecture + ArchAdapter<Driver>,
 {
+    type Architecture = Driver::Architecture;
+    type Driver = Driver;
+
     type Process<'a> = LinuxTaskStruct<'a, Driver>;
     type Thread<'a> = LinuxThread;
     type Image<'a> = LinuxImage;
@@ -173,20 +176,20 @@ where
     type Region<'a> = LinuxVmAreaStruct<'a, Driver>;
     type Mapped<'a> = LinuxMapped;
 
-    fn kernel_image_base(_vmi: VmiState<Driver, Self>) -> Result<Va, VmiError> {
+    fn kernel_image_base(_vmi: VmiState<Self>) -> Result<Va, VmiError> {
         unimplemented!()
     }
 
-    fn kernel_information_string(_vmi: VmiState<Driver, Self>) -> Result<String, VmiError> {
+    fn kernel_information_string(_vmi: VmiState<Self>) -> Result<String, VmiError> {
         unimplemented!()
     }
 
-    fn kpti_enabled(_vmi: VmiState<Driver, Self>) -> Result<bool, VmiError> {
+    fn kpti_enabled(_vmi: VmiState<Self>) -> Result<bool, VmiError> {
         unimplemented!()
     }
 
     fn modules(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
         #[allow(unreachable_code)]
         {
@@ -195,7 +198,7 @@ where
     }
 
     fn processes(
-        vmi: VmiState<'_, Driver, Self>,
+        vmi: VmiState<'_, Self>,
     ) -> Result<impl Iterator<Item = Result<Self::Process<'_>, VmiError>> + '_, VmiError> {
         let __init_task = symbol!(vmi, init_task);
         let __task_struct = &offset!(vmi, task_struct);
@@ -208,13 +211,13 @@ where
     }
 
     fn process(
-        vmi: VmiState<'_, Driver, Self>,
+        vmi: VmiState<'_, Self>,
         process: ProcessObject,
     ) -> Result<Self::Process<'_>, VmiError> {
         Ok(LinuxTaskStruct::new(vmi, process))
     }
 
-    fn current_process(vmi: VmiState<'_, Driver, Self>) -> Result<Self::Process<'_>, VmiError> {
+    fn current_process(vmi: VmiState<'_, Self>) -> Result<Self::Process<'_>, VmiError> {
         let pcpu_hot = symbol!(vmi, pcpu_hot);
         let __pcpu_hot = offset!(vmi, pcpu_hot);
 
@@ -229,7 +232,7 @@ where
         Ok(LinuxTaskStruct::new(vmi, ProcessObject(result)))
     }
 
-    fn system_process(vmi: VmiState<'_, Driver, Self>) -> Result<Self::Process<'_>, VmiError> {
+    fn system_process(vmi: VmiState<'_, Self>) -> Result<Self::Process<'_>, VmiError> {
         let __init_task = symbol!(vmi, init_task);
         let __task_struct = &offset!(vmi, task_struct);
 
@@ -238,44 +241,41 @@ where
     }
 
     fn thread(
-        _vmi: VmiState<'_, Driver, Self>,
+        _vmi: VmiState<'_, Self>,
         _thread: ThreadObject,
     ) -> Result<Self::Thread<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn current_thread(_vmi: VmiState<'_, Driver, Self>) -> Result<Self::Thread<'_>, VmiError> {
+    fn current_thread(_vmi: VmiState<'_, Self>) -> Result<Self::Thread<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn image(
-        _vmi: VmiState<'_, Driver, Self>,
-        _image_base: Va,
-    ) -> Result<Self::Image<'_>, VmiError> {
+    fn image(_vmi: VmiState<'_, Self>, _image_base: Va) -> Result<Self::Image<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn module(_vmi: VmiState<'_, Driver, Self>, _module: Va) -> Result<Self::Module<'_>, VmiError> {
+    fn module(_vmi: VmiState<'_, Self>, _module: Va) -> Result<Self::Module<'_>, VmiError> {
         unimplemented!()
     }
 
-    fn region(vmi: VmiState<'_, Driver, Self>, region: Va) -> Result<Self::Region<'_>, VmiError> {
+    fn region(vmi: VmiState<'_, Self>, region: Va) -> Result<Self::Region<'_>, VmiError> {
         Ok(LinuxVmAreaStruct::new(vmi, region))
     }
 
-    fn syscall_argument(vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
+    fn syscall_argument(vmi: VmiState<Self>, index: u64) -> Result<u64, VmiError> {
         Driver::Architecture::syscall_argument(vmi, index)
     }
 
-    fn function_argument(vmi: VmiState<Driver, Self>, index: u64) -> Result<u64, VmiError> {
+    fn function_argument(vmi: VmiState<Self>, index: u64) -> Result<u64, VmiError> {
         Driver::Architecture::function_argument(vmi, index)
     }
 
-    fn function_return_value(vmi: VmiState<Driver, Self>) -> Result<u64, VmiError> {
+    fn function_return_value(vmi: VmiState<Self>) -> Result<u64, VmiError> {
         Driver::Architecture::function_return_value(vmi)
     }
 
-    fn last_error(_vmi: VmiState<Driver, Self>) -> Result<Option<u32>, VmiError> {
+    fn last_error(_vmi: VmiState<Self>) -> Result<Option<u32>, VmiError> {
         unimplemented!()
     }
 }

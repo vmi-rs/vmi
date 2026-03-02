@@ -451,7 +451,7 @@
 //!   let va = Va(0xfffff804590c8980);
 //!
 //!   // let vmi: &VmiSession = ...;
-//!   # let vmi: &VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
+//!   # let vmi: &VmiSession<WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //!   let registers = vmi.registers(VcpuId(0))?;
 //!   let value = vmi.read_u64((va, registers.cr3.into()))?; // Explicitly pass the translation root (CR3)
 //!   #
@@ -470,7 +470,7 @@
 //!   #
 //!   # let va = Va(0xfffff804590c8980);
 //!   // let vmi: &VmiContext = ...;
-//!   # let vmi: &VmiContext<'_, VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
+//!   # let vmi: &VmiContext<'_, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //!   let value = vmi.read_u64(va)?; // No need to pass the translation root
 //!   #
 //!   # Ok::<_, vmi::VmiError>(())
@@ -489,7 +489,7 @@
 //! # };
 //! #
 //! // let session: &VmiSession = ...;
-//! # let session: &VmiSession<VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
+//! # let session: &VmiSession<WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //! let registers = session.registers(VcpuId(0))?;
 //! let vmi = session.with_registers(&registers); // Create a new VmiState
 //! let process = vmi.os().current_process()?;
@@ -509,7 +509,7 @@
 //! #     Va, VmiContext,
 //! # };
 //! // let vmi: &VmiContext = ...;
-//! # let vmi: &VmiContext<'_, VmiXenDriver<Amd64>, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
+//! # let vmi: &VmiContext<'_, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //! let process = vmi.os().current_process()?;
 //! let process_id = process.id()?;
 //! #

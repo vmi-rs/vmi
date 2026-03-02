@@ -9,7 +9,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver>;
+    type Os: VmiOs<Driver = Driver>;
 
     /// Returns the starting virtual address of the memory region.
     fn start(&self) -> Result<Va, VmiError>;
@@ -21,14 +21,13 @@ where
     fn protection(&self) -> Result<MemoryAccess, VmiError>;
 
     /// Returns the memory region's kind.
-    fn kind(&self) -> Result<VmiOsRegionKind<'a, Driver, Self::Os>, VmiError>;
+    fn kind(&self) -> Result<VmiOsRegionKind<'a, Self::Os>, VmiError>;
 }
 
 /// Specifies the kind of memory region.
-pub enum VmiOsRegionKind<'a, Driver, Os>
+pub enum VmiOsRegionKind<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver> + 'a,
+    Os: VmiOs + 'a,
 {
     /// A private region of memory.
     ///
@@ -49,10 +48,9 @@ where
     MappedImage(Os::Mapped<'a>),
 }
 
-impl<'a, Driver, Os> VmiOsRegionKind<'a, Driver, Os>
+impl<'a, Os> VmiOsRegionKind<'a, Os>
 where
-    Driver: VmiDriver,
-    Os: VmiOs<Driver>,
+    Os: VmiOs,
 {
     /// Checks if the region is private.
     pub fn is_private(&self) -> bool {
