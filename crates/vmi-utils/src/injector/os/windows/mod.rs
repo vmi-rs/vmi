@@ -3,12 +3,16 @@ mod user_mode;
 use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
     Hex, VmiCore, VmiError,
-    driver::{VmiRead, VmiWrite},
+    driver::{VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
 };
 use vmi_os_windows::WindowsOs;
 
+use self::user_mode::UserInjectorHandler;
 use super::{
-    super::{CallBuilder, arch::ArchAdapter as _},
+    super::{
+        BridgeHandler, CallBuilder, InjectorExecutionAdapter, InjectorResultCode, UserMode,
+        arch::ArchAdapter as _,
+    },
     OsAdapter,
 };
 
@@ -143,4 +147,17 @@ where
 
         Ok(())
     }
+}
+
+impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, UserMode, T, Bridge> for WindowsOs<Driver>
+where
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>
+        + VmiVmControl<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+{
+    type Handler = UserInjectorHandler<Driver, T, Bridge>;
 }

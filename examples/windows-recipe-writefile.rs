@@ -30,7 +30,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
-    utils::injector::{InjectorHandler, Recipe, RecipeControlFlow, recipe},
+    utils::injector::{Recipe, RecipeControlFlow, UserInjectorHandler, recipe},
 };
 
 #[derive(Debug, Default)]
@@ -230,14 +230,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     session.handle(|session| {
-        InjectorHandler::new(
+        UserInjectorHandler::new(
             session,
-            explorer_pid,
             recipe_factory(GuestFile::new(
                 "C:\\Users\\John\\Desktop\\test.txt",
                 "Hello, World!".as_bytes(),
             )),
-        )
+        )?
+        .with_pid(explorer_pid)
     })?;
 
     Ok(())

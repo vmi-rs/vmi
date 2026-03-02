@@ -1,50 +1,67 @@
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt};
 use vmi_core::{
-    Architecture as _, Hex, MemoryAccess, Registers as _, Va, View, VmiContext, VmiCore, VmiError,
-    VmiEventResponse, VmiHandler,
+    Architecture as _, Hex, MemoryAccess, Pa, Registers as _, Va, View, VmiContext, VmiError,
+    VmiEventResponse, VmiHandler, VmiSession,
     driver::{VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
-    os::{ProcessId, VmiOsProcess, VmiOsThread},
+    os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
-use super::super::super::{InjectorHandler, InjectorResultCode, Recipe, RecipeExecutor};
+use super::super::super::{
+    InjectorHandlerAdapter, InjectorResultCode, Recipe, RecipeExecutor, UserMode,
+};
 use crate::bridge::{BridgeHandler, BridgePacket};
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
 const INVALID_VIEW: View = View(0xffff);
 // const INVALID_TID: ThreadId = ThreadId(0xffff_ffff);
 // const INVALID_PID: ProcessId = ProcessId(0xffff_ffff);
 
-impl<Driver, T> InjectorHandler<Driver, WindowsOs<Driver>, T, ()>
+pub struct UserInjectorHandler<Driver, T, Bridge>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>,
-{
-    /// Creates a new injector handler.
-    pub fn new(
-        vmi: &VmiCore<Driver>,
-        pid: ProcessId,
-        recipe: Recipe<Driver, WindowsOs<Driver>, T>,
-    ) -> Result<Self, VmiError> {
-        Self::with_bridge(vmi, pid, (), recipe)
-    }
-}
-
-impl<Driver, T, Bridge> InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
-where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>,
+    Driver: VmiRead<Architecture = Amd64>,
     Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
 {
-    /// Creates a new injector handler.
-    pub fn with_bridge(
-        vmi: &VmiCore<Driver>,
-        pid: ProcessId,
+    /// Process ID being injected into.
+    pid: Option<ProcessId>,
+
+    /// Thread ID that was hijacked for injection.
+    tid: Option<ThreadId>,
+
+    /// Whether a thread has been successfully hijacked.
+    hijacked: bool,
+
+    /// Virtual address of the instruction pointer in the hijacked thread.
+    ip_va: Option<Va>,
+
+    /// Physical address of the instruction pointer in the hijacked thread.
+    ip_pa: Option<Pa>,
+
+    /// Executor for running the injection recipe.
+    recipe: RecipeExecutor<Driver, WindowsOs<Driver>, T>,
+
+    /// Memory view used for injection operations.
+    view: View,
+
+    /// Bridge.
+    bridge: Bridge,
+
+    /// Whether the injection has completed.
+    finished: Option<Result<InjectorResultCode, BridgePacket>>,
+}
+
+impl<Driver, T, Bridge> InjectorHandlerAdapter<Driver, WindowsOs<Driver>, UserMode, T, Bridge>
+    for UserInjectorHandler<Driver, T, Bridge>
+where
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>
+        + VmiVmControl<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+{
+    fn with_bridge(
+        vmi: &VmiSession<Driver, WindowsOs<Driver>>,
         bridge: Bridge,
         recipe: Recipe<Driver, WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
@@ -58,7 +75,7 @@ where
         }
 
         Ok(Self {
-            pid,
+            pid: None,
             tid: None,
             hijacked: false,
             ip_va: None,
@@ -70,6 +87,22 @@ where
         })
     }
 
+    fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
+        Ok(Self {
+            pid: Some(pid),
+            ..self
+        })
+    }
+}
+
+impl<Driver, T, Bridge> UserInjectorHandler<Driver, T, Bridge>
+where
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, WindowsOs<Driver>, InjectorResultCode>,
+{
     #[tracing::instrument(
         name = "injector",
         skip_all,
@@ -184,7 +217,9 @@ where
 
         let current_process = vmi.os().current_process()?;
         let current_pid = current_process.id()?;
-        if current_pid != self.pid {
+        if let Some(pid) = self.pid
+            && current_pid != pid
+        {
             return Ok(VmiEventResponse::default());
         }
 
@@ -275,6 +310,7 @@ where
         // The next `MemoryAccess` handler will try to hijack the thread.
         //
 
+        self.pid = Some(current_pid);
         self.tid = Some(current_tid);
         self.ip_va = Some(ip_va);
         self.ip_pa = Some(ip_pa);
@@ -310,7 +346,9 @@ where
 
         let current_process = vmi.os().current_process()?;
         let current_pid = current_process.id()?;
-        if current_pid != self.pid {
+        if let Some(pid) = self.pid
+            && current_pid != pid
+        {
             // Too noisy...
             // tracing::trace!(
             //     pid = %self.pid,
@@ -415,10 +453,9 @@ where
 }
 
 impl<Driver, T, Bridge> VmiHandler<Driver, WindowsOs<Driver>>
-    for InjectorHandler<Driver, WindowsOs<Driver>, T, Bridge>
+    for UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
         + VmiSetProtection<Architecture = Amd64>
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>

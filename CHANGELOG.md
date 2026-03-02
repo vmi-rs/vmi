@@ -23,8 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `VmiQueryRegisters`
 - **Breaking:** `WindowsThread::attached_process()` renamed to
   `WindowsThread::current_process()`
+- **Breaking:** `InjectorHandler` now accepts `VmiSession` instead of `VmiCore`
+- **Breaking:** `InjectorHandler` refactored into a generic delegation wrapper
+  with `ExecutionMode`-based dispatch
 
 ### Added
+
+- `KernelInjectorHandler` / `UserInjectorHandler` type aliases
 
 - `WindowsThread::is_attached()` - checks if a thread is attached to a
   foreign process (via `_KTHREAD.ApcStateIndex`)

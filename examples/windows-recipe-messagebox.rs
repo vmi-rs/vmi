@@ -25,7 +25,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
-    utils::injector::{InjectorHandler, Recipe, recipe},
+    utils::injector::{Recipe, UserInjectorHandler, recipe},
 };
 
 struct MessageBox {
@@ -92,14 +92,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     session.handle(|session| {
-        InjectorHandler::new(
+        UserInjectorHandler::new(
             session,
-            explorer_pid,
             recipe_factory(MessageBox::new(
                 "Hello, World!",
                 "This is a message box from the VMI!",
             )),
-        )
+        )?
+        .with_pid(explorer_pid)
     })?;
 
     Ok(())
