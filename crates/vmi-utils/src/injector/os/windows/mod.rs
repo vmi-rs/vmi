@@ -1,20 +1,52 @@
+mod kernel_mode;
 mod user_mode;
 
 use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
     Hex, VmiCore, VmiError,
-    driver::{VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
+    driver::{
+        VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
+        VmiVmControl, VmiWrite,
+    },
 };
 use vmi_os_windows::WindowsOs;
 
-use self::user_mode::UserInjectorHandler;
+use self::{kernel_mode::KernelInjectorHandler, user_mode::UserInjectorHandler};
 use super::{
     super::{
-        BridgeHandler, CallBuilder, InjectorExecutionAdapter, InjectorResultCode, UserMode,
-        arch::ArchAdapter as _,
+        BridgeHandler, CallBuilder, InjectorExecutionAdapter, InjectorResultCode, KernelMode,
+        UserMode, arch::ArchAdapter as _,
     },
     OsAdapter,
 };
+
+impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, KernelMode, T, Bridge>
+    for WindowsOs<Driver>
+where
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiQueryRegisters<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>
+        + VmiVmControl<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+{
+    type Handler = KernelInjectorHandler<Driver, T, Bridge>;
+}
+
+impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, UserMode, T, Bridge> for WindowsOs<Driver>
+where
+    Driver: VmiRead<Architecture = Amd64>
+        + VmiWrite<Architecture = Amd64>
+        + VmiSetProtection<Architecture = Amd64>
+        + VmiEventControl<Architecture = Amd64>
+        + VmiViewControl<Architecture = Amd64>
+        + VmiVmControl<Architecture = Amd64>,
+    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
+{
+    type Handler = UserInjectorHandler<Driver, T, Bridge>;
+}
 
 impl<Driver> OsAdapter<Driver> for WindowsOs<Driver>
 where
@@ -147,17 +179,4 @@ where
 
         Ok(())
     }
-}
-
-impl<Driver, T, Bridge> InjectorExecutionAdapter<Driver, UserMode, T, Bridge> for WindowsOs<Driver>
-where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<Driver, Self, InjectorResultCode>,
-{
-    type Handler = UserInjectorHandler<Driver, T, Bridge>;
 }

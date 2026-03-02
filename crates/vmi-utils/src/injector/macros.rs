@@ -10,11 +10,121 @@ pub mod __private {
 
     use vmi_core::{
         Va, VmiDriver, VmiError, VmiOs, VmiState,
-        os::{VmiOsImage as _, VmiOsMapped as _, VmiOsProcess, VmiOsRegion, VmiOsRegionKind},
+        os::{
+            VmiOsImage as _, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _,
+            VmiOsRegion as _, VmiOsRegionKind,
+        },
     };
 
     use super::super::RecipeContext;
     use crate::injector::recipe::SymbolCache;
+
+    /// Search kind for symbol lookup.
+    #[derive(Debug)]
+    pub enum SearchKind {
+        /// Search in kernel modules.
+        Module,
+
+        /// Search in mapped regions of the current process.
+        Region,
+    }
+
+    /// Finds a first kernel module with the specified filename. The filename
+    /// is case-insensitive. Returns the base address of the module if found.
+    pub fn find_module<Driver, Os>(
+        vmi: &VmiState<'_, Driver, Os>,
+        filename: &str,
+    ) -> Result<Option<Va>, VmiError>
+    where
+        Driver: VmiDriver,
+        Os: VmiOs<Driver>,
+    {
+        for module in vmi.os().modules()? {
+            let module = module?;
+
+            if module.name()?.eq_ignore_ascii_case(filename) {
+                return Ok(Some(module.base_address()?));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Finds a first mapped region with the specified filename in the current
+    /// process. The filename is case-insensitive. Returns the base address of
+    /// the region if found.
+    pub fn find_region<Driver, Os>(
+        vmi: &VmiState<'_, Driver, Os>,
+        filename: &str,
+    ) -> Result<Option<Va>, VmiError>
+    where
+        Driver: VmiDriver,
+        Os: VmiOs<Driver>,
+    {
+        let current_process = vmi.os().current_process()?;
+
+        for region in current_process.regions()? {
+            let region = region?;
+
+            let mapped = match region.kind()? {
+                VmiOsRegionKind::MappedImage(mapped) => mapped,
+                _ => continue,
+            };
+
+            let path = match mapped.path() {
+                Ok(Some(path)) => path,
+                _ => continue,
+            };
+
+            if path.to_ascii_lowercase().ends_with(filename) {
+                return Ok(Some(region.start()?));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Finds a first mapped region with the specified filename in the current
+    /// process and retrieves the exported symbols from the image. The filename
+    /// is case-insensitive. Returns map of exported symbols and their virtual
+    /// addresses.
+    #[tracing::instrument(skip(vmi), err)]
+    pub fn exported_symbols<Driver, Os>(
+        vmi: &VmiState<'_, Driver, Os>,
+        filename: &str,
+        kind: SearchKind,
+    ) -> Result<Option<SymbolCache>, VmiError>
+    where
+        Driver: VmiDriver,
+        Os: VmiOs<Driver>,
+    {
+        let image_base = match kind {
+            SearchKind::Module => find_module(vmi, filename)?,
+            SearchKind::Region => find_region(vmi, filename)?,
+        };
+
+        let image_base = match image_base {
+            Some(image_base) => image_base,
+            None => return Ok(None),
+        };
+
+        let image = vmi.os().image(image_base)?;
+        let symbols = image.exports()?;
+
+        tracing::trace!(
+            va = %image_base,
+            //kind = ?region.kind()?,
+            symbols = symbols.len(),
+            "image found"
+        );
+
+        Ok(Some(
+            symbols
+                .into_iter()
+                .map(|symbol| (symbol.name, symbol.address))
+                .collect(),
+        ))
+    }
 
     /// Looks up a symbol in the function cache. If the symbol is not found, it
     /// retrieves the exported symbols from the specified image and caches them.
@@ -25,6 +135,7 @@ pub mod __private {
         ctx: &mut RecipeContext<'_, Driver, Os, T>,
         filename: &str,
         symbol: &str,
+        kind: SearchKind,
     ) -> Result<Option<Va>, VmiError>
     where
         Driver: VmiDriver,
@@ -44,7 +155,7 @@ pub mod __private {
                 }
             },
             Entry::Vacant(entry) => {
-                let symbols = match exported_symbols(ctx.vmi, filename)? {
+                let symbols = match exported_symbols(ctx.vmi, filename, kind)? {
                     Some(symbols) => symbols,
                     None => {
                         tracing::error!(cache_hit = false, "Image not found");
@@ -66,74 +177,6 @@ pub mod __private {
                 Ok(Some(va))
             }
         }
-    }
-
-    /// Finds a first mapped region with the specified filename in the current
-    /// process. The filename is case-insensitive. Returns the region if found.
-    pub fn find_region<'a, Driver>(
-        process: &impl VmiOsProcess<'a, Driver>,
-        filename: &str,
-    ) -> Result<Option<impl VmiOsRegion<'a, Driver>>, VmiError>
-    where
-        Driver: VmiDriver,
-    {
-        for region in process.regions()? {
-            let region = region?;
-
-            let mapped = match region.kind()? {
-                VmiOsRegionKind::MappedImage(mapped) => mapped,
-                _ => continue,
-            };
-
-            let path = match mapped.path() {
-                Ok(Some(path)) => path,
-                _ => continue,
-            };
-
-            if path.to_ascii_lowercase().ends_with(filename) {
-                return Ok(Some(region));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Finds a first mapped region with the specified filename in the current
-    /// process and retrieves the exported symbols from the image. The filename
-    /// is case-insensitive. Returns map of exported symbols and their virtual
-    /// addresses.
-    #[tracing::instrument(skip(vmi), err)]
-    pub fn exported_symbols<Driver, Os>(
-        vmi: &VmiState<'_, Driver, Os>,
-        filename: &str,
-    ) -> Result<Option<SymbolCache>, VmiError>
-    where
-        Driver: VmiDriver,
-        Os: VmiOs<Driver>,
-    {
-        let current_process = vmi.os().current_process()?;
-
-        let region = match find_region(&current_process, filename)? {
-            Some(image) => image,
-            None => return Ok(None),
-        };
-
-        let image = vmi.os().image(region.start()?)?;
-        let symbols = image.exports()?;
-
-        tracing::trace!(
-            va = %region.start()?,
-            //kind = ?region.kind()?,
-            symbols = symbols.len(),
-            "image found"
-        );
-
-        Ok(Some(
-            symbols
-                .into_iter()
-                .map(|symbol| (symbol.name, symbol.address))
-                .collect(),
-        ))
     }
 }
 
@@ -313,10 +356,50 @@ macro_rules! _private_recipe {
         }
     };
 
+    (@inject $ctx:expr, nt!$function:ident($($arg:expr),*)) => {
+        'm: {
+            use $crate::injector::macros::__private::{self, vmi_core::VmiError};
+
+            //
+            // The parent macro can be invoked as follows:
+            // ```
+            // inject! {
+            //     nt!ExAllocatePool(
+            //         NonPagedPoolExecute,        // PoolType
+            //         0x1000                      // NumberOfBytes
+            //     )
+            // }
+            // ```
+            // In this case, the `$image` is `ntoskrnl.exe`, the `$function` is
+            // `ExAllocatePool`, and the `$($arg),*` are the arguments to the function.
+            //
+            // Note that the lookup can return a [`VmiError::Translation`].
+            //
+
+            let function = match __private::lookup_symbol(
+                $ctx,
+                "ntoskrnl.exe",
+                stringify!($function),
+                __private::SearchKind::Module,
+            ) {
+                Ok(Some(function)) => function,
+                Ok(None) => break 'm Err(VmiError::Other(concat!(stringify!($function), " not found"))),
+                Err(err) => break 'm Err(err),
+            };
+
+            tracing::trace!(
+                function = stringify!($function),
+                $(arg = ?$arg,)*
+                "preparing function call"
+            );
+
+            $crate::_private_recipe!(@inject $ctx, function($($arg),*))
+        }
+    };
+
     (@inject $ctx:expr, $image:ident!$function:ident($($arg:expr),*)) => {
         'm: {
-            use $crate::injector::{macros::__private, OsAdapter as _, CallBuilder};
-            use __private::vmi_core::{VmiError, VmiEventResponse};
+            use $crate::injector::macros::__private::{self, vmi_core::VmiError};
 
             //
             // The parent macro can be invoked as follows:
@@ -342,7 +425,8 @@ macro_rules! _private_recipe {
             let function = match __private::lookup_symbol(
                 $ctx,
                 concat!(stringify!($image), ".dll"),
-                stringify!($function)
+                stringify!($function),
+                __private::SearchKind::Region,
             ) {
                 Ok(Some(function)) => function,
                 Ok(None) => break 'm Err(VmiError::Other(concat!(stringify!($function), " not found"))),
@@ -362,8 +446,10 @@ macro_rules! _private_recipe {
 
     (@inject $ctx:expr, $function:ident($($arg:expr),*)) => {
         'm: {
-            use $crate::injector::{macros::__private, OsAdapter as _, CallBuilder};
-            use __private::vmi_core::{Registers as _, VmiError, VmiEventResponse};
+            use $crate::injector::{
+                CallBuilder, OsAdapter as _, RecipeControlFlow,
+                macros::__private::{self, vmi_core::VmiError}
+            };
 
             let call = CallBuilder::new($function)
                 $(.with_argument(&$arg))*;
@@ -372,7 +458,7 @@ macro_rules! _private_recipe {
                 break 'm Err(err);
             }
 
-            Ok($crate::injector::RecipeControlFlow::Continue)
+            Ok(RecipeControlFlow::Continue)
         }
     };
 }

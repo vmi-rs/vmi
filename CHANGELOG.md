@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `KernelInjectorHandler` / `UserInjectorHandler` type aliases
+- Kernel-mode injection handler (`KernelMode`)
+- `inject!` macro now supports `nt!` prefix for kernel symbol lookup
 
 - `WindowsThread::is_attached()` - checks if a thread is attached to a
   foreign process (via `_KTHREAD.ApcStateIndex`)
