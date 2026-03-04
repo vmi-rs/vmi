@@ -98,12 +98,6 @@ where
         vmi.monitor_enable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
-        if !Bridge::EMPTY {
-            vmi.monitor_enable(EventMonitor::GuestRequest {
-                allow_userspace: false,
-            })?;
-        }
-
         let mut bpm = BreakpointManager::new();
         let mut ptm = PageTableMonitor::new();
         let _pause_guard = vmi.pause_guard()?;
@@ -223,89 +217,6 @@ where
         }
     }
 
-    #[tracing::instrument(name = "singlestep", skip_all, err)]
-    fn on_singlestep(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        if let InjectorState::Teardown(vcpu) = self.state
-            && vcpu == vmi.event().vcpu_id()
-        {
-            debug_assert_eq!(vmi.event().view(), Some(vmi.default_view()));
-
-            vmi.switch_to_view(vmi.default_view())?;
-
-            vmi.monitor_disable(EventMonitor::Singlestep)?;
-            vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
-
-            self.bpm.remove_by_view(vmi, self.view)?;
-            self.ptm.unmonitor_view(vmi, self.view);
-
-            vmi.destroy_view(self.view)?;
-
-            // If the bridge was not enabled, we're done.
-            if Bridge::EMPTY {
-                self.state = InjectorState::Complete(Ok(0));
-            }
-            else {
-                self.state = InjectorState::Bridge;
-            }
-
-            return Ok(VmiEventResponse::toggle_singlestep());
-        }
-
-        // Get the page table modifications by processing the dirty page table
-        // entries.
-        let ptm_events = self.ptm.process_dirty_entries(vmi, vmi.event().vcpu_id())?;
-        self.bpm.handle_ptm_events(vmi, ptm_events)?;
-
-        // Disable singlestep and switch back to our view.
-        Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
-    }
-
-    #[tracing::instrument(name = "vmcall", skip_all, err)]
-    fn on_vmcall(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        let guest_request = vmi.event().reason().as_guest_request();
-
-        let mut registers = vmi.registers().gp_registers();
-        registers.rip += guest_request.instruction_length as u64;
-
-        tracing::trace!(
-            magic = %Hex(registers.rbp as u32),
-            request = %Hex((registers.rcx & 0xFFFF) as u16),
-            method = %Hex((registers.rcx >> 16) as u16),
-        );
-
-        if let Some(result) = self.bridge.dispatch(vmi, BridgePacket::from(vmi)) {
-            let complete = match result {
-                Ok(response) => {
-                    response.write_to(&mut registers);
-                    response.into_result().map(Ok)
-                }
-                Err(packet) => {
-                    tracing::error!(
-                        request = packet.request(),
-                        method = packet.method(),
-                        "Empty bridge response"
-                    );
-                    Some(Err(packet))
-                }
-            };
-
-            if let Some(complete) = complete {
-                self.state = InjectorState::Complete(complete);
-                vmi.monitor_disable(EventMonitor::GuestRequest {
-                    allow_userspace: false,
-                })?;
-            }
-        }
-
-        Ok(VmiEventResponse::set_registers(registers))
-    }
-
     #[tracing::instrument(name = "interrupt", skip_all, err)]
     fn on_interrupt(
         &mut self,
@@ -423,6 +334,98 @@ where
                 .and_set_view(vmi.default_view()),
         )
     }
+
+    #[tracing::instrument(name = "singlestep", skip_all, err)]
+    fn on_singlestep(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
+        if let InjectorState::Teardown(vcpu) = self.state
+            && vcpu == vmi.event().vcpu_id()
+        {
+            debug_assert_eq!(vmi.event().view(), Some(vmi.default_view()));
+
+            // Singlestep monitoring is NOT disabled here - `cleanup` handles it.
+            //
+            // On Xen, `monitor_disable(Singlestep)` calls `debug_control(OFF)`
+            // on every vCPU, clearing per-vCPU `single_step` state. The response's
+            // `toggle_singlestep` then flips it back to true on this vCPU, but
+            // with global singlestep delivery already off, the resulting MTF exits
+            // are silently discarded and `single_step` is never cleared - trapping
+            // the vCPU in an infinite MTF loop with interrupt injection blocked.
+            vmi.switch_to_view(vmi.default_view())?;
+            vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
+
+            self.bpm.remove_by_view(vmi, self.view)?;
+            self.ptm.unmonitor_view(vmi, self.view);
+
+            vmi.destroy_view(self.view)?;
+
+            // If the bridge was not enabled, we're done.
+            if Bridge::EMPTY {
+                self.state = InjectorState::Complete(Ok(0));
+            }
+            else {
+                self.state = InjectorState::Bridge;
+                vmi.monitor_enable(EventMonitor::GuestRequest {
+                    allow_userspace: false,
+                })?;
+            }
+
+            return Ok(VmiEventResponse::toggle_singlestep());
+        }
+
+        // Get the page table modifications by processing the dirty page table
+        // entries.
+        let ptm_events = self.ptm.process_dirty_entries(vmi, vmi.event().vcpu_id())?;
+        self.bpm.handle_ptm_events(vmi, ptm_events)?;
+
+        // Disable singlestep and switch back to our view.
+        Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
+    }
+
+    #[tracing::instrument(name = "vmcall", skip_all, err)]
+    fn on_vmcall(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
+        let guest_request = vmi.event().reason().as_guest_request();
+
+        let mut registers = vmi.registers().gp_registers();
+        registers.rip += guest_request.instruction_length as u64;
+
+        tracing::trace!(
+            magic = %Hex(registers.rbp as u32),
+            request = %Hex((registers.rcx & 0xFFFF) as u16),
+            method = %Hex((registers.rcx >> 16) as u16),
+        );
+
+        if let Some(result) = self.bridge.dispatch(vmi, BridgePacket::from(vmi)) {
+            let complete = match result {
+                Ok(response) => {
+                    response.write_to(&mut registers);
+                    response.into_result().map(Ok)
+                }
+                Err(packet) => {
+                    tracing::error!(
+                        request = packet.request(),
+                        method = packet.method(),
+                        "Empty bridge response"
+                    );
+                    Some(Err(packet))
+                }
+            };
+
+            if let Some(complete) = complete {
+                self.state = InjectorState::Complete(complete);
+                vmi.monitor_disable(EventMonitor::GuestRequest {
+                    allow_userspace: false,
+                })?;
+            }
+        }
+
+        Ok(VmiEventResponse::set_registers(registers))
+    }
 }
 
 impl<Driver, T, Bridge> VmiHandler<WindowsOs<Driver>> for KernelInjectorHandler<Driver, T, Bridge>
@@ -452,6 +455,59 @@ where
                 VmiEventResponse::default()
             }
             Err(err) => panic!("Unhandled error: {err:?}"),
+        }
+    }
+
+    fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
+        // Disabled when transitioning from `Teardown` to `Bridge` or `Complete`.
+        let mut disable_interrupt = false;
+        // Disabled when transitioning from `Bridge` to `Complete`.
+        let mut disable_guest_request = false;
+
+        match self.state {
+            InjectorState::PreHijack | InjectorState::Executing | InjectorState::Teardown(_) => {
+                disable_interrupt = true;
+            }
+            InjectorState::Bridge => {
+                disable_guest_request = true;
+            }
+            _ => {}
+        }
+
+        // In `PreHijack`, `Executing`, or `Teardown` states, we are guaranteed to
+        // have enabled the breakpoint monitor, so we must disable it.
+        if disable_interrupt {
+            if let Err(err) =
+                vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))
+            {
+                tracing::error!(%err, "failed to disable breakpoint monitor");
+            }
+
+            if let Err(err) = self.bpm.remove_by_view(vmi, self.view) {
+                tracing::error!(%err, "failed to remove breakpoints");
+            }
+
+            self.ptm.unmonitor_view(vmi, self.view);
+
+            if let Err(err) = vmi.destroy_view(self.view) {
+                tracing::error!(%err, "failed to destroy view");
+            }
+        }
+
+        // In `Bridge` state, we are guaranteed to have enabled the guest request
+        // monitor, so we must disable it.
+        if disable_guest_request
+            && let Err(err) = vmi.monitor_disable(EventMonitor::GuestRequest {
+                allow_userspace: false,
+            })
+        {
+            tracing::error!(%err, "failed to disable guest request monitor");
+        }
+
+        // In all states, we are guaranteed to have enabled the singlestep
+        // monitor, so we must disable it.
+        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+            tracing::error!(%err, "failed to disable singlestep monitor");
         }
     }
 

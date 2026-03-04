@@ -1,7 +1,7 @@
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt};
 use vmi_core::{
-    Architecture as _, Hex, MemoryAccess, Pa, Registers as _, Va, View, VmiContext, VmiError,
-    VmiEventResponse, VmiHandler, VmiSession,
+    Architecture as _, Hex, MemoryAccess, Pa, Registers as _, Va, VcpuId, View, VmiContext,
+    VmiError, VmiEventResponse, VmiHandler, VmiSession,
     driver::{VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite},
     os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
 };
@@ -16,6 +16,26 @@ const INVALID_VIEW: View = View(0xffff);
 // const INVALID_TID: ThreadId = ThreadId(0xffff_ffff);
 // const INVALID_PID: ProcessId = ProcessId(0xffff_ffff);
 
+/// Lifecycle state of the user-mode injector.
+enum InjectorState {
+    /// Waiting for target process CR3 write; scanning trap frames for
+    /// a viable user-mode instruction pointer to hijack.
+    PreHijack,
+    /// Thread hijacked; executing the injection recipe.
+    Executing,
+    /// Recipe finished; singlestepping to safely tear down monitoring.
+    ///
+    /// The [`VcpuId`] identifies the vCPU that completed the recipe. Only a
+    /// singlestep event from this specific vCPU signals that it has resumed
+    /// past the memory access context, making it safe to tear down monitors
+    /// and views.
+    Teardown(VcpuId),
+    /// Monitoring torn down; waiting for bridge communication.
+    Bridge,
+    /// Injection complete; result is available.
+    Complete(Result<InjectorResultCode, BridgePacket>),
+}
+
 pub struct UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiRead<Architecture = Amd64>,
@@ -27,8 +47,8 @@ where
     /// Thread ID that was hijacked for injection.
     tid: Option<ThreadId>,
 
-    /// Whether a thread has been successfully hijacked.
-    hijacked: bool,
+    /// Memory view used for injection operations.
+    view: View,
 
     /// Virtual address of the instruction pointer in the hijacked thread.
     ip_va: Option<Va>,
@@ -39,14 +59,11 @@ where
     /// Executor for running the injection recipe.
     recipe: RecipeExecutor<WindowsOs<Driver>, T>,
 
-    /// Memory view used for injection operations.
-    view: View,
-
     /// Bridge.
     bridge: Bridge,
 
-    /// Whether the injection has completed.
-    finished: Option<Result<InjectorResultCode, BridgePacket>>,
+    /// Current lifecycle state of the injector.
+    state: InjectorState,
 }
 
 impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, UserMode, T, Bridge>
@@ -70,22 +87,15 @@ where
         vmi.monitor_enable(EventMonitor::Register(ControlRegister::Cr3))?;
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
-        if !Bridge::EMPTY {
-            vmi.monitor_enable(EventMonitor::GuestRequest {
-                allow_userspace: true,
-            })?;
-        }
-
         Ok(Self {
             pid: None,
             tid: None,
-            hijacked: false,
+            view,
             ip_va: None,
             ip_pa: None,
             recipe: RecipeExecutor::new(recipe),
-            view,
             bridge,
-            finished: None,
+            state: InjectorState::PreHijack,
         })
     }
 
@@ -124,52 +134,10 @@ where
                 let _ = self.on_write_cr(vmi);
                 Ok(VmiEventResponse::default())
             }
+            EventReason::Singlestep(_) => self.on_singlestep(vmi),
             EventReason::GuestRequest(_) => self.on_vmcall(vmi),
             _ => panic!("Unhandled event: {:?}", vmi.event().reason()),
         }
-    }
-
-    #[tracing::instrument(name = "vmcall", skip_all, err)]
-    fn on_vmcall(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        let guest_request = vmi.event().reason().as_guest_request();
-
-        let mut registers = vmi.registers().gp_registers();
-        registers.rip += guest_request.instruction_length as u64;
-
-        tracing::trace!(
-            magic = %Hex(registers.rbp as u32),
-            request = %Hex((registers.rcx & 0xFFFF) as u16),
-            method = %Hex((registers.rcx >> 16) as u16),
-        );
-
-        if let Some(result) = self.bridge.dispatch(vmi, BridgePacket::from(vmi)) {
-            let finished = match result {
-                Ok(response) => {
-                    response.write_to(&mut registers);
-                    response.into_result().map(Ok)
-                }
-                Err(packet) => {
-                    tracing::error!(
-                        request = packet.request(),
-                        method = packet.method(),
-                        "Empty bridge response"
-                    );
-                    Some(Err(packet))
-                }
-            };
-
-            if let Some(finished) = finished {
-                self.finished = Some(finished);
-                vmi.monitor_disable(EventMonitor::GuestRequest {
-                    allow_userspace: true,
-                })?;
-            }
-        }
-
-        Ok(VmiEventResponse::set_registers(registers))
     }
 
     #[tracing::instrument(name = "write_cr", skip_all, err)]
@@ -182,7 +150,7 @@ where
         // (Besides, in such case, this CR3 monitoring is being disabled anyway.)
         //
 
-        if self.hijacked {
+        if !matches!(self.state, InjectorState::PreHijack) {
             return Ok(VmiEventResponse::default());
         }
 
@@ -369,7 +337,7 @@ where
         // Hijack the thread, save the current registers, and disable CR3 monitoring.
         //
 
-        if !self.hijacked {
+        if matches!(self.state, InjectorState::PreHijack) {
             tracing::debug!(
                 session_id = current_process
                     .session()
@@ -382,8 +350,8 @@ where
                 filename = current_process.name().unwrap_or_else(|_| String::from("<unknown>")),
                 "thread hijacked"
             );
-            self.hijacked = true;
 
+            self.state = InjectorState::Executing;
             vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))?;
         }
 
@@ -400,30 +368,118 @@ where
             }
         };
 
-        if self.recipe.done() {
-            //
-            // If the recipe is finished, restore the previous memory access permissions,
-            // switch back to the default view, disable single-stepping, and restore back
-            // the original registers.
-            //
+        if !self.recipe.done() {
+            return Ok(VmiEventResponse::set_registers(
+                new_registers.gp_registers(),
+            ));
+        }
 
-            let memory_access = vmi.event().reason().as_memory_access();
-            let gfn = Driver::Architecture::gfn_from_pa(memory_access.pa);
-            vmi.set_memory_access(gfn, self.view, MemoryAccess::RWX)?;
-            vmi.monitor_disable(EventMonitor::Singlestep)?;
+        //
+        // Terminal path: request exactly one singlestep in the default view
+        // with restored registers.
+        //
+        // Cleanup is intentionally deferred to `on_singlestep`. If the tool
+        // exits immediately after this event, monitor teardown may call
+        // `xc_monitor_disable` before Xen's vCPU resume path (`hvm_do_resume`)
+        // applies staged register changes. The follow-up singlestep event is
+        // our rendezvous that the vCPU resumed once past this memory access
+        // context, reducing that teardown-ordering race.
+        //
 
-            vmi.switch_to_view(vmi.default_view())?;
-            vmi.destroy_view(self.view)?;
+        let memory_access = vmi.event().reason().as_memory_access();
+        let gfn = Driver::Architecture::gfn_from_pa(memory_access.pa);
 
-            // If the bridge was not enabled, we're done.
-            if Bridge::EMPTY {
-                self.finished = Some(Ok(0));
+        // The GFN of the accessed page should match the GFN of the page we
+        // set permissions for in `on_write_cr`.
+        debug_assert_eq!(Some(gfn), self.ip_pa.map(Driver::Architecture::gfn_from_pa));
+
+        self.state = InjectorState::Teardown(vmi.event().vcpu_id());
+        vmi.set_memory_access(gfn, self.view, MemoryAccess::RWX)?;
+
+        Ok(
+            VmiEventResponse::set_registers(new_registers.gp_registers())
+                .and_toggle_singlestep()
+                .and_set_view(vmi.default_view()),
+        )
+    }
+
+    #[tracing::instrument(name = "singlestep", skip_all, err)]
+    fn on_singlestep(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
+        // We do not expect any singlestep events until the recipe is done.
+        debug_assert!(
+            matches!(self.state, InjectorState::Teardown(vcpu) if vcpu == vmi.event().vcpu_id())
+        );
+        debug_assert_eq!(vmi.event().view(), Some(vmi.default_view()));
+
+        // Singlestep monitoring is NOT disabled here - `cleanup` handles it.
+        //
+        // On Xen, `monitor_disable(Singlestep)` calls `debug_control(OFF)`
+        // on every vCPU, clearing per-vCPU `single_step` state. The response's
+        // `toggle_singlestep` then flips it back to true on this vCPU, but
+        // with global singlestep delivery already off, the resulting MTF exits
+        // are silently discarded and `single_step` is never cleared - trapping
+        // the vCPU in an infinite MTF loop with interrupt injection blocked.
+        vmi.switch_to_view(vmi.default_view())?;
+        vmi.destroy_view(self.view)?;
+
+        // If the bridge was not enabled, we're done.
+        if Bridge::EMPTY {
+            self.state = InjectorState::Complete(Ok(0));
+        }
+        else {
+            self.state = InjectorState::Bridge;
+            vmi.monitor_enable(EventMonitor::GuestRequest {
+                allow_userspace: true,
+            })?;
+        }
+
+        Ok(VmiEventResponse::toggle_singlestep())
+    }
+
+    #[tracing::instrument(name = "vmcall", skip_all, err)]
+    fn on_vmcall(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
+        let guest_request = vmi.event().reason().as_guest_request();
+
+        let mut registers = vmi.registers().gp_registers();
+        registers.rip += guest_request.instruction_length as u64;
+
+        tracing::trace!(
+            magic = %Hex(registers.rbp as u32),
+            request = %Hex((registers.rcx & 0xFFFF) as u16),
+            method = %Hex((registers.rcx >> 16) as u16),
+        );
+
+        if let Some(result) = self.bridge.dispatch(vmi, BridgePacket::from(vmi)) {
+            let complete = match result {
+                Ok(response) => {
+                    response.write_to(&mut registers);
+                    response.into_result().map(Ok)
+                }
+                Err(packet) => {
+                    tracing::error!(
+                        request = packet.request(),
+                        method = packet.method(),
+                        "Empty bridge response"
+                    );
+                    Some(Err(packet))
+                }
+            };
+
+            if let Some(complete) = complete {
+                self.state = InjectorState::Complete(complete);
+                vmi.monitor_disable(EventMonitor::GuestRequest {
+                    allow_userspace: true,
+                })?;
             }
         }
 
-        Ok(VmiEventResponse::set_registers(
-            new_registers.gp_registers(),
-        ))
+        Ok(VmiEventResponse::set_registers(registers))
     }
 }
 
@@ -456,7 +512,69 @@ where
         }
     }
 
+    fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
+        // Restored when transitioning from `Executing` to `Teardown`.
+        let mut restore_memory_access = false;
+        // Destroyed when transitioning from `Teardown` to `Bridge` or `Complete`.
+        let mut destroy_view = false;
+        // Disabled when transitioning from `PreHijack` to `Executing`.
+        let mut disable_write_cr = false;
+        // Disabled when transitioning from `Bridge` to `Complete`.
+        let mut disable_guest_request = false;
+
+        match self.state {
+            InjectorState::PreHijack => {
+                restore_memory_access = true;
+                destroy_view = true;
+                disable_write_cr = true;
+            }
+            InjectorState::Executing => {
+                restore_memory_access = true;
+                destroy_view = true;
+            }
+            InjectorState::Teardown(_) => {
+                destroy_view = true;
+            }
+            InjectorState::Bridge => {
+                disable_guest_request = true;
+            }
+            _ => {}
+        }
+
+        if restore_memory_access && let Some(ip_pa) = self.ip_pa {
+            let ip_gfn = Driver::Architecture::gfn_from_pa(ip_pa);
+            if let Err(err) = vmi.set_memory_access(ip_gfn, self.view, MemoryAccess::RWX) {
+                tracing::error!(%err, "failed to restore memory access");
+            }
+        }
+
+        if destroy_view && let Err(err) = vmi.destroy_view(self.view) {
+            tracing::error!(%err, "failed to destroy view");
+        }
+
+        if disable_write_cr
+            && let Err(err) = vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))
+        {
+            tracing::error!(%err, "failed to disable CR3 monitor");
+        }
+
+        if disable_guest_request
+            && let Err(err) = vmi.monitor_disable(EventMonitor::GuestRequest {
+                allow_userspace: true,
+            })
+        {
+            tracing::error!(%err, "failed to disable guest request monitor");
+        }
+
+        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+            tracing::error!(%err, "failed to disable singlestep monitor");
+        }
+    }
+
     fn check_completion(&self) -> Option<Self::Output> {
-        self.finished
+        match self.state {
+            InjectorState::Complete(result) => Some(result),
+            _ => None,
+        }
     }
 }
