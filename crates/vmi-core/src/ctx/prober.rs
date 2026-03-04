@@ -148,15 +148,20 @@ impl VmiProber {
     }
     */
 
+    /// Returns the set of page faults that have occurred that are not in the
+    /// restricted set.
+    pub fn page_faults(&self) -> IndexSet<AddressContext> {
+        &*self.page_faults.borrow() - &self.restricted
+    }
+
     /// Checks for any unexpected page faults that have occurred and returns
     /// an error if any are present.
     #[tracing::instrument(skip_all, err)]
     pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
-        let pfs = self.page_faults.borrow();
-        let new_pfs = &*pfs - &self.restricted;
-        if !new_pfs.is_empty() {
-            tracing::trace!(?new_pfs);
-            return Err(VmiError::page_faults(new_pfs));
+        let pfs = self.page_faults();
+        if !pfs.is_empty() {
+            tracing::trace!(?pfs);
+            return Err(VmiError::page_faults(pfs));
         }
 
         Ok(())
