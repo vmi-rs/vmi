@@ -13,13 +13,21 @@ where
     /// The output type of the handler.
     type Output;
 
-    /// Handles a VMI event.
+    /// Called for each VMI event.
+    ///
+    /// The returned [`VmiEventResponse`] tells the hypervisor how to resume
+    /// the vCPU that triggered the event.
     fn handle_event(&mut self, event: VmiContext<Os>) -> VmiEventResponse<Os::Architecture>;
 
-    /// Handles a timeout event.
+    /// Called when the event loop times out waiting for the next event.
+    ///
+    /// This is useful for periodic housekeeping while the guest is idle.
     fn handle_timeout(&mut self, _session: &VmiSession<Os>) {}
 
-    /// Handles an interrupted event.
+    /// Called when the event loop is interrupted by a signal.
+    ///
+    /// Typically used to initiate a graceful shutdown, by setting a flag
+    /// that causes [`poll`](Self::poll) to return `Some` on the next call.
     fn handle_interrupted(&mut self, _session: &VmiSession<Os>) {}
 
     /// Called once before the session tears down monitoring.
