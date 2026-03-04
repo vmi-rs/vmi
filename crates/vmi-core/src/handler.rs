@@ -22,6 +22,15 @@ where
     /// Handles an interrupted event.
     fn handle_interrupted(&mut self, _session: &VmiSession<Os>) {}
 
+    /// Called once before the session tears down monitoring.
+    ///
+    /// This gives the handler an opportunity to release resources that
+    /// depend on the session (views, memory access permissions, event
+    /// monitors) before the session calls [`reset_state`].
+    ///
+    /// [`reset_state`]: crate::VmiCore::reset_state
+    fn cleanup(&mut self, _session: &VmiSession<Os>) {}
+
     /// Checks if the handler has completed.
     ///
     /// This method is called after each event is handled. If the handler

@@ -163,6 +163,7 @@ where
         }
 
         tracing::trace!("disabling monitor");
+        handler.cleanup(self);
         self.core.reset_state()?;
         tracing::trace!(pending_events = self.events_pending());
 
