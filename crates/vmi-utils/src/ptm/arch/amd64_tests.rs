@@ -294,7 +294,7 @@ fn monitor_remonitor_same_va() -> Result<(), VmiError> {
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 1);
 
-    // Monitor the same VA again — should update in-place without doubling.
+    // Monitor the same VA again - should update in-place without doubling.
     ptm.monitor(&vmi, test_ctx(), VIEW, "test2")?;
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -702,7 +702,7 @@ fn page_out_at_pd_level() -> Result<(), VmiError> {
     assert_eq!(ptm.paged_in_entries(), 1);
     assert_eq!(ptm.monitored_tables(), 4);
 
-    // Zero the PD entry — the entire PT subtree becomes unreachable.
+    // Zero the PD entry - the entire PT subtree becomes unreachable.
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
 
@@ -809,7 +809,7 @@ fn page_out_at_shared_level_affects_all_vas() -> Result<(), VmiError> {
     ptm.monitor(&vmi, ctx2, VIEW, "test2")?;
     assert_eq!(ptm.paged_in_entries(), 2);
 
-    // Zero the PD entry — both VAs lose their mapping.
+    // Zero the PD entry - both VAs lose their mapping.
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
 
@@ -1814,7 +1814,7 @@ const VCPU_1: VcpuId = VcpuId(1);
 
 #[test]
 fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
-    // Mark dirty on vCPU 0, then process on vCPU 1 — vCPU 1 should see
+    // Mark dirty on vCPU 0, then process on vCPU 1 - vCPU 1 should see
     // no dirty entries. Only vCPU 0's processing should produce events.
     let driver = MockPtmDriver::new();
     build_full_hierarchy(&driver);
@@ -1834,7 +1834,7 @@ fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
     let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU_0);
     assert!(marked);
 
-    // Process on vcpu 1 — should see nothing.
+    // Process on vcpu 1 - should see nothing.
     let events = ptm.process_dirty_entries(&vmi, VCPU_1)?;
     assert!(
         events.is_empty(),
@@ -1844,7 +1844,7 @@ fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
     // vcpu 0's dirty entry hasn't been processed yet.
     assert_eq!(ptm.paged_in_entries(), 1);
 
-    // Process on vcpu 0 — should see the change.
+    // Process on vcpu 0 - should see the change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_0)?;
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
@@ -1891,14 +1891,14 @@ fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
     vmi.driver().write_pte(pt_entry_pa2, make_pte(new_data2));
     ptm.mark_dirty_entry(pt_entry_pa2, VIEW, VCPU_1);
 
-    // Process vcpu 1 first — should only see VA2's change.
+    // Process vcpu 1 first - should only see VA2's change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_1)?;
     assert_eq!(events.len(), 2, "vcpu 1 should see VA2 page-out + page-in");
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(ref u) if u.ctx == ctx2));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
         if u.pa == Amd64::pa_from_gfn(new_data2) + Amd64::va_offset(va2)));
 
-    // Process vcpu 0 — should only see VA1's change.
+    // Process vcpu 0 - should only see VA1's change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_0)?;
     assert_eq!(events.len(), 2, "vcpu 0 should see VA1 page-out + page-in");
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(ref u) if u.ctx == test_ctx()));
@@ -1952,13 +1952,13 @@ fn same_entry_marked_dirty_by_multiple_vcpus() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pt_entry_pa(), make_pte(new_data_gfn));
 
-    // vcpu 0 processes — sees the change.
+    // vcpu 0 processes - sees the change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_0)?;
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(..)));
 
-    // vcpu 1 processes — entry already updated by vcpu 0's processing,
+    // vcpu 1 processes - entry already updated by vcpu 0's processing,
     // so cached_pte matches current PTE: no events.
     let events = ptm.process_dirty_entries(&vmi, VCPU_1)?;
     assert!(

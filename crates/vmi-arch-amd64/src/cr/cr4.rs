@@ -121,7 +121,7 @@ impl Cr4 {
 
     /// Checks if the CR4.OSXMMEXCPT flag is set.
     ///
-    /// Operating System Support for Unmasked SIMD Floating-Point Exceptions —
+    /// Operating System Support for Unmasked SIMD Floating-Point Exceptions -
     /// When set, indicates that the operating system supports the handling of
     /// unmasked SIMD floating-point exceptions through an exception handler
     /// that is invoked when a SIMD floating-point exception (#XM) is

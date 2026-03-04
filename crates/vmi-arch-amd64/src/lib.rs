@@ -496,13 +496,13 @@ impl vmi_core::arch::Registers for Registers {
         // between 64-bit mode and compatibility mode when IA-32e mode is
         // active (IA32_EFER.LMA = 1).
         //
-        // — If CS.L = 0 and IA-32e mode is active, the processor is running
+        // - If CS.L = 0 and IA-32e mode is active, the processor is running
         //   in compatibility mode. In this case, CS.D selects the default
         //   size for data and addresses. If CS.D = 0, the default data and
         //   address size is 16 bits. If CS.D = 1, the default data and address
         //   size is 32 bits.
         //
-        // — If CS.L = 1 and IA-32e mode is active, the only valid setting
+        // - If CS.L = 1 and IA-32e mode is active, the only valid setting
         //   is CS.D = 0. This setting indicates a default operand size of
         //   32 bits and a default address size of 64 bits. The CS.L = 1 and
         //   CS.D = 1 bit combination is reserved for future use and a #GP
