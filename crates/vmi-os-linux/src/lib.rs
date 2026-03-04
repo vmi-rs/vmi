@@ -42,7 +42,7 @@ macro_rules! symbol {
 fn __self<'a, Driver>(vmi: &VmiState<'a, LinuxOs<Driver>>) -> &'a LinuxOs<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     vmi.underlying_os()
 }
@@ -68,7 +68,7 @@ where
 impl<Driver> LinuxOs<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new `LinuxOs` instance.
     pub fn new(profile: &Profile) -> Result<Self, VmiError> {
@@ -164,7 +164,7 @@ where
 impl<Driver> VmiOs for LinuxOs<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Architecture = Driver::Architecture;
     type Driver = Driver;

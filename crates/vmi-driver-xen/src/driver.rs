@@ -6,8 +6,8 @@ use std::{
 };
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiEvent, VmiEventResponse,
-    VmiInfo, VmiMappedPage,
+    Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiEvent, VmiEventResponse, VmiInfo,
+    VmiMappedPage,
 };
 use xen::{
     XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain, XenDomainId, XenDomainInfo,
@@ -20,7 +20,7 @@ use crate::{ArchAdapter, Error, IntoExt as _};
 /// VMI driver for Xen hypervisor.
 pub struct XenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub(crate) domain: XenDomain<Arch::XenArch>,
     pub(crate) devicemodel: XenDeviceModel,
@@ -37,7 +37,7 @@ where
 
 impl<Arch> Drop for XenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn drop(&mut self) {
         let max_memkb = self.info.max_pages * Arch::PAGE_SIZE / 1024;
@@ -50,7 +50,7 @@ where
 
 impl<Arch> XenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub fn new(domain_id: XenDomainId) -> Result<Self, Error> {
         let xc = XenControl::new()?;
@@ -319,7 +319,7 @@ where
 
         struct OverheadGuard<'a, Arch>
         where
-            Arch: Architecture + ArchAdapter,
+            Arch: ArchAdapter,
         {
             driver: &'a XenDriver<Arch>,
             start: Instant,
@@ -327,7 +327,7 @@ where
 
         impl<'a, Arch> OverheadGuard<'a, Arch>
         where
-            Arch: Architecture + ArchAdapter,
+            Arch: ArchAdapter,
         {
             fn new(driver: &'a XenDriver<Arch>) -> Self {
                 Self {
@@ -339,7 +339,7 @@ where
 
         impl<Arch> Drop for OverheadGuard<'_, Arch>
         where
-            Arch: Architecture + ArchAdapter,
+            Arch: ArchAdapter,
         {
             fn drop(&mut self) {
                 let elapsed = Instant::now().duration_since(self.start);

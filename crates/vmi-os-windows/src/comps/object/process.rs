@@ -29,7 +29,7 @@ use crate::{
 pub struct WindowsProcess<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -41,7 +41,7 @@ where
 impl<'a, Driver> From<WindowsProcess<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from(value: WindowsProcess<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
@@ -51,7 +51,7 @@ where
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsProcess<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
         match object.type_kind()? {
@@ -66,7 +66,7 @@ where
 impl<Driver> VmiVa for WindowsProcess<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -76,7 +76,7 @@ where
 impl<'a, Driver> WindowsProcess<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
@@ -352,7 +352,7 @@ where
 impl<'a, Driver> VmiOsProcess<'a, Driver> for WindowsProcess<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;
 

@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Va, VmiError, VmiState, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 
 use crate::{ArchAdapter, WindowsOs, offsets::OffsetsExt};
 
@@ -11,7 +11,7 @@ use crate::{ArchAdapter, WindowsOs, offsets::OffsetsExt};
 pub struct TreeNodeIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -44,7 +44,7 @@ where
 impl<'a, Driver> TreeNodeIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new tree node iterator.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, root: Va) -> Self {
@@ -232,7 +232,7 @@ where
 impl<Driver> Iterator for TreeNodeIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;
 
@@ -244,6 +244,6 @@ where
 impl<Driver> FusedIterator for TreeNodeIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
 }

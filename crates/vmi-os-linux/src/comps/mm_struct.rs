@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{LinuxFile, macros::impl_offsets};
 use crate::{ArchAdapter, LinuxOs, MapleTree};
@@ -15,7 +15,7 @@ use crate::{ArchAdapter, LinuxOs, MapleTree};
 pub struct LinuxMmStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
@@ -27,7 +27,7 @@ where
 impl<Driver> VmiVa for LinuxMmStruct<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -37,7 +37,7 @@ where
 impl<'a, Driver> LinuxMmStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 

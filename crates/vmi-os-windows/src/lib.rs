@@ -312,7 +312,7 @@ macro_rules! this {
 impl<Driver> WindowsOs<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// 32-bit current process pseudo-handle (-1).
     pub const NtCurrentProcess32: u64 = 0xffff_ffff;
@@ -1211,7 +1211,7 @@ where
 impl<Driver> VmiOs for WindowsOs<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Architecture = Driver::Architecture;
     type Driver = Driver;

@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, Va, VmiError, VmiState, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 
 use crate::{ArchAdapter, WindowsOs};
 
@@ -10,7 +10,7 @@ use crate::{ArchAdapter, WindowsOs};
 pub struct ListEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -41,7 +41,7 @@ where
 impl<'a, Driver> ListEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new list entry iterator.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, list_head: Va, offset: u64) -> Self {
@@ -179,7 +179,7 @@ where
 impl<Driver> Iterator for ListEntryIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;
 
@@ -191,7 +191,7 @@ where
 impl<Driver> DoubleEndedIterator for ListEntryIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.walk_next_back().transpose()
@@ -201,6 +201,6 @@ where
 impl<Driver> FusedIterator for ListEntryIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
 }

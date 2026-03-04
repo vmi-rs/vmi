@@ -7,7 +7,7 @@ mod section;
 mod thread;
 
 use vmi_core::{
-    Architecture, Va, VmiError, VmiState, VmiVa,
+    Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
     os::{ProcessObject, ThreadObject},
 };
@@ -31,7 +31,7 @@ use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter};
 pub trait FromWindowsObject<'a, Driver>: Sized
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Attempts to convert a [`WindowsObject`] into a specific object type.
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError>;
@@ -49,7 +49,7 @@ where
 pub struct WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -61,7 +61,7 @@ where
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
         // Any object can be converted to itself.
@@ -72,7 +72,7 @@ where
 impl<Driver> VmiVa for WindowsObject<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -82,7 +82,7 @@ where
 impl<Driver> std::fmt::Debug for WindowsObject<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let name_info = self.name_info();
@@ -98,7 +98,7 @@ where
 impl<'a, Driver> WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_symbols!();
     impl_offsets!();
@@ -827,7 +827,7 @@ impl std::str::FromStr for WindowsObjectTypeKind {
 pub enum WindowsObjectKind<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// A directory object (`_OBJECT_DIRECTORY`).
     Directory(WindowsDirectoryObject<'a, Driver>),

@@ -1,6 +1,6 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    Architecture, Pa, Va, VmiError, VmiOs, VmiState, VmiVa,
+    Pa, Va, VmiError, VmiOs, VmiState, VmiVa,
     driver::VmiRead,
     os::{ProcessId, ProcessObject, VmiOsImageArchitecture, VmiOsProcess},
 };
@@ -19,7 +19,7 @@ use crate::{ArchAdapter, LinuxError, LinuxOs};
 pub struct LinuxTaskStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
@@ -34,7 +34,7 @@ where
 impl<Driver> VmiVa for LinuxTaskStruct<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -44,7 +44,7 @@ where
 impl<'a, Driver> LinuxTaskStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
@@ -225,7 +225,7 @@ where
 impl<'a, Driver> VmiOsProcess<'a, Driver> for LinuxTaskStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 

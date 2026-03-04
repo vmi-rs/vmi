@@ -13,7 +13,7 @@
 //! - [Kernel Documentation - Maple Tree](https://docs.kernel.org/core-api/maple_tree.html)
 
 #![allow(dead_code)]
-use vmi_core::{Architecture, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use crate::{LinuxOs, Offsets, arch::ArchAdapter};
 
@@ -159,7 +159,7 @@ const fn mte_is_leaf(entry: Va /* maple_enode */) -> bool {
 pub struct MapleTree<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
@@ -171,7 +171,7 @@ where
 impl<Driver> VmiVa for MapleTree<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.root
@@ -181,7 +181,7 @@ where
 impl<'a, Driver> MapleTree<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new MapleTree instance.
     pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, root: Va) -> Self {

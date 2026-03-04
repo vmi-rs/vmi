@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -11,7 +11,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 pub struct WindowsProcessParameters<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
 }
@@ -19,7 +19,7 @@ where
 impl<Driver> VmiVa for WindowsProcessParameters<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         match &self.inner {
@@ -32,7 +32,7 @@ where
 impl<Driver> std::fmt::Debug for WindowsProcessParameters<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let current_directory = self.current_directory();
@@ -52,7 +52,7 @@ where
 impl<'a, Driver> WindowsProcessParameters<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new Windows process parameters structure.
     pub(crate) fn new(
@@ -136,7 +136,7 @@ where
 enum Inner<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// A native (non-WoW64) process.
     Native(WindowsProcessParametersNative<'a, Driver>),
@@ -148,7 +148,7 @@ where
 struct WindowsProcessParametersNative<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -163,7 +163,7 @@ where
 impl<'a, Driver> WindowsProcessParametersNative<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
@@ -218,7 +218,7 @@ where
 struct WindowsProcessParameters32<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -233,7 +233,7 @@ where
 impl<'a, Driver> WindowsProcessParameters32<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }

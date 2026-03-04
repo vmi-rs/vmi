@@ -1,5 +1,5 @@
 use vmi_core::{
-    Architecture, Va, VmiError, VmiVa,
+    Va, VmiError, VmiVa,
     driver::VmiRead,
     os::{
         ThreadId, ThreadObject, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsMapped,
@@ -21,7 +21,7 @@ impl VmiVa for LinuxImage {
 impl<'a, Driver> VmiOsImage<'a, Driver> for LinuxImage
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 
@@ -50,7 +50,7 @@ impl VmiVa for LinuxMapped {
 impl<Driver> VmiOsMapped<'_, Driver> for LinuxMapped
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 
@@ -71,7 +71,7 @@ impl VmiVa for LinuxModule {
 impl<Driver> VmiOsModule<'_, Driver> for LinuxModule
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 
@@ -100,7 +100,7 @@ impl VmiVa for LinuxThread {
 impl<'a, Driver> VmiOsThread<'a, Driver> for LinuxThread
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 

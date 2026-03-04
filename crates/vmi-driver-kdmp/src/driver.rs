@@ -1,14 +1,14 @@
 use std::path::Path;
 
 use kdmp_parser::{gxa::Gpa, map::MappedFileReader, parse::KernelDumpParser, phys::Reader};
-use vmi_core::{Architecture, Gfn, VcpuId, VmiInfo, VmiMappedPage};
+use vmi_core::{Gfn, VcpuId, VmiInfo, VmiMappedPage};
 
 use crate::{ArchAdapter, Error};
 
 /// VMI driver for Xen core dump.
 pub struct KdmpDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub(crate) dump: KernelDumpParser,
     _marker: std::marker::PhantomData<Arch>,
@@ -16,7 +16,7 @@ where
 
 impl<Arch> KdmpDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
         let dump = KernelDumpParser::with_reader(MappedFileReader::new(path)?)?;

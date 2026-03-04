@@ -1,6 +1,6 @@
 use std::iter::FusedIterator;
 
-use vmi_core::{Architecture, VmiError, driver::VmiRead};
+use vmi_core::{VmiError, driver::VmiRead};
 
 use crate::{ArchAdapter, WindowsHandleTable, WindowsHandleTableEntry};
 
@@ -11,7 +11,7 @@ use crate::{ArchAdapter, WindowsHandleTable, WindowsHandleTableEntry};
 pub struct HandleTableEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// VMI state.
     handle_table: &'a WindowsHandleTable<'a, Driver>,
@@ -23,7 +23,7 @@ where
 impl<'a, Driver> HandleTableEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new handle table entry iterator.
     pub fn new(handle_table: &'a WindowsHandleTable<'a, Driver>) -> Self {
@@ -55,7 +55,7 @@ where
 impl<'a, Driver> Iterator for HandleTableEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Item = Result<(u64, WindowsHandleTableEntry<'a, Driver>), VmiError>;
 
@@ -67,6 +67,6 @@ where
 impl<Driver> FusedIterator for HandleTableEntryIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
 }

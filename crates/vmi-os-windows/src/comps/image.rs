@@ -24,7 +24,7 @@ use crate::{
 pub struct WindowsImage<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state (without the OS context).
     ///
@@ -43,7 +43,7 @@ where
 impl<Driver> VmiVa for WindowsImage<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -53,7 +53,7 @@ where
 impl<'a, Driver> WindowsImage<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     const MAX_DATA_DIRECTORY_SIZE: u32 = 1024 * 1024; // 1MB
 
@@ -152,7 +152,7 @@ where
 impl<'a, Driver> VmiOsImage<'a, Driver> for WindowsImage<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;
 

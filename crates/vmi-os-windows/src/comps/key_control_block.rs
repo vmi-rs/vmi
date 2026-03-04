@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::macros::impl_offsets;
 use crate::{ArchAdapter, WindowsError, WindowsOs};
@@ -16,7 +16,7 @@ use crate::{ArchAdapter, WindowsError, WindowsOs};
 pub struct WindowsKeyControlBlock<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -31,7 +31,7 @@ where
 impl<Driver> VmiVa for WindowsKeyControlBlock<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -41,7 +41,7 @@ where
 impl<'a, Driver> WindowsKeyControlBlock<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 

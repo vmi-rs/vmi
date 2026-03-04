@@ -1,6 +1,6 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    Architecture, MemoryAccess, Va, VmiError, VmiState, VmiVa,
+    MemoryAccess, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
     os::{VmiOsRegion, VmiOsRegionKind},
 };
@@ -20,7 +20,7 @@ use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 pub struct WindowsRegion<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -35,7 +35,7 @@ where
 impl<Driver> VmiVa for WindowsRegion<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -45,7 +45,7 @@ where
 impl<Driver> std::fmt::Debug for WindowsRegion<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let start = self.start();
@@ -65,7 +65,7 @@ where
 impl<'a, Driver> WindowsRegion<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
@@ -252,7 +252,7 @@ where
 impl<'a, Driver> VmiOsRegion<'a, Driver> for WindowsRegion<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = WindowsOs<Driver>;
 

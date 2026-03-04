@@ -1,13 +1,13 @@
 use std::{collections::HashMap, path::Path};
 
-use vmi_core::{Architecture, Gfn, VcpuId, VmiInfo, VmiMappedPage};
+use vmi_core::{Gfn, VcpuId, VmiInfo, VmiMappedPage};
 
 use crate::{ArchAdapter, Error, dump::Dump};
 
 /// VMI driver for Xen core dump.
 pub struct XenCoreDumpDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub(crate) dump: Dump,
     pfn_cache: HashMap<Gfn, usize>,
@@ -17,7 +17,7 @@ where
 
 impl<Arch> XenCoreDumpDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
         let dump = Dump::new(path)?;

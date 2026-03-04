@@ -11,7 +11,7 @@ use crate::{arch::ArchAdapter, offsets::OffsetsExt, WindowsOs};
 pub struct TreeNodeIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// VMI state.
     vmi: VmiState<'a, Driver, WindowsOs<Driver>>,
@@ -38,7 +38,7 @@ where
 impl<'a, Driver> TreeNodeIterator<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new tree node iterator.
     pub fn new(vmi: VmiState<'a, Driver, WindowsOs<Driver>>, root: Va) -> Result<Self, VmiError> {
@@ -169,7 +169,7 @@ where
 impl<Driver> Iterator for TreeNodeIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Item = Result<Va, VmiError>;
 
@@ -181,6 +181,6 @@ where
 impl<Driver> FusedIterator for TreeNodeIterator<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
 }

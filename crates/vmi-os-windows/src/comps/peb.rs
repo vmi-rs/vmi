@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsProcessParameters, WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs};
@@ -15,7 +15,7 @@ use crate::{ArchAdapter, WindowsOs};
 pub struct WindowsPeb<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -33,7 +33,7 @@ where
 impl<Driver> VmiVa for WindowsPeb<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -43,7 +43,7 @@ where
 impl<Driver> std::fmt::Debug for WindowsPeb<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let process_parameters = self.process_parameters();
@@ -57,7 +57,7 @@ where
 impl<'a, Driver> WindowsPeb<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 

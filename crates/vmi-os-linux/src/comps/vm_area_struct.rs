@@ -1,6 +1,6 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    Architecture, MemoryAccess, Va, VmiError, VmiState, VmiVa,
+    MemoryAccess, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
     os::{VmiOsRegion, VmiOsRegionKind},
 };
@@ -19,7 +19,7 @@ use crate::{ArchAdapter, LinuxOs};
 pub struct LinuxVmAreaStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
@@ -34,7 +34,7 @@ where
 impl<Driver> VmiVa for LinuxVmAreaStruct<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -44,7 +44,7 @@ where
 impl<Driver> std::fmt::Debug for LinuxVmAreaStruct<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let start = self.start();
@@ -64,7 +64,7 @@ where
 impl<'a, Driver> LinuxVmAreaStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
@@ -104,7 +104,7 @@ where
 impl<'a, Driver> VmiOsRegion<'a, Driver> for LinuxVmAreaStruct<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     type Os = LinuxOs<Driver>;
 

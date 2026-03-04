@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{WindowsObject, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -14,7 +14,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 pub struct WindowsObjectHeaderNameInfo<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -26,7 +26,7 @@ where
 impl<Driver> VmiVa for WindowsObjectHeaderNameInfo<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -36,7 +36,7 @@ where
 impl<Driver> std::fmt::Debug for WindowsObjectHeaderNameInfo<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let directory = self.directory();
@@ -52,7 +52,7 @@ where
 impl<'a, Driver> WindowsObjectHeaderNameInfo<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 

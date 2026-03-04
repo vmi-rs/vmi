@@ -28,14 +28,14 @@ use self::{
 /// VMI driver for Xen hypervisor.
 pub struct VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     inner: XenDriver<Arch>,
 }
 
 impl<Arch> VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     /// Creates a new VMI driver for Xen hypervisor.
     pub fn new(domain_id: XenDomainId) -> Result<Self, VmiError> {
@@ -47,7 +47,7 @@ where
 
 impl<Arch> VmiDriver for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     type Architecture = Arch;
 
@@ -58,7 +58,7 @@ where
 
 impl<Arch> VmiRead for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
         Ok(self.inner.read_page(gfn)?)
@@ -67,7 +67,7 @@ where
 
 impl<Arch> VmiWrite for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
         Ok(self.inner.write_page(gfn, offset, content)?)
@@ -76,7 +76,7 @@ where
 
 impl<Arch> VmiQueryProtection for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
         Ok(self.inner.memory_access(gfn, view)?)
@@ -85,7 +85,7 @@ where
 
 impl<Arch> VmiSetProtection for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn set_memory_access(
         &self,
@@ -111,7 +111,7 @@ where
 
 impl<Arch> VmiQueryRegisters for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, VmiError> {
         Ok(self.inner.registers(vcpu)?)
@@ -120,7 +120,7 @@ where
 
 impl<Arch> VmiSetRegisters for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn set_registers(&self, vcpu: VcpuId, registers: Arch::Registers) -> Result<(), VmiError> {
         Ok(self.inner.set_registers(vcpu, registers)?)
@@ -129,7 +129,7 @@ where
 
 impl<Arch> VmiViewControl for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn default_view(&self) -> View {
         self.inner.default_view()
@@ -158,7 +158,7 @@ where
 
 impl<Arch> VmiEventControl for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn monitor_enable(&self, option: Arch::EventMonitor) -> Result<(), VmiError> {
         Ok(self.inner.monitor_enable(option)?)
@@ -187,7 +187,7 @@ where
 
 impl<Arch> VmiVmControl for VmiXenDriver<Arch>
 where
-    Arch: Architecture + ArchAdapter,
+    Arch: ArchAdapter,
 {
     fn pause(&self) -> Result<(), VmiError> {
         Ok(self.inner.pause()?)

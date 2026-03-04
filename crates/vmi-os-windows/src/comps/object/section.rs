@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
     super::{
@@ -22,7 +22,7 @@ use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 pub struct WindowsSectionObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
 }
@@ -30,7 +30,7 @@ where
 impl<'a, Driver> From<WindowsSectionObject<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from(value: WindowsSectionObject<'a, Driver>) -> Self {
         let (vmi, va) = match value.inner {
@@ -45,7 +45,7 @@ where
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsSectionObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
         match object.type_kind()? {
@@ -58,7 +58,7 @@ where
 impl<Driver> VmiVa for WindowsSectionObject<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         match &self.inner {
@@ -71,7 +71,7 @@ where
 impl<'a, Driver> WindowsSectionObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new Windows section object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
@@ -164,7 +164,7 @@ where
 enum Inner<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     V1(WindowsSectionObjectV1<'a, Driver>),
     V2(WindowsSectionObjectV2<'a, Driver>),
@@ -174,7 +174,7 @@ where
 struct WindowsSectionObjectV1<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -189,7 +189,7 @@ where
 impl<'a, Driver> WindowsSectionObjectV1<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
     impl_offsets_ext_v1!();
@@ -279,7 +279,7 @@ where
 struct WindowsSectionObjectV2<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -291,7 +291,7 @@ where
 impl<'a, Driver> WindowsSectionObjectV2<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
     impl_offsets_ext_v2!();

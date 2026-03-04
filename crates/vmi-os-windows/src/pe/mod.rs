@@ -26,7 +26,7 @@ use object::{
     },
     slice_from_all_bytes,
 };
-use vmi_core::{Architecture, VmiError, driver::VmiRead, os::VmiOsImage};
+use vmi_core::{VmiError, driver::VmiRead, os::VmiOsImage};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 pub use self::error::PeError;
@@ -231,7 +231,7 @@ impl ImageOptionalHeader {
 pub struct PeExportDirectory<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     _marker: std::marker::PhantomData<Driver>,
 
@@ -245,7 +245,7 @@ where
 impl<Driver> PeExportDirectory<Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new PE export directory parser.
     pub(crate) fn new(
@@ -278,7 +278,7 @@ where
 pub struct PeDebugDirectory<'pe, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     image: &'pe WindowsImage<'pe, Driver>,
     data: Vec<u8>,
@@ -287,7 +287,7 @@ where
 impl<'pe, Driver> PeDebugDirectory<'pe, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new PE debug directory parser.
     pub(crate) fn new(

@@ -1,4 +1,4 @@
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
     WindowsObject,
@@ -17,7 +17,7 @@ use crate::{ArchAdapter, OffsetsExt, WindowsOs};
 pub struct WindowsHandleTableEntry<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     inner: Inner<'a, Driver>,
 }
@@ -25,7 +25,7 @@ where
 impl<Driver> VmiVa for WindowsHandleTableEntry<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         match &self.inner {
@@ -38,7 +38,7 @@ where
 impl<'a, Driver> WindowsHandleTableEntry<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// Creates a new Windows handle table entry.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
@@ -91,7 +91,7 @@ where
 enum Inner<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     V1(WindowsHandleTableEntryV1<'a, Driver>),
     V2(WindowsHandleTableEntryV2<'a, Driver>),
@@ -105,7 +105,7 @@ const OBJ_HANDLE_ATTRIBUTES: u64 = OBJ_PROTECT_CLOSE | OBJ_INHERIT | OBJ_AUDIT_O
 struct WindowsHandleTableEntryV1<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -117,7 +117,7 @@ where
 impl<'a, Driver> WindowsHandleTableEntryV1<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
     impl_offsets_ext_v1!();
@@ -170,7 +170,7 @@ where
 struct WindowsHandleTableEntryV2<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -182,7 +182,7 @@ where
 impl<'a, Driver> WindowsHandleTableEntryV2<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
     impl_offsets_ext_v2!();

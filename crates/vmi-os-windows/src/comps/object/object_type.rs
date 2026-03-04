@@ -1,6 +1,6 @@
 use std::str::FromStr as _;
 
-use vmi_core::{Architecture, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
@@ -15,7 +15,7 @@ use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 pub struct WindowsObjectType<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -27,7 +27,7 @@ where
 impl<'a, Driver> From<WindowsObjectType<'a, Driver>> for WindowsObject<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from(value: WindowsObjectType<'a, Driver>) -> Self {
         Self::new(value.vmi, value.va)
@@ -37,7 +37,7 @@ where
 impl<'a, Driver> FromWindowsObject<'a, Driver> for WindowsObjectType<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn from_object(object: WindowsObject<'a, Driver>) -> Result<Option<Self>, VmiError> {
         match object.type_kind()? {
@@ -50,7 +50,7 @@ where
 impl<Driver> VmiVa for WindowsObjectType<'_, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
         self.va
@@ -60,7 +60,7 @@ where
 impl<'a, Driver> WindowsObjectType<'a, Driver>
 where
     Driver: VmiRead,
-    Driver::Architecture: Architecture + ArchAdapter<Driver>,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     impl_offsets!();
 
