@@ -2,3 +2,7 @@ unstable_features = true
 group_imports = "StdExternalCrate"
 control_brace_style = "ClosingNextLine"
 imports_granularity = "Crate"
+
+skip_macro_invocations = [
+    "impl_bridge_dispatch"              # vmi-utils/bridge
+]

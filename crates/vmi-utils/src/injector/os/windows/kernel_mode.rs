@@ -15,7 +15,7 @@ use super::super::super::{
 };
 use crate::{
     bpm::{Breakpoint, BreakpointController, BreakpointManager},
-    bridge::{BridgeHandler, BridgePacket},
+    bridge::{BridgeDispatch, BridgePacket},
     ptm::PageTableMonitor,
 };
 
@@ -36,7 +36,7 @@ enum InjectorState {
     /// Monitoring torn down; waiting for bridge communication.
     Bridge,
     /// Injection complete; result is available.
-    Done(Result<InjectorResultCode, BridgePacket>),
+    Complete(Result<InjectorResultCode, BridgePacket>),
 }
 
 pub struct KernelInjectorHandler<Driver, T, Bridge>
@@ -46,7 +46,7 @@ where
         + VmiSetProtection<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Process ID being injected into.
     pid: Option<ProcessId>,
@@ -83,7 +83,7 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Creates a new injector handler.
     #[expect(non_snake_case)]
@@ -99,7 +99,9 @@ where
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
         if !Bridge::EMPTY {
-            vmi.monitor_enable(EventMonitor::CpuId)?;
+            vmi.monitor_enable(EventMonitor::GuestRequest {
+                allow_userspace: false,
+            })?;
         }
 
         let mut bpm = BreakpointManager::new();
@@ -160,7 +162,7 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     #[tracing::instrument(
         name = "injector",
@@ -180,7 +182,7 @@ where
             EventReason::MemoryAccess(_) => self.on_memory_access(vmi),
             EventReason::Interrupt(_) => self.on_interrupt(vmi),
             EventReason::Singlestep(_) => self.on_singlestep(vmi),
-            EventReason::CpuId(_) => self.on_cpuid(vmi),
+            EventReason::GuestRequest(_) => self.on_vmcall(vmi),
             _ => panic!("Unhandled event: {:?}", vmi.event().reason()),
         }
     }
@@ -243,7 +245,7 @@ where
 
             // If the bridge was not enabled, we're done.
             if Bridge::EMPTY {
-                self.state = InjectorState::Done(Ok(0));
+                self.state = InjectorState::Complete(Ok(0));
             }
             else {
                 self.state = InjectorState::Bridge;
@@ -261,71 +263,44 @@ where
         Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
     }
 
-    #[tracing::instrument(name = "cpuid", skip_all, err)]
-    fn on_cpuid(
+    #[tracing::instrument(name = "vmcall", skip_all, err)]
+    fn on_vmcall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        let cpuid = vmi.event().reason().as_cpuid();
+        let guest_request = vmi.event().reason().as_guest_request();
 
         let mut registers = vmi.registers().gp_registers();
-        registers.rip += cpuid.instruction_length as u64;
+        registers.rip += guest_request.instruction_length as u64;
 
         tracing::trace!(
-            rip = %Va(registers.rip),
-            leaf = %Hex(cpuid.leaf),
-            subleaf = %Hex(cpuid.subleaf),
+            magic = %Hex(registers.rbp as u32),
+            request = %Hex((registers.rcx & 0xFFFF) as u16),
+            method = %Hex((registers.rcx >> 16) as u16),
         );
 
-        if cpuid.leaf != Bridge::MAGIC {
-            return Ok(VmiEventResponse::set_registers(registers));
-        }
+        if let Some(result) = self.bridge.dispatch(vmi, BridgePacket::from(vmi)) {
+            let complete = match result {
+                Ok(response) => {
+                    response.write_to(&mut registers);
+                    response.into_result().map(Ok)
+                }
+                Err(packet) => {
+                    tracing::error!(
+                        request = packet.request(),
+                        method = packet.method(),
+                        "Empty bridge response"
+                    );
+                    Some(Err(packet))
+                }
+            };
 
-        let magic = cpuid.leaf;
-        let request = (cpuid.subleaf & 0xFFFF) as u16;
-        let method = (cpuid.subleaf >> 16) as u16;
-
-        let packet = BridgePacket::new(magic, request, method)
-            .with_value1(registers.r8)
-            .with_value2(registers.r9)
-            .with_value3(registers.r10)
-            .with_value4(registers.r11);
-
-        let result = match self.bridge.dispatch(vmi, packet) {
-            Some(result) => result,
-            None => {
-                tracing::error!(request, method, "Empty bridge response");
-
-                self.state = InjectorState::Done(Err(packet));
-                vmi.monitor_disable(EventMonitor::CpuId)?;
-
-                return Ok(VmiEventResponse::set_registers(registers));
+            if let Some(complete) = complete {
+                self.state = InjectorState::Complete(complete);
+                vmi.monitor_disable(EventMonitor::GuestRequest {
+                    allow_userspace: false,
+                })?;
             }
-        };
-
-        if let Some(value1) = result.value1() {
-            registers.rax = value1;
-        }
-        if let Some(value2) = result.value2() {
-            registers.rbx = value2;
-        }
-
-        if let Some(result) = result.into_result() {
-            self.state = InjectorState::Done(Ok(result));
-            vmi.monitor_disable(EventMonitor::CpuId)?;
-        };
-
-        if let Some(verify) = Bridge::VERIFY_VALUE4 {
-            registers.rdx = verify;
-        }
-        if let Some(verify) = Bridge::VERIFY_VALUE3 {
-            registers.rcx = verify;
-        }
-        if let Some(verify) = Bridge::VERIFY_VALUE2 {
-            registers.rbx = verify;
-        }
-        if let Some(verify) = Bridge::VERIFY_VALUE1 {
-            registers.rax = verify;
         }
 
         Ok(VmiEventResponse::set_registers(registers))
@@ -458,7 +433,7 @@ where
         + VmiEventControl<Architecture = Amd64>
         + VmiViewControl<Architecture = Amd64>
         + VmiVmControl<Architecture = Amd64>,
-    Bridge: BridgeHandler<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     type Output = Result<InjectorResultCode, BridgePacket>;
 
@@ -482,7 +457,7 @@ where
 
     fn check_completion(&self) -> Option<Self::Output> {
         match self.state {
-            InjectorState::Done(result) => Some(result),
+            InjectorState::Complete(result) => Some(result),
             _ => None,
         }
     }

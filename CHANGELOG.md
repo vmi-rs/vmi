@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `InjectorHandler` now accepts `VmiSession` instead of `VmiCore`
 - **Breaking:** `InjectorHandler` refactored into a generic delegation wrapper
   with `ExecutionMode`-based dispatch
+- **Breaking:** Bridge trait hierarchy restructured: `BridgeHandler` split into
+  `BridgeContract` (magic/verification constants), `BridgeHandler` (per-request
+  handling), and `BridgeDispatch` (packet routing). The `Bridge` generic
+  parameter on injector types is now bounded on `BridgeDispatch` instead of
+  `BridgeHandler`
+- **Breaking:** Injectors now use VMCALL (`GuestRequest`) instead of CPUID for
+  guest-host bridge communication. Existing guest-side shellcode using CPUID
+  must be updated
 
 ### Added
 

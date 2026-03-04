@@ -1,4 +1,17 @@
+use super::arch::GpRegistersAdapter;
+
 /// A response from the bridge.
+///
+/// Carries up to four architecture-mapped values and an optional typed
+/// result. The values are written back into guest registers by
+/// [`write_to`](Self::write_to); the result signals handler completion.
+///
+/// # Architecture-specific
+///
+/// - **AMD64**: value1–value4 map to `RAX`, `RBX`, `RCX`, `RDX`.
+///
+/// See the [`arch::amd64`](super::arch) module for the full register
+/// layout.
 #[derive(Debug)]
 pub struct BridgeResponse<T = ()> {
     value1: Option<u64>,
@@ -21,7 +34,7 @@ impl<T> Default for BridgeResponse<T> {
 }
 
 impl<T> BridgeResponse<T> {
-    /// Creates a new response with the given value.
+    /// Creates a new response with the first value set.
     pub fn new(value1: u64) -> Self {
         Self {
             value1: Some(value1),
@@ -52,12 +65,15 @@ impl<T> BridgeResponse<T> {
         self.value4
     }
 
-    /// Returns the result of the response.
+    /// Returns a reference to the result of the response.
     pub fn result(&self) -> Option<&T> {
         self.result.as_ref()
     }
 
-    /// Converts the response into a result.
+    /// Consumes the response and returns the result, if present.
+    ///
+    /// A `Some` value indicates that the handler has finished and the
+    /// bridge dispatch loop should terminate.
     pub fn into_result(self) -> Option<T> {
         self.result
     }
@@ -94,11 +110,21 @@ impl<T> BridgeResponse<T> {
         }
     }
 
-    /// Sets the result of the response.
+    /// Sets the completion result of the response.
+    ///
+    /// When present, signals that the handler has finished processing
+    /// and the bridge dispatch loop should terminate.
     pub fn with_result(self, result: T) -> Self {
         Self {
             result: Some(result),
             ..self
         }
+    }
+
+    /// Writes the response values into the given general-purpose registers.
+    ///
+    /// `None` values leave the corresponding register unchanged.
+    pub fn write_to(&self, registers: &mut impl GpRegistersAdapter) {
+        registers.write_response(self.value1, self.value2, self.value3, self.value4);
     }
 }
