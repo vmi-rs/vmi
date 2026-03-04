@@ -25,8 +25,9 @@ pub use self::{
     dr::{Dr0, Dr1, Dr2, Dr3, Dr6, Dr7},
     efer::MsrEfer,
     event::{
-        EventCpuId, EventInterrupt, EventIo, EventIoDirection, EventMemoryAccess, EventMonitor,
-        EventReason, EventSinglestep, EventWriteControlRegister, MemoryAccessFlags,
+        EventCpuId, EventGuestRequest, EventInterrupt, EventIo, EventIoDirection,
+        EventMemoryAccess, EventMonitor, EventReason, EventSinglestep, EventWriteControlRegister,
+        MemoryAccessFlags,
     },
     interrupt::{ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType},
     paging::{PageTableEntry, PageTableLevel, PagingMode},

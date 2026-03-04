@@ -64,6 +64,13 @@ pub struct EventSinglestep {
     pub gfn: Gfn,
 }
 
+/// Event generated when a VMCALL instruction is executed.
+#[derive(Debug, Clone, Copy)]
+pub struct EventGuestRequest {
+    /// Length of the VMCALL instruction.
+    pub instruction_length: u8,
+}
+
 /// Event generated when a CPUID instruction is executed.
 #[derive(Debug, Clone, Copy)]
 pub struct EventCpuId {
@@ -119,7 +126,7 @@ pub enum EventReason {
     Singlestep(EventSinglestep),
 
     /// Guest request event (VMCALL).
-    GuestRequest,
+    GuestRequest(EventGuestRequest),
 
     /// CPUID instruction event.
     CpuId(EventCpuId),
@@ -174,6 +181,18 @@ impl EventReason {
         match self {
             Self::Singlestep(singlestep) => singlestep,
             _ => panic!("EventReason is not a Singlestep"),
+        }
+    }
+
+    /// Returns the guest request event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event reason is not a guest request event.
+    pub fn as_guest_request(&self) -> &EventGuestRequest {
+        match self {
+            Self::GuestRequest(guest_request) => guest_request,
+            _ => panic!("EventReason is not a GuestRequest"),
         }
     }
 
