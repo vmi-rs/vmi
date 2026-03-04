@@ -5,7 +5,7 @@ use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
     Hex, VmiCore, VmiError,
     driver::{
-        VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
+        VmiDriver, VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
         VmiVmControl, VmiWrite,
     },
 };
@@ -22,13 +22,14 @@ use super::{
 
 impl<Driver, T, Bridge> InjectorExecutionAdapter<KernelMode, T, Bridge> for WindowsOs<Driver>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiQueryRegisters<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiQueryRegisters
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<Self, InjectorResultCode>,
 {
     type Handler = KernelInjectorHandler<Driver, T, Bridge>;
@@ -36,12 +37,13 @@ where
 
 impl<Driver, T, Bridge> InjectorExecutionAdapter<UserMode, T, Bridge> for WindowsOs<Driver>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<Self, InjectorResultCode>,
 {
     type Handler = UserInjectorHandler<Driver, T, Bridge>;
@@ -49,7 +51,7 @@ where
 
 impl<Driver> OsAdapter for WindowsOs<Driver>
 where
-    Driver: VmiRead<Architecture = Amd64> + VmiWrite<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiWrite,
 {
     fn prepare_function_call(
         &self,

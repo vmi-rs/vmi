@@ -39,7 +39,7 @@ use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
     View, VmiCore, VmiError,
-    driver::{VmiRead, VmiSetProtection},
+    driver::{VmiDriver, VmiRead, VmiSetProtection},
 };
 
 use super::super::{
@@ -108,7 +108,7 @@ where
 
 impl<Driver, Tag> ArchAdapter<Driver, Tag> for Amd64
 where
-    Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiSetProtection,
     Tag: TagType,
 {
     type Monitor = PageTableMonitorAmd64<Tag>;
@@ -324,7 +324,7 @@ where
 
 impl<Driver, Tag> PageTableMonitorAdapter<Driver, Tag> for PageTableMonitorAmd64<Tag>
 where
-    Driver: VmiRead + VmiSetProtection<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiSetProtection,
     Tag: TagType,
 {
     fn new() -> Self {

@@ -3,7 +3,7 @@ use vmi_core::{
     Hex, MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
     VmiHandler, VmiSession,
     driver::{
-        VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
+        VmiDriver, VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
         VmiVmControl, VmiWrite,
     },
     os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
@@ -41,11 +41,12 @@ enum InjectorState {
 
 pub struct KernelInjectorHandler<Driver, T, Bridge>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Process ID being injected into.
@@ -76,13 +77,14 @@ where
 impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, KernelMode, T, Bridge>
     for KernelInjectorHandler<Driver, T, Bridge>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiQueryRegisters<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiQueryRegisters
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     /// Creates a new injector handler.
@@ -150,12 +152,13 @@ where
 
 impl<Driver, T, Bridge> KernelInjectorHandler<Driver, T, Bridge>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     #[tracing::instrument(
@@ -430,12 +433,13 @@ where
 
 impl<Driver, T, Bridge> VmiHandler<WindowsOs<Driver>> for KernelInjectorHandler<Driver, T, Bridge>
 where
-    Driver: VmiRead<Architecture = Amd64>
-        + VmiWrite<Architecture = Amd64>
-        + VmiSetProtection<Architecture = Amd64>
-        + VmiEventControl<Architecture = Amd64>
-        + VmiViewControl<Architecture = Amd64>
-        + VmiVmControl<Architecture = Amd64>,
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
     Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
 {
     type Output = Result<InjectorResultCode, BridgePacket>;
