@@ -517,7 +517,7 @@ where
         // Sort by level descending (PML4 first, PT last) to ensure
         // higher-level changes invalidate subtrees before lower-level
         // entries are processed.
-        to_process.sort_by(|a, b| b.1.cmp(&a.1));
+        to_process.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         let mut events = Vec::new();
 
