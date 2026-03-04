@@ -515,7 +515,7 @@ where
         self.dispatch(&vmi).expect("dispatch")
     }
 
-    fn check_completion(&self) -> Option<Self::Output> {
+    fn poll(&self) -> Option<Self::Output> {
         self.terminate_flag.load(Ordering::Relaxed).then_some(())
     }
 }

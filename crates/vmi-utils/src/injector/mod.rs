@@ -220,8 +220,8 @@ where
         self.inner.handle_event(vmi)
     }
 
-    fn check_completion(&self) -> Option<Self::Output> {
-        self.inner.check_completion()
+    fn poll(&self) -> Option<Self::Output> {
+        self.inner.poll()
     }
 }
 

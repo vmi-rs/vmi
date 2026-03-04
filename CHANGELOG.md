@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Injectors now use VMCALL (`GuestRequest`) instead of CPUID for
   guest-host bridge communication. Existing guest-side shellcode using CPUID
   must be updated
+- **Breaking:** `VmiHandler::check_completion()` renamed to `VmiHandler::poll()`
 
 ### Added
 

@@ -571,7 +571,7 @@ where
         }
     }
 
-    fn check_completion(&self) -> Option<Self::Output> {
+    fn poll(&self) -> Option<Self::Output> {
         match self.state {
             InjectorState::Complete(result) => Some(result),
             _ => None,

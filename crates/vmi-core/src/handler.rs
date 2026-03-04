@@ -36,7 +36,7 @@ where
     /// This method is called after each event is handled. If the handler
     /// has completed, this method should return the output of the handler.
     /// Otherwise, it should return `None`.
-    fn check_completion(&self) -> Option<Self::Output> {
+    fn poll(&self) -> Option<Self::Output> {
         None
     }
 }

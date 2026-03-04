@@ -141,7 +141,7 @@ where
         let mut handler = handler_factory(self)?;
 
         loop {
-            result = handler.check_completion();
+            result = handler.poll();
 
             if result.is_some() {
                 break;
