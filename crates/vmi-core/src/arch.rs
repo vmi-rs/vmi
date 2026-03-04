@@ -146,6 +146,21 @@ pub trait Architecture {
         Driver: VmiRead<Architecture = Self>;
 }
 
+/// General-purpose register set for a specific architecture.
+///
+/// Marker trait for the concrete GP register struct exposed by each
+/// architecture.
+///
+/// # Architecture-specific
+///
+/// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
+///   `R8`-`R15`, `RIP` and `RFLAGS`.
+pub trait GpRegisters
+where
+    Self: Debug + Default + Clone + Copy,
+{
+}
+
 /// Complete set of CPU registers for a specific architecture.
 ///
 /// Provides methods to access and modify key registers and register sets.
@@ -162,7 +177,7 @@ where
     ///
     /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
     ///   `R8`-`R15`, `RIP` and `RFLAGS`.
-    type GpRegisters: Debug + Default + Clone + Copy;
+    type GpRegisters: GpRegisters;
 
     /// Returns the current value of the instruction pointer.
     ///

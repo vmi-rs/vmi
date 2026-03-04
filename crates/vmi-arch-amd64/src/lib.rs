@@ -411,6 +411,8 @@ impl Amd64 {
     }
 }
 
+impl vmi_core::arch::GpRegisters for GpRegisters {}
+
 impl vmi_core::arch::Registers for Registers {
     type Architecture = Amd64;
 
