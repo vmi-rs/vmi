@@ -1,0 +1,24 @@
+[package]
+name = "vmi-driver-kvm"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = false
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "VMI driver for KVM hypervisor"
+keywords = ["vmi", "kvm"]
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+vmi-arch-amd64 = { workspace = true }
+vmi-core = { workspace = true }
+kvm = { workspace = true }

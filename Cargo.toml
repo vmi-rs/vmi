@@ -64,10 +64,13 @@ xen = { package = "libxen", version = "0.4.0" }
 
 # xen = { path = "../xen", package = "libxen", version = "0.4.0" }
 
+kvm = { path = "../kvm", package = "libkvm", version = "0.4.0" }
+
 vmi = { path = ".", version = "0.4.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.4.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.4.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.4.0" }
+vmi-driver-kvm = { path = "./crates/vmi-driver-kvm", version = "0.4.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.4.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.4.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.4.0" }
@@ -117,6 +120,7 @@ isr-macros = { workspace = true }
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
+vmi-driver-kvm = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
 vmi-driver-xen-core-dump = { workspace = true, optional = true }
 vmi-os-linux = { workspace = true, optional = true }
@@ -139,6 +143,7 @@ arch-amd64 = [
     "vmi-utils?/arch-amd64"
 ]
 driver-kdmp = ["vmi-driver-kdmp"]
+driver-kvm = ["vmi-driver-kvm"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
 os-linux = ["vmi-os-linux"]
