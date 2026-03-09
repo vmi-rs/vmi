@@ -206,7 +206,7 @@ where
             self.ptm
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
 
-            Ok(VmiEventResponse::singlestep().and_set_view(vmi.default_view()))
+            Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
         }
         else if memory_access.access.contains(MemoryAccess::R) {
             // When the guest tries to read from the memory, a fast-singlestep
@@ -308,9 +308,7 @@ where
         };
 
         if !self.recipe.done() {
-            return Ok(VmiEventResponse::set_registers(
-                new_registers.gp_registers(),
-            ));
+            return Ok(VmiEventResponse::default().with_registers(new_registers.gp_registers()));
         }
 
         //
@@ -327,11 +325,9 @@ where
 
         self.state = InjectorState::Teardown(vmi.event().vcpu_id());
 
-        Ok(
-            VmiEventResponse::set_registers(new_registers.gp_registers())
-                .and_singlestep()
-                .and_set_view(vmi.default_view()),
-        )
+        Ok(VmiEventResponse::singlestep()
+            .with_registers(new_registers.gp_registers())
+            .with_view(vmi.default_view()))
     }
 
     #[tracing::instrument(name = "singlestep", skip_all, err)]
@@ -382,7 +378,7 @@ where
         self.bpm.handle_ptm_events(vmi, ptm_events)?;
 
         // Disable singlestep and switch back to our view.
-        Ok(VmiEventResponse::set_view(self.view))
+        Ok(VmiEventResponse::default().with_view(self.view))
     }
 
     #[tracing::instrument(name = "vmcall", skip_all, err)]
@@ -425,7 +421,7 @@ where
             }
         }
 
-        Ok(VmiEventResponse::set_registers(registers))
+        Ok(VmiEventResponse::default().with_registers(registers))
     }
 }
 

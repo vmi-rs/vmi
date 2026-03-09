@@ -78,28 +78,48 @@ where
     }
 }
 
-bitflags::bitflags! {
-    /// Flags that can be set in a VMI event response.
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-    pub struct VmiEventResponseFlags: u8 {
-        /// Reinject the interrupt.
-        const REINJECT_INTERRUPT = 1 << 0;
+/// The primary action to take when resuming from a VMI event.
+///
+/// These actions are mutually exclusive. Each variant maps to a distinct
+/// hypervisor resume behavior.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum VmiEventAction {
+    /// Resume the vCPU normally, allowing the trapped instruction to
+    /// proceed with its original side effects.
+    #[default]
+    Continue,
 
-        /// Single-step one instruction.
-        ///
-        /// When set on a non-singlestep event, enables singlestep for the
-        /// next instruction. When set on a singlestep event, continues
-        /// singlestepping for one more instruction. When absent from a
-        /// singlestep event response, singlestep is automatically disabled.
-        const SINGLESTEP = 1 << 1;
+    /// Deny the event (suppress CR/MSR write side effects).
+    ///
+    /// The instruction has already executed and RIP has advanced, but the
+    /// register write is not committed. Effectively makes the instruction
+    /// a no-op.
+    Deny,
 
-        /// Fast single-step one instruction in the specified view.
-        /// Unlike regular singlestep, this never generates a VMI event.
-        const FAST_SINGLESTEP = 1 << 2;
+    /// Reinject the interrupt back into the guest.
+    ///
+    /// Used when a monitored interrupt (e.g. INT3) was not placed by us
+    /// and should be delivered to the guest's own interrupt handler.
+    ReinjectInterrupt,
 
-        /// Emulate the instruction.
-        const EMULATE = 1 << 3;
-    }
+    /// Single-step one instruction.
+    ///
+    /// When returned from a non-singlestep event, enables singlestep for
+    /// the next instruction. When returned from a singlestep event,
+    /// continues singlestepping for one more instruction. When absent
+    /// from a singlestep event response, singlestep is automatically
+    /// disabled.
+    Singlestep,
+
+    /// Fast single-step one instruction in the response's view, then
+    /// silently switch back to the event's original view. Unlike regular
+    /// singlestep, this never generates a VMI event.
+    FastSinglestep,
+
+    /// Emulate the faulting instruction inside the hypervisor instead of
+    /// returning to the guest. Useful for handling read/write memory
+    /// access events without switching views.
+    Emulate,
 }
 
 /// A response to a VMI event.
@@ -108,8 +128,8 @@ pub struct VmiEventResponse<Arch>
 where
     Arch: Architecture,
 {
-    /// Flags associated with the response.
-    pub flags: VmiEventResponseFlags,
+    /// The primary action to take when resuming.
+    pub action: VmiEventAction,
 
     /// The view to set for the vCPU.
     pub view: Option<View>,
@@ -124,7 +144,7 @@ where
 {
     fn default() -> Self {
         Self {
-            flags: VmiEventResponseFlags::empty(),
+            action: VmiEventAction::Continue,
             view: None,
             registers: None,
         }
@@ -135,73 +155,51 @@ impl<Arch> VmiEventResponse<Arch>
 where
     Arch: Architecture,
 {
+    /// Creates a response to deny the event.
+    pub fn deny() -> Self {
+        Self {
+            action: VmiEventAction::Deny,
+            ..Self::default()
+        }
+    }
+
     /// Creates a response to reinject an interrupt.
     pub fn reinject_interrupt() -> Self {
-        Self::default().and_reinject_interrupt()
+        Self {
+            action: VmiEventAction::ReinjectInterrupt,
+            ..Self::default()
+        }
     }
 
     /// Creates a response to single-step one instruction.
     pub fn singlestep() -> Self {
-        Self::default().and_singlestep()
+        Self {
+            action: VmiEventAction::Singlestep,
+            ..Self::default()
+        }
     }
 
     /// Creates a response to fast single-step one instruction in the
     /// specified view. Unlike regular singlestep, fast singlestep never
     /// generates a VMI event.
     pub fn fast_singlestep(view: View) -> Self {
-        Self::default().and_fast_singlestep(view)
+        Self {
+            action: VmiEventAction::FastSinglestep,
+            view: Some(view),
+            ..Self::default()
+        }
     }
 
     /// Creates a response to emulate the instruction.
     pub fn emulate() -> Self {
-        Self::default().and_emulate()
-    }
-
-    /// Creates a response to set a specific view.
-    pub fn set_view(view: View) -> Self {
-        Self::default().and_set_view(view)
-    }
-
-    /// Creates a response to set specific CPU registers.
-    pub fn set_registers(registers: <Arch::Registers as Registers>::GpRegisters) -> Self {
-        Self::default().and_set_registers(registers)
-    }
-
-    /// Adds the reinject interrupt flag to the response.
-    pub fn and_reinject_interrupt(self) -> Self {
         Self {
-            flags: self.flags | VmiEventResponseFlags::REINJECT_INTERRUPT,
-            ..self
-        }
-    }
-
-    /// Adds the single-step flag to the response.
-    pub fn and_singlestep(self) -> Self {
-        Self {
-            flags: self.flags | VmiEventResponseFlags::SINGLESTEP,
-            ..self
-        }
-    }
-
-    /// Adds the fast single-step flag to the response.
-    pub fn and_fast_singlestep(self, view: View) -> Self {
-        Self {
-            flags: self.flags | VmiEventResponseFlags::FAST_SINGLESTEP,
-            view: Some(view),
-            ..self
-        }
-    }
-
-    /// Adds the emulate flag to the response.
-    pub fn and_emulate(self) -> Self {
-        Self {
-            flags: self.flags | VmiEventResponseFlags::EMULATE,
-            ..self
+            action: VmiEventAction::Emulate,
+            ..Self::default()
         }
     }
 
     /// Sets a specific view for the response.
-    pub fn and_set_view(self, view: View) -> Self {
+    pub fn with_view(self, view: View) -> Self {
         Self {
             view: Some(view),
             ..self
@@ -209,7 +207,7 @@ where
     }
 
     /// Sets specific CPU registers for the response.
-    pub fn and_set_registers(self, registers: <Arch::Registers as Registers>::GpRegisters) -> Self {
+    pub fn with_registers(self, registers: <Arch::Registers as Registers>::GpRegisters) -> Self {
         Self {
             registers: Some(registers),
             ..self

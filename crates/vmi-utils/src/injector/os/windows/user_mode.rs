@@ -372,9 +372,7 @@ where
         };
 
         if !self.recipe.done() {
-            return Ok(VmiEventResponse::set_registers(
-                new_registers.gp_registers(),
-            ));
+            return Ok(VmiEventResponse::default().with_registers(new_registers.gp_registers()));
         }
 
         //
@@ -399,11 +397,9 @@ where
         self.state = InjectorState::Teardown(vmi.event().vcpu_id());
         vmi.set_memory_access(gfn, self.view, MemoryAccess::RWX)?;
 
-        Ok(
-            VmiEventResponse::set_registers(new_registers.gp_registers())
-                .and_singlestep()
-                .and_set_view(vmi.default_view()),
-        )
+        Ok(VmiEventResponse::singlestep()
+            .with_registers(new_registers.gp_registers())
+            .with_view(vmi.default_view()))
     }
 
     #[tracing::instrument(name = "singlestep", skip_all, err)]
@@ -484,7 +480,7 @@ where
             }
         }
 
-        Ok(VmiEventResponse::set_registers(registers))
+        Ok(VmiEventResponse::default().with_registers(registers))
     }
 }
 

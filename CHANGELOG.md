@@ -40,14 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guest-host bridge communication. Existing guest-side shellcode using CPUID
   must be updated
 - **Breaking:** `VmiHandler::check_completion()` renamed to `VmiHandler::poll()`
-- **Breaking:** Singlestep response flags renamed and given one-shot semantics:
-    - `VmiEventResponseFlags::TOGGLE_SINGLESTEP` -> `SINGLESTEP`
-    - `VmiEventResponseFlags::TOGGLE_FAST_SINGLESTEP` -> `FAST_SINGLESTEP`
-    - `toggle_singlestep()` / `and_toggle_singlestep()` -> `singlestep()` / `and_singlestep()`
-    - `toggle_fast_singlestep()` / `and_toggle_fast_singlestep()` -> `fast_singlestep(view)` / `and_fast_singlestep(view)`
-    - The SINGLESTEP flag now means "step one instruction". The Xen driver
-      automatically disables singlestep when a singlestep handler returns
-      without the flag set. Callers no longer need to manually toggle off.
+- **Breaking:** `VmiEventResponse` redesigned from bitflags to an enum-based
+  action model:
+    - `VmiEventResponseFlags` removed, replaced by `VmiEventAction` enum
+      with variants: `Continue`, `Deny`, `ReinjectInterrupt`, `Singlestep`,
+      `FastSinglestep`, `Emulate`
+    - `VmiEventResponse` fields changed: `flags` -> `action`
+    - Builder methods `and_reinject_interrupt()`, `and_singlestep()`,
+      `and_fast_singlestep()`, `and_emulate()` removed
+    - `set_view()` / `and_set_view()` replaced by `with_view()`
+    - `set_registers()` / `and_set_registers()` replaced by `with_registers()`
+    - New: `VmiEventResponse::deny()` for suppressing CR/MSR write side effects
+    - Singlestep now has one-shot semantics. The Xen driver automatically
+      disables singlestep when a singlestep handler returns without
+      `VmiEventAction::Singlestep`. Callers no longer need to manually
+      toggle off.
     - `fast_singlestep` now requires a `View` parameter (the view to execute in)
 
 ### Added

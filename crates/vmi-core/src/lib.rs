@@ -29,7 +29,7 @@ pub use self::{
         VmiViewControl, VmiVmControl, VmiWrite, VmiWriteAccess,
     },
     error::{PageFaults, VmiError},
-    event::{VmiEvent, VmiEventFlags, VmiEventResponse, VmiEventResponseFlags},
+    event::{VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse},
     handler::VmiHandler,
     os::VmiOs,
     page::VmiMappedPage,
@@ -898,14 +898,14 @@ where
     /// quick transitions between different memory perspectives globally.
     ///
     /// Note the difference between this method and
-    /// [`VmiEventResponse::set_view()`]:
+    /// [`VmiEventResponse::with_view()`]:
     /// - `switch_to_view()` changes the view for all vCPUs immediately.
-    /// - `VmiEventResponse::set_view()` sets the view only for the specific
+    /// - `VmiEventResponse::with_view()` sets the view only for the specific
     ///   vCPU that received the event, and the change is applied when the event
     ///   handler returns.
     ///
     /// Use `switch_to_view()` for global view changes, and
-    /// `VmiEventResponse::set_view()` for targeted, event-specific view
+    /// `VmiEventResponse::with_view()` for targeted, event-specific view
     /// modifications on individual vCPUs.
     pub fn switch_to_view(&self, view: View) -> Result<(), VmiError> {
         self.driver.switch_to_view(view)
