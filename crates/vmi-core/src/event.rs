@@ -85,11 +85,17 @@ bitflags::bitflags! {
         /// Reinject the interrupt.
         const REINJECT_INTERRUPT = 1 << 0;
 
-        /// Toggle single-step mode.
-        const TOGGLE_SINGLESTEP = 1 << 1;
+        /// Single-step one instruction.
+        ///
+        /// When set on a non-singlestep event, enables singlestep for the
+        /// next instruction. When set on a singlestep event, continues
+        /// singlestepping for one more instruction. When absent from a
+        /// singlestep event response, singlestep is automatically disabled.
+        const SINGLESTEP = 1 << 1;
 
-        /// Toggle fast single-step mode.
-        const TOGGLE_FAST_SINGLESTEP = 1 << 2;
+        /// Fast single-step one instruction in the specified view.
+        /// Unlike regular singlestep, this never generates a VMI event.
+        const FAST_SINGLESTEP = 1 << 2;
 
         /// Emulate the instruction.
         const EMULATE = 1 << 3;
@@ -134,14 +140,16 @@ where
         Self::default().and_reinject_interrupt()
     }
 
-    /// Creates a response to toggle single-step mode.
-    pub fn toggle_singlestep() -> Self {
-        Self::default().and_toggle_singlestep()
+    /// Creates a response to single-step one instruction.
+    pub fn singlestep() -> Self {
+        Self::default().and_singlestep()
     }
 
-    /// Creates a response to toggle fast single-step mode.
-    pub fn toggle_fast_singlestep() -> Self {
-        Self::default().and_toggle_fast_singlestep()
+    /// Creates a response to fast single-step one instruction in the
+    /// specified view. Unlike regular singlestep, fast singlestep never
+    /// generates a VMI event.
+    pub fn fast_singlestep(view: View) -> Self {
+        Self::default().and_fast_singlestep(view)
     }
 
     /// Creates a response to emulate the instruction.
@@ -167,18 +175,19 @@ where
         }
     }
 
-    /// Adds the toggle single-step flag to the response.
-    pub fn and_toggle_singlestep(self) -> Self {
+    /// Adds the single-step flag to the response.
+    pub fn and_singlestep(self) -> Self {
         Self {
-            flags: self.flags | VmiEventResponseFlags::TOGGLE_SINGLESTEP,
+            flags: self.flags | VmiEventResponseFlags::SINGLESTEP,
             ..self
         }
     }
 
-    /// Adds the toggle fast single-step flag to the response.
-    pub fn and_toggle_fast_singlestep(self) -> Self {
+    /// Adds the fast single-step flag to the response.
+    pub fn and_fast_singlestep(self, view: View) -> Self {
         Self {
-            flags: self.flags | VmiEventResponseFlags::TOGGLE_FAST_SINGLESTEP,
+            flags: self.flags | VmiEventResponseFlags::FAST_SINGLESTEP,
+            view: Some(view),
             ..self
         }
     }

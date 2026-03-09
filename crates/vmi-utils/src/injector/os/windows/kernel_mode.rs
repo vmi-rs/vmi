@@ -206,14 +206,14 @@ where
             self.ptm
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
 
-            Ok(VmiEventResponse::toggle_singlestep().and_set_view(vmi.default_view()))
+            Ok(VmiEventResponse::singlestep().and_set_view(vmi.default_view()))
         }
         else if memory_access.access.contains(MemoryAccess::R) {
             // When the guest tries to read from the memory, a fast-singlestep
             // is performed over the instruction that tried to read the memory.
             // This is done to allow the instruction to read the original memory
             // content.
-            Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()))
+            Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
         }
         else {
             panic!("Unhandled memory access: {memory_access:?}");
@@ -244,9 +244,7 @@ where
                     // This can happen if the event was triggered by a breakpoint
                     // we just removed.
                     tracing::warn!("Ignoring old breakpoint event");
-                    return Ok(
-                        VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                    );
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
                 }
             }
         };
@@ -262,7 +260,7 @@ where
         //
 
         if current_process.peb()?.is_none() {
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         let current_pid = current_process.id()?;
@@ -272,7 +270,7 @@ where
             self.pid = Some(current_pid);
         }
         else if Some(current_pid) != self.pid {
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         let current_thread = vmi.os().current_thread()?;
@@ -295,7 +293,7 @@ where
             );
         }
         else if Some(current_tid) != self.tid {
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         //
@@ -305,9 +303,7 @@ where
         let new_registers = match self.recipe.execute(vmi)? {
             Some(registers) => registers,
             None => {
-                return Ok(
-                    VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                );
+                return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
             }
         };
 
@@ -333,7 +329,7 @@ where
 
         Ok(
             VmiEventResponse::set_registers(new_registers.gp_registers())
-                .and_toggle_singlestep()
+                .and_singlestep()
                 .and_set_view(vmi.default_view()),
         )
     }
@@ -351,11 +347,13 @@ where
             // Singlestep monitoring is NOT disabled here - `cleanup` handles it.
             //
             // On Xen, `monitor_disable(Singlestep)` calls `debug_control(OFF)`
-            // on every vCPU, clearing per-vCPU `single_step` state. The response's
-            // `toggle_singlestep` then flips it back to true on this vCPU, but
-            // with global singlestep delivery already off, the resulting MTF exits
-            // are silently discarded and `single_step` is never cleared - trapping
-            // the vCPU in an infinite MTF loop with interrupt injection blocked.
+            // on every vCPU, clearing per-vCPU `single_step` state. Calling it
+            // during event handling creates a race with the response's singlestep
+            // toggle, potentially trapping a vCPU in an infinite MTF loop.
+            //
+            // Instead, per-vCPU singlestep is disabled via the event response
+            // (returning without the SINGLESTEP flag), and the global monitor
+            // is disabled later in `cleanup`.
             vmi.switch_to_view(vmi.default_view())?;
             vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
 
@@ -375,7 +373,7 @@ where
                 })?;
             }
 
-            return Ok(VmiEventResponse::toggle_singlestep());
+            return Ok(VmiEventResponse::default());
         }
 
         // Get the page table modifications by processing the dirty page table
@@ -384,7 +382,7 @@ where
         self.bpm.handle_ptm_events(vmi, ptm_events)?;
 
         // Disable singlestep and switch back to our view.
-        Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
+        Ok(VmiEventResponse::set_view(self.view))
     }
 
     #[tracing::instrument(name = "vmcall", skip_all, err)]

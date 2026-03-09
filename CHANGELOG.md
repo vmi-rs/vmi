@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guest-host bridge communication. Existing guest-side shellcode using CPUID
   must be updated
 - **Breaking:** `VmiHandler::check_completion()` renamed to `VmiHandler::poll()`
+- **Breaking:** Singlestep response flags renamed and given one-shot semantics:
+    - `VmiEventResponseFlags::TOGGLE_SINGLESTEP` -> `SINGLESTEP`
+    - `VmiEventResponseFlags::TOGGLE_FAST_SINGLESTEP` -> `FAST_SINGLESTEP`
+    - `toggle_singlestep()` / `and_toggle_singlestep()` -> `singlestep()` / `and_singlestep()`
+    - `toggle_fast_singlestep()` / `and_toggle_fast_singlestep()` -> `fast_singlestep(view)` / `and_fast_singlestep(view)`
+    - The SINGLESTEP flag now means "step one instruction". The Xen driver
+      automatically disables singlestep when a singlestep handler returns
+      without the flag set. Callers no longer need to manually toggle off.
+    - `fast_singlestep` now requires a `View` parameter (the view to execute in)
 
 ### Added
 

@@ -282,7 +282,7 @@ where
                 "not the right view"
             );
 
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         //
@@ -303,7 +303,7 @@ where
             //     %current_pid,
             //     "not the right process"
             // );
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         //
@@ -319,7 +319,7 @@ where
             //     %current_tid,
             //     "not the right thread"
             // );
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         //
@@ -335,7 +335,7 @@ where
             //    "not the right instruction pointer"
             //);
 
-            return Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()));
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
         //
@@ -367,9 +367,7 @@ where
         let new_registers = match self.recipe.execute(vmi)? {
             Some(registers) => registers,
             None => {
-                return Ok(
-                    VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                );
+                return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
             }
         };
 
@@ -403,7 +401,7 @@ where
 
         Ok(
             VmiEventResponse::set_registers(new_registers.gp_registers())
-                .and_toggle_singlestep()
+                .and_singlestep()
                 .and_set_view(vmi.default_view()),
         )
     }
@@ -422,11 +420,13 @@ where
         // Singlestep monitoring is NOT disabled here - `cleanup` handles it.
         //
         // On Xen, `monitor_disable(Singlestep)` calls `debug_control(OFF)`
-        // on every vCPU, clearing per-vCPU `single_step` state. The response's
-        // `toggle_singlestep` then flips it back to true on this vCPU, but
-        // with global singlestep delivery already off, the resulting MTF exits
-        // are silently discarded and `single_step` is never cleared - trapping
-        // the vCPU in an infinite MTF loop with interrupt injection blocked.
+        // on every vCPU, clearing per-vCPU `single_step` state. Calling it
+        // during event handling creates a race with the response's singlestep
+        // toggle, potentially trapping a vCPU in an infinite MTF loop.
+        //
+        // Instead, per-vCPU singlestep is disabled via the event response
+        // (returning without the SINGLESTEP flag), and the global monitor
+        // is disabled later in `cleanup`.
         vmi.switch_to_view(vmi.default_view())?;
         vmi.destroy_view(self.view)?;
 
@@ -441,7 +441,7 @@ where
             })?;
         }
 
-        Ok(VmiEventResponse::toggle_singlestep())
+        Ok(VmiEventResponse::default())
     }
 
     #[tracing::instrument(name = "vmcall", skip_all, err)]

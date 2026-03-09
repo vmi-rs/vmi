@@ -255,14 +255,14 @@ where
             self.ptm
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
 
-            Ok(VmiEventResponse::toggle_singlestep().and_set_view(vmi.default_view()))
+            Ok(VmiEventResponse::singlestep().and_set_view(vmi.default_view()))
         }
         else if memory_access.access.contains(MemoryAccess::R) {
             // When the guest tries to read from the memory, a fast-singlestep
             // is performed over the instruction that tried to read the memory.
             // This is done to allow the instruction to read the original memory
             // content.
-            Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()))
+            Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
         }
         else {
             panic!("Unhandled memory access: {memory_access:?}");
@@ -293,9 +293,7 @@ where
                     // This can happen if the event was triggered by a breakpoint
                     // we just removed.
                     tracing::warn!("Ignoring old breakpoint event");
-                    return Ok(
-                        VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view())
-                    );
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
                 }
             }
         };
@@ -315,7 +313,7 @@ where
             _ => panic!("Unhandled tag: {tag}"),
         }
 
-        Ok(VmiEventResponse::toggle_fast_singlestep().and_set_view(vmi.default_view()))
+        Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
     }
 
     #[tracing::instrument(skip_all)]
@@ -331,7 +329,7 @@ where
         self.bpm.handle_ptm_events(vmi, ptm_events)?;
 
         // Disable singlestep and switch back to our view.
-        Ok(VmiEventResponse::toggle_singlestep().and_set_view(self.view))
+        Ok(VmiEventResponse::set_view(self.view))
     }
 
     #[tracing::instrument(skip_all)]

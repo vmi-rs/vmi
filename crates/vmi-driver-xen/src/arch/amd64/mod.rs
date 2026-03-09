@@ -189,16 +189,37 @@ impl ArchAdapter for Amd64 {
             }
         }
 
+        // The VMI SINGLESTEP flag has one-shot semantics ("step one
+        // instruction"), but Xen singlestep is a sticky toggle that stays
+        // enabled until explicitly flipped off. We bridge the two by
+        // toggling whenever the requested state differs from the current
+        // one.
+        //
+        //   event        | SINGLESTEP flag | Xen toggle
+        //   ------------ | --------------- | ----------
+        //   non-SS       | set             | ON  (start stepping)
+        //   singlestep   | set             | -   (continue, already on)
+        //   singlestep   | absent          | OFF (done stepping)
+        //   non-SS       | absent          | -   (leave as-is)
         if vmi_response
             .flags
-            .contains(VmiEventResponseFlags::TOGGLE_SINGLESTEP)
+            .contains(VmiEventResponseFlags::SINGLESTEP)
+            != matches!(vmi_event.reason(), EventReason::Singlestep(_))
         {
             event.flags |= VmEventFlag::TOGGLE_SINGLESTEP;
         }
 
+        // Xen fast singlestep executes one instruction in the view set by
+        // ALTERNATE_P2M (from vmi_response.view above), then silently
+        // switches the vCPU to p2midx and auto-disables singlestep - no
+        // VM event is generated.
+        //
+        // p2midx is the view to RETURN TO after the singlestep, not the
+        // view to execute in. We use the incoming event's view so the
+        // vCPU returns to whichever view triggered the original event.
         if vmi_response
             .flags
-            .contains(VmiEventResponseFlags::TOGGLE_FAST_SINGLESTEP)
+            .contains(VmiEventResponseFlags::FAST_SINGLESTEP)
         {
             event.flags |= VmEventFlag::FAST_SINGLESTEP;
             event.options = Some(VmEventFlagOptions {
