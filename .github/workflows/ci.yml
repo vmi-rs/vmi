@@ -167,3 +167,25 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --lib --tests
+
+  notify:
+    name: Notify parent repo
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [clippy, fmt, build, examples, test]
+    steps:
+      - name: Generate token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: vmi-rs
+
+      - name: Send repository_dispatch to vmi-rs
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: vmi-rs/vmi-rs
+          event-type: vmi-updated
+          client-payload: '{"sha": "${{ github.sha }}"}'
