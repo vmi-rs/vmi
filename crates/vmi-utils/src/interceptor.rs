@@ -113,7 +113,7 @@ where
                 // Create a shadow page for the original page.
                 let page = Page {
                     original_gfn,
-                    shadow_gfn: vmi.allocate_next_available_gfn()?,
+                    shadow_gfn: vmi.allocate_gfn()?,
                     view,
                     breakpoints: HashMap::new(),
                 };

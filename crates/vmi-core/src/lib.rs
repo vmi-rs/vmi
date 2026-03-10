@@ -1045,25 +1045,22 @@ where
         VmiPauseGuard::new(&self.driver)
     }
 
-    /// Allocates the next available guest frame number (GFN).
+    /// Allocates a guest frame number (GFN).
     ///
-    /// This method finds and allocates the next free GFN after the current
-    /// maximum GFN. It's useful when you need to allocate new memory pages
-    /// for the VM.
-    pub fn allocate_next_available_gfn(&self) -> Result<Gfn, VmiError> {
-        let info = self.info()?;
-
-        let next_available_gfn = info.max_gfn + 1;
-        self.allocate_gfn(next_available_gfn)?;
-        Ok(next_available_gfn)
+    /// This method allocates a new GFN, with the driver responsible for
+    /// choosing the specific frame to allocate. It's useful when you need
+    /// to allocate new memory pages for the VM without caring about the
+    /// specific location.
+    pub fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+        self.driver.allocate_gfn()
     }
 
-    /// Allocates a specific guest frame number (GFN).
+    /// Allocates a guest frame number (GFN) at a specific location.
     ///
-    /// This method allows you to allocate a particular GFN. It's useful when
-    /// you need to allocate a specific memory page for the VM.
-    pub fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.allocate_gfn(gfn)
+    /// This method allows you to allocate a particular GFN. It's useful
+    /// when you need to allocate a specific memory page for the VM.
+    pub fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.allocate_gfn_at(gfn)
     }
 
     /// Frees a previously allocated guest frame number (GFN).

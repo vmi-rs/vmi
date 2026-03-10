@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `VmiEventAction::Singlestep`. Callers no longer need to manually
       toggle off.
     - `fast_singlestep` now requires a `View` parameter (the view to execute in)
+- **Breaking:** GFN allocation API redesigned:
+    - `allocate_gfn(gfn)` renamed to `allocate_gfn_at(gfn)` for allocating
+      a specific GFN
+    - `allocate_gfn()` now takes no parameters and returns
+      `Result<Gfn, VmiError>`, with the driver choosing the GFN to allocate
+    - `VmiCore::allocate_next_available_gfn()` removed (use `allocate_gfn()`
+      instead)
 
 ### Added
 

@@ -176,8 +176,11 @@ pub trait VmiVmControl: VmiDriver {
     /// Resumes the virtual machine.
     fn resume(&self) -> Result<(), VmiError>;
 
-    /// Allocates a specific GFN.
-    fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError>;
+    /// Allocates a GFN.
+    fn allocate_gfn(&self) -> Result<Gfn, VmiError>;
+
+    /// Allocates a GFN at a specific location.
+    fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError>;
 
     /// Frees a previously allocated GFN.
     fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError>;

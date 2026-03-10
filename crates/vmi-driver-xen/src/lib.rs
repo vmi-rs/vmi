@@ -197,8 +197,12 @@ where
         Ok(self.inner.resume()?)
     }
 
-    fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        Ok(self.inner.allocate_gfn(gfn)?)
+    fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+        Ok(self.inner.allocate_gfn()?)
+    }
+
+    fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError> {
+        Ok(self.inner.allocate_gfn_at(gfn)?)
     }
 
     fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {

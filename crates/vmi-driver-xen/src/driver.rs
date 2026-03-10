@@ -198,7 +198,13 @@ where
         Ok(VmiMappedPage::new(page))
     }
 
-    pub fn allocate_gfn(&self, gfn: Gfn) -> Result<(), Error> {
+    pub fn allocate_gfn(&self) -> Result<Gfn, Error> {
+        let gfn = Gfn::new(self.domain.maximum_gpfn()?) + 1;
+        self.allocate_gfn_at(gfn)?;
+        Ok(gfn)
+    }
+
+    pub fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), Error> {
         Ok(self.domain.populate_physmap_exact(0, 0, &[gfn.into()])?)
     }
 
