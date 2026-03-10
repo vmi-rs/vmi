@@ -2059,6 +2059,8 @@ dependencies = [
  "isr",
  "isr-core",
  "isr-macros",
+ "libc",
+ "libkvm",
  "libxen",
  "signal-hook",
  "tracing",

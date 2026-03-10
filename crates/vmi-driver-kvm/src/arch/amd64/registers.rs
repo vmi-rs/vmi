@@ -2,23 +2,145 @@ use vmi_arch_amd64::{Gdtr, Idtr, Registers, SegmentDescriptor};
 
 use crate::FromExt;
 
-/// Helper to convert a KVM segment to a `SegmentDescriptor`.
-fn segment_from_kvm(seg: &kvm::sys::kvm_vmi_regs__bindgen_ty_1) -> SegmentDescriptor {
+/// Convert a standard `kvm_segment` (from KVM_GET_SREGS) to a `SegmentDescriptor`.
+///
+/// The `kvm_segment` has separate fields (type, s, dpl, present, avl, l, db, g, unusable).
+/// We pack them into the compact access-rights format used by `SegmentAccess`:
+///   bits 0-3: type, bit 4: S, bits 5-6: DPL, bit 7: P,
+///   bit 8: AVL, bit 9: L, bit 10: D/B, bit 11: G, bit 12: unusable
+fn segment_from_kvm_std(seg: &kvm::sys::kvm_segment) -> SegmentDescriptor {
+    let ar: u32 = (seg.type_ as u32)
+        | ((seg.s as u32) << 4)
+        | ((seg.dpl as u32) << 5)
+        | ((seg.present as u32) << 7)
+        | ((seg.avl as u32) << 8)
+        | ((seg.l as u32) << 9)
+        | ((seg.db as u32) << 10)
+        | ((seg.g as u32) << 11)
+        | ((seg.unusable as u32) << 12);
+
     SegmentDescriptor {
         base: seg.base,
         limit: seg.limit,
         selector: seg.selector.into(),
-        access: (seg.ar as u32).into(),
+        access: ar.into(),
     }
 }
 
-/// Helper to convert a `SegmentDescriptor` to a KVM segment.
+/// Convert a `kvm_dtable` (from KVM_GET_SREGS) to an `Idtr`.
+fn idtr_from_kvm_std(dt: &kvm::sys::kvm_dtable) -> Idtr {
+    Idtr {
+        base: dt.base,
+        limit: dt.limit as u32,
+    }
+}
+
+/// Convert a `kvm_dtable` (from KVM_GET_SREGS) to a `Gdtr`.
+fn gdtr_from_kvm_std(dt: &kvm::sys::kvm_dtable) -> Gdtr {
+    Gdtr {
+        base: dt.base,
+        limit: dt.limit as u32,
+    }
+}
+
+/// Build full `Registers` from `kvm_regs` + `kvm_sregs` + MSR values.
+///
+/// This is used when reading registers via KVM_GET_REGS/SREGS/MSRS ioctls
+/// on a vCPU fd (outside of ring events).
+pub(crate) fn registers_from_kvm(
+    regs: &kvm::sys::kvm_regs,
+    sregs: &kvm::sys::kvm_sregs,
+    msrs: &kvm::MsrValues,
+) -> Registers {
+    Registers {
+        rax: regs.rax,
+        rbx: regs.rbx,
+        rcx: regs.rcx,
+        rdx: regs.rdx,
+        rbp: regs.rbp,
+        rsi: regs.rsi,
+        rdi: regs.rdi,
+        rsp: regs.rsp,
+        r8: regs.r8,
+        r9: regs.r9,
+        r10: regs.r10,
+        r11: regs.r11,
+        r12: regs.r12,
+        r13: regs.r13,
+        r14: regs.r14,
+        r15: regs.r15,
+        rip: regs.rip,
+        rflags: regs.rflags.into(),
+
+        cr0: sregs.cr0.into(),
+        cr2: sregs.cr2.into(),
+        cr3: sregs.cr3.into(),
+        cr4: sregs.cr4.into(),
+
+        dr0: Default::default(),
+        dr1: Default::default(),
+        dr2: Default::default(),
+        dr3: Default::default(),
+        dr6: Default::default(),
+        dr7: Default::default(),
+
+        cs: segment_from_kvm_std(&sregs.cs),
+        ss: segment_from_kvm_std(&sregs.ss),
+        ds: segment_from_kvm_std(&sregs.ds),
+        es: segment_from_kvm_std(&sregs.es),
+        fs: segment_from_kvm_std(&sregs.fs),
+        gs: segment_from_kvm_std(&sregs.gs),
+        tr: segment_from_kvm_std(&sregs.tr),
+        ldtr: segment_from_kvm_std(&sregs.ldt),
+
+        idtr: idtr_from_kvm_std(&sregs.idt),
+        gdtr: gdtr_from_kvm_std(&sregs.gdt),
+
+        sysenter_cs: msrs.sysenter_cs,
+        sysenter_esp: msrs.sysenter_esp,
+        sysenter_eip: msrs.sysenter_eip,
+        shadow_gs: msrs.kernel_gs_base,
+
+        msr_flags: Default::default(),
+        msr_lstar: msrs.lstar,
+        msr_star: msrs.star,
+        msr_cstar: msrs.cstar,
+        msr_syscall_mask: msrs.syscall_mask,
+        msr_efer: msrs.efer.into(),
+        msr_tsc_aux: msrs.tsc_aux,
+    }
+}
+
+/// Helper to convert a KVM ring-event segment to a `SegmentDescriptor`.
+///
+/// The kernel packs segment AR in VMX format (AVL=12, L=13, D/B=14, G=15),
+/// but `SegmentAccess` uses compact format (AVL=8, L=9, D/B=10, G=11).
+/// Convert by shifting bits 12-15 down to bits 8-11.
+fn segment_from_kvm(seg: &kvm::sys::kvm_vmi_regs__bindgen_ty_1) -> SegmentDescriptor {
+    let vmx_ar = seg.ar as u32;
+    let compact_ar = (vmx_ar & 0xFF) | ((vmx_ar >> 4) & 0xF00);
+
+    SegmentDescriptor {
+        base: seg.base,
+        limit: seg.limit,
+        selector: seg.selector.into(),
+        access: compact_ar.into(),
+    }
+}
+
+/// Helper to convert a `SegmentDescriptor` to a KVM ring-event segment.
+///
+/// Converts from compact AR format (AVL=8, L=9, D/B=10, G=11) back to
+/// VMX format (AVL=12, L=13, D/B=14, G=15).
 fn segment_to_kvm(seg: &SegmentDescriptor) -> kvm::sys::kvm_vmi_regs__bindgen_ty_1 {
+    let compact_ar = u32::from(seg.access);
+    let vmx_ar = (compact_ar & 0xFF) | ((compact_ar & 0xF00) << 4);
+
     kvm::sys::kvm_vmi_regs__bindgen_ty_1 {
         base: seg.base,
         limit: seg.limit,
         selector: seg.selector.into(),
-        ar: u32::from(seg.access) as u16,
+        ar: vmx_ar as u16,
     }
 }
 
@@ -71,7 +193,7 @@ impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
             sysenter_cs: raw.sysenter_cs,
             sysenter_esp: raw.sysenter_esp,
             sysenter_eip: raw.sysenter_eip,
-            shadow_gs: raw.shadow_gs,
+            shadow_gs: raw.msr_kernel_gs_base,
 
             msr_flags: Default::default(), // not in ring event
             msr_lstar: raw.msr_lstar,

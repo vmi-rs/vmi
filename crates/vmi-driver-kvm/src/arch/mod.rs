@@ -1,5 +1,7 @@
 mod amd64;
 
+use std::os::fd::RawFd;
+
 use vmi_core::{Architecture, VcpuId, VmiEvent, VmiEventResponse};
 
 use crate::{Error, KvmDriver};
@@ -11,6 +13,9 @@ pub trait ArchAdapter: Architecture + Sized + 'static {
 
     /// Convert architecture-specific registers to ring event registers.
     fn registers_to_ring(regs: &Self::Registers) -> kvm::sys::kvm_vmi_regs;
+
+    /// Read registers from a vCPU fd using KVM_GET_REGS + KVM_GET_SREGS + KVM_GET_MSRS.
+    fn registers_from_vcpu(vcpu_fd: RawFd) -> Result<Self::Registers, Error>;
 
     /// Enable monitoring for a specific event type.
     fn monitor_enable(driver: &KvmDriver<Self>, option: Self::EventMonitor) -> Result<(), Error>;

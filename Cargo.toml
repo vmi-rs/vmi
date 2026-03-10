@@ -154,6 +154,7 @@ os-windows = [
 utils = ["vmi-utils"]
 
 [dev-dependencies]
+libc = { workspace = true }
 signal-hook = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -165,11 +166,13 @@ isr = { workspace = true }
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
+vmi-driver-kvm = { workspace = true }
 vmi-driver-xen = { workspace = true }
 vmi-driver-xen-core-dump = { workspace = true }
 vmi-os-linux = { workspace = true }
 vmi-os-windows = { workspace = true }
 
+kvm = { workspace = true }
 xen = { workspace = true }
 
 [[example]]
@@ -201,6 +204,18 @@ doc-scrape-examples = true
 name = "windows-recipe-writefile"
 path = "examples/windows-recipe-writefile.rs"
 doc-scrape-examples = true
+
+[[example]]
+name = "kvm-basic"
+path = "examples/kvm-basic.rs"
+
+[[example]]
+name = "kvm-basic-process-list"
+path = "examples/kvm-basic-process-list.rs"
+
+[[example]]
+name = "kvm-windows-breakpoint-manager"
+path = "examples/kvm-windows-breakpoint-manager.rs"
 
 [[example]]
 name = "windows-recipe-writefile-advanced"

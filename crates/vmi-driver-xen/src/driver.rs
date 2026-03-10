@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     os::fd::AsRawFd as _,
     time::{Duration, Instant},
@@ -33,6 +33,7 @@ where
     pub(crate) ring: RefCell<VmEventRing>,
     pub(crate) views: RefCell<HashMap<u16, XenAltP2MView>>,
     pub(crate) event_processing_overhead: RefCell<Duration>,
+    pub(crate) next_shadow_gfn: Cell<u64>,
 }
 
 impl<Arch> Drop for XenDriver<Arch>
@@ -67,6 +68,8 @@ where
         monitor.inguest_pagefault(true)?;
         monitor.emul_unimplemented(true)?;
 
+        let max_gpfn = domain.maximum_gpfn()?;
+
         Ok(Self {
             domain,
             devicemodel,
@@ -78,6 +81,7 @@ where
             ring: RefCell::new(ring),
             views: RefCell::new(HashMap::new()),
             event_processing_overhead: RefCell::new(Duration::from_millis(0)),
+            next_shadow_gfn: Cell::new(max_gpfn + 1),
         })
     }
 
@@ -199,9 +203,10 @@ where
     }
 
     pub fn allocate_gfn(&self) -> Result<Gfn, Error> {
-        let gfn = Gfn::new(self.domain.maximum_gpfn()?) + 1;
-        self.allocate_gfn_at(gfn)?;
-        Ok(gfn)
+        let gfn = self.next_shadow_gfn.get();
+        self.next_shadow_gfn.set(gfn + 1);
+        self.domain.populate_physmap_exact(0, 0, &[gfn])?;
+        Ok(Gfn::new(gfn))
     }
 
     pub fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), Error> {

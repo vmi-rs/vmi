@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    os::fd::RawFd,
     time::{Duration, Instant},
 };
 
@@ -20,6 +21,7 @@ pub struct KvmDriver<Arch: ArchAdapter> {
     pub(crate) views: RefCell<HashMap<u16, KvmVmiView>>,
     pub(crate) event_processing_overhead: RefCell<Duration>,
     pub(crate) num_vcpus: u32,
+    pub(crate) vcpu_fds: Vec<RawFd>,
     _arch: std::marker::PhantomData<Arch>,
 }
 
@@ -28,7 +30,12 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
     ///
     /// `vm_fd`: raw fd of the KVM VM (from `/dev/kvm` -> `KVM_CREATE_VM`)
     /// `num_vcpus`: number of vCPUs in the VM
-    pub fn new(vm_fd: std::os::fd::RawFd, num_vcpus: u32) -> Result<Self, Error> {
+    /// `vcpu_fds`: raw fds for each vCPU (for KVM_GET_REGS etc.)
+    pub fn new(
+        vm_fd: RawFd,
+        num_vcpus: u32,
+        vcpu_fds: Vec<RawFd>,
+    ) -> Result<Self, Error> {
         let session = KvmVmiSession::new(vm_fd)?;
         let monitor = KvmVmiMonitor::new(session.clone());
 
@@ -45,6 +52,7 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
             views: RefCell::new(HashMap::new()),
             event_processing_overhead: RefCell::new(Duration::ZERO),
             num_vcpus,
+            vcpu_fds,
             _arch: std::marker::PhantomData,
         })
     }
@@ -123,33 +131,50 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
         gfn: Gfn,
         view: View,
         access: MemoryAccess,
-        _options: MemoryAccessOptions,
+        options: MemoryAccessOptions,
     ) -> Result<(), Error> {
-        // KVM doesn't support special options like IGNORE_PAGE_WALK_UPDATES.
-        self.set_memory_access(gfn, view, access)
+        if view.0 == 0 {
+            return Err(Error::NotSupported);
+        }
+
+        let mut raw_access = access.bits();
+
+        if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
+            // Map to KVM_VMI_ACCESS_PW which allows CPU paging writes
+            // (A/D bit updates) without triggering EPT violations.
+            raw_access |= kvm::sys::KVM_VMI_ACCESS_PW as u8;
+        }
+
+        match self.views.borrow().get(&view.0) {
+            Some(v) => Ok(v.set_mem_access(gfn.into(), raw_access)?),
+            None => Err(Error::ViewNotFound),
+        }
     }
 
-    /// Get vCPU registers. Only available during event processing.
-    pub fn registers(&self, _vcpu: VcpuId) -> Result<Arch::Registers, Error> {
-        // KVM provides registers via ring events. Outside of events,
-        // KVM_GET_REGS on a vCPU fd would be needed.
-        Err(Error::NotSupported)
+    /// Get vCPU registers via KVM_GET_REGS + KVM_GET_SREGS + KVM_GET_MSRS.
+    ///
+    /// Requires vCPU fds to have been provided at construction time.
+    /// The vCPU must be paused (or blocked in KVM_RUN with mutex released)
+    /// for this to succeed.
+    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, Error> {
+        let idx = u16::from(vcpu) as usize;
+        let vcpu_fd = *self.vcpu_fds.get(idx).ok_or(Error::NotSupported)?;
+        Arch::registers_from_vcpu(vcpu_fd)
     }
 
-    /// Set vCPU registers. Only available during event processing.
+    /// Set vCPU registers. Not yet implemented for direct vCPU fd access.
     pub fn set_registers(
         &self,
         _vcpu: VcpuId,
         _registers: Arch::Registers,
     ) -> Result<(), Error> {
-        // KVM provides register modification via ring event SET_REGS response flag.
         Err(Error::NotSupported)
     }
 
     /// Allocate a shadow GFN from the kernel's pool.
-    pub fn allocate_gfn(&self, _gfn: Gfn) -> Result<(), Error> {
-        let _allocated = self.session.alloc_gfn()?;
-        Ok(())
+    pub fn allocate_gfn(&self) -> Result<Gfn, Error> {
+        let gfn = self.session.alloc_gfn()?;
+        Ok(Gfn::new(gfn))
     }
 
     /// Free a shadow GFN.
@@ -185,16 +210,12 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
     pub fn switch_to_view(&self, view: View) -> Result<(), Error> {
         let view_id = view.0 as u32;
         if view_id == 0 {
-            for vcpu_id in 0..self.num_vcpus {
-                self.session.switch_view(vcpu_id, 0)?;
-            }
+            self.session.switch_view(0)?;
             return Ok(());
         }
         match self.views.borrow().get(&view.0) {
             Some(v) => {
-                for vcpu_id in 0..self.num_vcpus {
-                    v.switch(vcpu_id)?;
-                }
+                v.switch()?;
                 Ok(())
             }
             None => Err(Error::ViewNotFound),
@@ -298,8 +319,9 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
                 while ring.has_unconsumed_requests() {
                     let event = unsafe { ring.current_event() };
                     Arch::process_event(self, event, &mut handler)?;
-                    ring.advance_consumer();
-                    ring.signal_ack();
+                    // Ack via ioctl: advances req_cons in kernel and
+                    // calls wake_up() to unblock the vCPU thread.
+                    ring.ack_event_ioctl()?;
                 }
             }
         }

@@ -39,9 +39,15 @@ where
     ///
     /// `vm_fd` is the raw file descriptor of the KVM VM.
     /// `num_vcpus` is the number of vCPUs.
-    pub fn new(vm_fd: std::os::fd::RawFd, num_vcpus: u32) -> Result<Self, VmiError> {
+    /// `vcpu_fds` are the raw file descriptors for each vCPU
+    /// (for KVM_GET_REGS, KVM_GET_SREGS, KVM_GET_MSRS).
+    pub fn new(
+        vm_fd: std::os::fd::RawFd,
+        num_vcpus: u32,
+        vcpu_fds: Vec<std::os::fd::RawFd>,
+    ) -> Result<Self, VmiError> {
         Ok(Self {
-            inner: KvmDriver::new(vm_fd, num_vcpus)?,
+            inner: KvmDriver::new(vm_fd, num_vcpus, vcpu_fds)?,
         })
     }
 }
@@ -198,8 +204,12 @@ where
         Ok(self.inner.resume()?)
     }
 
-    fn allocate_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        Ok(self.inner.allocate_gfn(gfn)?)
+    fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+        Ok(self.inner.allocate_gfn()?)
+    }
+
+    fn allocate_gfn_at(&self, _gfn: Gfn) -> Result<(), VmiError> {
+        Err(VmiError::NotSupported)
     }
 
     fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
