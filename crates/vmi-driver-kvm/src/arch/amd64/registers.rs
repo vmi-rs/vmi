@@ -179,11 +179,11 @@ impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
             dr7: Default::default(),
 
             cs: segment_from_kvm(&raw.cs),
-            ss: segment_from_kvm(&raw.ss),
             ds: segment_from_kvm(&raw.ds),
             es: segment_from_kvm(&raw.es),
             fs: segment_from_kvm(&raw.fs),
             gs: segment_from_kvm(&raw.gs),
+            ss: segment_from_kvm(&raw.ss),
             tr: SegmentDescriptor::default(),  // not in ring event
             ldtr: SegmentDescriptor::default(), // not in ring event
 
@@ -243,15 +243,14 @@ impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
             sysenter_cs: regs.sysenter_cs,
             sysenter_esp: regs.sysenter_esp,
             sysenter_eip: regs.sysenter_eip,
-            shadow_gs: regs.shadow_gs,
 
+            msr_efer: regs.msr_efer.into(),
             msr_star: regs.msr_star,
             msr_lstar: regs.msr_lstar,
             msr_cstar: regs.msr_cstar,
             msr_syscall_mask: regs.msr_syscall_mask,
-            msr_efer: regs.msr_efer.into(),
+            msr_kernel_gs_base: regs.shadow_gs,
             msr_tsc_aux: regs.msr_tsc_aux,
-            msr_kernel_gs_base: 0, // not in Registers struct
         }
     }
 }
