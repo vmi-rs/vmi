@@ -45,6 +45,17 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
             rings.push(KvmVmiRing::new(session.clone(), vcpu_id)?);
         }
 
+        // Enable mem_access events so EPT violations on alternate views
+        // are delivered to the agent instead of silently looping.
+        let ctrl = kvm::sys::kvm_vmi_control_event {
+            event: kvm::sys::KVM_VMI_EVENT_MEM_ACCESS,
+            enable: 1,
+            flags: 0,
+            pad: 0,
+            __bindgen_anon_1: kvm::sys::kvm_vmi_control_event__bindgen_ty_1::default(),
+        };
+        monitor.control_event(&ctrl)?;
+
         Ok(Self {
             session,
             monitor,
@@ -311,7 +322,12 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
         let start = Instant::now();
 
         // Process events from all rings that have data.
+        // Collect all events first, then ack them all at once.
+        // This batches processing like Xen's shared ring design:
+        // all vCPU events are processed before any vCPU is woken.
         let rings = self.rings.borrow();
+        let mut ack_list: Vec<usize> = Vec::new();
+
         for (i, ring) in rings.iter().enumerate() {
             if fds[i].revents & libc::POLLIN != 0 {
                 ring.drain_eventfd();
@@ -319,11 +335,15 @@ impl<Arch: ArchAdapter> KvmDriver<Arch> {
                 while ring.has_unconsumed_requests() {
                     let event = unsafe { ring.current_event() };
                     Arch::process_event(self, event, &mut handler)?;
-                    // Ack via ioctl: advances req_cons in kernel and
-                    // calls wake_up() to unblock the vCPU thread.
-                    ring.ack_event_ioctl()?;
+                    ring.advance_consumer();
+                    ack_list.push(i);
                 }
             }
+        }
+
+        // Signal all ack_fds at once to wake vCPUs simultaneously.
+        for &i in &ack_list {
+            rings[i].signal_ack();
         }
 
         *self.event_processing_overhead.borrow_mut() += start.elapsed();

@@ -20,7 +20,7 @@ fn make_ctrl(event: u32, enable: u32) -> kvm::sys::kvm_vmi_control_event {
         event,
         enable,
         flags: 0,
-        _reserved: 0,
+        pad: 0,
         __bindgen_anon_1: kvm::sys::kvm_vmi_control_event__bindgen_ty_1::default(),
     }
 }
@@ -28,10 +28,10 @@ fn make_ctrl(event: u32, enable: u32) -> kvm::sys::kvm_vmi_control_event {
 /// Build a `kvm_vmi_control_event` for a CR event.
 fn make_cr_ctrl(enable: u32, index: u8) -> kvm::sys::kvm_vmi_control_event {
     kvm::sys::kvm_vmi_control_event {
-        event: kvm::sys::KVM_VMI_EVENT_CR,
+        event: kvm::sys::KVM_VMI_EVENT_CR_EVAL,
         enable,
         flags: 0,
-        _reserved: 0,
+        pad: 0,
         __bindgen_anon_1: kvm::sys::kvm_vmi_control_event__bindgen_ty_1 {
             cr: kvm::sys::kvm_vmi_control_event__bindgen_ty_1__bindgen_ty_1 {
                 index,
@@ -66,16 +66,16 @@ impl ArchAdapter for Amd64 {
             EventMonitor::Register(cr) => make_cr_ctrl(enable, cr_to_index(cr)),
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::Breakpoint => {
-                    make_ctrl(kvm::sys::KVM_VMI_EVENT_BREAKPOINT, enable)
+                    make_ctrl(kvm::sys::KVM_VMI_EVENT_BREAKPOINT_EVAL, enable)
                 }
                 ExceptionVector::DebugException => {
-                    make_ctrl(kvm::sys::KVM_VMI_EVENT_DEBUG, enable)
+                    make_ctrl(kvm::sys::KVM_VMI_EVENT_DEBUG_EVAL, enable)
                 }
                 _ => return Err(Error::NotSupported),
             },
             EventMonitor::Singlestep => make_ctrl(kvm::sys::KVM_VMI_EVENT_SINGLESTEP, enable),
-            EventMonitor::CpuId => make_ctrl(kvm::sys::KVM_VMI_EVENT_CPUID, enable),
-            EventMonitor::Io => make_ctrl(kvm::sys::KVM_VMI_EVENT_IO, enable),
+            EventMonitor::CpuId => make_ctrl(kvm::sys::KVM_VMI_EVENT_CPUID_EVAL, enable),
+            EventMonitor::Io => make_ctrl(kvm::sys::KVM_VMI_EVENT_IO_EVAL, enable),
             EventMonitor::GuestRequest { .. } => return Err(Error::NotSupported),
         };
 
@@ -90,16 +90,16 @@ impl ArchAdapter for Amd64 {
             EventMonitor::Register(cr) => make_cr_ctrl(enable, cr_to_index(cr)),
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::Breakpoint => {
-                    make_ctrl(kvm::sys::KVM_VMI_EVENT_BREAKPOINT, enable)
+                    make_ctrl(kvm::sys::KVM_VMI_EVENT_BREAKPOINT_EVAL, enable)
                 }
                 ExceptionVector::DebugException => {
-                    make_ctrl(kvm::sys::KVM_VMI_EVENT_DEBUG, enable)
+                    make_ctrl(kvm::sys::KVM_VMI_EVENT_DEBUG_EVAL, enable)
                 }
                 _ => return Err(Error::NotSupported),
             },
             EventMonitor::Singlestep => make_ctrl(kvm::sys::KVM_VMI_EVENT_SINGLESTEP, enable),
-            EventMonitor::CpuId => make_ctrl(kvm::sys::KVM_VMI_EVENT_CPUID, enable),
-            EventMonitor::Io => make_ctrl(kvm::sys::KVM_VMI_EVENT_IO, enable),
+            EventMonitor::CpuId => make_ctrl(kvm::sys::KVM_VMI_EVENT_CPUID_EVAL, enable),
+            EventMonitor::Io => make_ctrl(kvm::sys::KVM_VMI_EVENT_IO_EVAL, enable),
             EventMonitor::GuestRequest { .. } => return Err(Error::NotSupported),
         };
 
@@ -150,7 +150,7 @@ impl ArchAdapter for Amd64 {
         let vmi_response = handler(&vmi_event);
 
         // Build the ring response flags.
-        let mut response_flags: u32 = kvm::sys::KVM_VMI_RESPONSE_ALLOW;
+        let mut response_flags: u32 = kvm::sys::KVM_VMI_RESPONSE_CONTINUE;
 
         // Handle SET_REGS.
         if let Some(new_gp_regs) = &vmi_response.registers {
@@ -206,6 +206,9 @@ impl ArchAdapter for Amd64 {
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr4));
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr3));
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr0));
+        let _ = driver.monitor.control_event(&make_ctrl(
+            kvm::sys::KVM_VMI_EVENT_MEM_ACCESS, 0,
+        ));
 
         // Switch all vCPUs back to view 0.
         let _ = driver.session.switch_view(0);

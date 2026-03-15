@@ -211,7 +211,7 @@ where
             .global()
             .with_tag("NtCreateFile");
         bpm.insert(&vmi, bp_NtCreateFile)?;
-        ptm.monitor(&vmi, cx_NtCreateFile, view, "NtCreateFile")?;
+        //ptm.monitor(&vmi, cx_NtCreateFile, view, "NtCreateFile")?;
         tracing::info!(%va_NtCreateFile);
 
         // Insert breakpoint for the NtWriteFile function.
@@ -221,7 +221,7 @@ where
             .global()
             .with_tag("NtWriteFile");
         bpm.insert(&vmi, bp_NtWriteFile)?;
-        ptm.monitor(&vmi, cx_NtWriteFile, view, "NtWriteFile")?;
+        //ptm.monitor(&vmi, cx_NtWriteFile, view, "NtWriteFile")?;
         tracing::info!(%va_NtWriteFile);
 
         // Insert breakpoint for the PspInsertProcess function.
@@ -231,7 +231,7 @@ where
             .global()
             .with_tag("PspInsertProcess");
         bpm.insert(&vmi, bp_PspInsertProcess)?;
-        ptm.monitor(&vmi, cx_PspInsertProcess, view, "PspInsertProcess")?;
+        //ptm.monitor(&vmi, cx_PspInsertProcess, view, "PspInsertProcess")?;
 
         // Insert breakpoint for the MmCleanProcessAddressSpace function.
         let va_MmCleanProcessAddressSpace = kernel_image_base + symbols.MmCleanProcessAddressSpace;
@@ -240,12 +240,12 @@ where
             .global()
             .with_tag("MmCleanProcessAddressSpace");
         bpm.insert(&vmi, bp_MmCleanProcessAddressSpace)?;
-        ptm.monitor(
-            &vmi,
-            cx_MmCleanProcessAddressSpace,
-            view,
-            "MmCleanProcessAddressSpace",
-        )?;
+        //ptm.monitor(
+        //    &vmi,
+        //    cx_MmCleanProcessAddressSpace,
+        //    view,
+        //    "MmCleanProcessAddressSpace",
+        //)?;
 
         Ok(Self {
             terminate_flag,
@@ -482,7 +482,7 @@ where
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(tracing::Level::TRACE)
         .init();
 
     let target_pid = std::env::args()

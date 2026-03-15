@@ -88,8 +88,7 @@ impl TryFromExt<&kvm::KvmVmiEventReason> for EventReason {
 
             // MSR, DescAccess, Interrupt events don't have direct EventReason equivalents.
             KvmVmiEventReason::Msr { .. }
-            | KvmVmiEventReason::DescAccess { .. }
-            | KvmVmiEventReason::Interrupt { .. } => Err(()),
+            | KvmVmiEventReason::DescAccess { .. } => Err(()),
         }
     }
 }

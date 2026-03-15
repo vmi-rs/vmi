@@ -214,8 +214,16 @@ name = "kvm-basic-process-list"
 path = "examples/kvm-basic-process-list.rs"
 
 [[example]]
+name = "kvm-kernel-set-time"
+path = "examples/kvm-kernel-set-time.rs"
+
+[[example]]
 name = "kvm-windows-breakpoint-manager"
 path = "examples/kvm-windows-breakpoint-manager.rs"
+
+[[example]]
+name = "kvm-windows-recipe-messagebox"
+path = "examples/kvm-windows-recipe-messagebox.rs"
 
 [[example]]
 name = "windows-recipe-writefile-advanced"
