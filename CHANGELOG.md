@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `Result<Gfn, VmiError>`, with the driver choosing the GFN to allocate
     - `VmiCore::allocate_next_available_gfn()` removed (use `allocate_gfn()`
       instead)
+- **Breaking:** `EventGuestRequest` renamed to `EventHypercall`;
+  `EventReason::GuestRequest` renamed to `EventReason::Hypercall`;
+  `EventMonitor::GuestRequest` renamed to `EventMonitor::Hypercall`;
+  `as_guest_request()` renamed to `as_hypercall()`
 
 ### Added
 

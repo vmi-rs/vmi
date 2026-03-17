@@ -1,7 +1,7 @@
 use vmi_arch_amd64::{
-    Amd64, ControlRegister, EventCpuId, EventGuestRequest, EventInterrupt, EventIo,
-    EventIoDirection, EventMemoryAccess, EventReason, EventSinglestep, EventWriteControlRegister,
-    ExceptionVector, Interrupt, InterruptType, MemoryAccessFlags,
+    Amd64, ControlRegister, EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection,
+    EventMemoryAccess, EventReason, EventSinglestep, EventWriteControlRegister, ExceptionVector,
+    Interrupt, InterruptType, MemoryAccessFlags,
 };
 use xen::{
     XenX86EventType, XenX86ExceptionVector,
@@ -155,7 +155,7 @@ impl TryFromExt<&VmEventReason> for EventReason {
                 (value, ExceptionVector::DebugException).into_ext(),
             )),
             Singlestep(value) => Ok(Self::Singlestep(value.into_ext())),
-            GuestRequest => Ok(Self::GuestRequest(EventGuestRequest {
+            GuestRequest => Ok(Self::Hypercall(EventHypercall {
                 instruction_length: 3, // VMCALL is always 3 bytes:
                                        // 0F 01 C1
             })),

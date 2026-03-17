@@ -66,7 +66,7 @@ pub struct EventSinglestep {
 
 /// Event generated when a VMCALL instruction is executed.
 #[derive(Debug, Clone, Copy)]
-pub struct EventGuestRequest {
+pub struct EventHypercall {
     /// Length of the VMCALL instruction.
     pub instruction_length: u8,
 }
@@ -125,8 +125,8 @@ pub enum EventReason {
     /// Singlestep event.
     Singlestep(EventSinglestep),
 
-    /// Guest request event (VMCALL).
-    GuestRequest(EventGuestRequest),
+    /// Hypercall event (VMCALL).
+    Hypercall(EventHypercall),
 
     /// CPUID instruction event.
     CpuId(EventCpuId),
@@ -184,15 +184,15 @@ impl EventReason {
         }
     }
 
-    /// Returns the guest request event.
+    /// Returns the hypercall event.
     ///
     /// # Panics
     ///
-    /// Panics if the event reason is not a guest request event.
-    pub fn as_guest_request(&self) -> &EventGuestRequest {
+    /// Panics if the event reason is not a hypercall event.
+    pub fn as_hypercall(&self) -> &EventHypercall {
         match self {
-            Self::GuestRequest(guest_request) => guest_request,
-            _ => panic!("EventReason is not a GuestRequest"),
+            Self::Hypercall(hypercall) => hypercall,
+            _ => panic!("EventReason is not a Hypercall"),
         }
     }
 
@@ -265,12 +265,12 @@ pub enum EventMonitor {
     ///
     /// When enabled, this method generates an event each time a VMCALL
     /// instruction is executed in the guest. This can be useful for
-    /// implementing custom guest requests or for implementing custom
+    /// implementing custom hypercalls or for implementing custom
     /// virtual device behavior.
     ///
     /// VMCALL events will be passed to the event callback function when they
     /// occur.
-    GuestRequest {
+    Hypercall {
         /// Allow userspace to handle the VMCALL.
         allow_userspace: bool,
     },

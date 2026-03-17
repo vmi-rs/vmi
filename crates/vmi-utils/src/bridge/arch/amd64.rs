@@ -2,12 +2,12 @@
 //!
 //! # Register layout
 //!
-//! The bridge supports two event sources: **VMCALL** (`GuestRequest`) and
+//! The bridge supports two event sources: **VMCALL** (`Hypercall`) and
 //! **CPUID**.
 //!
-//! ## VMCALL (`GuestRequest`)
+//! ## VMCALL (`Hypercall`)
 //!
-//! VMCALL is the intended mechanism. On Xen, triggering a guest request
+//! VMCALL is the intended mechanism. On Xen, triggering a hypercall
 //! requires the hypercall ABI registers to be set up:
 //!
 //! **x64:**
@@ -91,7 +91,7 @@ impl ArchAdapter for Amd64 {
                     .with_value2(registers.rdx & 0xFFFFFFFF)
                     .with_value3(registers.rsi & 0xFFFFFFFF)
                     .with_value4(registers.rdi & 0xFFFFFFFF),
-                    EventReason::GuestRequest(_) | _ => BridgePacket::new(
+                    EventReason::Hypercall(_) | _ => BridgePacket::new(
                         registers.rbp as u32,
                         (registers.rdx & 0xFFFF) as u16,
                         (registers.rdx >> 16) as u16,
@@ -109,7 +109,7 @@ impl ArchAdapter for Amd64 {
                         (cpuid.subleaf & 0xFFFF) as u16, // ecx (lower 16 bits)
                         (cpuid.subleaf >> 16) as u16,    // ecx (upper 16 bits)
                     ),
-                    EventReason::GuestRequest(_) | _ => BridgePacket::new(
+                    EventReason::Hypercall(_) | _ => BridgePacket::new(
                         registers.rcx as u32,
                         (registers.rdx & 0xFFFF) as u16,
                         (registers.rdx >> 16) as u16,

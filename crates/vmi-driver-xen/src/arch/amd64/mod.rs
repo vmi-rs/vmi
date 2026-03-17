@@ -49,7 +49,7 @@ impl ArchAdapter for Amd64 {
                 _ => return Err(Error::NotSupported),
             },
             EventMonitor::Singlestep => driver.monitor.singlestep(ENABLE)?,
-            EventMonitor::GuestRequest { allow_userspace } => {
+            EventMonitor::Hypercall { allow_userspace } => {
                 driver
                     .monitor
                     .guest_request(ENABLE, SYNC, allow_userspace)?
@@ -90,9 +90,7 @@ impl ArchAdapter for Amd64 {
 
                 driver.monitor.singlestep(DISABLE)?;
             }
-            EventMonitor::GuestRequest { .. } => {
-                driver.monitor.guest_request(DISABLE, SYNC, false)?
-            }
+            EventMonitor::Hypercall { .. } => driver.monitor.guest_request(DISABLE, SYNC, false)?,
             EventMonitor::CpuId => driver.monitor.cpuid(DISABLE)?,
             EventMonitor::Io => driver.monitor.io(DISABLE)?,
         }
@@ -246,7 +244,7 @@ impl ArchAdapter for Amd64 {
     fn reset_state(driver: &XenDriver<Self>) -> Result<(), Error> {
         let _ = driver.monitor_disable(EventMonitor::Io);
         let _ = driver.monitor_disable(EventMonitor::CpuId);
-        let _ = driver.monitor_disable(EventMonitor::GuestRequest {
+        let _ = driver.monitor_disable(EventMonitor::Hypercall {
             allow_userspace: false,
         });
         let _ = driver.monitor_disable(EventMonitor::Singlestep);

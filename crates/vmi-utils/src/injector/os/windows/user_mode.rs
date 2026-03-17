@@ -140,7 +140,7 @@ where
                 Ok(VmiEventResponse::default())
             }
             EventReason::Singlestep(_) => self.on_singlestep(vmi),
-            EventReason::GuestRequest(_) => self.on_vmcall(vmi),
+            EventReason::Hypercall(_) => self.on_hypercall(vmi),
             _ => panic!("Unhandled event: {:?}", vmi.event().reason()),
         }
     }
@@ -432,7 +432,7 @@ where
         }
         else {
             self.state = InjectorState::Bridge;
-            vmi.monitor_enable(EventMonitor::GuestRequest {
+            vmi.monitor_enable(EventMonitor::Hypercall {
                 allow_userspace: true,
             })?;
         }
@@ -440,15 +440,15 @@ where
         Ok(VmiEventResponse::default())
     }
 
-    #[tracing::instrument(name = "vmcall", skip_all, err)]
-    fn on_vmcall(
+    #[tracing::instrument(name = "hypercall", skip_all, err)]
+    fn on_hypercall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        let guest_request = vmi.event().reason().as_guest_request();
+        let hypercall = vmi.event().reason().as_hypercall();
 
         let mut registers = vmi.registers().gp_registers();
-        registers.rip += guest_request.instruction_length as u64;
+        registers.rip += hypercall.instruction_length as u64;
 
         tracing::trace!(
             magic = %Hex(registers.rbp as u32),
@@ -474,7 +474,7 @@ where
 
             if let Some(complete) = complete {
                 self.state = InjectorState::Complete(complete);
-                vmi.monitor_disable(EventMonitor::GuestRequest {
+                vmi.monitor_disable(EventMonitor::Hypercall {
                     allow_userspace: true,
                 })?;
             }
@@ -522,7 +522,7 @@ where
         // Disabled when transitioning from `PreHijack` to `Executing`.
         let mut disable_write_cr = false;
         // Disabled when transitioning from `Bridge` to `Complete`.
-        let mut disable_guest_request = false;
+        let mut disable_hypercall = false;
 
         match self.state {
             InjectorState::PreHijack => {
@@ -538,7 +538,7 @@ where
                 destroy_view = true;
             }
             InjectorState::Bridge => {
-                disable_guest_request = true;
+                disable_hypercall = true;
             }
             _ => {}
         }
@@ -560,12 +560,12 @@ where
             tracing::error!(%err, "failed to disable CR3 monitor");
         }
 
-        if disable_guest_request
-            && let Err(err) = vmi.monitor_disable(EventMonitor::GuestRequest {
+        if disable_hypercall
+            && let Err(err) = vmi.monitor_disable(EventMonitor::Hypercall {
                 allow_userspace: true,
             })
         {
-            tracing::error!(%err, "failed to disable guest request monitor");
+            tracing::error!(%err, "failed to disable hypercall monitor");
         }
 
         if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
