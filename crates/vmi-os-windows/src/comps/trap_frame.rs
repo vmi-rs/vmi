@@ -60,23 +60,31 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KTRAP_FRAME.Rip`.
+    /// Corresponds to `_KTRAP_FRAME.Rip` (AMD64) or `_KTRAP_FRAME.Pc` (AArch64).
     pub fn instruction_pointer(&self) -> Result<Va, VmiError> {
         let offsets = self.offsets();
         let KTRAP_FRAME = &offsets._KTRAP_FRAME;
 
-        self.vmi.read_va_native(self.va + KTRAP_FRAME.Rip.offset())
+        let field = KTRAP_FRAME.Rip
+            .or(KTRAP_FRAME.Pc)
+            .ok_or(VmiError::NotSupported)?;
+
+        self.vmi.read_va_native(self.va + field.offset())
     }
 
     /// Returns the stack pointer.
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KTRAP_FRAME.Rsp`.
+    /// Corresponds to `_KTRAP_FRAME.Rsp` (AMD64) or `_KTRAP_FRAME.Sp` (AArch64).
     pub fn stack_pointer(&self) -> Result<Va, VmiError> {
         let offsets = self.offsets();
         let KTRAP_FRAME = &offsets._KTRAP_FRAME;
 
-        self.vmi.read_va_native(self.va + KTRAP_FRAME.Rsp.offset())
+        let field = KTRAP_FRAME.Rsp
+            .or(KTRAP_FRAME.Sp)
+            .ok_or(VmiError::NotSupported)?;
+
+        self.vmi.read_va_native(self.va + field.offset())
     }
 }

@@ -18,12 +18,13 @@ symbols! {
         DbgkpSendErrorMessage: Option<u64>,
 
         KiKvaShadow: Option<u64>,
-        KiSystemCall32: u64,
-        KiSystemCall64: u64,
+        KiSystemCall32: Option<u64>,
+        KiSystemCall64: Option<u64>,
         //KiSystemCall32Shadow: u64,
         //KiSystemCall64Shadow: u64,
         KiSystemServiceStart: Option<u64>,
         KiSystemServiceExit: Option<u64>,
+        KiArm64ExceptionVectors: Option<u64>,
 
         KeInitThread: Option<u64>,
         KiInitializeContextThread: Option<u64>,
@@ -213,16 +214,19 @@ offsets! {
         }
 
         struct _KTRAP_FRAME {
-            Rax: Field,
-            Rcx: Field,
-            Rdx: Field,
-            R8: Field,
-            R9: Field,
-            R10: Field,
-            R11: Field,
+            Rax: Option<Field>,
+            Rcx: Option<Field>,
+            Rdx: Option<Field>,
+            R8: Option<Field>,
+            R9: Option<Field>,
+            R10: Option<Field>,
+            R11: Option<Field>,
 
-            Rip: Field,
-            Rsp: Field,
+            Rip: Option<Field>,
+            Rsp: Option<Field>,
+
+            Pc: Option<Field>,
+            Sp: Option<Field>,
         }
 
         struct _KAPC_STATE {

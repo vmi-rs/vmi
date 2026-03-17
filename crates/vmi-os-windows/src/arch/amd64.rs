@@ -181,7 +181,8 @@ where
         vmi.underlying_os()
             .kernel_image_base
             .get_or_try_init(|| {
-                let KiSystemCall64 = vmi.underlying_os().symbols.KiSystemCall64;
+                let KiSystemCall64 = vmi.underlying_os().symbols.KiSystemCall64
+                    .ok_or(VmiError::NotSupported)?;
 
                 let registers = vmi.registers();
                 Ok(Va(registers.msr_lstar - KiSystemCall64))
