@@ -17,6 +17,10 @@ keywords = [
 [lints]
 workspace = true
 
+[features]
+arch-amd64 = ["vmi-arch-amd64"]
+arch-aarch64 = ["vmi-arch-aarch64"]
+
 [dependencies]
 bitflags = { workspace = true, features = ["serde"] }
 object = { workspace = true }
@@ -29,7 +33,8 @@ isr-core = { workspace = true }
 isr-dl-pdb = { workspace = true } # CodeView
 isr-macros = { workspace = true }
 
-vmi-arch-amd64 = { workspace = true }
+vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-arch-aarch64 = { workspace = true, optional = true }
 vmi-core = { workspace = true }
 vmi-macros = { workspace = true }
 

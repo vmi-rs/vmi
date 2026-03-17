@@ -67,6 +67,7 @@ xen = { package = "libxen", version = "0.4.0" }
 kvm = { path = "../kvm", package = "libkvm", version = "0.4.0" }
 
 vmi = { path = ".", version = "0.4.0" }
+vmi-arch-aarch64 = { path = "./crates/vmi-arch-aarch64", version = "0.4.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.4.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.4.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.4.0" }
@@ -118,6 +119,7 @@ isr-core = { workspace = true }
 isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
+vmi-arch-aarch64 = { workspace = true, optional = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
 vmi-driver-kvm = { workspace = true, optional = true }
@@ -129,6 +131,7 @@ vmi-utils = { workspace = true, optional = true }
 
 [features]
 default = [
+    "arch-aarch64",
     "arch-amd64",
     "driver-kdmp",
     "driver-xen",
@@ -138,9 +141,14 @@ default = [
     "utils"
 ]
 
+arch-aarch64 = [
+    "vmi-arch-aarch64",
+    "vmi-os-windows?/arch-aarch64",
+]
 arch-amd64 = [
     "vmi-arch-amd64",
-    "vmi-utils?/arch-amd64"
+    "vmi-utils?/arch-amd64",
+    "vmi-os-windows?/arch-amd64",
 ]
 driver-kdmp = ["vmi-driver-kdmp"]
 driver-kvm = ["vmi-driver-kvm"]
@@ -164,16 +172,17 @@ isr = { workspace = true }
 
 # vmi = { workspace = true }
 vmi-core = { workspace = true }
+vmi-arch-aarch64 = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
 vmi-driver-kvm = { workspace = true }
-vmi-driver-xen = { workspace = true }
-vmi-driver-xen-core-dump = { workspace = true }
+# vmi-driver-xen = { workspace = true }
+# vmi-driver-xen-core-dump = { workspace = true }
 vmi-os-linux = { workspace = true }
 vmi-os-windows = { workspace = true }
 
 kvm = { workspace = true }
-xen = { workspace = true }
+# xen = { workspace = true }
 
 [[example]]
 name = "basic"
@@ -226,6 +235,16 @@ name = "kvm-windows-recipe-messagebox"
 path = "examples/kvm-windows-recipe-messagebox.rs"
 
 [[example]]
+name = "kvm-basic-aarch64"
+path = "examples/kvm-basic-aarch64.rs"
+required-features = ["arch-aarch64", "driver-kvm"]
+
+[[example]]
 name = "windows-recipe-writefile-advanced"
 path = "examples/windows-recipe-writefile-advanced.rs"
 doc-scrape-examples = true
+
+[[example]]
+name = "kvm-basic-process-list-aarch64"
+path = "examples/kvm-basic-process-list-aarch64.rs"
+required-features = ["arch-aarch64", "driver-kvm", "os-windows"]

@@ -32,6 +32,9 @@ pub enum VmiOsImageArchitecture {
 
     /// The x86-64 architecture.
     Amd64,
+
+    /// The AArch64 architecture.
+    Aarch64,
 }
 
 /// An exported symbol from an image (e.g., DLL or .so file).
