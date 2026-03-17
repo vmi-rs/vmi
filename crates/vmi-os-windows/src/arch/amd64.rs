@@ -1,10 +1,11 @@
 use vmi_arch_amd64::{
-    Amd64, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel, Registers,
+    Amd64, Cr3, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel,
+    Registers,
 };
 use vmi_core::{
-    Architecture as _, Va, VmiCore, VmiError, VmiSession, VmiState,
+    Architecture as _, Pa, Va, VmiCore, VmiError, VmiSession, VmiState,
     driver::VmiRead,
-    os::{NoOS, VmiOsImage},
+    os::{NoOS, VmiOsImage, VmiOsImageArchitecture},
 };
 
 use super::ArchAdapter;
@@ -235,6 +236,14 @@ where
             registers.gs.base.into()
         }
     }
+
+    fn translation_root_from_raw(value: u64) -> Pa {
+        Pa::from(Cr3(value))
+    }
+
+    fn native_image_architecture() -> VmiOsImageArchitecture {
+        VmiOsImageArchitecture::Amd64
+    }
 }
 
 /*
@@ -279,11 +288,12 @@ where
 
 */
 
-fn image_codeview<Driver>(
+pub(crate) fn image_codeview<Driver>(
     image: &WindowsImage<Driver>,
 ) -> Result<Option<WindowsKernelInformation>, VmiError>
 where
-    Driver: VmiRead<Architecture = Amd64>,
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
 {
     let debug_directory = match image.debug_directory()? {
         Some(debug_directory) => debug_directory,

@@ -71,6 +71,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 mod arch;
 use self::arch::ArchAdapter;
+#[cfg(feature = "arch-amd64")]
 pub use self::arch::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
 
 mod error;

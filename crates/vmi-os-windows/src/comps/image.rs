@@ -163,10 +163,21 @@ where
 
     /// Returns the target architecture for which the image was compiled.
     fn architecture(&self) -> Result<Option<VmiOsImageArchitecture>, VmiError> {
-        match self.pe()?.nt_headers().optional_header() {
+        let pe = self.pe()?;
+        let nt_headers = pe.nt_headers();
+
+        match nt_headers.optional_header() {
             ImageOptionalHeader::ImageOptionalHeader32(_) => Ok(Some(VmiOsImageArchitecture::X86)),
             ImageOptionalHeader::ImageOptionalHeader64(_) => {
-                Ok(Some(VmiOsImageArchitecture::Amd64))
+                // ARM64 PE images also use ImageOptionalHeader64.
+                // Check PE file header Machine field to distinguish.
+                const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+                let machine = nt_headers.file_header().machine.get(object::endian::LittleEndian);
+                if machine == IMAGE_FILE_MACHINE_ARM64 {
+                    Ok(Some(VmiOsImageArchitecture::Aarch64))
+                } else {
+                    Ok(Some(VmiOsImageArchitecture::Amd64))
+                }
             }
         }
     }
