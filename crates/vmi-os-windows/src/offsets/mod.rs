@@ -312,10 +312,8 @@ offsets! {
             DosPath: Field,                 // _UNICODE_STRING
         }
 
-        struct _MM_SESSION_SPACE {
-            SessionId: Field,               // ULONG
-            ProcessList: Field,             // _LIST_ENTRY
-        }
+        // NOTE: _MM_SESSION_SPACE is in SessionOffsets below (optional,
+        // not present in all PDBs e.g. ARM64).
 
         struct _MMPFN {
             ReferenceCount: Field,          // USHORT
@@ -403,6 +401,17 @@ offsets! {
     }
 }
 
+offsets! {
+    /// Session-related offsets (optional, not present in all PDBs).
+    #[derive(Debug)]
+    pub struct SessionOffsets {
+        struct _MM_SESSION_SPACE {
+            SessionId: Field,               // ULONG
+            ProcessList: Field,             // _LIST_ENTRY
+        }
+    }
+}
+
 /// Extended offsets for Windows.
 pub enum OffsetsExt {
     /// First version of extended offsets.
@@ -423,6 +432,9 @@ pub struct Offsets {
 
     /// Extended offsets specific to the Windows version.
     pub ext: Option<OffsetsExt>,
+
+    /// Session-related offsets (optional, not in all PDBs).
+    pub session: Option<SessionOffsets>,
 }
 
 impl std::ops::Deref for Offsets {
@@ -447,7 +459,9 @@ impl Offsets {
             None
         };
 
-        Ok(Self { common, ext })
+        let session = SessionOffsets::new(profile).ok();
+
+        Ok(Self { common, ext, session })
     }
 
     /// Returns the extended offsets.

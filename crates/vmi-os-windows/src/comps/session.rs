@@ -55,7 +55,9 @@ where
     /// Corresponds to `_MM_SESSION_SPACE.SessionId`.
     pub fn id(&self) -> Result<u32, VmiError> {
         let offsets = self.offsets();
-        let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
+        let session = offsets.session.as_ref()
+            .ok_or(VmiError::NotSupported)?;
+        let MM_SESSION_SPACE = &session._MM_SESSION_SPACE;
 
         self.vmi
             .read_u32(self.va + MM_SESSION_SPACE.SessionId.offset())
@@ -70,7 +72,9 @@ where
         &'a self,
     ) -> Result<impl Iterator<Item = Result<WindowsProcess<'a, Driver>, VmiError>>, VmiError> {
         let offsets = self.offsets();
-        let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
+        let session = offsets.session.as_ref()
+            .ok_or(VmiError::NotSupported)?;
+        let MM_SESSION_SPACE = &session._MM_SESSION_SPACE;
         let EPROCESS = &offsets._EPROCESS;
 
         Ok(ListEntryIterator::new(

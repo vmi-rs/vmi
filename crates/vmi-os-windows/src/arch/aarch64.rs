@@ -84,14 +84,9 @@ where
         {
             let base_address = Va(base_address);
 
-            //
-            // Read next page.
-            // Ignore page faults.
-            //
-
             match vmi.read(base_address, &mut data) {
                 Ok(()) => {}
-                Err(VmiError::Translation(_)) => continue,
+                Err(VmiError::Translation(_)) | Err(VmiError::Io(_)) => continue,
                 Err(err) => return Err(err),
             }
 

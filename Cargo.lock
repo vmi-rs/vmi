@@ -2061,10 +2061,10 @@ dependencies = [
  "isr-macros",
  "libc",
  "libkvm",
- "libxen",
  "signal-hook",
  "tracing",
  "tracing-subscriber",
+ "vmi-arch-aarch64",
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-driver-kdmp",
@@ -2074,6 +2074,16 @@ dependencies = [
  "vmi-os-linux",
  "vmi-os-windows",
  "vmi-utils",
+ "zerocopy",
+]
+
+[[package]]
+name = "vmi-arch-aarch64"
+version = "0.4.0"
+dependencies = [
+ "bitflags",
+ "smallvec",
+ "vmi-core",
  "zerocopy",
 ]
 
@@ -2124,6 +2134,7 @@ dependencies = [
  "libkvm",
  "thiserror",
  "tracing",
+ "vmi-arch-aarch64",
  "vmi-arch-amd64",
  "vmi-core",
 ]
@@ -2189,6 +2200,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "vmi",
+ "vmi-arch-aarch64",
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-macros",

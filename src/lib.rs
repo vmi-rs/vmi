@@ -671,6 +671,13 @@ pub mod arch {
 
     pub use vmi_core::arch::*;
 
+    #[cfg(feature = "arch-aarch64")]
+    pub mod aarch64 {
+        #![doc = include_str!("../docs/vmi-arch-aarch64.md")]
+
+        pub use vmi_arch_aarch64::*;
+    }
+
     #[cfg(feature = "arch-amd64")]
     pub mod amd64 {
         #![doc = include_str!("../docs/vmi-arch-amd64.md")]

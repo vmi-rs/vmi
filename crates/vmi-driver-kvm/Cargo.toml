@@ -22,3 +22,6 @@ tracing = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
 vmi-core = { workspace = true }
 kvm = { workspace = true }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+vmi-arch-aarch64 = { workspace = true }

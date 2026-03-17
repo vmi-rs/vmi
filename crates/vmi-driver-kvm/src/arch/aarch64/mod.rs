@@ -9,7 +9,6 @@ use vmi_core::{
 };
 
 use vmi_arch_aarch64::Pstate;
-
 use crate::{ArchAdapter, Error, IntoExt as _, KvmDriver, TryFromExt};
 
 // ARM64 KVM register ID encoding constants.
@@ -69,7 +68,9 @@ fn get_one_reg(vcpu_fd: RawFd, reg_id: u64) -> Result<u64, Error> {
         )
     };
     if ret < 0 {
-        return Err(Error::Io(std::io::Error::last_os_error()));
+        let err = std::io::Error::last_os_error();
+        tracing::trace!(vcpu_fd, reg_id = format!("{reg_id:#018x}"), ?err, "KVM_GET_ONE_REG failed");
+        return Err(Error::Io(err));
     }
     Ok(value)
 }
@@ -84,6 +85,7 @@ fn make_ctrl(event: u32, enable: u32) -> kvm::sys::kvm_vmi_control_event {
         __bindgen_anon_1: kvm::sys::kvm_vmi_control_event__bindgen_ty_1::default(),
     }
 }
+
 
 impl ArchAdapter for Aarch64 {
     fn registers_from_ring(regs: &kvm::sys::kvm_vmi_regs) -> Self::Registers {
@@ -120,6 +122,7 @@ impl ArchAdapter for Aarch64 {
             sp_el0: get_one_reg(vcpu_fd, REG_SP)?,
         })
     }
+
 
     fn monitor_enable(driver: &KvmDriver<Self>, option: Self::EventMonitor) -> Result<(), Error> {
         let enable = 1u32;
