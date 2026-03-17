@@ -165,7 +165,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the VMI session with Windows OS.
     eprintln!("Creating VMI session...");
-    let os = WindowsOs::<VmiKvmDriver<Aarch64>>::new(&profile)?;
+    let os = WindowsOs::<VmiKvmDriver<Aarch64>>::with_kernel_base(
+        &profile,
+        kernel_info.base_address,
+    )?;
     let session = VmiSession::new(&core, &os);
 
     // Pause and list processes.
