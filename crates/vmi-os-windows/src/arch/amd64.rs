@@ -5,7 +5,7 @@ use vmi_arch_amd64::{
 use vmi_core::{
     Architecture as _, Pa, Va, VmiCore, VmiError, VmiSession, VmiState,
     driver::VmiRead,
-    os::{NoOS, VmiOsImage, VmiOsImageArchitecture},
+    os::{NoOS, VmiOsImageArchitecture},
 };
 
 use super::ArchAdapter;
@@ -154,7 +154,7 @@ where
             tracing::trace!(%base_address, "found MZ");
 
             let image = WindowsImage::new_without_os(vmi, base_address);
-            match image_codeview(&image) {
+            match super::image_codeview(&image) {
                 Ok(Some(result)) => {
                     let path = &result.codeview.path;
 
@@ -287,33 +287,6 @@ where
 }
 
 */
-
-pub(crate) fn image_codeview<Driver>(
-    image: &WindowsImage<Driver>,
-) -> Result<Option<WindowsKernelInformation>, VmiError>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    let debug_directory = match image.debug_directory()? {
-        Some(debug_directory) => debug_directory,
-        None => return Ok(None),
-    };
-
-    let codeview = match debug_directory.codeview()? {
-        Some(codeview) => codeview,
-        None => return Ok(None),
-    };
-
-    let optional_header = image.nt_headers()?.optional_header();
-
-    Ok(Some(WindowsKernelInformation {
-        base_address: image.base_address(),
-        version_major: optional_header.major_operating_system_version(),
-        version_minor: optional_header.minor_operating_system_version(),
-        codeview,
-    }))
-}
 
 fn function_argument_x86<Driver>(
     vmi: VmiState<WindowsOs<Driver>>,

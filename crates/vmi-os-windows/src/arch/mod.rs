@@ -4,12 +4,12 @@ mod amd64;
 #[cfg(feature = "arch-aarch64")]
 mod aarch64;
 
-use vmi_core::{Architecture, Pa, Va, VmiCore, VmiError, VmiState, driver::VmiRead, os::VmiOsImageArchitecture};
+use vmi_core::{Architecture, Pa, Va, VmiCore, VmiError, VmiState, driver::VmiRead, os::{VmiOsImage, VmiOsImageArchitecture}};
 
 #[cfg(feature = "arch-amd64")]
 pub use self::amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
 
-use crate::{WindowsKernelInformation, WindowsOs};
+use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// Architecture-specific Windows functionality.
 pub trait ArchAdapter<Driver>: Architecture
@@ -43,4 +43,31 @@ where
     /// Return the native image architecture for this architecture.
     /// This is used to determine the architecture of non-WoW64 processes.
     fn native_image_architecture() -> VmiOsImageArchitecture;
+}
+
+pub(crate) fn image_codeview<Driver>(
+    image: &WindowsImage<Driver>,
+) -> Result<Option<WindowsKernelInformation>, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    let debug_directory = match image.debug_directory()? {
+        Some(debug_directory) => debug_directory,
+        None => return Ok(None),
+    };
+
+    let codeview = match debug_directory.codeview()? {
+        Some(codeview) => codeview,
+        None => return Ok(None),
+    };
+
+    let optional_header = image.nt_headers()?.optional_header();
+
+    Ok(Some(WindowsKernelInformation {
+        base_address: image.base_address(),
+        version_major: optional_header.major_operating_system_version(),
+        version_minor: optional_header.minor_operating_system_version(),
+        codeview,
+    }))
 }
