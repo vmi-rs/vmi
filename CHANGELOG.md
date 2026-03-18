@@ -67,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EventReason::GuestRequest` renamed to `EventReason::Hypercall`;
   `EventMonitor::GuestRequest` renamed to `EventMonitor::Hypercall`;
   `as_guest_request()` renamed to `as_hypercall()`
+- **Breaking:** `EventWriteControlRegister` renamed to `EventWriteCr`;
+  `EventReason::WriteControlRegister` renamed to `EventReason::WriteCr`;
+  `as_write_control_register()` renamed to `as_write_cr()`
 
 ### Added
 

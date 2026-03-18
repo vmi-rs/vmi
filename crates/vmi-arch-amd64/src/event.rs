@@ -35,7 +35,7 @@ pub struct EventMemoryAccess {
 
 /// Event generated when a control register is written to.
 #[derive(Debug, Clone, Copy)]
-pub struct EventWriteControlRegister {
+pub struct EventWriteCr {
     /// The control register that was written to (CR0, CR3, CR4 or XCR0).
     pub register: ControlRegister,
 
@@ -117,7 +117,7 @@ pub enum EventReason {
     MemoryAccess(EventMemoryAccess),
 
     /// Control register write event.
-    WriteControlRegister(EventWriteControlRegister),
+    WriteCr(EventWriteCr),
 
     /// Interrupt or exception event.
     Interrupt(EventInterrupt),
@@ -153,10 +153,10 @@ impl EventReason {
     /// # Panics
     ///
     /// Panics if the event reason is not a control register write event.
-    pub fn as_write_control_register(&self) -> &EventWriteControlRegister {
+    pub fn as_write_cr(&self) -> &EventWriteCr {
         match self {
-            Self::WriteControlRegister(write_control_register) => write_control_register,
-            _ => panic!("EventReason is not a WriteControlRegister"),
+            Self::WriteCr(write_cr) => write_cr,
+            _ => panic!("EventReason is not a WriteCr"),
         }
     }
 

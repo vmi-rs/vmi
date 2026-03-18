@@ -26,7 +26,7 @@ pub use self::{
     efer::MsrEfer,
     event::{
         EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection, EventMemoryAccess,
-        EventMonitor, EventReason, EventSinglestep, EventWriteControlRegister, MemoryAccessFlags,
+        EventMonitor, EventReason, EventSinglestep, EventWriteCr, MemoryAccessFlags,
     },
     interrupt::{ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType},
     paging::{PageTableEntry, PageTableLevel, PagingMode},

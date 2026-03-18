@@ -135,7 +135,7 @@ where
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         match vmi.event().reason() {
             EventReason::MemoryAccess(_) => self.on_memory_access(vmi),
-            EventReason::WriteControlRegister(_) => {
+            EventReason::WriteCr(_) => {
                 let _ = self.on_write_cr(vmi);
                 Ok(VmiEventResponse::default())
             }
