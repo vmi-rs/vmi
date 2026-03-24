@@ -156,7 +156,6 @@ impl VmiProber {
 
     /// Checks for any unexpected page faults that have occurred and returns
     /// an error if any are present.
-    #[tracing::instrument(skip_all, err)]
     pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
         let pfs = self.page_faults();
         if !pfs.is_empty() {

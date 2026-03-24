@@ -123,7 +123,6 @@ where
     #[tracing::instrument(
         name = "injector",
         skip_all,
-        err,
         fields(
             vcpu = %vmi.event().vcpu_id(),
             rip = %Va(vmi.registers().rip),
@@ -145,7 +144,7 @@ where
         }
     }
 
-    #[tracing::instrument(name = "write_cr", skip_all, err)]
+    #[tracing::instrument(name = "write_cr", skip_all)]
     fn on_write_cr(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -266,7 +265,7 @@ where
         Ok(VmiEventResponse::default())
     }
 
-    #[tracing::instrument(name = "memory_access", skip_all, err)]
+    #[tracing::instrument(name = "memory_access", skip_all)]
     fn on_memory_access(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -402,7 +401,7 @@ where
             .with_view(vmi.default_view()))
     }
 
-    #[tracing::instrument(name = "singlestep", skip_all, err)]
+    #[tracing::instrument(name = "singlestep", skip_all)]
     fn on_singlestep(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -440,7 +439,7 @@ where
         Ok(VmiEventResponse::default())
     }
 
-    #[tracing::instrument(name = "hypercall", skip_all, err)]
+    #[tracing::instrument(name = "hypercall", skip_all)]
     fn on_hypercall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -504,7 +503,7 @@ where
             Err(VmiError::Translation(pfs)) => {
                 let pf = pfs[0];
 
-                tracing::debug!(?pf, "injecting page fault");
+                tracing::debug!(va = %pf.va, "injecting page fault");
                 let _ =
                     vmi.inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.va, 0));
 

@@ -80,7 +80,6 @@ pub mod __private {
     /// process and retrieves the exported symbols from the image. The filename
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
-    #[tracing::instrument(skip(vmi), err)]
     pub fn exported_symbols<Os>(
         vmi: &VmiState<'_, Os>,
         filename: &str,

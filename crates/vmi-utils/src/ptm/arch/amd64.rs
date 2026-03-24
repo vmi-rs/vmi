@@ -349,7 +349,7 @@ where
     }
 
     fn dump(&self) {
-        tracing::debug!(
+        tracing::trace!(
             tables = self.tables.len(),
             entries = self.entries.len(),
             vas = self.vas.len(),
@@ -357,7 +357,7 @@ where
             "page table monitor state"
         );
         for (&(view, ctx), va) in &self.vas {
-            tracing::debug!(
+            tracing::trace!(
                 va = %ctx.va,
                 root = %ctx.root,
                 view = %view,
