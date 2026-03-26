@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Msr` type with well-known MSR constants (SYSENTER_CS/ESP/EIP, EFER, STAR,
+  LSTAR, CSTAR, FMASK, FS_BASE, GS_BASE, KERNEL_GS_BASE, TSC_AUX)
+
 - `KernelInjectorHandler` / `UserInjectorHandler` type aliases
 - Kernel-mode injection handler (`KernelMode`)
 - `inject!` macro now supports `nt!` prefix for kernel symbol lookup

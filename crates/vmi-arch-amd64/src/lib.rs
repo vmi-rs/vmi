@@ -4,9 +4,9 @@ mod address;
 mod cr;
 mod descriptor;
 mod dr;
-mod efer;
 mod event;
 mod interrupt;
+mod msr;
 mod paging;
 mod registers;
 mod rflags;
@@ -23,12 +23,12 @@ pub use self::{
     cr::{ControlRegister, Cr0, Cr2, Cr3, Cr4},
     descriptor::{Gdtr, Idtr},
     dr::{Dr0, Dr1, Dr2, Dr3, Dr6, Dr7},
-    efer::MsrEfer,
     event::{
         EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection, EventMemoryAccess,
         EventMonitor, EventReason, EventSinglestep, EventWriteCr, MemoryAccessFlags,
     },
     interrupt::{ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType},
+    msr::{Msr, MsrEfer},
     paging::{PageTableEntry, PageTableLevel, PagingMode},
     registers::{GpRegisters, Registers},
     rflags::Rflags,
