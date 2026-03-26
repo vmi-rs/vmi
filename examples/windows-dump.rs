@@ -190,7 +190,7 @@ fn enumerate_handle_table(process: &WindowsProcess<Driver>) -> Result<(), VmiErr
             return Ok(());
         }
         Err(err) => {
-            tracing::error!(?err, "Failed to get handle table");
+            tracing::error!(%err, "Failed to get handle table");
             return Ok(());
         }
     };

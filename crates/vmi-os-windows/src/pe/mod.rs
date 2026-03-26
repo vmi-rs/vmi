@@ -360,7 +360,7 @@ where
         let info = match CvInfoPdb70::ref_from_bytes(info) {
             Ok(info) => info,
             Err(err) => {
-                tracing::warn!(?err, "Invalid CodeView Info address");
+                tracing::warn!(%err, "Invalid CodeView Info address");
                 return Ok(None);
             }
         };

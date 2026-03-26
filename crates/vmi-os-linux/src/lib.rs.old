@@ -646,7 +646,7 @@ where
 
             match self.process_vm_area_to_region(vmi, process, entry) {
                 Ok(region) => result.push(region),
-                Err(err) => tracing::warn!(?err, ?entry, "Failed to convert MT entry to region"),
+                Err(err) => tracing::warn!(%err, ?entry, "Failed to convert MT entry to region"),
             }
 
             true
