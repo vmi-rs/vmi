@@ -1,13 +1,13 @@
 use vmi_arch_amd64::{
     Amd64, ControlRegister, EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection,
-    EventMemoryAccess, EventReason, EventSinglestep, EventWriteCr, ExceptionVector, Interrupt,
-    InterruptType, MemoryAccessFlags,
+    EventMemoryAccess, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, ExceptionVector,
+    Interrupt, InterruptType, MemoryAccessFlags,
 };
 use xen::{
     XenX86EventType, XenX86ExceptionVector,
     ctrl::{
-        VmEventCpuid, VmEventCtrlReg, VmEventDebug, VmEventIo, VmEventMemAccess, VmEventReason,
-        VmEventSinglestep, VmEventWriteCtrlReg,
+        VmEventCpuid, VmEventCtrlReg, VmEventDebug, VmEventIo, VmEventMemAccess, VmEventMovToMsr,
+        VmEventReason, VmEventSinglestep, VmEventWriteCtrlReg,
     },
 };
 
@@ -50,6 +50,16 @@ impl FromExt<&VmEventWriteCtrlReg> for EventWriteCr {
     fn from_ext(value: &VmEventWriteCtrlReg) -> Self {
         Self {
             register: value.index.into_ext(),
+            new_value: value.new_value,
+            old_value: value.old_value,
+        }
+    }
+}
+
+impl FromExt<&VmEventMovToMsr> for EventWriteMsr {
+    fn from_ext(value: &VmEventMovToMsr) -> Self {
+        Self {
+            register: value.msr as u32,
             new_value: value.new_value,
             old_value: value.old_value,
         }
@@ -148,6 +158,7 @@ impl TryFromExt<&VmEventReason> for EventReason {
         match value {
             MemoryAccess(value) => Ok(Self::MemoryAccess(value.into_ext())),
             WriteCtrlReg(value) => Ok(Self::WriteCr(value.into_ext())),
+            MovToMsr(value) => Ok(Self::WriteMsr(value.into_ext())),
             SoftwareBreakpoint(value) => Ok(Self::Interrupt(
                 (value, ExceptionVector::Breakpoint).into_ext(),
             )),

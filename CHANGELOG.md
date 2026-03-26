@@ -75,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Msr` type with well-known MSR constants (SYSENTER_CS/ESP/EIP, EFER, STAR,
   LSTAR, CSTAR, FMASK, FS_BASE, GS_BASE, KERNEL_GS_BASE, TSC_AUX)
+- MSR write monitoring: `EventMonitor::Msr`, `EventReason::WriteMsr`,
+  `EventWriteMsr`, `as_write_msr()`
 
 - `KernelInjectorHandler` / `UserInjectorHandler` type aliases
 - Kernel-mode injection handler (`KernelMode`)

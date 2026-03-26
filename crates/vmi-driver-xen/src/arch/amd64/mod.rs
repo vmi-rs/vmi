@@ -1,7 +1,7 @@
 mod event;
 mod registers;
 
-use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, ExceptionVector};
+use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, ExceptionVector, Msr};
 use vmi_core::{
     Registers as _, VcpuId, View, VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse,
 };
@@ -43,6 +43,11 @@ impl ArchAdapter for Amd64 {
                     ON_CHANGE_ONLY,
                 )?;
             }
+            EventMonitor::Msr(msr) => {
+                driver
+                    .monitor
+                    .mov_to_msr(msr.into(), ENABLE, ON_CHANGE_ONLY)?
+            }
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::DebugException => driver.monitor.debug_exceptions(ENABLE, SYNC)?,
                 ExceptionVector::Breakpoint => driver.monitor.software_breakpoint(ENABLE)?,
@@ -75,6 +80,11 @@ impl ArchAdapter for Amd64 {
                     0,
                     ON_CHANGE_ONLY,
                 )?;
+            }
+            EventMonitor::Msr(msr) => {
+                driver
+                    .monitor
+                    .mov_to_msr(msr.into(), DISABLE, ON_CHANGE_ONLY)?
             }
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::DebugException => {
@@ -250,6 +260,28 @@ impl ArchAdapter for Amd64 {
         let _ = driver.monitor_disable(EventMonitor::Singlestep);
         let _ = driver.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint));
         let _ = driver.monitor_disable(EventMonitor::Interrupt(ExceptionVector::DebugException));
+
+        // Try to disable all known MSR events.
+        // Unfortunately, Xen does not provide a way to disable all MSR events
+        // at once, so if a user enabled some MSR events that we don't know
+        // about, those may remain enabled after reset.
+        //
+        // TODO: Track which MSR events have been enabled?
+        {
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::TSC_AUX));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::GS_BASE));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::FS_BASE));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::FMASK));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::CSTAR));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::LSTAR));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::STAR));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::EFER));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_EIP));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_ESP));
+            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_CS));
+        }
+
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Xcr0));
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr4));
         let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr3));

@@ -1,6 +1,6 @@
 use vmi_core::{Gfn, MemoryAccess, Pa, Va};
 
-use crate::{ControlRegister, ExceptionVector, Interrupt};
+use crate::{ControlRegister, ExceptionVector, Interrupt, Msr};
 
 bitflags::bitflags! {
     /// Flags describing a memory access event.
@@ -43,6 +43,19 @@ pub struct EventWriteCr {
     pub new_value: u64,
 
     /// Old value of the control register.
+    pub old_value: u64,
+}
+
+/// Event generated when a model-specific register (MSR) is written to.
+#[derive(Debug, Clone, Copy)]
+pub struct EventWriteMsr {
+    /// The MSR that was written to.
+    pub register: u32,
+
+    /// New value of the MSR.
+    pub new_value: u64,
+
+    /// Old value of the MSR.
     pub old_value: u64,
 }
 
@@ -119,6 +132,9 @@ pub enum EventReason {
     /// Control register write event.
     WriteCr(EventWriteCr),
 
+    /// MSR write event.
+    WriteMsr(EventWriteMsr),
+
     /// Interrupt or exception event.
     Interrupt(EventInterrupt),
 
@@ -157,6 +173,18 @@ impl EventReason {
         match self {
             Self::WriteCr(write_cr) => write_cr,
             _ => panic!("EventReason is not a WriteCr"),
+        }
+    }
+
+    /// Returns the MSR write event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event reason is not an MSR write event.
+    pub fn as_write_msr(&self) -> &EventWriteMsr {
+        match self {
+            Self::WriteMsr(write_msr) => write_msr,
+            _ => panic!("EventReason is not a WriteMsr"),
         }
     }
 
@@ -238,6 +266,18 @@ pub enum EventMonitor {
     /// When enabled, relevant events will be passed to the event callback
     /// function.
     Register(ControlRegister),
+
+    /// Monitor writes to a specific model-specific register (MSR).
+    ///
+    /// When enabled, this method generates an event each time the specified
+    /// MSR is written to via the WRMSR instruction. This can be useful for
+    /// detecting changes to system configuration, such as SYSCALL entry
+    /// points ([`Msr::LSTAR`]), segment base addresses ([`Msr::FS_BASE`],
+    /// [`Msr::GS_BASE`]), or extended feature settings ([`Msr::EFER`]).
+    ///
+    /// MSR write events will be passed to the event callback function when
+    /// they occur.
+    Msr(Msr),
 
     /// Monitor specific hardware interrupts or exception vectors.
     ///
