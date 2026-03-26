@@ -234,6 +234,7 @@ where
     mm_pfn_database: OnceCell<Va>, // _MMPFN*
     nt_build_lab: OnceCell<String>,
     nt_build_lab_ex: OnceCell<String>,
+    ps_idle_process: OnceCell<Va>, // _EPROCESS*
 
     _marker: std::marker::PhantomData<Driver>,
 }
@@ -351,6 +352,7 @@ where
             mm_pfn_database: OnceCell::new(),
             nt_build_lab: OnceCell::new(),
             nt_build_lab_ex: OnceCell::new(),
+            ps_idle_process: OnceCell::new(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -565,6 +567,62 @@ where
 
         let result = vmi.read_u32(teb + TEB.LastStatusValue.offset())?;
         Ok(Some(result))
+    }
+
+    /// Returns the idle process (PID 0).
+    ///
+    /// The idle process is a special system process that runs when no other
+    /// threads are ready to execute on a processor.
+    ///
+    /// # Notes
+    ///
+    /// This value is cached after the first read.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `PsIdleProcess` symbol.
+    pub fn idle_process<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<WindowsProcess<'a, Driver>, VmiError> {
+        let ps_idle_process = this!(vmi)
+            .ps_idle_process
+            .get_or_try_init(|| {
+                let PsIdleProcess = symbol!(vmi, PsIdleProcess);
+
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                vmi.read_va_native(kernel_image_base + PsIdleProcess)
+            })
+            .copied()?;
+
+        Ok(WindowsProcess::new(vmi, ProcessObject(ps_idle_process)))
+    }
+
+    /// Returns the idle thread for the current processor.
+    ///
+    /// The idle thread is a per-processor thread that runs when no other
+    /// threads are scheduled on that processor.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KPCR.Prcb.IdleThread`.
+    pub fn idle_thread<'a>(vmi: VmiState<'a, Self>) -> Result<WindowsThread<'a, Driver>, VmiError> {
+        let KPCR = offset!(vmi, _KPCR);
+        let KPRCB = offset!(vmi, _KPRCB);
+
+        let kpcr = Self::current_kpcr(vmi);
+
+        if kpcr.is_null() {
+            return Err(WindowsError::CorruptedStruct("KPCR").into());
+        }
+
+        let addr = kpcr + KPCR.Prcb.offset() + KPRCB.IdleThread.offset();
+        let result = vmi.read_va_native(addr)?;
+
+        if result.is_null() {
+            return Err(WindowsError::CorruptedStruct("KPCR.Prcb.IdleThread").into());
+        }
+
+        Ok(WindowsThread::new(vmi, ThreadObject(result)))
     }
 
     /// Returns the virtual address of the Page Frame Number (PFN) database.

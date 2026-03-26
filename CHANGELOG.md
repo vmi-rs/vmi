@@ -77,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kernel-mode injection handler (`KernelMode`)
 - `inject!` macro now supports `nt!` prefix for kernel symbol lookup
 
+- `WindowsOs::idle_process()` - returns the idle process (PID 0)
+- `WindowsOs::idle_thread()` - returns the idle thread for the current processor
 - `WindowsThread::is_attached()` - checks if a thread is attached to a
   foreign process (via `_KTHREAD.ApcStateIndex`)
 - `WindowsThread::saved_process()` - returns the thread's home process

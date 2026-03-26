@@ -11,6 +11,7 @@ symbols! {
     #[derive(Debug)]
     pub struct Symbols {
         PsActiveProcessHead: u64,
+        PsIdleProcess: u64,
         PsInitialSystemProcess: u64,
         PsLoadedModuleList: u64,
         KiDeliverApc: Option<u64>,
@@ -130,6 +131,8 @@ offsets! {
 
         struct _KPRCB {
             CurrentThread: Field,
+            NextThread: Field,
+            IdleThread: Field,
         }
 
         #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]
