@@ -83,8 +83,11 @@ symbols! {
         PspInsertThread: Option<u64>,
         PspUserThreadStartup: Option<u64>,
         PspExitThread: Option<u64>,
+        PspThreadDelete: Option<u64>,
         PspSetContextThreadInternal: Option<u64>,
+        PspWow64SetContextThread: Option<u64>,
         MmCleanProcessAddressSpace: Option<u64>,
+        MmDeleteProcessAddressSpace: Option<u64>,
 
         SeAccessCheck: Option<u64>,
 
