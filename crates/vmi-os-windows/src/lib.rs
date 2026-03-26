@@ -468,10 +468,10 @@ where
         this!(vmi)
             .highest_user_address
             .get_or_try_init(|| {
-                let MmHighestUserAddress =
-                    Self::kernel_image_base(vmi)? + symbol!(vmi, MmHighestUserAddress);
+                let MmHighestUserAddress = symbol!(vmi, MmHighestUserAddress);
 
-                vmi.read_va_native(MmHighestUserAddress)
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                vmi.read_va_native(kernel_image_base + MmHighestUserAddress)
             })
             .copied()
     }
@@ -580,11 +580,11 @@ where
     ///
     /// Corresponds to `MmPfnDatabase` symbol.
     fn pfn_database(vmi: VmiState<Self>) -> Result<Va, VmiError> {
-        let MmPfnDatabase = symbol!(vmi, MmPfnDatabase);
-
         this!(vmi)
             .mm_pfn_database
             .get_or_try_init(|| {
+                let MmPfnDatabase = symbol!(vmi, MmPfnDatabase);
+
                 let kernel_image_base = Self::kernel_image_base(vmi)?;
                 vmi.read_va_native(kernel_image_base + MmPfnDatabase)
             })
@@ -653,10 +653,10 @@ where
         let object_root_directory = this!(vmi)
             .object_root_directory
             .get_or_try_init(|| {
-                let ObpRootDirectoryObject =
-                    Self::kernel_image_base(vmi)? + symbol!(vmi, ObpRootDirectoryObject);
+                let ObpRootDirectoryObject = symbol!(vmi, ObpRootDirectoryObject);
 
-                vmi.read_va_native(ObpRootDirectoryObject)
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                vmi.read_va_native(kernel_image_base + ObpRootDirectoryObject)
             })
             .copied()?;
 
