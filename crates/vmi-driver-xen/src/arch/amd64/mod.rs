@@ -9,7 +9,7 @@ use xen::ctrl::{
     VmEvent, VmEventData, VmEventFastSinglestep, VmEventFlag, VmEventFlagOptions, VmEventRegs,
 };
 
-use crate::{ArchAdapter, Error, IntoExt as _, TryFromExt, XenDriver};
+use crate::{ArchAdapter, Error, IntoExt as _, TryFromExt as _, XenDriver};
 
 impl ArchAdapter for Amd64 {
     type XenArch = xen::arch::x86::Amd64;
