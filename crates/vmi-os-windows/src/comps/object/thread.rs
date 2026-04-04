@@ -288,6 +288,22 @@ where
         let value = self.vmi.read_u8(self.va + KTHREAD.State.offset())?;
         Ok(WindowsThreadState::from(value))
     }
+
+    /// Returns the saved kernel stack pointer for this thread.
+    ///
+    /// For threads that are not currently running, this is the stack pointer
+    /// value saved during the last context switch (KiSwapContext).
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.KernelStack`.
+    pub fn kernel_stack(&self) -> Result<Va, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        self.vmi
+            .read_va_native(self.va + KTHREAD.KernelStack.offset())
+    }
 }
 
 impl<'a, Driver> VmiOsThread<'a, Driver> for WindowsThread<'a, Driver>

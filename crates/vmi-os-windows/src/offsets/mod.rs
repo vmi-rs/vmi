@@ -244,6 +244,7 @@ offsets! {
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY
             State: Field,                   // UCHAR - KTHREAD_STATE enum
+            KernelStack: Field,             // PVOID
         }
 
         struct _ETHREAD {
