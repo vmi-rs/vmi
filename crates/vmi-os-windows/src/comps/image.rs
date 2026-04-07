@@ -13,8 +13,8 @@ use vmi_core::{
 use crate::{
     ArchAdapter, WindowsError, WindowsOs,
     pe::{
-        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, Pe, PeDebugDirectory,
-        PeExportDirectory,
+        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory, PeExportDirectory,
+        PeHeader, PeImage,
     },
 };
 
@@ -36,8 +36,8 @@ where
     /// The base address of the image.
     va: Va,
 
-    /// Cached PE parser.
-    pe: OnceCell<Pe>,
+    /// Cached PE header.
+    pe_header: OnceCell<PeHeader>,
 }
 
 impl<Driver> VmiVa for WindowsImage<'_, Driver>
@@ -67,50 +67,8 @@ where
         Self {
             vmi,
             va,
-            pe: OnceCell::new(),
+            pe_header: OnceCell::new(),
         }
-    }
-
-    /// Returns the DOS header.
-    pub fn dos_header(&self) -> Result<&ImageDosHeader, VmiError> {
-        Ok(self.pe()?.dos_header())
-    }
-
-    /// Returns the NT headers.
-    pub fn nt_headers(&self) -> Result<&ImageNtHeaders, VmiError> {
-        Ok(self.pe()?.nt_headers())
-    }
-
-    /// Returns the debug directory.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG]`.
-    pub fn debug_directory(&'a self) -> Result<Option<PeDebugDirectory<'a, Driver>>, VmiError> {
-        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_DEBUG)? {
-            Some(entry) => entry,
-            None => return Ok(None),
-        };
-
-        let data = self.read_data_directory(&entry)?;
-
-        Ok(Some(PeDebugDirectory::new(self, entry, data)))
-    }
-
-    /// Returns the export directory.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]`.
-    pub fn export_directory(&self) -> Result<Option<PeExportDirectory<Driver>>, VmiError> {
-        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_EXPORT)? {
-            Some(entry) => entry,
-            None => return Ok(None),
-        };
-
-        let data = self.read_data_directory(&entry)?;
-
-        Ok(Some(PeExportDirectory::new(self, entry, data)))
     }
 
     /// Finds the specified data directory entry.
@@ -140,12 +98,50 @@ where
     }
 
     /// Returns the parsed PE representation of the image.
-    fn pe(&self) -> Result<&Pe, VmiError> {
-        self.pe.get_or_try_init(|| {
+    fn pe(&self) -> Result<&PeHeader, VmiError> {
+        self.pe_header.get_or_try_init(|| {
             let mut data = vec![0; Driver::Architecture::PAGE_SIZE as usize];
             self.vmi.read(self.va, &mut data)?;
-            Ok(Pe::new(&data).map_err(WindowsError::from)?)
+            Ok(PeHeader::parse(&data).map_err(WindowsError::from)?)
         })
+    }
+}
+
+impl<'a, Driver> PeImage for WindowsImage<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn read_at_rva(&self, rva: u32, buf: &mut [u8]) -> Result<(), VmiError> {
+        self.vmi.read(self.va + rva as u64, buf)
+    }
+
+    fn dos_header(&self) -> Result<&ImageDosHeader, VmiError> {
+        Ok(self.pe()?.dos_header())
+    }
+
+    fn nt_headers(&self) -> Result<&ImageNtHeaders, VmiError> {
+        Ok(self.pe()?.nt_headers())
+    }
+
+    fn export_directory(&self) -> Result<Option<PeExportDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_EXPORT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let data = self.read_data_directory(&entry)?;
+        Ok(Some(PeExportDirectory::new(self, entry, data)))
+    }
+
+    fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_DEBUG)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let data = self.read_data_directory(&entry)?;
+        Ok(Some(PeDebugDirectory::new(self, data)))
     }
 }
 

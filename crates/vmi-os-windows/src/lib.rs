@@ -89,7 +89,7 @@ pub use self::iter::{
 };
 
 pub mod pe;
-pub use self::pe::{CodeView, Pe, PeError};
+pub use self::pe::{CodeView, PeError, PeFile, PeHeader, PeImage};
 
 mod offsets;
 pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + remove offsets() & symbols() methods

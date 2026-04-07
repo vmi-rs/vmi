@@ -36,4 +36,12 @@ pub enum PeError {
     /// Invalid export table.
     #[error("Invalid export table")]
     InvalidExportTable,
+
+    /// Invalid section table.
+    #[error("Invalid section table")]
+    InvalidSectionTable,
+
+    /// Invalid RVA.
+    #[error("Invalid RVA: {0}")]
+    InvalidRva(u32),
 }
