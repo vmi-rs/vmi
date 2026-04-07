@@ -111,6 +111,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BreakpointManager::handle_ptm_events()` - batch processing for page table monitor events
 - `GpRegisters` marker trait in `vmi-core` for general-purpose register sets
 - `VmiOsUserModule` trait in `vmi-core` for enumerating user-mode modules
+- Windows CONTEXT structure definitions (`CONTEXT_X86`, `CONTEXT_AMD64`)
+- `WindowsContext` trait - accessor for general-purpose registers, RIP, flags, segments from a `CONTEXT`
+- `WindowsSpecialRegisters` trait - accessor for control/debug registers and descriptor tables from `KSPECIAL_REGISTERS`
+- `WindowsRegistersAdapter` trait - writes `WindowsContext`/`WindowsSpecialRegisters` into VMI Registers
 
 ### Fixed
 

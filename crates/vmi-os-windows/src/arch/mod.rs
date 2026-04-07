@@ -1,8 +1,17 @@
 mod amd64;
+mod context;
 
 use vmi_core::{AccessContext, Architecture, Va, VmiCore, VmiError, VmiState, driver::VmiRead};
 
-pub use self::amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
+pub use self::{
+    amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry},
+    context::{
+        CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64, KDESCRIPTOR_X86,
+        KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A, MAXIMUM_SUPPORTED_EXTENSION,
+        SIZE_OF_80387_REGISTERS, WindowsContext, WindowsRegistersAdapter, WindowsSpecialRegisters,
+        XSAVE_FORMAT,
+    },
+};
 use crate::{WindowsKernelInformation, WindowsOs, WindowsOsExt};
 
 /// Architecture-specific Windows functionality.
