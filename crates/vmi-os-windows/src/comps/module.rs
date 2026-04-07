@@ -71,6 +71,19 @@ where
             .os()
             .read_unicode_string(self.va + KLDR_DATA_TABLE_ENTRY.FullDllName.offset())
     }
+
+    /// Returns the timestamp of the module.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.TimeDateStamp`.
+    pub fn time_date_stamp(&self) -> Result<u32, VmiError> {
+        let offsets = self.offsets();
+        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+
+        self.vmi
+            .read_u32(self.va + KLDR_DATA_TABLE_ENTRY.TimeDateStamp.offset())
+    }
 }
 
 impl<'a, Driver> VmiOsModule<'a, Driver> for WindowsModule<'a, Driver>

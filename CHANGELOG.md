@@ -92,6 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsThread::trap_frame()` + `struct WindowsTrapFrame` - returns the thread's trap frame
 - `WindowsProcess::native_peb()` - returns the process's native PEB (via `_EPROCESS.Peb`)
 - `WindowsProcess::is_wow64()` - checks if the process is a WoW64 process (via `_EPROCESS.WoW64Process`)
+- `WindowsModule::time_date_stamp()` - returns the `TimeDateStamp` from the
+  kernel module's `_KLDR_DATA_TABLE_ENTRY`
 - `WindowsExceptionVector` trait for Windows-specific exception vectors (APC, DPC)
 - `WindowsInterrupt` trait for creating Windows-specific interrupts
 - `WindowsPageTableEntry` trait made public
