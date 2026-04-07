@@ -4,7 +4,7 @@ use std::cell::RefCell;
 
 use isr_core::Profile;
 use vmi_core::{
-    Architecture, Va, VmiCore, VmiDriver, VmiError, VmiOs, VmiState, VmiVa as _,
+    Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiOs, VmiState, VmiVa as _,
     driver::VmiRead,
     os::{ProcessObject, ThreadObject},
 };
@@ -15,7 +15,8 @@ use self::arch::ArchAdapter;
 mod comps;
 pub use self::comps::{
     LinuxDEntry, LinuxFile, LinuxFsStruct, LinuxImage, LinuxMapped, LinuxMmStruct, LinuxModule,
-    LinuxPath, LinuxQStr, LinuxTaskStruct, LinuxThread, LinuxVFSMount, LinuxVmAreaStruct,
+    LinuxPath, LinuxQStr, LinuxTaskStruct, LinuxThread, LinuxUserModule, LinuxVFSMount,
+    LinuxVmAreaStruct,
 };
 
 mod error;
@@ -173,6 +174,7 @@ where
     type Thread<'a> = LinuxThread;
     type Image<'a> = LinuxImage;
     type Module<'a> = LinuxModule;
+    type UserModule<'a> = LinuxUserModule;
     type Region<'a> = LinuxVmAreaStruct<'a, Driver>;
     type Mapped<'a> = LinuxMapped;
 
@@ -256,6 +258,14 @@ where
     }
 
     fn module(_vmi: VmiState<'_, Self>, _module: Va) -> Result<Self::Module<'_>, VmiError> {
+        unimplemented!()
+    }
+
+    fn user_module(
+        _vmi: VmiState<'_, Self>,
+        _module: Va,
+        _root: Pa,
+    ) -> Result<Self::UserModule<'_>, VmiError> {
         unimplemented!()
     }
 

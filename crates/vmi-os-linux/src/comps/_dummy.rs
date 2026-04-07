@@ -3,7 +3,7 @@ use vmi_core::{
     driver::VmiRead,
     os::{
         ThreadId, ThreadObject, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol, VmiOsMapped,
-        VmiOsModule, VmiOsThread,
+        VmiOsModule, VmiOsThread, VmiOsUserModule,
     },
 };
 
@@ -69,6 +69,35 @@ impl VmiVa for LinuxModule {
 }
 
 impl<Driver> VmiOsModule<'_, Driver> for LinuxModule
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    type Os = LinuxOs<Driver>;
+
+    fn base_address(&self) -> Result<Va, VmiError> {
+        unimplemented!()
+    }
+
+    fn size(&self) -> Result<u64, VmiError> {
+        unimplemented!()
+    }
+
+    fn name(&self) -> Result<String, VmiError> {
+        unimplemented!()
+    }
+}
+
+/// Dummy implementation for Linux OS user module.
+pub struct LinuxUserModule;
+
+impl VmiVa for LinuxUserModule {
+    fn va(&self) -> Va {
+        unimplemented!()
+    }
+}
+
+impl<Driver> VmiOsUserModule<'_, Driver> for LinuxUserModule
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,

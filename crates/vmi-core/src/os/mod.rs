@@ -8,6 +8,7 @@ mod process;
 mod region;
 mod struct_reader;
 mod thread;
+mod user_module;
 
 use vmi_macros::derive_os_wrapper;
 
@@ -20,12 +21,16 @@ pub use self::{
     region::{VmiOsRegion, VmiOsRegionKind},
     struct_reader::StructReader,
     thread::{ThreadId, ThreadObject, VmiOsThread},
+    user_module::VmiOsUserModule,
 };
-use crate::{Architecture, Va, VmiDriver, VmiError, VmiOsState, VmiState};
+use crate::{Architecture, Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
 #[derive_os_wrapper(VmiOsState)]
-pub trait VmiOs: Sized {
+pub trait VmiOs
+where
+    Self: Sized,
+{
     /// The architecture.
     type Architecture: Architecture;
 
@@ -49,6 +54,11 @@ pub trait VmiOs: Sized {
 
     /// The kernel module type.
     type Module<'a>: VmiOsModule<'a, Self::Driver> + 'a
+    where
+        Self: 'a;
+
+    /// The user-mode module type.
+    type UserModule<'a>: VmiOsUserModule<'a, Self::Driver> + 'a
     where
         Self: 'a;
 
@@ -155,6 +165,13 @@ pub trait VmiOs: Sized {
 
     /// Returns the kernel module corresponding to the given base address.
     fn module<'a>(vmi: VmiState<'a, Self>, module: Va) -> Result<Self::Module<'a>, VmiError>;
+
+    /// Returns the user-mode module corresponding to the given base address.
+    fn user_module<'a>(
+        vmi: VmiState<'a, Self>,
+        module: Va,
+        root: Pa,
+    ) -> Result<Self::UserModule<'a>, VmiError>;
 
     /// Returns the memory region corresponding to the given address.
     ///

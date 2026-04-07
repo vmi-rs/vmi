@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsProcess::is_wow64()` - checks if the process is a WoW64 process (via `_EPROCESS.WoW64Process`)
 - `WindowsModule::time_date_stamp()` - returns the `TimeDateStamp` from the
   kernel module's `_KLDR_DATA_TABLE_ENTRY`
+- `WindowsUserModule` - Windows implementation backed by `_LDR_DATA_TABLE_ENTRY`
+- `WindowsPebLdrData` - PEB loader data
+- `WindowsPeb::ldr()` - returns the PEB loader data
 - `WindowsExceptionVector` trait for Windows-specific exception vectors (APC, DPC)
 - `WindowsInterrupt` trait for creating Windows-specific interrupts
 - `WindowsPageTableEntry` trait made public
@@ -107,6 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsThread::state()` - returns the thread's scheduling state (via `_KTHREAD.State`)
 - `BreakpointManager::handle_ptm_events()` - batch processing for page table monitor events
 - `GpRegisters` marker trait in `vmi-core` for general-purpose register sets
+- `VmiOsUserModule` trait in `vmi-core` for enumerating user-mode modules
 
 ### Fixed
 

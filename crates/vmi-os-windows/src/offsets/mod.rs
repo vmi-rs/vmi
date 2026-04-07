@@ -284,6 +284,24 @@ offsets! {
             ProcessParameters: Field,       // _RTL_USER_PROCESS_PARAMETERS*
         }
 
+        struct _PEB_LDR_DATA {
+            InLoadOrderModuleList: Field,           // _LIST_ENTRY
+            InMemoryOrderModuleList: Field,         // _LIST_ENTRY
+            InInitializationOrderModuleList: Field, // _LIST_ENTRY
+        }
+
+        struct _LDR_DATA_TABLE_ENTRY {
+            InLoadOrderLinks: Field,            // _LIST_ENTRY
+            InMemoryOrderLinks: Field,          // _LIST_ENTRY
+            InInitializationOrderLinks: Field,  // _LIST_ENTRY
+            DllBase: Field,                     // PVOID
+            EntryPoint: Field,                  // PVOID
+            SizeOfImage: Field,                 // ULONG
+            FullDllName: Field,                 // _UNICODE_STRING
+            BaseDllName: Field,                 // _UNICODE_STRING
+            TimeDateStamp: Field,               // ULONG
+        }
+
         struct _TEB {
             ProcessEnvironmentBlock: Field, // _PEB*
             LastErrorValue: Field,          // ULONG
