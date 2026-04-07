@@ -1,9 +1,15 @@
+use vmi_core::VcpuId;
+
 /// Error types for Windows operations.
 #[derive(thiserror::Error, Debug)]
 pub enum WindowsError {
     /// Corrupted struct.
     #[error("Corrupted struct: {0}")]
     CorruptedStruct(&'static str),
+
+    /// Invalid processor.
+    #[error("Invalid processor: {0}")]
+    InvalidProcessor(VcpuId),
 
     /// Corrupted struct.
     #[error(transparent)]

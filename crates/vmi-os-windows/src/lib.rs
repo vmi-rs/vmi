@@ -61,8 +61,8 @@ use std::{cell::RefCell, collections::HashMap};
 use isr_core::Profile;
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    AccessContext, Architecture, Gfn, Hex, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError,
-    VmiState,
+    AccessContext, Architecture, Gfn, Hex, Pa, Registers as _, Va, VcpuId, VmiCore, VmiDriver,
+    VmiError, VmiState,
     driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
 };
@@ -100,9 +100,9 @@ pub use self::comps::{
     PebLdrData, PebLdrDataLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR,
     WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsControlArea,
     WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable, WindowsHandleTableEntry,
-    WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
-    WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
-    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess, WindowsProcessParameters,
+    WindowsImage, WindowsKernelProcessorBlock, WindowsModule, WindowsObject,
+    WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind,
+    WindowsPeb, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess, WindowsProcessParameters,
     WindowsRegion, WindowsSectionObject, WindowsSession, WindowsTeb, WindowsThread,
     WindowsThreadState, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
 };
@@ -241,6 +241,8 @@ where
     object_type_rcache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
+    ke_number_processors: OnceCell<u16>,   // CCHAR
+    ki_processor_block: OnceCell<Vec<Va>>, // _KPRCB*[]
     ki_kva_shadow: OnceCell<bool>,
     mm_pfn_database: OnceCell<Va>, // _MMPFN*
     nt_build_lab: OnceCell<String>,
@@ -359,6 +361,8 @@ where
             object_type_cache: RefCell::new(HashMap::new()),
             object_type_rcache: RefCell::new(HashMap::new()),
             object_type_name_cache: RefCell::new(HashMap::new()),
+            ke_number_processors: OnceCell::new(),
+            ki_processor_block: OnceCell::new(),
             ki_kva_shadow: OnceCell::new(),
             mm_pfn_database: OnceCell::new(),
             nt_build_lab: OnceCell::new(),
@@ -500,6 +504,25 @@ where
         Ok(address >= lowest_user_address && address <= highest_user_address)
     }
 
+    /// Returns the number of active processors in the system.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KeNumberProcessors`.
+    pub fn number_of_processors(vmi: VmiState<Self>) -> Result<u16, VmiError> {
+        this!(vmi)
+            .ke_number_processors
+            .get_or_try_init(|| {
+                // KeNumberProcessors is a CCHAR (i8), but we return it as u16
+                // for convenience since VcpuId is u16.
+                let KeNumberProcessors = symbol!(vmi, KeNumberProcessors);
+
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                Ok(vmi.read_u8(kernel_image_base + KeNumberProcessors)? as u16)
+            })
+            .copied()
+    }
+
     /// Returns the virtual address of the current Kernel Processor Control
     /// Region (KPCR).
     ///
@@ -508,6 +531,47 @@ where
     /// returns the virtual address of the KPCR for the current processor.
     pub fn current_kpcr(vmi: VmiState<Self>) -> Va {
         Driver::Architecture::current_kpcr(vmi)
+    }
+
+    /// Returns a Kernel Processor Control Block (KPRCB) for the specified processor.
+    ///
+    /// The KPRCB is an opaque, per-processor structure embedded within the
+    /// KPCR.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KiProcessorBlock` symbol, offset by the processor ID.
+    pub fn kprcb<'a>(
+        vmi: VmiState<'a, Self>,
+        vcpu_id: VcpuId,
+    ) -> Result<WindowsKernelProcessorBlock<'a, Driver>, VmiError> {
+        let number_of_processors = Self::number_of_processors(vmi)? as u64;
+        let ki_processor_block = this!(vmi).ki_processor_block.get_or_try_init(|| {
+            let KiProcessorBlock = symbol!(vmi, KiProcessorBlock);
+
+            let kernel_image_base = Self::kernel_image_base(vmi)?;
+
+            // Pre-read all KPCR addresses for each processor and cache them.
+            let mut blocks = Vec::new();
+            for cpu in 0..number_of_processors {
+                let offset = cpu * vmi.registers().address_width() as u64;
+                let addr = vmi.read_va_native(kernel_image_base + KiProcessorBlock + offset)?;
+                blocks.push(addr);
+            }
+
+            Ok::<_, VmiError>(blocks)
+        })?;
+
+        if vcpu_id.0 as usize >= ki_processor_block.len() {
+            return Err(WindowsError::InvalidProcessor(vcpu_id).into());
+        }
+
+        let prcb = ki_processor_block[vcpu_id.0 as usize];
+        if prcb.is_null() {
+            return Err(WindowsError::CorruptedStruct("KiProcessorBlock").into());
+        }
+
+        Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
     }
 
     /// Returns information from an exception record at the specified address.
