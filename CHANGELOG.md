@@ -126,6 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PeFile` - file-backed PE parser with section-based RVA-to-file-offset translation
 - `PeExceptionDirectory` - parses .pdata RUNTIME_FUNCTION entries
 
+- `unwind` module with x64 stack unwinder
+
 ### Fixed
 
 ## [0.4.0] - 2025-08-15
