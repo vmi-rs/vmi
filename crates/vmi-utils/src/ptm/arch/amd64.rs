@@ -470,12 +470,12 @@ where
     }
 
     fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View) {
-        let va_keys: Vec<VaKey> = self
+        let va_keys = self
             .vas
             .keys()
             .filter(|&&(v, _)| v == view)
             .copied()
-            .collect();
+            .collect::<Vec<VaKey>>();
 
         for (v, ctx) in va_keys {
             debug_assert_eq!(v, view);
