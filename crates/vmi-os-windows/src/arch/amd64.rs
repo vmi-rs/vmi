@@ -8,7 +8,7 @@ use vmi_core::{
 };
 
 use super::ArchAdapter;
-use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
+use crate::{PeImage as _, WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// An extension trait for [`PageTableEntry`] that provides access to
 /// Windows-specific fields.

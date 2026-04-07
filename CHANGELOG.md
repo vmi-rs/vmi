@@ -70,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `EventWriteControlRegister` renamed to `EventWriteCr`;
   `EventReason::WriteControlRegister` renamed to `EventReason::WriteCr`;
   `as_write_control_register()` renamed to `as_write_cr()`
+- **Breaking:** `Pe` renamed to `PeHeader`
+- **Breaking:** `PeExportDirectory` and `PeDebugDirectory` are now generic over
+  `PeImage`
 
 ### Added
 
@@ -118,6 +121,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsContext` trait - accessor for general-purpose registers, RIP, flags, segments from a `CONTEXT`
 - `WindowsSpecialRegisters` trait - accessor for control/debug registers and descriptor tables from `KSPECIAL_REGISTERS`
 - `WindowsRegistersAdapter` trait - writes `WindowsContext`/`WindowsSpecialRegisters` into VMI Registers
+
+- `PeImage` trait - abstracts PE data access
+- `PeFile` - file-backed PE parser with section-based RVA-to-file-offset translation
 
 ### Fixed
 

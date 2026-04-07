@@ -5,14 +5,16 @@
 //! format for Windows operating systems.
 
 mod error;
+mod file;
 
 pub use isr_dl_pdb::CodeView; // re-export the CodeView struct from the isr-dl-pdb crate
-pub use object::pe::{ImageDataDirectory, ImageDebugDirectory, ImageDosHeader, ImageFileHeader};
+pub use object::pe::{ImageDataDirectory, ImageDebugDirectory};
 use object::{
     endian::LittleEndian as LE,
     pe::{
         IMAGE_DEBUG_TYPE_CODEVIEW, IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC,
         IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
+        ImageDosHeader as OImageDosHeader, ImageFileHeader as OImageFileHeader,
         ImageNtHeaders32 as OImageNtHeaders32, ImageNtHeaders64 as OImageNtHeaders64,
         ImageOptionalHeader32 as OImageOptionalHeader32,
         ImageOptionalHeader64 as OImageOptionalHeader64,
@@ -26,11 +28,143 @@ use object::{
     },
     slice_from_all_bytes,
 };
-use vmi_core::{VmiError, driver::VmiRead, os::VmiOsImage};
+use vmi_core::VmiError;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
-pub use self::error::PeError;
-use crate::{ArchAdapter, WindowsImage};
+pub use self::{error::PeError, file::PeFile};
+
+/// Trait for reading PE image data.
+///
+/// Abstracts the source of PE data - either VMI memory ([`WindowsImage`])
+/// or a local file buffer ([`PeFile`]). Directory accessors are provided
+/// as default methods.
+///
+/// [`WindowsImage`]: crate::WindowsImage
+pub trait PeImage
+where
+    Self: Sized,
+{
+    /// Reads data at the given RVA within the image.
+    fn read_at_rva(&self, rva: u32, buf: &mut [u8]) -> Result<(), VmiError>;
+
+    /// Returns the DOS header.
+    fn dos_header(&self) -> Result<&ImageDosHeader, VmiError>;
+
+    /// Returns the NT headers.
+    fn nt_headers(&self) -> Result<&ImageNtHeaders, VmiError>;
+
+    /// Returns the export directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]`.
+    fn export_directory(&self) -> Result<Option<PeExportDirectory<'_, Self>>, VmiError>;
+
+    /// Returns the debug directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG]`.
+    fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError>;
+}
+
+macro_rules! impl_image_methods {
+    (
+        $(
+            $( #[$meta:meta] )*
+            $name:ident: $ty:ty
+        ),+ $(,)?
+    ) => {
+        $(
+            $( #[$meta] )*
+            pub fn $name(&self) -> $ty {
+                self.0.$name.get(LE)
+            }
+        )*
+    }
+}
+
+/// Portable Executable (PE) DOS Header.
+///
+/// Represents the **DOS Header** in a **PE file**, which is the initial structure
+/// at the beginning of the file. It contains legacy information from the MS-DOS
+/// executable format and a pointer to the NT headers.
+pub struct ImageDosHeader(OImageDosHeader);
+
+impl ImageDosHeader {
+    /// Parses the DOS header.
+    pub fn parse(data: &[u8], offset: &mut u64) -> Result<ImageDosHeader, PeError> {
+        let dos_header = data
+            .read_at::<OImageDosHeader>(0)
+            .map_err(|_| PeError::InvalidDosHeaderSizeOrAlignment)?;
+
+        if dos_header.e_magic.get(LE) != IMAGE_DOS_SIGNATURE {
+            return Err(PeError::InvalidDosMagic);
+        }
+
+        *offset = dos_header.nt_headers_offset() as u64;
+
+        Ok(ImageDosHeader(*dos_header))
+    }
+
+    /// Return the file offset of the nt_headers.
+    pub fn nt_headers_offset(&self) -> u32 {
+        self.e_lfanew()
+    }
+
+    impl_image_methods!(
+        /// Magic number.
+        e_magic: u16,
+
+        /// Bytes on last page of file.
+        e_cblp: u16,
+
+        /// Pages in file.
+        e_cp: u16,
+
+        /// Relocations.
+        e_crlc: u16,
+
+        /// Size of header in paragraphs.
+        e_cparhdr: u16,
+
+        /// Minimum extra paragraphs needed.
+        e_minalloc: u16,
+
+        /// Maximum extra paragraphs needed.
+        e_maxalloc: u16,
+
+        /// Initial (relative) SS value.
+        e_ss: u16,
+
+        /// Initial SP value.
+        e_sp: u16,
+
+        /// Checksum.
+        e_csum: u16,
+
+        /// Initial IP value.
+        e_ip: u16,
+
+        /// Initial (relative) CS value.
+        e_cs: u16,
+
+        /// File address of relocation table.
+        e_lfarlc: u16,
+
+        /// Overlay number.
+        e_ovno: u16,
+
+        /// OEM identifier (for e_oeminfo).
+        e_oemid: u16,
+
+        /// OEM information; e_oemid specific.
+        e_oeminfo: u16,
+
+        /// File address of new exe header.
+        e_lfanew: u32,
+    );
+}
 
 /// Portable Executable (PE) NT Headers.
 ///
@@ -48,6 +182,41 @@ pub struct ImageNtHeaders {
 }
 
 impl ImageNtHeaders {
+    /// Parses the NT headers.
+    pub fn parse(data: &[u8], offset: &mut u64) -> Result<Self, PeError> {
+        let magic = optional_header_magic(data).map_err(|_| PeError::InvalidPeMagic)?;
+
+        match magic {
+            IMAGE_NT_OPTIONAL_HDR32_MAGIC => {
+                ImageNtHeaders::parse_inner::<OImageNtHeaders32>(data, offset)
+            }
+            IMAGE_NT_OPTIONAL_HDR64_MAGIC => {
+                ImageNtHeaders::parse_inner::<OImageNtHeaders64>(data, offset)
+            }
+            _ => Err(PeError::InvalidPeMagic),
+        }
+    }
+
+    fn parse_inner<Pe>(data: &[u8], offset: &mut u64) -> Result<Self, PeError>
+    where
+        Self: From<Pe>,
+        Pe: OImageNtHeaders,
+    {
+        let nt_headers = data
+            .read::<Pe>(offset)
+            .map_err(|_| PeError::InvalidNtHeadersSizeOrAlignment)?;
+
+        if nt_headers.signature() != IMAGE_NT_SIGNATURE {
+            return Err(PeError::InvalidPeMagic);
+        }
+
+        if !nt_headers.is_valid_optional_magic() {
+            return Err(PeError::InvalidPeOptionalHeaderMagic);
+        }
+
+        Ok(Self::from(*nt_headers))
+    }
+
     /// Returns the PE signature.
     pub fn signature(&self) -> u32 {
         self.signature
@@ -68,7 +237,7 @@ impl From<OImageNtHeaders32> for ImageNtHeaders {
     fn from(value: OImageNtHeaders32) -> Self {
         Self {
             signature: value.signature.get(LE),
-            file_header: value.file_header,
+            file_header: ImageFileHeader(value.file_header),
             optional_header: ImageOptionalHeader::ImageOptionalHeader32(value.optional_header),
         }
     }
@@ -78,10 +247,41 @@ impl From<OImageNtHeaders64> for ImageNtHeaders {
     fn from(value: OImageNtHeaders64) -> Self {
         Self {
             signature: value.signature.get(LE),
-            file_header: value.file_header,
+            file_header: ImageFileHeader(value.file_header),
             optional_header: ImageOptionalHeader::ImageOptionalHeader64(value.optional_header),
         }
     }
+}
+
+/// Portable Executable (PE) File Header.
+///
+/// Represents the **File Header** in a **PE file**, containing metadata about
+/// the target architecture, number of sections, timestamps, and characteristics.
+pub struct ImageFileHeader(OImageFileHeader);
+
+impl ImageFileHeader {
+    impl_image_methods!(
+        /// Returns the target machine architecture.
+        machine: u16,
+
+        /// Returns the number of sections in the PE file.
+        number_of_sections: u16,
+
+        /// Returns the timestamp of when the PE file was created.
+        time_date_stamp: u32,
+
+        /// Returns the file offset of the symbol table (deprecated).
+        pointer_to_symbol_table: u32,
+
+        /// Returns the number of symbols in the symbol table (deprecated).
+        number_of_symbols: u32,
+
+        /// Returns the size of the optional header.
+        size_of_optional_header: u16,
+
+        /// Returns the characteristics flags of the PE file.
+        characteristics: u16,
+    );
 }
 
 /// Portable Executable (PE) Optional Header.
@@ -228,12 +428,10 @@ impl ImageOptionalHeader {
 /// Represents the **Export Directory** in a **PE file**, which contains
 /// metadata about exported functions, symbols, and addresses. This structure
 /// abstracts the export table, storing raw data and directory information.
-pub struct PeExportDirectory<Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    _marker: std::marker::PhantomData<Driver>,
+pub struct PeExportDirectory<'a, Image: PeImage> {
+    /// The PE image containing the export directory.
+    #[expect(unused)]
+    image: &'a Image,
 
     /// The export directory entry.
     entry: ImageDataDirectory,
@@ -242,22 +440,10 @@ where
     data: Vec<u8>,
 }
 
-impl<Driver> PeExportDirectory<Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
+impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
     /// Creates a new PE export directory parser.
-    pub(crate) fn new(
-        _image: &WindowsImage<Driver>,
-        entry: ImageDataDirectory,
-        data: Vec<u8>,
-    ) -> Self {
-        Self {
-            entry,
-            data,
-            _marker: std::marker::PhantomData,
-        }
+    pub(crate) fn new(image: &'a Image, entry: ImageDataDirectory, data: Vec<u8>) -> Self {
+        Self { image, entry, data }
     }
 
     /// Returns the list of exported symbols.
@@ -275,26 +461,17 @@ where
 ///
 /// Represents the **Debug Directory** in a **PE file**, which contains
 /// debugging information such as symbols, timestamps, and PDB references.
-pub struct PeDebugDirectory<'pe, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    image: &'pe WindowsImage<'pe, Driver>,
+pub struct PeDebugDirectory<'a, Image: PeImage> {
+    /// The PE image containing the debug directory.
+    image: &'a Image,
+
+    /// The debug directory data.
     data: Vec<u8>,
 }
 
-impl<'pe, Driver> PeDebugDirectory<'pe, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
+impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
     /// Creates a new PE debug directory parser.
-    pub(crate) fn new(
-        image: &'pe WindowsImage<'pe, Driver>,
-        _entry: ImageDataDirectory,
-        data: Vec<u8>,
-    ) -> Self {
+    pub(crate) fn new(image: &'a Image, data: Vec<u8>) -> Self {
         Self { image, data }
     }
 
@@ -344,11 +521,11 @@ where
         // Read the CodeView debug info.
         //
 
-        let info_address = self.image.base_address() + directory.address_of_raw_data.get(LE) as u64;
+        let rva = directory.address_of_raw_data.get(LE);
         let info_size = directory.size_of_data.get(LE) as usize;
 
         let mut info_data = vec![0u8; info_size];
-        self.image.vmi.read(info_address, &mut info_data)?;
+        self.image.read_at_rva(rva, &mut info_data)?;
 
         //
         // Parse the CodeView debug info.
@@ -409,7 +586,7 @@ where
 /// **32-bit (PE32) and 64-bit (PE32+)** formats. It encapsulates
 /// the **DOS header, NT headers, and data directories**, providing
 /// essential metadata for parsing and analyzing PE binaries.
-pub struct Pe {
+pub struct PeHeader {
     /// The DOS header.
     dos_header: ImageDosHeader,
 
@@ -418,31 +595,23 @@ pub struct Pe {
 
     /// The data directories.
     data_directories: [ImageDataDirectory; IMAGE_NUMBEROF_DIRECTORY_ENTRIES],
+
+    /// The file offset of the section table.
+    section_table_offset: u64,
 }
 
-impl Pe {
-    /// Creates a `Pe` instance by parsing raw PE data.
-    pub fn new(data: &[u8]) -> Result<Self, PeError> {
-        let magic = optional_header_magic(data).map_err(|_| PeError::InvalidPeMagic)?;
-
+impl PeHeader {
+    /// Creates a `PeHeader` instance by parsing raw PE data.
+    pub fn parse(data: &[u8]) -> Result<Self, PeError> {
         let mut offset = 0;
-        let dos_header = Self::parse_image_dos_header(data, &mut offset)?;
-        let nt_headers = match magic {
-            IMAGE_NT_OPTIONAL_HDR32_MAGIC => {
-                Self::parse_image_nt_headers::<OImageNtHeaders32>(data, &mut offset)?
-            }
-            IMAGE_NT_OPTIONAL_HDR64_MAGIC => {
-                Self::parse_image_nt_headers::<OImageNtHeaders64>(data, &mut offset)?
-            }
-            _ => return Err(PeError::InvalidPeMagic),
-        };
+        let dos_header = ImageDosHeader::parse(data, &mut offset)?;
+        let nt_headers = ImageNtHeaders::parse(data, &mut offset)?;
 
         // Read the rest of the optional header, and then read
         // the data directories from that.
-        let optional_data_size =
-            u64::from(nt_headers.file_header().size_of_optional_header.get(LE))
-                .checked_sub(nt_headers.optional_header().size() as u64)
-                .ok_or(PeError::PeOptionalHeaderSizeTooSmall)?;
+        let optional_data_size = u64::from(nt_headers.file_header().size_of_optional_header())
+            .checked_sub(nt_headers.optional_header().size() as u64)
+            .ok_or(PeError::PeOptionalHeaderSizeTooSmall)?;
 
         let optional_data = data
             .read_bytes(&mut offset, optional_data_size)
@@ -467,6 +636,7 @@ impl Pe {
                         size: Default::default(),
                     })
             }),
+            section_table_offset: offset,
         })
     }
 
@@ -485,38 +655,8 @@ impl Pe {
         &self.data_directories
     }
 
-    /// Parses the DOS header.
-    fn parse_image_dos_header(data: &[u8], offset: &mut u64) -> Result<ImageDosHeader, PeError> {
-        let dos_header = data
-            .read_at::<ImageDosHeader>(0)
-            .map_err(|_| PeError::InvalidDosHeaderSizeOrAlignment)?;
-
-        if dos_header.e_magic.get(LE) != IMAGE_DOS_SIGNATURE {
-            return Err(PeError::InvalidDosMagic);
-        }
-
-        *offset = dos_header.nt_headers_offset() as u64;
-
-        Ok(*dos_header)
-    }
-
-    /// Parses the NT headers.
-    fn parse_image_nt_headers<Pe>(data: &[u8], offset: &mut u64) -> Result<ImageNtHeaders, PeError>
-    where
-        Pe: OImageNtHeaders + Into<ImageNtHeaders>,
-    {
-        let nt_headers = data
-            .read::<Pe>(offset)
-            .map_err(|_| PeError::InvalidNtHeadersSizeOrAlignment)?;
-
-        if nt_headers.signature() != IMAGE_NT_SIGNATURE {
-            return Err(PeError::InvalidPeMagic);
-        }
-
-        if !nt_headers.is_valid_optional_magic() {
-            return Err(PeError::InvalidPeOptionalHeaderMagic);
-        }
-
-        Ok((*nt_headers).into())
+    /// Returns the offset of the section table within the PE data.
+    pub fn section_table_offset(&self) -> u64 {
+        self.section_table_offset
     }
 }
