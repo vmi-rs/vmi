@@ -72,8 +72,11 @@ use zerocopy::{FromBytes, IntoBytes};
 mod arch;
 use self::arch::ArchAdapter;
 pub use self::arch::{
-    StructLayout, StructLayout32, StructLayout64, WindowsExceptionVector, WindowsInterrupt,
-    WindowsPageTableEntry,
+    CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64, KDESCRIPTOR_X86,
+    KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A, MAXIMUM_SUPPORTED_EXTENSION,
+    SIZE_OF_80387_REGISTERS, StructLayout, StructLayout32, StructLayout64, WindowsContext,
+    WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry, WindowsRegistersAdapter,
+    WindowsSpecialRegisters, XSAVE_FORMAT,
 };
 
 mod error;
