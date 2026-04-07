@@ -91,6 +91,8 @@ pub use self::iter::{
 pub mod pe;
 pub use self::pe::{CodeView, PeError, PeFile, PeHeader, PeImage};
 
+pub mod unwind;
+
 mod offsets;
 pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + remove offsets() & symbols() methods
 

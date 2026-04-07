@@ -1,0 +1,55 @@
+//! Stack unwinding support for Windows.
+//!
+//! This module provides types and traits for walking the call stack
+//! of a Windows process using PE exception directory information.
+
+pub mod amd64;
+
+use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
+
+use crate::{ArchAdapter, WindowsOs, pe::PeImage};
+
+/// A single frame in a stack trace.
+#[derive(Debug, Clone)]
+pub struct StackFrame {
+    /// The instruction pointer for this frame.
+    pub instruction_pointer: Va,
+
+    /// The stack pointer for this frame.
+    pub stack_pointer: Va,
+
+    /// The first four parameters (home space) from this frame.
+    pub params: [u64; 4],
+
+    /// True if this frame was produced by unwinding through a machine frame
+    /// (UWOP_PUSH_MACHFRAME), indicating an interrupt, exception, or syscall
+    /// boundary.
+    pub machine_frame: bool,
+}
+
+/// Trait for stack unwinding implementations.
+///
+/// Given the current unwind context and image, produces the next
+/// stack frame by reading unwind metadata from the PE exception
+/// directory and adjusting the context accordingly.
+pub trait StackUnwind<Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    /// The context type used by this unwinder.
+    type Context;
+
+    /// Unwinds one stack frame.
+    ///
+    /// Returns `Ok(Some(frame))` if a frame was successfully unwound,
+    /// `Ok(None)` if the bottom of the stack was reached (return address
+    /// is zero), or `Err` on failure.
+    fn unwind(
+        &self,
+        vmi: &VmiState<WindowsOs<Driver>>,
+        image_base: Va,
+        image: &impl PeImage,
+        context: &mut Self::Context,
+    ) -> Result<Option<StackFrame>, VmiError>;
+}
