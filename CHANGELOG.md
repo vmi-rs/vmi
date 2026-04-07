@@ -84,6 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `WindowsOs::idle_process()` - returns the idle process (PID 0)
 - `WindowsOs::idle_thread()` - returns the idle thread for the current processor
+- `WindowsOs::number_of_processors()` - returns the active processor count
+- `WindowsOs::kprcb()` - returns the KPRCB for a given vCPU
 - `WindowsThread::is_attached()` - checks if a thread is attached to a
   foreign process (via `_KTHREAD.ApcStateIndex`)
 - `WindowsThread::saved_process()` - returns the thread's home process
@@ -97,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsUserModule` - Windows implementation backed by `_LDR_DATA_TABLE_ENTRY`
 - `WindowsPebLdrData` - PEB loader data
 - `WindowsPeb::ldr()` - returns the PEB loader data
+- `WindowsKernelProcessorBlock` - per-processor KPRCB
 - `WindowsExceptionVector` trait for Windows-specific exception vectors (APC, DPC)
 - `WindowsInterrupt` trait for creating Windows-specific interrupts
 - `WindowsPageTableEntry` trait made public

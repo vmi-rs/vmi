@@ -18,6 +18,9 @@ symbols! {
         KiDispatchException: Option<u64>,
         DbgkpSendErrorMessage: Option<u64>,
 
+        KeNumberProcessors: u64,
+        KiProcessorBlock: u64,
+
         KiKvaShadow: Option<u64>,
         KiSystemCall32: u64,
         KiSystemCall64: u64,
@@ -133,6 +136,13 @@ offsets! {
             CurrentThread: Field,
             NextThread: Field,
             IdleThread: Field,
+            ProcessorState: Field,          // _KPROCESSOR_STATE
+            Context: Field,                 // _CONTEXT* (bugcheck saved context)
+        }
+
+        struct _KPROCESSOR_STATE {
+            SpecialRegisters: Field,        // _KSPECIAL_REGISTERS
+            ContextFrame: Field,            // _CONTEXT
         }
 
         #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]

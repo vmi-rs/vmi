@@ -3,6 +3,7 @@ mod handle_table;
 mod handle_table_entry;
 mod image;
 mod key_control_block;
+mod kprcb;
 pub(crate) mod macros;
 mod module;
 mod name_info;
@@ -24,6 +25,7 @@ pub use self::{
     handle_table_entry::WindowsHandleTableEntry,
     image::WindowsImage,
     key_control_block::WindowsKeyControlBlock,
+    kprcb::WindowsKernelProcessorBlock,
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
     object::{
