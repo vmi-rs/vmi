@@ -609,7 +609,7 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
         // so we need to trim it.
         //
 
-        let path = String::from_utf8_lossy(pdb_file_name)
+        let name = String::from_utf8_lossy(pdb_file_name)
             .trim_end_matches('\0')
             .to_string();
 
@@ -624,15 +624,17 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
                 "{:08x}{:04x}{:04x}",
                 "{:02x}{:02x}{:02x}{:02x}",
                 "{:02x}{:02x}{:02x}{:02x}",
-                "{:01x}"
             ),
             guid0, guid1, guid2,
             guid3[0], guid3[1], guid3[2], guid3[3],
             guid3[4], guid3[5], guid3[6], guid3[7],
-            info.age & 0xf,
         );
 
-        Ok(Some(CodeView { path, guid }))
+        Ok(Some(CodeView {
+            name,
+            guid,
+            age: info.age & 0xf,
+        }))
     }
 }
 

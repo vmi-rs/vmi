@@ -155,14 +155,14 @@ where
             let image = WindowsImage::new_without_os(vmi, base_address);
             match image_codeview(&image) {
                 Ok(Some(result)) => {
-                    let path = &result.codeview.path;
+                    let name = &result.codeview.name;
 
-                    if path.starts_with("nt") {
+                    if name.starts_with("nt") {
                         tracing::debug!(%base_address, "found kernel image");
                         return Ok(Some(result));
                     }
 
-                    tracing::trace!(%path, "found non-kernel image");
+                    tracing::trace!(%name, "found non-kernel image");
                 }
                 Ok(None) => tracing::trace!("No codeview found"),
                 Err(err) => tracing::trace!(%err, "Error parsing PE"),
