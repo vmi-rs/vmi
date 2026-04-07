@@ -61,7 +61,7 @@ use std::{cell::RefCell, collections::HashMap};
 use isr_core::Profile;
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    AccessContext, Architecture, Gfn, Hex, Registers as _, Va, VmiCore, VmiDriver, VmiError,
+    AccessContext, Architecture, Gfn, Hex, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError,
     VmiState,
     driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
@@ -93,13 +93,15 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod comps;
 pub use self::comps::{
-    FromWindowsObject, ParseObjectTypeError, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED,
-    WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO,
-    WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
-    WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    FromWindowsObject, LdrDataTableEntry, LdrDataTableEntryLayout, ParseObjectTypeError,
+    PebLdrData, PebLdrDataLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR,
+    WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsControlArea,
+    WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable, WindowsHandleTableEntry,
+    WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
-    WindowsProcess, WindowsProcessParameters, WindowsRegion, WindowsSectionObject, WindowsSession,
-    WindowsTeb, WindowsThread, WindowsThreadState, WindowsTrapFrame, WindowsWow64Kind,
+    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess, WindowsProcessParameters,
+    WindowsRegion, WindowsSectionObject, WindowsSession, WindowsTeb, WindowsThread,
+    WindowsThreadState, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -1284,6 +1286,7 @@ where
     type Thread<'a> = WindowsThread<'a, Driver>;
     type Image<'a> = WindowsImage<'a, Driver>;
     type Module<'a> = WindowsModule<'a, Driver>;
+    type UserModule<'a> = WindowsUserModule<'a, Driver>;
     type Region<'a> = WindowsRegion<'a, Driver>;
     type Mapped<'a> = WindowsControlArea<'a, Driver>;
 
@@ -1428,6 +1431,14 @@ where
 
     fn module(vmi: VmiState<'_, Self>, module: Va) -> Result<Self::Module<'_>, VmiError> {
         Ok(WindowsModule::new(vmi, module))
+    }
+
+    fn user_module(
+        vmi: VmiState<'_, Self>,
+        module: Va,
+        root: Pa,
+    ) -> Result<Self::UserModule<'_>, VmiError> {
+        Ok(WindowsUserModule::new(vmi, module, root))
     }
 
     fn region(vmi: VmiState<'_, Self>, region: Va) -> Result<Self::Region<'_>, VmiError> {

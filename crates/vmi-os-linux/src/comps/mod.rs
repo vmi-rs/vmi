@@ -11,7 +11,7 @@ mod vfsmount;
 mod vm_area_struct;
 
 pub use self::{
-    _dummy::{LinuxImage, LinuxMapped, LinuxModule, LinuxThread},
+    _dummy::{LinuxImage, LinuxMapped, LinuxModule, LinuxThread, LinuxUserModule},
     dentry::LinuxDEntry,
     file::LinuxFile,
     fs_struct::LinuxFsStruct,

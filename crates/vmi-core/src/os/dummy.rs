@@ -3,7 +3,7 @@ use super::{
     VmiOsImageSymbol, VmiOsMapped, VmiOsModule, VmiOsProcess, VmiOsRegion, VmiOsRegionKind,
     VmiOsThread,
 };
-use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa};
+use crate::{MemoryAccess, Pa, Va, VmiDriver, VmiError, VmiState, VmiVa, os::VmiOsUserModule};
 
 /// Marker type for a missing OS implementation.
 pub struct NoOS<Driver>(pub std::marker::PhantomData<Driver>)
@@ -30,6 +30,7 @@ where
     type Thread<'a> = NoOS<Driver>;
     type Image<'a> = NoOS<Driver>;
     type Module<'a> = NoOS<Driver>;
+    type UserModule<'a> = NoOS<Driver>;
     type Region<'a> = NoOS<Driver>;
     type Mapped<'a> = NoOS<Driver>;
 
@@ -97,6 +98,14 @@ where
         unimplemented!()
     }
 
+    fn user_module<'a>(
+        _vmi: VmiState<'_, Self>,
+        _module: Va,
+        _root: Pa,
+    ) -> Result<Self::UserModule<'_>, VmiError> {
+        unimplemented!()
+    }
+
     fn region<'a>(_vmi: VmiState<'_, Self>, _region: Va) -> Result<Self::Region<'_>, VmiError> {
         unimplemented!()
     }
@@ -149,6 +158,25 @@ where
 }
 
 impl<Driver> VmiOsModule<'_, Driver> for NoOS<Driver>
+where
+    Driver: VmiDriver,
+{
+    type Os = NoOS<Driver>;
+
+    fn base_address(&self) -> Result<Va, VmiError> {
+        unimplemented!()
+    }
+
+    fn size(&self) -> Result<u64, VmiError> {
+        unimplemented!()
+    }
+
+    fn name(&self) -> Result<String, VmiError> {
+        unimplemented!()
+    }
+}
+
+impl<Driver> VmiOsUserModule<'_, Driver> for NoOS<Driver>
 where
     Driver: VmiDriver,
 {

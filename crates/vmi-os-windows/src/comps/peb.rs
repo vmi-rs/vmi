@@ -1,6 +1,6 @@
 use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsProcessParameters, WindowsWow64Kind, macros::impl_offsets};
+use super::{WindowsPebLdrData, WindowsProcessParameters, WindowsWow64Kind, macros::impl_offsets};
 use crate::{ArchAdapter, WindowsOs};
 
 /// A Windows process environment block (PEB).
@@ -74,6 +74,38 @@ where
             root,
             kind,
         }
+    }
+
+    /// Returns the PEB loader data.
+    ///
+    /// The loader data contains the three module lists maintained
+    /// by the Windows loader.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_PEB.Ldr`.
+    pub fn ldr(&self) -> Result<WindowsPebLdrData<'a, Driver>, VmiError> {
+        let va = match self.kind {
+            WindowsWow64Kind::Native => {
+                let offsets = self.offsets();
+                let PEB = &offsets.common._PEB;
+
+                self.vmi
+                    .read_va_native_in((self.va + PEB.Ldr.offset(), self.root))?
+            }
+            WindowsWow64Kind::X86 => {
+                const PEB32_Ldr_offset: u64 = 0x0C;
+
+                Va(self
+                    .vmi
+                    .read_u32_in((self.va + PEB32_Ldr_offset, self.root))?
+                    as u64)
+            }
+        };
+
+        Ok(WindowsPebLdrData::with_kind(
+            self.vmi, va, self.root, self.kind,
+        ))
     }
 
     /// Returns the process parameters of the process.

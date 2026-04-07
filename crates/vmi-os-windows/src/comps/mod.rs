@@ -9,11 +9,13 @@ mod name_info;
 mod object;
 mod object_attributes;
 mod peb;
+mod peb_ldr_data;
 mod process_parameters;
 mod region;
 mod session;
 mod teb;
 mod trap_frame;
+mod user_module;
 mod wow64;
 
 pub use self::{
@@ -31,11 +33,16 @@ pub use self::{
     },
     object_attributes::WindowsObjectAttributes,
     peb::WindowsPeb,
+    peb_ldr_data::{
+        LdrDataTableEntry, LdrDataTableEntryLayout, PebLdrData, PebLdrDataLayout,
+        WindowsPebLdrData, WindowsPebLdrDataBase,
+    },
     process_parameters::WindowsProcessParameters,
     region::WindowsRegion,
     session::WindowsSession,
     teb::WindowsTeb,
     trap_frame::WindowsTrapFrame,
+    user_module::WindowsUserModule,
     wow64::{
         WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST,
         WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsWow64Kind,
