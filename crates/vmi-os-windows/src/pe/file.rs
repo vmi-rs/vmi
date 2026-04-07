@@ -3,15 +3,16 @@
 use object::{
     endian::LittleEndian as LE,
     pe::{
-        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXPORT, ImageDataDirectory,
-        ImageSectionHeader,
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        ImageDataDirectory, ImageSectionHeader,
     },
     read::ReadRef as _,
 };
 use vmi_core::VmiError;
 
 use super::{
-    ImageDosHeader, ImageNtHeaders, PeDebugDirectory, PeError, PeExportDirectory, PeHeader, PeImage,
+    ImageDosHeader, ImageNtHeaders, PeDebugDirectory, PeError, PeExceptionDirectory,
+    PeExportDirectory, PeHeader, PeImage,
 };
 use crate::WindowsError;
 
@@ -106,6 +107,16 @@ impl PeImage for PeFile<'_> {
 
         let data = self.read_data_directory(&entry)?;
         Ok(Some(PeExportDirectory::new(self, entry, data)))
+    }
+
+    fn exception_directory(&self) -> Result<Option<PeExceptionDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_EXCEPTION)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let data = self.read_data_directory(&entry)?;
+        Ok(Some(PeExceptionDirectory::new(self, data)))
     }
 
     fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError> {

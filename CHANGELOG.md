@@ -124,6 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PeImage` trait - abstracts PE data access
 - `PeFile` - file-backed PE parser with section-based RVA-to-file-offset translation
+- `PeExceptionDirectory` - parses .pdata RUNTIME_FUNCTION entries
 
 ### Fixed
 

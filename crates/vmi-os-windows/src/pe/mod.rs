@@ -8,7 +8,7 @@ mod error;
 mod file;
 
 pub use isr_dl_pdb::CodeView; // re-export the CodeView struct from the isr-dl-pdb crate
-pub use object::pe::{ImageDataDirectory, ImageDebugDirectory};
+pub use object::pe::{ImageDataDirectory, ImageDebugDirectory, ImageRuntimeFunctionEntry};
 use object::{
     endian::LittleEndian as LE,
     pe::{
@@ -69,6 +69,13 @@ where
     ///
     /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]`.
     fn export_directory(&self) -> Result<Option<PeExportDirectory<'_, Self>>, VmiError>;
+
+    /// Returns the exception directory (.pdata section).
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION]`.
+    fn exception_directory(&self) -> Result<Option<PeExceptionDirectory<'_, Self>>, VmiError>;
 
     /// Returns the debug directory.
     ///
@@ -464,6 +471,55 @@ impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
         export_table
             .exports()
             .map_err(|_| PeError::InvalidExportTable)
+    }
+}
+
+/// Portable Executable (PE) Exception Directory.
+///
+/// Represents the **Exception Directory** (.pdata section) in a **PE file**,
+/// which contains `RUNTIME_FUNCTION` entries for stack unwinding on x64.
+pub struct PeExceptionDirectory<'a, Image: PeImage> {
+    /// The PE image containing the exception directory.
+    #[expect(unused)]
+    image: &'a Image,
+
+    /// The exception directory data.
+    data: Vec<u8>,
+}
+
+impl<'a, Image: PeImage> PeExceptionDirectory<'a, Image> {
+    /// Creates a new PE exception directory parser.
+    pub(crate) fn new(image: &'a Image, data: Vec<u8>) -> Self {
+        Self { image, data }
+    }
+
+    /// Returns the RUNTIME_FUNCTION entries as a slice.
+    pub fn runtime_functions(&self) -> Option<&[ImageRuntimeFunctionEntry]> {
+        slice_from_all_bytes::<ImageRuntimeFunctionEntry>(&self.data).ok()
+    }
+
+    /// Finds the RUNTIME_FUNCTION entry containing the given RVA.
+    ///
+    /// Uses binary search over the sorted entries.
+    pub fn find(&self, rva: u32) -> Option<&ImageRuntimeFunctionEntry> {
+        let entries = self.runtime_functions()?;
+        let index = entries
+            .binary_search_by(|entry| {
+                let begin = entry.begin_address.get(LE);
+                let end = entry.end_address.get(LE);
+                if rva < begin {
+                    std::cmp::Ordering::Greater
+                }
+                else if rva >= end {
+                    std::cmp::Ordering::Less
+                }
+                else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .ok()?;
+
+        Some(&entries[index])
     }
 }
 

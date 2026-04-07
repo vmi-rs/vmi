@@ -1,6 +1,9 @@
 use object::{
     endian::LittleEndian as LE,
-    pe::{IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXPORT, ImageDataDirectory},
+    pe::{
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        ImageDataDirectory,
+    },
     read::pe::ExportTarget,
 };
 use once_cell::unsync::OnceCell;
@@ -13,8 +16,8 @@ use vmi_core::{
 use crate::{
     ArchAdapter, WindowsError, WindowsOs,
     pe::{
-        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory, PeExportDirectory,
-        PeHeader, PeImage,
+        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory,
+        PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage,
     },
 };
 
@@ -132,6 +135,16 @@ where
 
         let data = self.read_data_directory(&entry)?;
         Ok(Some(PeExportDirectory::new(self, entry, data)))
+    }
+
+    fn exception_directory(&self) -> Result<Option<PeExceptionDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_EXCEPTION)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let data = self.read_data_directory(&entry)?;
+        Ok(Some(PeExceptionDirectory::new(self, data)))
     }
 
     fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError> {
