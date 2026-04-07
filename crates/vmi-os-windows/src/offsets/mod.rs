@@ -143,6 +143,7 @@ offsets! {
             SizeOfImage: Field,             // ULONG
             FullDllName: Field,             // _UNICODE_STRING
             BaseDllName: Field,             // _UNICODE_STRING
+            TimeDateStamp: Field,           // ULONG
         }
 
         struct _CLIENT_ID {
