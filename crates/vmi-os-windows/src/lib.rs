@@ -122,7 +122,7 @@ pub use self::comps::{
 /// about the specific Windows version being introspected:
 ///
 /// ```no_run
-/// use isr::cache::{IsrCache, JsonCodec};
+/// use isr::cache::IsrCache;
 /// use vmi::{
 ///     VcpuId, VmiCore,
 ///     arch::amd64::Amd64,
@@ -151,7 +151,7 @@ pub use self::comps::{
 /// };
 ///
 /// // Load the profile using the ISR library.
-/// let isr = IsrCache::<JsonCodec>::new("cache")?;
+/// let isr = IsrCache::new("cache")?;
 /// let entry = isr.entry_from_codeview(kernel_info.codeview)?;
 /// let profile = entry.profile()?;
 ///

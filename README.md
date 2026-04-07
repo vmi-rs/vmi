@@ -124,7 +124,7 @@ vmi = "0.2"
 Basic usage example:
 
 ```rust,ignore
-use isr::{cache::JsonCodec, IsrCache};
+use isr::IsrCache;
 use vmi::{
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the profile.
     // The profile contains offsets to kernel functions and data structures.
-    let isr = IsrCache::<JsonCodec>::new("cache")?;
+    let isr = IsrCache::new("cache")?;
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = entry.profile()?;
 

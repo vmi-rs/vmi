@@ -3,11 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use isr::{
-    Profile,
-    cache::{IsrCache, JsonCodec},
-    macros::symbols,
-};
+use isr::{Profile, cache::IsrCache, macros::symbols};
 use vmi::{
     Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse,
     VmiHandler, VmiSession,
@@ -550,7 +546,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the profile.
     // The profile contains offsets to kernel functions and data structures.
-    let isr = IsrCache::<JsonCodec>::new("cache")?;
+    let isr = IsrCache::new("cache")?;
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = entry.profile()?;
 

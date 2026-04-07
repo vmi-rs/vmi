@@ -26,7 +26,7 @@ tracing = { workspace = true }
 zerocopy = { workspace = true }
 
 isr-core = { workspace = true }
-isr-dl-pdb = { workspace = true } # CodeView
+isr-dl-windows = { workspace = true } # CodeView
 isr-macros = { workspace = true }
 
 vmi-arch-amd64 = { workspace = true }

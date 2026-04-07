@@ -1,7 +1,4 @@
-use isr::{
-    Profile,
-    cache::{IsrCache, JsonCodec},
-};
+use isr::{Profile, cache::IsrCache};
 use vmi::{
     VcpuId, VmiCore, VmiError, VmiOs, VmiSession, VmiState,
     arch::amd64::Amd64,
@@ -59,7 +56,7 @@ pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
 
     // Load the profile.
     // The profile contains offsets to kernel functions and data structures.
-    let isr = IsrCache::<JsonCodec>::new("cache")?;
+    let isr = IsrCache::new("cache")?;
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let entry = Box::leak(Box::new(entry));
     let profile = entry.profile()?;
