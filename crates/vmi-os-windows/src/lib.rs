@@ -71,7 +71,10 @@ use zerocopy::{FromBytes, IntoBytes};
 
 mod arch;
 use self::arch::ArchAdapter;
-pub use self::arch::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry};
+pub use self::arch::{
+    StructLayout, StructLayout32, StructLayout64, WindowsExceptionVector, WindowsInterrupt,
+    WindowsPageTableEntry,
+};
 
 mod error;
 pub use self::error::WindowsError;
