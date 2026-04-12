@@ -80,7 +80,10 @@ mod error;
 pub use self::error::WindowsError;
 
 mod iter;
-pub use self::iter::{HandleTableEntryIterator, ListEntryIterator, TreeNodeIterator};
+pub use self::iter::{
+    HandleTableEntryIterator, ListEntry, ListEntryIterator, ListEntryIteratorBase, ListEntryLayout,
+    TreeNodeIterator,
+};
 
 pub mod pe;
 pub use self::pe::{CodeView, Pe, PeError};
