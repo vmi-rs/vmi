@@ -137,7 +137,15 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.next_entry(entry)?);
+        match self.next_entry(entry) {
+            Ok(next) => self.current = Some(next),
+            Err(err) => {
+                // Terminate iteration so that callers who `continue` on
+                // errors do not spin forever on the same failing entry.
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
@@ -170,7 +178,13 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.previous_entry(entry)?);
+        match self.previous_entry(entry) {
+            Ok(prev) => self.current = Some(prev),
+            Err(err) => {
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
