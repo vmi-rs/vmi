@@ -122,14 +122,13 @@ where
                     return Ok(None);
                 }
 
-                let first = match self.first_entry()? {
-                    Some(first) => first,
-                    None => return Ok(None),
-                };
-
-                self.current = Some(first);
                 self.initialized = true;
-                first
+
+                match self.first_entry() {
+                    Ok(Some(first)) => first,
+                    Ok(None) => return Ok(None),
+                    Err(err) => return Err(err),
+                }
             }
         };
 
@@ -137,7 +136,15 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.next_entry(entry)?);
+        match self.next_entry(entry) {
+            Ok(next) => self.current = Some(next),
+            Err(err) => {
+                // Terminate iteration so that callers who `continue` on
+                // errors do not spin forever on the same failing entry.
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
@@ -155,14 +162,13 @@ where
                     return Ok(None);
                 }
 
-                let last = match self.last_entry()? {
-                    Some(last) => last,
-                    None => return Ok(None),
-                };
-
-                self.current = Some(last);
                 self.initialized = true;
-                last
+
+                match self.last_entry() {
+                    Ok(Some(last)) => last,
+                    Ok(None) => return Ok(None),
+                    Err(err) => return Err(err),
+                }
             }
         };
 
@@ -170,7 +176,13 @@ where
             return Ok(None);
         }
 
-        self.current = Some(self.previous_entry(entry)?);
+        match self.previous_entry(entry) {
+            Ok(prev) => self.current = Some(prev),
+            Err(err) => {
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
