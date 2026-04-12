@@ -232,7 +232,7 @@ where
     ///
     /// # Architecture-specific
     ///
-    /// - **AMD64**: 8 bytes
+    /// - **AMD64**: 8 bytes if the `CR4.PAE` bit is set, otherwise 4 bytes
     fn address_width(&self) -> usize;
 
     /// Returns the effective address width, which may differ from the native
