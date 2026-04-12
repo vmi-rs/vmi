@@ -135,7 +135,7 @@ where
 
         let root = self.translation_root()?;
 
-        Ok(Some(WindowsPeb::new(
+        Ok(Some(WindowsPeb::with_kind(
             self.vmi,
             va,
             root,
@@ -160,7 +160,7 @@ where
 
         let root = self.translation_root()?;
 
-        Ok(Some(WindowsPeb::new(
+        Ok(Some(WindowsPeb::with_kind(
             self.vmi,
             va,
             root,

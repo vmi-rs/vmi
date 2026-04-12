@@ -216,7 +216,7 @@ where
         let va = teb.va() + Driver::Architecture::va_align_up(Va(TEB.len() as u64));
         let root = owning_process.translation_root()?;
 
-        Ok(Some(WindowsTeb::new(
+        Ok(Some(WindowsTeb::with_kind(
             self.vmi,
             va,
             root,
@@ -241,7 +241,7 @@ where
 
         let root = self.process()?.translation_root()?;
 
-        Ok(Some(WindowsTeb::new(
+        Ok(Some(WindowsTeb::with_kind(
             self.vmi,
             va,
             root,

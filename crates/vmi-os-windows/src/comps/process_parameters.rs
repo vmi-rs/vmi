@@ -1,19 +1,270 @@
-use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Pa, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsWow64Kind, macros::impl_offsets};
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use super::WindowsWow64Kind;
+use crate::{
+    WindowsOs,
+    arch::{ArchAdapter, StructLayout, StructLayout32, StructLayout64},
+};
 
-/// A Windows process parameters structure.
+/// Field offsets for a `_RTL_USER_PROCESS_PARAMETERS` structure.
+pub trait RtlUserProcessParameters<Layout>
+where
+    Layout: StructLayout,
+{
+    /// Offset of the `CurrentDirectory` field.
+    const OFFSET_CURRENT_DIRECTORY: u64;
+
+    /// Offset of the `DllPath` field.
+    const OFFSET_DLL_PATH: u64;
+
+    /// Offset of the `ImagePathName` field.
+    const OFFSET_IMAGE_PATH_NAME: u64;
+
+    /// Offset of the `CommandLine` field.
+    const OFFSET_COMMAND_LINE: u64;
+}
+
+/// `_RTL_USER_PROCESS_PARAMETERS` structure layout.
+pub struct RtlUserProcessParametersLayout;
+
+impl RtlUserProcessParameters<StructLayout32> for RtlUserProcessParametersLayout {
+    const OFFSET_CURRENT_DIRECTORY: u64 = 0x24;
+    const OFFSET_DLL_PATH: u64 = 0x30;
+    const OFFSET_IMAGE_PATH_NAME: u64 = 0x38;
+    const OFFSET_COMMAND_LINE: u64 = 0x40;
+}
+
+impl RtlUserProcessParameters<StructLayout64> for RtlUserProcessParametersLayout {
+    const OFFSET_CURRENT_DIRECTORY: u64 = 0x38;
+    const OFFSET_DLL_PATH: u64 = 0x50;
+    const OFFSET_IMAGE_PATH_NAME: u64 = 0x60;
+    const OFFSET_COMMAND_LINE: u64 = 0x70;
+}
+
+/// Field offsets for a `_CURDIR` structure.
+pub trait CurDir<Layout>
+where
+    Layout: StructLayout,
+{
+    /// Offset of the `DosPath` field.
+    const OFFSET_DOS_PATH: u64;
+}
+
+/// `_CURDIR` structure layout.
+pub struct CurDirLayout;
+
+impl CurDir<StructLayout32> for CurDirLayout {
+    const OFFSET_DOS_PATH: u64 = 0x00;
+}
+
+impl CurDir<StructLayout64> for CurDirLayout {
+    const OFFSET_DOS_PATH: u64 = 0x00;
+}
+
+/// Process parameters accessor with a compile-time pointer width.
 ///
-/// Process parameters contain command-line arguments, environment variables,
-/// and other startup information for a process. This structure supports both
-/// **32-bit and 64-bit** structures.
+/// # Implementation Details
+///
+/// Corresponds to `_RTL_USER_PROCESS_PARAMETERS`.
+pub struct WindowsProcessParametersBase<'a, Driver, Layout>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+    Layout: StructLayout,
+    RtlUserProcessParametersLayout: RtlUserProcessParameters<Layout>,
+{
+    /// The VMI state.
+    vmi: VmiState<'a, WindowsOs<Driver>>,
+
+    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
+    va: Va,
+
+    /// The translation root.
+    root: Pa,
+
+    _marker: std::marker::PhantomData<Layout>,
+}
+
+impl<'a, Driver, Layout> WindowsProcessParametersBase<'a, Driver, Layout>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+    Layout: StructLayout,
+    RtlUserProcessParametersLayout: RtlUserProcessParameters<Layout>,
+    CurDirLayout: CurDir<Layout>,
+{
+    /// Creates a new process parameters accessor.
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self {
+            vmi,
+            va,
+            root,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Returns the current directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath`.
+    pub fn current_directory(&self) -> Result<String, VmiError> {
+        Layout::read_unicode_string(
+            self.vmi,
+            (
+                self.va
+                    + RtlUserProcessParametersLayout::OFFSET_CURRENT_DIRECTORY
+                    + CurDirLayout::OFFSET_DOS_PATH,
+                self.root,
+            ),
+        )
+    }
+
+    /// Returns the DLL search path.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.DllPath`.
+    pub fn dll_path(&self) -> Result<String, VmiError> {
+        Layout::read_unicode_string(
+            self.vmi,
+            (
+                self.va + RtlUserProcessParametersLayout::OFFSET_DLL_PATH,
+                self.root,
+            ),
+        )
+    }
+
+    /// Returns the full path of the executable image.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.ImagePathName`.
+    pub fn image_path_name(&self) -> Result<String, VmiError> {
+        Layout::read_unicode_string(
+            self.vmi,
+            (
+                self.va + RtlUserProcessParametersLayout::OFFSET_IMAGE_PATH_NAME,
+                self.root,
+            ),
+        )
+    }
+
+    /// Returns the command line used to launch the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CommandLine`.
+    pub fn command_line(&self) -> Result<String, VmiError> {
+        Layout::read_unicode_string(
+            self.vmi,
+            (
+                self.va + RtlUserProcessParametersLayout::OFFSET_COMMAND_LINE,
+                self.root,
+            ),
+        )
+    }
+}
+
+enum WindowsProcessParametersWrapper<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    W32(WindowsProcessParametersBase<'a, Driver, StructLayout32>),
+    W64(WindowsProcessParametersBase<'a, Driver, StructLayout64>),
+}
+
+impl<'a, Driver> WindowsProcessParametersWrapper<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn w32(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self::W32(WindowsProcessParametersBase::new(vmi, va, root))
+    }
+
+    fn w64(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self::W64(WindowsProcessParametersBase::new(vmi, va, root))
+    }
+
+    fn native(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        match vmi.registers().address_width() {
+            4 => Self::w32(vmi, va, root),
+            8 => Self::w64(vmi, va, root),
+            _ => panic!("Unsupported address width"),
+        }
+    }
+
+    fn current_directory(&self) -> Result<String, VmiError> {
+        match self {
+            Self::W32(inner) => inner.current_directory(),
+            Self::W64(inner) => inner.current_directory(),
+        }
+    }
+
+    fn dll_path(&self) -> Result<String, VmiError> {
+        match self {
+            Self::W32(inner) => inner.dll_path(),
+            Self::W64(inner) => inner.dll_path(),
+        }
+    }
+
+    fn image_path_name(&self) -> Result<String, VmiError> {
+        match self {
+            Self::W32(inner) => inner.image_path_name(),
+            Self::W64(inner) => inner.image_path_name(),
+        }
+    }
+
+    fn command_line(&self) -> Result<String, VmiError> {
+        match self {
+            Self::W32(inner) => inner.command_line(),
+            Self::W64(inner) => inner.command_line(),
+        }
+    }
+}
+
+/// Process parameters accessor with a runtime pointer width.
+///
+/// Contains command-line arguments, environment variables, and other
+/// startup information for a process.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_RTL_USER_PROCESS_PARAMETERS`.
 pub struct WindowsProcessParameters<'a, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    inner: Inner<'a, Driver>,
+    inner: WindowsProcessParametersWrapper<'a, Driver>,
+}
+
+impl<'a, Driver> From<WindowsProcessParametersBase<'a, Driver, StructLayout32>>
+    for WindowsProcessParameters<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsProcessParametersBase<'a, Driver, StructLayout32>) -> Self {
+        Self {
+            inner: WindowsProcessParametersWrapper::W32(value),
+        }
+    }
+}
+
+impl<'a, Driver> From<WindowsProcessParametersBase<'a, Driver, StructLayout64>>
+    for WindowsProcessParameters<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsProcessParametersBase<'a, Driver, StructLayout64>) -> Self {
+        Self {
+            inner: WindowsProcessParametersWrapper::W64(value),
+        }
+    }
 }
 
 impl<Driver> VmiVa for WindowsProcessParameters<'_, Driver>
@@ -23,8 +274,8 @@ where
 {
     fn va(&self) -> Va {
         match &self.inner {
-            Inner::Native(inner) => inner.va,
-            Inner::X86(inner) => inner.va,
+            WindowsProcessParametersWrapper::W32(inner) => inner.va,
+            WindowsProcessParametersWrapper::W64(inner) => inner.va,
         }
     }
 }
@@ -54,18 +305,22 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    /// Creates a new Windows process parameters structure.
-    pub(crate) fn new(
+    /// Creates a new process parameters accessor.
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
+        Self::with_kind(vmi, va, vmi.translation_root(va), WindowsWow64Kind::Native)
+    }
+
+    /// Creates a new process parameters accessor with an explicit address
+    /// space root and pointer width.
+    pub fn with_kind(
         vmi: VmiState<'a, WindowsOs<Driver>>,
         va: Va,
         root: Pa,
         kind: WindowsWow64Kind,
     ) -> Self {
         let inner = match kind {
-            WindowsWow64Kind::Native => {
-                Inner::Native(WindowsProcessParametersNative::new(vmi, va, root))
-            }
-            WindowsWow64Kind::X86 => Inner::X86(WindowsProcessParameters32::new(vmi, va, root)),
+            WindowsWow64Kind::Native => WindowsProcessParametersWrapper::native(vmi, va, root),
+            WindowsWow64Kind::X86 => WindowsProcessParametersWrapper::w32(vmi, va, root),
         };
 
         Self { inner }
@@ -73,205 +328,37 @@ where
 
     /// Returns the current directory.
     ///
-    /// This method returns the full path of the current directory
-    /// for the process.
-    ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CurrentDirectory`.
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath`.
     pub fn current_directory(&self) -> Result<String, VmiError> {
-        match &self.inner {
-            Inner::Native(inner) => inner.current_directory(),
-            Inner::X86(inner) => inner.current_directory(),
-        }
+        self.inner.current_directory()
     }
 
     /// Returns the DLL search path.
-    ///
-    /// This method returns the list of directories that the system searches
-    /// when loading DLLs for the process.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.DllPath`.
     pub fn dll_path(&self) -> Result<String, VmiError> {
-        match &self.inner {
-            Inner::Native(inner) => inner.dll_path(),
-            Inner::X86(inner) => inner.dll_path(),
-        }
+        self.inner.dll_path()
     }
 
     /// Returns the full path of the executable image.
-    ///
-    /// This method retrieves the full file system path of the main executable
-    /// that was used to create the process.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.ImagePathName`.
     pub fn image_path_name(&self) -> Result<String, VmiError> {
-        match &self.inner {
-            Inner::Native(inner) => inner.image_path_name(),
-            Inner::X86(inner) => inner.image_path_name(),
-        }
+        self.inner.image_path_name()
     }
 
     /// Returns the command line used to launch the process.
-    ///
-    /// This method retrieves the full command line string, including the
-    /// executable path and any arguments, used to start the process.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CommandLine`.
     pub fn command_line(&self) -> Result<String, VmiError> {
-        match &self.inner {
-            Inner::Native(inner) => inner.command_line(),
-            Inner::X86(inner) => inner.command_line(),
-        }
-    }
-}
-
-/// Inner representation of a Windows process parameters object.
-enum Inner<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    /// A native (non-WoW64) process.
-    Native(WindowsProcessParametersNative<'a, Driver>),
-
-    /// An x86 process running under WoW64.
-    X86(WindowsProcessParameters32<'a, Driver>),
-}
-
-struct WindowsProcessParametersNative<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    /// The VMI state.
-    vmi: VmiState<'a, WindowsOs<Driver>>,
-
-    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
-    va: Va,
-
-    /// The translation root.
-    root: Pa,
-}
-
-impl<'a, Driver> WindowsProcessParametersNative<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    impl_offsets!();
-
-    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
-        Self { vmi, va, root }
-    }
-
-    fn current_directory(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let CURDIR = &offsets._CURDIR;
-        let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
-
-        self.vmi.os().read_unicode_string_in((
-            self.va
-                + RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.offset()
-                + CURDIR.DosPath.offset(),
-            self.root,
-        ))
-    }
-
-    fn dll_path(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
-
-        self.vmi.os().read_unicode_string_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS.DllPath.offset(),
-            self.root,
-        ))
-    }
-
-    fn image_path_name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
-
-        self.vmi.os().read_unicode_string_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS.ImagePathName.offset(),
-            self.root,
-        ))
-    }
-
-    fn command_line(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let RTL_USER_PROCESS_PARAMETERS = &offsets._RTL_USER_PROCESS_PARAMETERS;
-
-        self.vmi.os().read_unicode_string_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS.CommandLine.offset(),
-            self.root,
-        ))
-    }
-}
-
-struct WindowsProcessParameters32<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    /// The VMI state.
-    vmi: VmiState<'a, WindowsOs<Driver>>,
-
-    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS32` structure.
-    va: Va,
-
-    /// The translation root.
-    root: Pa,
-}
-
-impl<'a, Driver> WindowsProcessParameters32<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
-        Self { vmi, va, root }
-    }
-
-    fn current_directory(&self) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset: u64 = 0x24;
-
-        self.vmi.os().read_unicode_string32_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS32_CurrentDirectory_offset,
-            self.root,
-        ))
-    }
-
-    fn dll_path(&self) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_DllPath_offset: u64 = 0x30;
-
-        self.vmi.os().read_unicode_string32_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS32_DllPath_offset,
-            self.root,
-        ))
-    }
-
-    fn image_path_name(&self) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset: u64 = 0x38;
-
-        self.vmi.os().read_unicode_string32_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS32_ImagePathName_offset,
-            self.root,
-        ))
-    }
-
-    fn command_line(&self) -> Result<String, VmiError> {
-        const RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset: u64 = 0x40;
-
-        self.vmi.os().read_unicode_string32_in((
-            self.va + RTL_USER_PROCESS_PARAMETERS32_CommandLine_offset,
-            self.root,
-        ))
+        self.inner.command_line()
     }
 }

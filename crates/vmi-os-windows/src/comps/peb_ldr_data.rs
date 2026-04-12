@@ -281,6 +281,32 @@ where
     inner: WindowsPebLdrDataWrapper<'a, Driver>,
 }
 
+impl<'a, Driver> From<WindowsPebLdrDataBase<'a, Driver, StructLayout32>>
+    for WindowsPebLdrData<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsPebLdrDataBase<'a, Driver, StructLayout32>) -> Self {
+        Self {
+            inner: WindowsPebLdrDataWrapper::W32(value),
+        }
+    }
+}
+
+impl<'a, Driver> From<WindowsPebLdrDataBase<'a, Driver, StructLayout64>>
+    for WindowsPebLdrData<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsPebLdrDataBase<'a, Driver, StructLayout64>) -> Self {
+        Self {
+            inner: WindowsPebLdrDataWrapper::W64(value),
+        }
+    }
+}
+
 impl<Driver> VmiVa for WindowsPebLdrData<'_, Driver>
 where
     Driver: VmiRead,

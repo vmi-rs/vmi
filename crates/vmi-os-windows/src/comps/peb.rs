@@ -1,21 +1,55 @@
-use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Pa, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsPebLdrData, WindowsProcessParameters, WindowsWow64Kind, macros::impl_offsets};
-use crate::{ArchAdapter, WindowsOs};
+use super::{
+    LdrDataTableEntry, LdrDataTableEntryLayout, PebLdrData, PebLdrDataLayout, WindowsPebLdrData,
+    WindowsPebLdrDataBase, WindowsProcessParameters, WindowsProcessParametersBase,
+    WindowsWow64Kind,
+    process_parameters::{
+        CurDir, CurDirLayout, RtlUserProcessParameters, RtlUserProcessParametersLayout,
+    },
+};
+use crate::{
+    ListEntry, WindowsOs,
+    arch::{ArchAdapter, StructLayout, StructLayout32, StructLayout64},
+    iter::ListEntryLayout,
+};
 
-/// A Windows process environment block (PEB).
-///
-/// The PEB is a user-mode structure that stores process-wide information,
-/// such as loaded modules, heap data, and environment settings.
-/// This structure supports both **32-bit and 64-bit** PEBs.
+/// Field offsets for a `_PEB` structure.
+pub trait Peb<Layout>
+where
+    Layout: StructLayout,
+{
+    /// Offset of the `Ldr` field.
+    const OFFSET_LDR: u64;
+
+    /// Offset of the `ProcessParameters` field.
+    const OFFSET_PROCESS_PARAMETERS: u64;
+}
+
+/// `_PEB` structure layout.
+pub struct PebLayout;
+
+impl Peb<StructLayout32> for PebLayout {
+    const OFFSET_LDR: u64 = 0x0c;
+    const OFFSET_PROCESS_PARAMETERS: u64 = 0x10;
+}
+
+impl Peb<StructLayout64> for PebLayout {
+    const OFFSET_LDR: u64 = 0x18;
+    const OFFSET_PROCESS_PARAMETERS: u64 = 0x20;
+}
+
+/// PEB accessor with a compile-time pointer width.
 ///
 /// # Implementation Details
 ///
 /// Corresponds to `_PEB`.
-pub struct WindowsPeb<'a, Driver>
+pub struct WindowsPebBase<'a, Driver, Layout>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
+    Layout: StructLayout,
+    PebLayout: Peb<Layout>,
 {
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
@@ -26,8 +60,112 @@ where
     /// The translation root.
     root: Pa,
 
-    /// The kind of the process.
-    kind: WindowsWow64Kind,
+    _marker: std::marker::PhantomData<Layout>,
+}
+
+impl<'a, Driver, Layout> WindowsPebBase<'a, Driver, Layout>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+    Layout: StructLayout,
+    PebLayout: Peb<Layout>,
+{
+    /// Creates a new PEB accessor.
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self {
+            vmi,
+            va,
+            root,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Returns the PEB loader data.
+    pub fn ldr(&self) -> Result<WindowsPebLdrDataBase<'a, Driver, Layout>, VmiError>
+    where
+        ListEntryLayout: ListEntry<Layout>,
+        PebLdrDataLayout: PebLdrData<Layout>,
+        LdrDataTableEntryLayout: LdrDataTableEntry<Layout>,
+    {
+        let va = Layout::read_va(self.vmi, (self.va + PebLayout::OFFSET_LDR, self.root))?;
+        Ok(WindowsPebLdrDataBase::new(self.vmi, va, self.root))
+    }
+
+    /// Returns the process parameters.
+    pub fn process_parameters(
+        &self,
+    ) -> Result<WindowsProcessParametersBase<'a, Driver, Layout>, VmiError>
+    where
+        RtlUserProcessParametersLayout: RtlUserProcessParameters<Layout>,
+        CurDirLayout: CurDir<Layout>,
+    {
+        let va = Layout::read_va(
+            self.vmi,
+            (self.va + PebLayout::OFFSET_PROCESS_PARAMETERS, self.root),
+        )?;
+        Ok(WindowsProcessParametersBase::new(self.vmi, va, self.root))
+    }
+}
+
+enum WindowsPebWrapper<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    W32(WindowsPebBase<'a, Driver, StructLayout32>),
+    W64(WindowsPebBase<'a, Driver, StructLayout64>),
+}
+
+impl<'a, Driver> WindowsPebWrapper<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn w32(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self::W32(WindowsPebBase::new(vmi, va, root))
+    }
+
+    fn w64(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        Self::W64(WindowsPebBase::new(vmi, va, root))
+    }
+
+    fn native(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
+        match vmi.registers().address_width() {
+            4 => Self::w32(vmi, va, root),
+            8 => Self::w64(vmi, va, root),
+            _ => panic!("Unsupported address width"),
+        }
+    }
+
+    fn ldr(&self) -> Result<WindowsPebLdrData<'a, Driver>, VmiError> {
+        match self {
+            Self::W32(inner) => Ok(WindowsPebLdrData::from(inner.ldr()?)),
+            Self::W64(inner) => Ok(WindowsPebLdrData::from(inner.ldr()?)),
+        }
+    }
+
+    fn process_parameters(&self) -> Result<WindowsProcessParameters<'a, Driver>, VmiError> {
+        match self {
+            Self::W32(inner) => Ok(WindowsProcessParameters::from(inner.process_parameters()?)),
+            Self::W64(inner) => Ok(WindowsProcessParameters::from(inner.process_parameters()?)),
+        }
+    }
+}
+
+/// PEB accessor with a runtime pointer width.
+///
+/// The PEB is a user-mode structure that stores process-wide information,
+/// such as loaded modules, heap data, and environment settings.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_PEB`.
+pub struct WindowsPeb<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    inner: WindowsPebWrapper<'a, Driver>,
 }
 
 impl<Driver> VmiVa for WindowsPeb<'_, Driver>
@@ -36,7 +174,34 @@ where
     Driver::Architecture: ArchAdapter<Driver>,
 {
     fn va(&self) -> Va {
-        self.va
+        match &self.inner {
+            WindowsPebWrapper::W32(inner) => inner.va,
+            WindowsPebWrapper::W64(inner) => inner.va,
+        }
+    }
+}
+
+impl<'a, Driver> From<WindowsPebBase<'a, Driver, StructLayout32>> for WindowsPeb<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsPebBase<'a, Driver, StructLayout32>) -> Self {
+        Self {
+            inner: WindowsPebWrapper::W32(value),
+        }
+    }
+}
+
+impl<'a, Driver> From<WindowsPebBase<'a, Driver, StructLayout64>> for WindowsPeb<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn from(value: WindowsPebBase<'a, Driver, StructLayout64>) -> Self {
+        Self {
+            inner: WindowsPebWrapper::W64(value),
+        }
     }
 }
 
@@ -59,21 +224,25 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
+    /// Creates a new PEB accessor.
+    pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
+        Self::with_kind(vmi, va, vmi.translation_root(va), WindowsWow64Kind::Native)
+    }
 
-    /// Creates a new Windows PEB object.
-    pub fn new(
+    /// Creates a new PEB accessor with an explicit address space root and
+    /// pointer width.
+    pub fn with_kind(
         vmi: VmiState<'a, WindowsOs<Driver>>,
         va: Va,
         root: Pa,
         kind: WindowsWow64Kind,
     ) -> Self {
-        Self {
-            vmi,
-            va,
-            root,
-            kind,
-        }
+        let inner = match kind {
+            WindowsWow64Kind::Native => WindowsPebWrapper::native(vmi, va, root),
+            WindowsWow64Kind::X86 => WindowsPebWrapper::w32(vmi, va, root),
+        };
+
+        Self { inner }
     }
 
     /// Returns the PEB loader data.
@@ -85,27 +254,7 @@ where
     ///
     /// Corresponds to `_PEB.Ldr`.
     pub fn ldr(&self) -> Result<WindowsPebLdrData<'a, Driver>, VmiError> {
-        let va = match self.kind {
-            WindowsWow64Kind::Native => {
-                let offsets = self.offsets();
-                let PEB = &offsets.common._PEB;
-
-                self.vmi
-                    .read_va_native_in((self.va + PEB.Ldr.offset(), self.root))?
-            }
-            WindowsWow64Kind::X86 => {
-                const PEB32_Ldr_offset: u64 = 0x0C;
-
-                Va(self
-                    .vmi
-                    .read_u32_in((self.va + PEB32_Ldr_offset, self.root))?
-                    as u64)
-            }
-        };
-
-        Ok(WindowsPebLdrData::with_kind(
-            self.vmi, va, self.root, self.kind,
-        ))
+        self.inner.ldr()
     }
 
     /// Returns the process parameters of the process.
@@ -114,25 +263,7 @@ where
     ///
     /// Corresponds to `_PEB.ProcessParameters`.
     pub fn process_parameters(&self) -> Result<WindowsProcessParameters<'a, Driver>, VmiError> {
-        let va = match self.kind {
-            WindowsWow64Kind::Native => {
-                let offsets = self.offsets();
-                let PEB = &offsets.common._PEB;
-
-                self.vmi
-                    .read_va_native_in((self.va + PEB.ProcessParameters.offset(), self.root))?
-            }
-            WindowsWow64Kind::X86 => {
-                const PEB32_ProcessParameters_offset: u64 = 0x10;
-
-                self.vmi
-                    .read_va_native_in((self.va + PEB32_ProcessParameters_offset, self.root))?
-            }
-        };
-
-        Ok(WindowsProcessParameters::new(
-            self.vmi, va, self.root, self.kind,
-        ))
+        self.inner.process_parameters()
     }
 
     /// Returns the current directory.

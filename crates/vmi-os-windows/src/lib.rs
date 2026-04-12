@@ -93,15 +93,17 @@ pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + r
 
 mod comps;
 pub use self::comps::{
-    FromWindowsObject, LdrDataTableEntry, LdrDataTableEntryLayout, ParseObjectTypeError,
-    PebLdrData, PebLdrDataLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR,
-    WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsControlArea,
-    WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable, WindowsHandleTableEntry,
-    WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    CurDir, CurDirLayout, FromWindowsObject, LdrDataTableEntry, LdrDataTableEntryLayout,
+    ParseObjectTypeError, Peb, PebLayout, PebLdrData, PebLdrDataLayout, RtlUserProcessParameters,
+    RtlUserProcessParametersLayout, Teb, TebLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED,
+    WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO,
+    WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
+    WindowsHandleTableEntry, WindowsImage, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
-    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess, WindowsProcessParameters,
-    WindowsRegion, WindowsSectionObject, WindowsSession, WindowsTeb, WindowsThread,
-    WindowsThreadState, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
+    WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess,
+    WindowsProcessParameters, WindowsProcessParametersBase, WindowsRegion, WindowsSectionObject,
+    WindowsSession, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
+    WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

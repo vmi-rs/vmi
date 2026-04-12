@@ -32,15 +32,18 @@ pub use self::{
         WindowsSectionObject, WindowsThread, WindowsThreadState,
     },
     object_attributes::WindowsObjectAttributes,
-    peb::WindowsPeb,
+    peb::{Peb, PebLayout, WindowsPeb, WindowsPebBase},
     peb_ldr_data::{
         LdrDataTableEntry, LdrDataTableEntryLayout, PebLdrData, PebLdrDataLayout,
         WindowsPebLdrData, WindowsPebLdrDataBase,
     },
-    process_parameters::WindowsProcessParameters,
+    process_parameters::{
+        CurDir, CurDirLayout, RtlUserProcessParameters, RtlUserProcessParametersLayout,
+        WindowsProcessParameters, WindowsProcessParametersBase,
+    },
     region::WindowsRegion,
     session::WindowsSession,
-    teb::WindowsTeb,
+    teb::{Teb, TebLayout, WindowsTeb, WindowsTebBase},
     trap_frame::WindowsTrapFrame,
     user_module::WindowsUserModule,
     wow64::{
