@@ -79,7 +79,6 @@ jobs:
   clippy:
     name: cargo clippy
     runs-on: ubuntu-latest
-    # needs: xen-install
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,7 +92,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
-        run: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   fmt:
     name: cargo fmt
@@ -116,7 +115,6 @@ jobs:
   build:
     name: cargo build
     runs-on: ubuntu-latest
-    # needs: xen-install
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,7 +126,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run build
-        run: cargo build
+        run: cargo build --workspace
 
   #
   # It would be better to run `cargo build --examples` but since the Xen
@@ -137,7 +135,6 @@ jobs:
   examples:
     name: cargo check --examples
     runs-on: ubuntu-latest
-    # needs: xen-install
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,7 +151,6 @@ jobs:
   test:
     name: cargo test
     runs-on: ubuntu-latest
-    # needs: xen-install
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -168,11 +164,27 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --lib --tests
 
+  doctest:
+    name: cargo test --doc
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run doctests
+        run: cargo test --workspace --doc
+
   notify:
     name: Notify parent repo
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [clippy, fmt, build, examples, test]
+    needs: [clippy, fmt, build, examples, test, doctest]
     steps:
       - name: Generate token
         id: app-token
