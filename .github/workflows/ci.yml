@@ -28,11 +28,13 @@ jobs:
     name: cargo doc
     runs-on: ubuntu-latest
     env:
-      RUSTDOCFLAGS: -D warnings
+      RUSTDOCFLAGS: --cfg docsrs -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo doc --workspace --all-features --no-deps
+        with:
+          toolchain: nightly
+      - run: cargo +nightly doc --workspace --all-features --no-deps
 
   clippy:
     name: cargo clippy
