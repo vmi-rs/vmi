@@ -19,24 +19,66 @@ pub trait ArchAdapter<Driver>: Architecture
 where
     Driver: VmiRead<Architecture = Self>,
 {
+    /// Reads a syscall argument by index from the current register state.
+    ///
+    /// Index 0 is the first argument.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Arguments 0-3 come from registers (`R10`, `RDX`, `R8`,
+    ///   `R9`); subsequent arguments are read from the stack.
     fn syscall_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError>;
 
+    /// Reads a function-call argument by index from the current register state.
+    ///
+    /// Unlike [`syscall_argument`](Self::syscall_argument), this follows the
+    /// standard calling convention.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Microsoft x64 calling convention (`RCX`, `RDX`, `R8`,
+    ///   `R9`) in long mode, stdcall (stack-based) in compatibility mode.
     fn function_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError>;
 
+    /// Reads the return value of the most recent function call.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RAX`
     fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError>;
 
+    /// Locates the Windows kernel image by scanning backward from the
+    /// syscall entry point.
+    ///
+    /// Returns the kernel's base address, OS version, and CodeView debug
+    /// information if found.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Scans backward from `MSR_LSTAR` (up to 32 MB)
     fn find_kernel(
         vmi: &VmiCore<Driver>,
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<WindowsKernelInformation>, VmiError>;
 
+    /// Returns the kernel image base address, caching the result for
+    /// subsequent calls.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `MSR_LSTAR - KiSystemCall64`
     fn kernel_image_base(vmi: VmiState<WindowsOs<Driver>>) -> Result<Va, VmiError>;
 
+    /// Checks whether a virtual address maps to a page that is either
+    /// present or in the Windows transition state (soft fault, still
+    /// resident in physical memory).
     fn is_page_present_or_transition(
         vmi: VmiState<WindowsOs<Driver>>,
         address: Va,
     ) -> Result<bool, VmiError>;
 
+    /// Returns the virtual address of the Kernel Processor Control Region
+    /// (KPCR) for the current CPU.
     fn current_kpcr(vmi: VmiState<WindowsOs<Driver>>) -> Va;
 }
 
