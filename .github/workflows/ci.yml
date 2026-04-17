@@ -14,119 +14,46 @@ permissions:
   contents: read
 
 jobs:
-  #xen-install:
-  #  name: Install Xen
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Cache Xen
-  #      id: cache-xen
-  #      uses: actions/cache@v4
-  #      with:
-  #        path: ~/xen/dist
-  #        key: ${{ runner.os }}-xen-RELEASE-4.19.0
-  #
-  #    - name: Install build dependencies
-  #      if: steps.cache-xen.outputs.cache-hit != 'true'
-  #      run: |
-  #        #
-  #        # Install build dependencies.
-  #        #
-  #
-  #        sudo apt-get install -y \
-  #          build-essential \
-  #          git-core \
-  #          golang \
-  #          iasl \
-  #          libbz2-dev \
-  #          libext2fs-dev \
-  #          liblzma-dev \
-  #          libncurses5-dev \
-  #          libyajl-dev \
-  #          libzstd-dev \
-  #          ninja-build \
-  #          ocaml \
-  #          ocaml-findlib \
-  #          python3-dev \
-  #          uuid-dev \
-  #          zlib1g-dev
-  #
-  #        #
-  #        # Clone Xen repository.
-  #        #
-  #
-  #        mkdir -p ~/xen
-  #        cd ~/xen
-  #        git clone https://github.com/xen-project/xen.git -b RELEASE-4.19.0 .
-  #
-  #        #
-  #        # Configure and build Xen.
-  #        #
-  #
-  #        ./configure \
-  #          --disable-docs \
-  #          --disable-pvshim \
-  #          --disable-stubdom \
-  #          --enable-githttp
-  #
-  #        make -j$(nproc) debball
-  #
-  #    - name: Install Xen
-  #      run: |
-  #        sudo dpkg -i ~/xen/dist/*.deb
-  #        sudo apt-get install -f
-  #        sudo ldconfig
+  msrv:
+    name: cargo check (MSRV)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          toolchain: "1.95.0"
+      - run: cargo check --workspace --all-features
+
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: cargo doc --workspace --all-features --no-deps
 
   clippy:
     name: cargo clippy
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
         with:
           components: clippy
-
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: cargo fmt
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
         with:
+          toolchain: nightly
           components: rustfmt
-
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run rustfmt
-        run: cargo +nightly fmt --all -- --check
-
-  build:
-    name: cargo build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run build
-        run: cargo build --workspace
+      - run: cargo +nightly fmt --all -- --check
 
   #
   # It would be better to run `cargo build --examples` but since the Xen
@@ -136,55 +63,49 @@ jobs:
     name: cargo check --examples
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run check
-        run: cargo check --examples
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: cargo check --examples --all-features
 
   test:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run tests
-        run: cargo test --workspace --lib --tests
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: cargo test --workspace --all-features --lib --tests
 
   doctest:
     name: cargo test --doc
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: cargo test --workspace --all-features --doc
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+  feature-powerset:
+    name: cargo hack --feature-powerset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack --feature-powerset --workspace check
 
-      - name: Set up cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run doctests
-        run: cargo test --workspace --doc
+  semver-checks:
+    name: cargo semver-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: all-features
 
   notify:
     name: Notify parent repo
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [clippy, fmt, build, examples, test, doctest]
+    needs: [msrv, doc, clippy, fmt, examples, test, doctest, feature-powerset, semver-checks]
     steps:
       - name: Generate token
         id: app-token
