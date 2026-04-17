@@ -213,14 +213,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 But first, you need to install the prerequisites.
 
-The framework has been tested on Ubuntu 22.04 and Xen 4.20.
-Note that Xen 4.20 is the minimum version required to use the
+The framework has been tested on Ubuntu 24.04 and Xen 4.21.
+Note that Xen 4.21 is the minimum version required to use the
 framework, and it is the current version (at the time of writing).
 
-Unfortunately, Xen 4.20 is not available in the official Ubuntu
+Unfortunately, Xen 4.21 is not available in the official Ubuntu
 repositories, so it must be built from source.
 
-This guide assumes you have a fresh Ubuntu 22.04 installation.
+This guide assumes you have a fresh Ubuntu 24.04 installation.
 
 > *Sorry, the guide is still under construction. Please check back later.*
 
