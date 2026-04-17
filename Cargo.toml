@@ -10,7 +10,7 @@ authors = ["Petr Benes <w.benny@outlook.com>"]
 edition = "2024"
 license = "MIT"
 publish = true
-rust-version = "1.91.0"
+rust-version = "1.95.0"
 
 homepage = "https://github.com/vmi-rs/vmi"
 repository = "https://github.com/vmi-rs/vmi"
