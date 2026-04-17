@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Changed
+
+## Added
+
+## Fixed
+
+## [0.5.0] - 2026-04-18
+
 ### Changed
 
 - **Breaking:** `VmiOs` trait no longer takes a `Driver` generic parameter;
