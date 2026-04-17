@@ -10,13 +10,12 @@ use vmi::{
 };
 use xen::XenStore;
 
-pub fn create_vmi_session() -> Result<
-    (
-        VmiSession<'static, WindowsOs<VmiXenDriver<Amd64>>>,
-        Profile<'static>,
-    ),
-    Box<dyn std::error::Error>,
-> {
+pub type Session = (
+    VmiSession<'static, WindowsOs<VmiXenDriver<Amd64>>>,
+    Profile<'static>,
+);
+
+pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_target(false)
