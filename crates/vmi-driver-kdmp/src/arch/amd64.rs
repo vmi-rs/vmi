@@ -4,9 +4,63 @@ use vmi_arch_amd64::{
 };
 use vmi_core::VcpuId;
 
-use crate::{ArchAdapter, Error, KdmpDriver};
+use super::{
+    ArchAdapter,
+    header64::{ExceptionRecord64, Header64},
+};
+use crate::{Error, KdmpDriver};
 
 impl ArchAdapter for Amd64 {
+    type Header = Header64;
+    type ExceptionRecord = ExceptionRecord64;
+
+    fn header(driver: &KdmpDriver<Self>) -> Self::Header {
+        let header = driver.dump.headers();
+
+        Header64 {
+            signature: header.signature,
+            valid_dump: header.valid_dump,
+            major_version: header.major_version,
+            minor_version: header.minor_version,
+            directory_table_base: header.directory_table_base,
+            pfn_database: header.pfn_database,
+            ps_loaded_module_list: header.ps_loaded_module_list,
+            ps_active_process_head: header.ps_active_process_head,
+            machine_image_type: header.machine_image_type,
+            number_processors: header.number_processors,
+            bug_check_code: header.bug_check_code,
+            bug_check_parameter1: header.bug_check_code_parameters[0],
+            bug_check_parameter2: header.bug_check_code_parameters[1],
+            bug_check_parameter3: header.bug_check_code_parameters[2],
+            bug_check_parameter4: header.bug_check_code_parameters[3],
+            version_user: header.version_user,
+            kd_debugger_data_block: header.kd_debugger_data_block,
+            physical_memory_block_buffer: header.physical_memory_block_buffer,
+            context_record_buffer: header.context_record_buffer,
+            exception: ExceptionRecord64 {
+                exception_code: header.exception.exception_code,
+                exception_flags: header.exception.exception_flags,
+                exception_record: header.exception.exception_record,
+                exception_address: header.exception.exception_address,
+                number_parameters: header.exception.number_parameters,
+                exception_information: header.exception.exception_information,
+            },
+            dump_type: header.dump_type,
+            required_dump_space: header.required_dump_space,
+            system_time: header.system_time,
+            comment: header.comment,
+            system_up_time: header.system_up_time,
+            minidump_fields: header.minidump_fields,
+            secondary_data_state: header.secondary_data_state,
+            product_type: header.product_type,
+            suite_mask: header.suite_mask,
+            writer_status: header.writer_status,
+            kd_secondary_version: header.kd_secondary_version,
+            attributes: header.attributes,
+            boot_id: header.boot_id,
+        }
+    }
+
     fn registers(driver: &KdmpDriver<Self>, _vcpu: VcpuId) -> Result<Self::Registers, Error> {
         let headers = driver.dump.headers();
         let ctx = driver.dump.context_record();

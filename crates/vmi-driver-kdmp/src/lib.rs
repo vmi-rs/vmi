@@ -11,8 +11,14 @@ use vmi_core::{
     driver::{VmiQueryRegisters, VmiRead},
 };
 
-pub use self::error::Error;
-use self::{arch::ArchAdapter, driver::KdmpDriver};
+use self::driver::KdmpDriver;
+pub use self::{
+    arch::{
+        ArchAdapter,
+        header64::{ExceptionRecord64, Header64},
+    },
+    error::Error,
+};
 
 /// VMI driver for kernel memory dump.
 pub struct VmiKdmpDriver<Arch>
@@ -31,6 +37,11 @@ where
         Ok(Self {
             inner: KdmpDriver::new(path)?,
         })
+    }
+
+    /// Returns the dump header.
+    pub fn header(&self) -> Arch::Header {
+        self.inner.header()
     }
 }
 

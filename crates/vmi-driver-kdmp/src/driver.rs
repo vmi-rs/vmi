@@ -27,6 +27,10 @@ where
         })
     }
 
+    pub fn header(&self) -> Arch::Header {
+        Arch::header(self)
+    }
+
     pub fn info(&self) -> Result<VmiInfo, Error> {
         Ok(VmiInfo {
             page_size: 4096,
