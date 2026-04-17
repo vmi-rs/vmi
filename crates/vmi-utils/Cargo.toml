@@ -29,15 +29,7 @@ vmi-os-windows = { workspace = true, optional = true }
 vmi = { workspace = true }
 
 [features]
-default = [
-    "arch-amd64",
-    "os-windows",
-    "bpm",
-    "bridge",
-    "injector",
-    "interceptor",
-    "ptm"
-]
+default = []
 
 arch-amd64 = ["vmi-arch-amd64"]
 os-windows = [

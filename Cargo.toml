@@ -127,15 +127,7 @@ vmi-os-windows = { workspace = true, optional = true }
 vmi-utils = { workspace = true, optional = true }
 
 [features]
-default = [
-    "arch-amd64",
-    "driver-kdmp",
-    "driver-xen",
-    "driver-xen-core-dump",
-    "os-linux",
-    "os-windows",
-    "utils"
-]
+default = []
 
 arch-amd64 = [
     "vmi-arch-amd64",
@@ -149,7 +141,14 @@ os-windows = [
     "vmi-os-windows",
     "vmi-utils?/os-windows"
 ]
-utils = ["vmi-utils"]
+utils = [
+    "vmi-utils",
+    "vmi-utils/bpm",
+    "vmi-utils/bridge",
+    "vmi-utils/injector",
+    "vmi-utils/interceptor",
+    "vmi-utils/ptm"
+]
 
 [dev-dependencies]
 signal-hook = { workspace = true }
@@ -179,28 +178,34 @@ doc-scrape-examples = true
 name = "basic-process-list"
 path = "examples/basic-process-list.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows"]
 
 [[example]]
 name = "windows-breakpoint-manager"
 path = "examples/windows-breakpoint-manager.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
 [[example]]
 name = "windows-dump"
 path = "examples/windows-dump.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kdmp", "os-windows"]
 
 [[example]]
 name = "windows-recipe-messagebox"
 path = "examples/windows-recipe-messagebox.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
 [[example]]
 name = "windows-recipe-writefile"
 path = "examples/windows-recipe-writefile.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
 [[example]]
 name = "windows-recipe-writefile-advanced"
 path = "examples/windows-recipe-writefile-advanced.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]

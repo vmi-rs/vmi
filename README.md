@@ -18,6 +18,7 @@ manipulating virtual machine state from the outside.
   - [The VMI Landscape](#the-vmi-landscape)
   - [Disclaimer](#disclaimer)
 - [Features](#features)
+- [Cargo Features](#cargo-features)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Examples](#examples)
@@ -112,13 +113,28 @@ contributions are welcome!
     - Powerful utilities like [`BreakpointManager`], [`PageTableMonitor`],
       and [`InjectorHandler`].
 
+# Cargo Features
+
+No features are enabled by default; opt in to what you need.
+
+| Feature | Enables |
+|---------|---------|
+| `arch-amd64` | Intel/AMD x86-64 architecture support. |
+| `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
+| `driver-xen` | Xen hypervisor driver (live introspection). |
+| `driver-xen-core-dump` | Xen core dump file driver. |
+| `os-linux` | Linux guest introspection. |
+| `os-windows` | Windows guest introspection. |
+| `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
+
 # Quick Start
 
-Add the following to your `Cargo.toml`:
+Add the following to your `Cargo.toml`, enabling the features you need
+(this example assumes live Windows introspection on Xen):
 
 ```toml
 [dependencies]
-vmi = "0.2"
+vmi = { version = "0.5", features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
 ```
 
 Basic usage example:
