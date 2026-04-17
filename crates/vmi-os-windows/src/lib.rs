@@ -416,7 +416,7 @@ where
         match vmi.registers().address_width() {
             4 => Ok(handle & KERNEL_HANDLE_MASK32 == KERNEL_HANDLE_MASK32),
             8 => Ok(handle & KERNEL_HANDLE_MASK64 == KERNEL_HANDLE_MASK64),
-            _ => panic!("Unsupported address width"),
+            _ => Err(VmiError::InvalidAddressWidth),
         }
     }
 
@@ -960,7 +960,7 @@ where
         match vmi.registers().address_width() {
             4 => Self::read_ansi_string32_bytes_in(vmi, ctx),
             8 => Self::read_ansi_string64_bytes_in(vmi, ctx),
-            _ => panic!("Unsupported address width"),
+            _ => Err(VmiError::InvalidAddressWidth),
         }
     }
 
@@ -998,7 +998,7 @@ where
         match vmi.registers().address_width() {
             4 => Self::read_ansi_string32_in(vmi, ctx),
             8 => Self::read_ansi_string64_in(vmi, ctx),
-            _ => panic!("Unsupported address width"),
+            _ => Err(VmiError::InvalidAddressWidth),
         }
     }
 
@@ -1036,7 +1036,7 @@ where
         match vmi.registers().address_width() {
             4 => Self::read_unicode_string32_bytes_in(vmi, ctx),
             8 => Self::read_unicode_string64_bytes_in(vmi, ctx),
-            _ => panic!("Unsupported address width"),
+            _ => Err(VmiError::InvalidAddressWidth),
         }
     }
 
@@ -1084,7 +1084,7 @@ where
         match vmi.registers().address_width() {
             4 => Self::read_unicode_string32_in(vmi, ctx),
             8 => Self::read_unicode_string64_in(vmi, ctx),
-            _ => panic!("Unsupported address width"),
+            _ => Err(VmiError::InvalidAddressWidth),
         }
     }
 
