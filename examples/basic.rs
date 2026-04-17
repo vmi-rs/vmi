@@ -1,3 +1,6 @@
+//! This example demonstrates how to connect to a running Xen domain and
+//! print the interrupt descriptor table (IDT) for each vCPU.
+
 use vmi_arch_amd64::Amd64;
 use vmi_core::{VcpuId, VmiCore};
 use vmi_driver_xen::VmiXenDriver;

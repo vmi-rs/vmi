@@ -1,3 +1,7 @@
+//! This example demonstrates how to use the [`BreakpointManager`] and
+//! [`PageTableMonitor`] to intercept calls to selected kernel routines
+//! on a Windows guest.
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -41,6 +45,7 @@ symbols! {
     }
 }
 
+/// Per-VM monitoring state used by the example's [`VmiHandler`].
 pub struct Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
@@ -56,6 +61,8 @@ impl<Driver> Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    /// Creates a new [`Monitor`] and installs breakpoints on the kernel
+    /// routines tracked by this example.
     pub fn new(
         session: &VmiSession<WindowsOs<Driver>>,
         profile: &Profile,

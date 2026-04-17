@@ -1,3 +1,6 @@
+//! This example demonstrates how to enumerate the running processes of a
+//! Windows guest running inside a Xen domain.
+
 use isr::cache::IsrCache;
 use vmi::{
     VcpuId, VmiCore, VmiSession,

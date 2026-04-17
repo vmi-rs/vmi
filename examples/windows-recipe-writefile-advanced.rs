@@ -58,6 +58,7 @@ use vmi::{
     utils::injector::{Recipe, RecipeControlFlow, UserInjectorHandler, recipe},
 };
 
+/// State shared across the recipe steps.
 #[derive(Debug, Default)]
 pub struct GuestFile {
     /// Target path in the guest to write the file.
@@ -82,6 +83,7 @@ pub struct GuestFile {
 }
 
 impl GuestFile {
+    /// Creates a new [`GuestFile`].
     pub fn new(target_path: impl AsRef<str>, content: impl AsRef<[u8]>) -> Self {
         Self {
             target_path: target_path.as_ref().to_string(),
