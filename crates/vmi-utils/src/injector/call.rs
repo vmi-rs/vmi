@@ -6,6 +6,7 @@ use super::Argument;
 /// the function's address and its required arguments.
 pub struct CallBuilder {
     /// The target function's virtual address.
+    #[allow(unused)] // if no adapter is enabled
     pub(super) function_address: Va,
 
     /// The arguments to pass to the function.

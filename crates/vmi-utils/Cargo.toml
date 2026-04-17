@@ -44,8 +44,8 @@ os-windows = [
     "vmi-os-windows",
 ]
 
-bpm = []
+bpm = ["interceptor", "ptm"]
 bridge = []
-injector = []
+injector = ["bridge"]
 interceptor = []
 ptm = []

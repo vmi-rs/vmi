@@ -1,4 +1,9 @@
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
+#[cfg(all(
+    feature = "arch-amd64",
+    feature = "os-windows",
+    feature = "bpm",
+    feature = "ptm"
+))]
 mod windows;
 
 use vmi_core::{Architecture, VmiCore, VmiError, VmiOs};

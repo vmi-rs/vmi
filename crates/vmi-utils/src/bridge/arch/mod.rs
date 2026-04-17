@@ -1,6 +1,7 @@
 //! Architecture-specific adapters for reading bridge packets from VMI
 //! events and writing responses back into guest registers.
 
+#[cfg(feature = "arch-amd64")]
 mod amd64;
 
 use vmi_core::{Architecture, VmiEvent, arch::GpRegisters};
