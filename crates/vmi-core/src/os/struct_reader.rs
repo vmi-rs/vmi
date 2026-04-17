@@ -27,10 +27,11 @@ use crate::{AccessContext, Registers, Va, VmiCore, VmiError, VmiRead, VmiState};
 ///     }
 /// }
 ///
-/// # fn example<Os: VmiOs>(
-/// #     vmi: &VmiState<Os>,
-/// #     va: Va,
-/// # ) -> Result<(), VmiError> {
+/// # fn example<Os>(vmi: &VmiState<Os>, va: Va) -> Result<(), VmiError>
+/// # where
+/// #     Os: VmiOs,
+/// #     Os::Driver: VmiRead
+/// # {
 /// # let profile = unimplemented!();
 ///
 /// let offsets = Offsets::new(profile)?;
