@@ -1,13 +1,14 @@
 mod amd64;
 
-use vmi_core::{Architecture, VcpuId};
+use vmi_core::{Architecture, VcpuId, VmiError};
 
-use crate::{XenCoreDumpDriver, XenCoreDumpError};
+use crate::VmiXenCoreDumpDriver;
 
 /// Architecture-specific adapter for Xen.
 pub trait ArchAdapter: Architecture + Sized + 'static {
+    /// Returns the registers of the specified vCPU.
     fn registers(
-        driver: &XenCoreDumpDriver<Self>,
+        driver: &VmiXenCoreDumpDriver<Self>,
         vcpu: VcpuId,
-    ) -> Result<Self::Registers, XenCoreDumpError>;
+    ) -> Result<Self::Registers, VmiError>;
 }

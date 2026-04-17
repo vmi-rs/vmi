@@ -2,19 +2,19 @@ use vmi_arch_amd64::{
     Amd64, Cr0, Cr3, Cr4, Dr0, Dr1, Dr2, Dr3, Dr6, Dr7, MsrEfer, Registers, Rflags,
     SegmentDescriptor, Selector,
 };
-use vmi_core::VcpuId;
+use vmi_core::{VcpuId, VmiError};
 
 use super::{
     ArchAdapter,
     header64::{ExceptionRecord64, Header64},
 };
-use crate::{KdmpDriver, KdmpDriverError};
+use crate::VmiKdmpDriver;
 
 impl ArchAdapter for Amd64 {
     type Header = Header64;
     type ExceptionRecord = ExceptionRecord64;
 
-    fn header(driver: &KdmpDriver<Self>) -> Self::Header {
+    fn header(driver: &VmiKdmpDriver<Self>) -> Self::Header {
         let header = driver.dump.headers();
 
         Header64 {
@@ -61,10 +61,7 @@ impl ArchAdapter for Amd64 {
         }
     }
 
-    fn registers(
-        driver: &KdmpDriver<Self>,
-        _vcpu: VcpuId,
-    ) -> Result<Self::Registers, KdmpDriverError> {
+    fn registers(driver: &VmiKdmpDriver<Self>, _vcpu: VcpuId) -> Result<Self::Registers, VmiError> {
         let headers = driver.dump.headers();
         let ctx = driver.dump.context_record();
 

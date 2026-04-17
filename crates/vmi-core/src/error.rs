@@ -60,6 +60,22 @@ pub enum VmiError {
 pub type PageFaults = smallvec::SmallVec<[AddressContext; 1]>;
 
 impl VmiError {
+    /// Boxes a driver-specific error into [`VmiError::Driver`].
+    pub fn driver<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Driver(Box::new(err))
+    }
+
+    /// Boxes an OS-specific error into [`VmiError::Os`].
+    pub fn os<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Os(Box::new(err))
+    }
+
     /// Creates a new page fault error.
     pub fn page_fault(pf: impl Into<AddressContext>) -> Self {
         Self::Translation(smallvec::smallvec![pf.into()])

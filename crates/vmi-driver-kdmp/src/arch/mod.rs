@@ -1,9 +1,9 @@
 mod amd64;
 pub(crate) mod header64;
 
-use vmi_core::{Architecture, VcpuId};
+use vmi_core::{Architecture, VcpuId, VmiError};
 
-use crate::{KdmpDriver, KdmpDriverError};
+use crate::VmiKdmpDriver;
 
 /// Architecture-specific adapter for Xen.
 pub trait ArchAdapter: Architecture + Sized + 'static {
@@ -14,11 +14,8 @@ pub trait ArchAdapter: Architecture + Sized + 'static {
     type ExceptionRecord;
 
     /// Returns the dump header.
-    fn header(driver: &KdmpDriver<Self>) -> Self::Header;
+    fn header(driver: &VmiKdmpDriver<Self>) -> Self::Header;
 
     /// Returns the registers of the specified vCPU.
-    fn registers(
-        driver: &KdmpDriver<Self>,
-        vcpu: VcpuId,
-    ) -> Result<Self::Registers, KdmpDriverError>;
+    fn registers(driver: &VmiKdmpDriver<Self>, vcpu: VcpuId) -> Result<Self::Registers, VmiError>;
 }

@@ -3,144 +3,160 @@ mod registers;
 
 use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, ExceptionVector, Msr};
 use vmi_core::{
-    Registers as _, VcpuId, View, VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse,
+    Registers as _, VcpuId, View, VmiError, VmiEvent, VmiEventAction, VmiEventFlags,
+    VmiEventResponse, driver::VmiEventControl,
 };
 use xen::ctrl::{
     VmEvent, VmEventData, VmEventFastSinglestep, VmEventFlag, VmEventFlagOptions, VmEventRegs,
 };
 
-use crate::{ArchAdapter, IntoExt as _, TryFromExt as _, XenDriver, XenDriverError};
+use crate::{ArchAdapter, IntoExt as _, TryFromExt as _, VmiXenDriver};
 
 impl ArchAdapter for Amd64 {
     type XenArch = xen::arch::x86::Amd64;
 
-    fn registers(
-        driver: &XenDriver<Self>,
-        vcpu: VcpuId,
-    ) -> Result<Self::Registers, XenDriverError> {
-        Ok(driver.domain.get_context_cpu(vcpu.into_ext())?.into_ext())
+    fn registers(driver: &VmiXenDriver<Self>, vcpu: VcpuId) -> Result<Self::Registers, VmiError> {
+        Ok(driver
+            .domain
+            .get_context_cpu(vcpu.into_ext())
+            .map_err(VmiError::driver)?
+            .into_ext())
     }
 
     fn set_registers(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         vcpu: VcpuId,
         registers: Self::Registers,
-    ) -> Result<(), XenDriverError> {
-        Ok(driver
+    ) -> Result<(), VmiError> {
+        driver
             .domain
-            .set_context_cpu(vcpu.into_ext(), registers.into_ext())?)
+            .set_context_cpu(vcpu.into_ext(), registers.into_ext())
+            .map_err(VmiError::driver)
     }
 
     fn monitor_enable(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         option: Self::EventMonitor,
-    ) -> Result<(), XenDriverError> {
+    ) -> Result<(), VmiError> {
         const ENABLE: bool = true;
         const SYNC: bool = true;
         const ON_CHANGE_ONLY: bool = true;
 
         match option {
             EventMonitor::Register(register) => {
-                driver.monitor.write_ctrlreg(
-                    register.into_ext(),
-                    ENABLE,
-                    SYNC,
-                    0,
-                    ON_CHANGE_ONLY,
-                )?;
-            }
-            EventMonitor::Msr(msr) => {
                 driver
                     .monitor
-                    .mov_to_msr(msr.into(), ENABLE, ON_CHANGE_ONLY)?
+                    .write_ctrlreg(register.into_ext(), ENABLE, SYNC, 0, ON_CHANGE_ONLY)
+                    .map_err(VmiError::driver)?;
             }
+            EventMonitor::Msr(msr) => driver
+                .monitor
+                .mov_to_msr(msr.into(), ENABLE, ON_CHANGE_ONLY)
+                .map_err(VmiError::driver)?,
             EventMonitor::Interrupt(vector) => match vector {
-                ExceptionVector::DebugException => driver.monitor.debug_exceptions(ENABLE, SYNC)?,
-                ExceptionVector::Breakpoint => driver.monitor.software_breakpoint(ENABLE)?,
-                _ => return Err(XenDriverError::NotSupported),
-            },
-            EventMonitor::Singlestep => driver.monitor.singlestep(ENABLE)?,
-            EventMonitor::Hypercall { allow_userspace } => {
-                driver
+                ExceptionVector::DebugException => driver
                     .monitor
-                    .guest_request(ENABLE, SYNC, allow_userspace)?
-            }
-            EventMonitor::CpuId => driver.monitor.cpuid(ENABLE)?,
-            EventMonitor::Io => driver.monitor.io(ENABLE)?,
+                    .debug_exceptions(ENABLE, SYNC)
+                    .map_err(VmiError::driver)?,
+                ExceptionVector::Breakpoint => driver
+                    .monitor
+                    .software_breakpoint(ENABLE)
+                    .map_err(VmiError::driver)?,
+                _ => return Err(VmiError::NotSupported),
+            },
+            EventMonitor::Singlestep => driver
+                .monitor
+                .singlestep(ENABLE)
+                .map_err(VmiError::driver)?,
+            EventMonitor::Hypercall { allow_userspace } => driver
+                .monitor
+                .guest_request(ENABLE, SYNC, allow_userspace)
+                .map_err(VmiError::driver)?,
+            EventMonitor::CpuId => driver.monitor.cpuid(ENABLE).map_err(VmiError::driver)?,
+            EventMonitor::Io => driver.monitor.io(ENABLE).map_err(VmiError::driver)?,
         }
 
         Ok(())
     }
 
     fn monitor_disable(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         option: Self::EventMonitor,
-    ) -> Result<(), XenDriverError> {
+    ) -> Result<(), VmiError> {
         const DISABLE: bool = false;
         const SYNC: bool = true;
         const ON_CHANGE_ONLY: bool = true;
 
         match option {
             EventMonitor::Register(register) => {
-                driver.monitor.write_ctrlreg(
-                    register.into_ext(),
-                    DISABLE,
-                    SYNC,
-                    0,
-                    ON_CHANGE_ONLY,
-                )?;
-            }
-            EventMonitor::Msr(msr) => {
                 driver
                     .monitor
-                    .mov_to_msr(msr.into(), DISABLE, ON_CHANGE_ONLY)?
+                    .write_ctrlreg(register.into_ext(), DISABLE, SYNC, 0, ON_CHANGE_ONLY)
+                    .map_err(VmiError::driver)?;
             }
+            EventMonitor::Msr(msr) => driver
+                .monitor
+                .mov_to_msr(msr.into(), DISABLE, ON_CHANGE_ONLY)
+                .map_err(VmiError::driver)?,
             EventMonitor::Interrupt(vector) => match vector {
-                ExceptionVector::DebugException => {
-                    driver.monitor.debug_exceptions(DISABLE, SYNC)?
-                }
-                ExceptionVector::Breakpoint => driver.monitor.software_breakpoint(DISABLE)?,
-                _ => return Err(XenDriverError::NotSupported),
+                ExceptionVector::DebugException => driver
+                    .monitor
+                    .debug_exceptions(DISABLE, SYNC)
+                    .map_err(VmiError::driver)?,
+                ExceptionVector::Breakpoint => driver
+                    .monitor
+                    .software_breakpoint(DISABLE)
+                    .map_err(VmiError::driver)?,
+                _ => return Err(VmiError::NotSupported),
             },
             EventMonitor::Singlestep => {
                 for vcpu in 0..=driver.info.max_vcpu_id {
                     let _ = driver.domain.debug_control(vcpu.into(), 0);
                 }
 
-                driver.monitor.singlestep(DISABLE)?;
+                driver
+                    .monitor
+                    .singlestep(DISABLE)
+                    .map_err(VmiError::driver)?;
             }
-            EventMonitor::Hypercall { .. } => driver.monitor.guest_request(DISABLE, SYNC, false)?,
-            EventMonitor::CpuId => driver.monitor.cpuid(DISABLE)?,
-            EventMonitor::Io => driver.monitor.io(DISABLE)?,
+            EventMonitor::Hypercall { .. } => driver
+                .monitor
+                .guest_request(DISABLE, SYNC, false)
+                .map_err(VmiError::driver)?,
+            EventMonitor::CpuId => driver.monitor.cpuid(DISABLE).map_err(VmiError::driver)?,
+            EventMonitor::Io => driver.monitor.io(DISABLE).map_err(VmiError::driver)?,
         }
 
         Ok(())
     }
 
     fn inject_interrupt(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         vcpu: VcpuId,
         interrupt: Self::Interrupt,
-    ) -> Result<(), XenDriverError> {
-        Ok(driver.devicemodel.inject_event(
-            vcpu.into_ext(),
-            interrupt.vector.into_ext(),
-            interrupt.typ.into_ext(),
-            interrupt.error_code,
-            interrupt.instruction_length,
-            interrupt.extra,
-        )?)
+    ) -> Result<(), VmiError> {
+        driver
+            .devicemodel
+            .inject_event(
+                vcpu.into_ext(),
+                interrupt.vector.into_ext(),
+                interrupt.typ.into_ext(),
+                interrupt.error_code,
+                interrupt.instruction_length,
+                interrupt.extra,
+            )
+            .map_err(VmiError::driver)
     }
 
     fn process_event(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         event: &mut VmEvent,
         mut handler: impl FnMut(&VmiEvent<Self>) -> VmiEventResponse<Self>,
-    ) -> Result<(), XenDriverError> {
+    ) -> Result<(), VmiError> {
         // Convert the Xen event to a VMI event.
         let vmi_reason = match EventReason::try_from_ext(&event.reason) {
             Ok(reason) => reason,
-            Err(_) => return Err(XenDriverError::NotSupported),
+            Err(_) => return Err(VmiError::NotSupported),
         };
 
         let mut registers = match &event.data {
@@ -192,14 +208,17 @@ impl ArchAdapter for Amd64 {
 
             VmiEventAction::ReinjectInterrupt => match vmi_event.reason() {
                 EventReason::Interrupt(data) => {
-                    driver.devicemodel.inject_event(
-                        event.vcpu_id,
-                        data.interrupt.vector.into_ext(),
-                        data.interrupt.typ.into_ext(),
-                        data.interrupt.error_code,
-                        data.interrupt.instruction_length,
-                        data.interrupt.extra,
-                    )?;
+                    driver
+                        .devicemodel
+                        .inject_event(
+                            event.vcpu_id,
+                            data.interrupt.vector.into_ext(),
+                            data.interrupt.typ.into_ext(),
+                            data.interrupt.error_code,
+                            data.interrupt.instruction_length,
+                            data.interrupt.extra,
+                        )
+                        .map_err(VmiError::driver)?;
                 }
                 _ => {
                     tracing::warn!(
@@ -260,7 +279,7 @@ impl ArchAdapter for Amd64 {
         Ok(())
     }
 
-    fn reset_state(driver: &XenDriver<Self>) -> Result<(), XenDriverError> {
+    fn reset_state(driver: &VmiXenDriver<Self>) -> Result<(), VmiError> {
         let _ = driver.monitor_disable(EventMonitor::Io);
         let _ = driver.monitor_disable(EventMonitor::CpuId);
         let _ = driver.monitor_disable(EventMonitor::Hypercall {

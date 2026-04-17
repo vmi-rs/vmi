@@ -2,10 +2,9 @@ use std::{fs::File, path::Path};
 
 use elf::{ElfBytes, ParseError, endian::AnyEndian, note::Note, section::SectionHeader};
 use memmap2::Mmap;
+use vmi_core::VmiError;
 use xen::sys::vcpu_guest_context;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-
-use crate::XenCoreDumpError;
 
 pub struct Dump {
     mmap: Mmap,
@@ -18,16 +17,19 @@ pub struct Dump {
 }
 
 impl Dump {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, XenCoreDumpError> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, VmiError> {
         let file = File::open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
 
-        let elf = ElfBytes::<AnyEndian>::minimal_parse(&mmap)?;
+        let elf = ElfBytes::<AnyEndian>::minimal_parse(&mmap).map_err(VmiError::driver)?;
 
-        let xen_note = parse_xen_dumpcore_elfnote_header_desc(&elf)?.expect("xen note not found");
+        let xen_note = parse_xen_dumpcore_elfnote_header_desc(&elf)
+            .map_err(VmiError::driver)?
+            .expect("xen note not found");
 
         let xen_pfn_shdr = elf
-            .section_header_by_name(".xen_pfn")?
+            .section_header_by_name(".xen_pfn")
+            .map_err(VmiError::driver)?
             .expect("xen_pfn section not found");
 
         if xen_pfn_shdr.sh_size != xen_note.xch_nr_pages * size_of::<u64>() as u64 {
@@ -35,7 +37,8 @@ impl Dump {
         }
 
         let xen_pages_shdr = elf
-            .section_header_by_name(".xen_pages")?
+            .section_header_by_name(".xen_pages")
+            .map_err(VmiError::driver)?
             .expect("xen_pages section not found");
 
         if xen_pages_shdr.sh_size != xen_note.xch_nr_pages * xen_note.xch_page_size {
@@ -43,7 +46,8 @@ impl Dump {
         }
 
         let xen_prstatus_shdr = elf
-            .section_header_by_name(".xen_prstatus")?
+            .section_header_by_name(".xen_prstatus")
+            .map_err(VmiError::driver)?
             .expect("xen_prstatus section not found");
 
         if xen_prstatus_shdr.sh_size

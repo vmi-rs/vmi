@@ -1,44 +1,51 @@
 mod amd64;
 
-use vmi_core::{Architecture, VcpuId, VmiEvent, VmiEventResponse};
+use vmi_core::{Architecture, VcpuId, VmiError, VmiEvent, VmiEventResponse};
 use xen::{Architecture as XenArchitecture, ctrl::VmEvent};
 
-use crate::{XenDriver, XenDriverError};
+use crate::VmiXenDriver;
 
 /// Architecture-specific adapter for Xen.
 pub trait ArchAdapter: Architecture + Sized + 'static {
+    /// Underlying Xen architecture type.
     type XenArch: XenArchitecture;
 
-    fn registers(driver: &XenDriver<Self>, vcpu: VcpuId)
-    -> Result<Self::Registers, XenDriverError>;
+    /// Returns the registers of the specified vCPU.
+    fn registers(driver: &VmiXenDriver<Self>, vcpu: VcpuId) -> Result<Self::Registers, VmiError>;
 
+    /// Sets the registers of the specified vCPU.
     fn set_registers(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         vcpu: VcpuId,
         registers: Self::Registers,
-    ) -> Result<(), XenDriverError>;
+    ) -> Result<(), VmiError>;
 
+    /// Enables the specified event monitor.
     fn monitor_enable(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         option: Self::EventMonitor,
-    ) -> Result<(), XenDriverError>;
+    ) -> Result<(), VmiError>;
 
+    /// Disables the specified event monitor.
     fn monitor_disable(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         option: Self::EventMonitor,
-    ) -> Result<(), XenDriverError>;
+    ) -> Result<(), VmiError>;
 
+    /// Injects an interrupt into the specified vCPU.
     fn inject_interrupt(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         vcpu: VcpuId,
         interrupt: Self::Interrupt,
-    ) -> Result<(), XenDriverError>;
+    ) -> Result<(), VmiError>;
 
+    /// Processes a single VM event and invokes the handler.
     fn process_event(
-        driver: &XenDriver<Self>,
+        driver: &VmiXenDriver<Self>,
         event: &mut VmEvent,
         handler: impl FnMut(&VmiEvent<Self>) -> VmiEventResponse<Self>,
-    ) -> Result<(), XenDriverError>;
+    ) -> Result<(), VmiError>;
 
-    fn reset_state(driver: &XenDriver<Self>) -> Result<(), XenDriverError>;
+    /// Resets all driver-managed monitoring state.
+    fn reset_state(driver: &VmiXenDriver<Self>) -> Result<(), VmiError>;
 }
