@@ -106,6 +106,9 @@ all-features = true
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 rustdoc-args = ["-Zunstable-options", "--generate-link-to-definition", "--cfg", "docsrs"]
 
+[lints]
+workspace = true
+
 [dependencies]
 indexmap = { workspace = true }
 tracing = { workspace = true }
