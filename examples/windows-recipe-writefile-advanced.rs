@@ -9,7 +9,8 @@
 //! # Possible log output
 //!
 //! > Note the page faults, which are automatically handled by the
-//! > [`InjectorHandler`] and injected back into the guest.
+//! > [`InjectorHandler`](vmi::utils::injector::InjectorHandler) and injected
+//! > back into the guest.
 //!
 //! ```text
 //! DEBUG domain_id=XenDomainId(104)
