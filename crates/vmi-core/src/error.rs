@@ -20,35 +20,35 @@ pub enum VmiError {
     Isr(#[from] isr_macros::Error),
 
     /// A translation error occurred.
-    #[error("Translation error ({:?}, len: {})", .0[0], .0.len())]
+    #[error("translation error ({:?}, len: {})", .0[0], .0.len())]
     Translation(PageFaults),
 
     /// The given address has invalid width.
-    #[error("Invalid address width")]
+    #[error("invalid address width")]
     InvalidAddressWidth,
 
-    /// The given timeout is invalid.
-    #[error("The given timeout is invalid.")]
+    /// Invalid timeout.
+    #[error("invalid timeout")]
     InvalidTimeout,
 
     /// Operation not supported.
-    #[error("Operation not supported.")]
+    #[error("operation not supported")]
     NotSupported,
 
     /// Out of bounds.
-    #[error("Out of bounds")]
+    #[error("out of bounds")]
     OutOfBounds,
 
-    /// Root not present.
-    #[error("Root not present")]
+    /// Translation root not present.
+    #[error("translation root not present")]
     RootNotPresent,
 
-    /// Timeout.
-    #[error("Operation timed out.")]
+    /// Operation timed out.
+    #[error("operation timed out")]
     Timeout,
 
     /// The view was not found.
-    #[error("The view was not found.")]
+    #[error("view not found")]
     ViewNotFound,
 
     /// Other error.

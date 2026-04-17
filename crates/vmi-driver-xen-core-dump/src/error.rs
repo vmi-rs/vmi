@@ -1,37 +1,30 @@
-/// Error type for the Xen driver.
-pub enum Error {
+/// Error type for the Xen core-dump driver.
+#[derive(thiserror::Error, Debug)]
+pub enum XenCoreDumpError {
     /// An error occurred while parsing an ELF file.
-    Elf(elf::ParseError),
+    #[error(transparent)]
+    Elf(#[from] elf::ParseError),
 
     /// An I/O error occurred.
-    Io(std::io::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 
     /// Operation not supported.
+    #[error("operation not supported")]
     NotSupported,
 
     /// Out of bounds.
+    #[error("out of bounds")]
     OutOfBounds,
 }
 
-impl From<elf::ParseError> for Error {
-    fn from(value: elf::ParseError) -> Self {
-        Self::Elf(value)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<Error> for vmi_core::VmiError {
-    fn from(value: Error) -> Self {
+impl From<XenCoreDumpError> for vmi_core::VmiError {
+    fn from(value: XenCoreDumpError) -> Self {
         match value {
-            Error::Elf(value) => Self::Driver(Box::new(value)),
-            Error::Io(value) => Self::Io(value),
-            Error::NotSupported => Self::NotSupported,
-            Error::OutOfBounds => Self::OutOfBounds,
+            XenCoreDumpError::Elf(value) => Self::Driver(Box::new(value)),
+            XenCoreDumpError::Io(value) => Self::Io(value),
+            XenCoreDumpError::NotSupported => Self::NotSupported,
+            XenCoreDumpError::OutOfBounds => Self::OutOfBounds,
         }
     }
 }

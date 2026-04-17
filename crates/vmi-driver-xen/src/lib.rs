@@ -18,7 +18,7 @@ use vmi_core::{
 };
 use xen::XenDomainId;
 
-pub use self::error::Error;
+pub use self::error::XenDriverError;
 use self::{
     arch::ArchAdapter,
     convert::{FromExt, IntoExt, TryFromExt},

@@ -2,46 +2,46 @@
 #[derive(thiserror::Error, Debug)]
 pub enum PeError {
     /// Invalid DOS magic.
-    #[error("Invalid DOS magic")]
+    #[error("invalid DOS magic")]
     InvalidDosMagic,
 
-    /// Invalid DOS header size or alignment.
-    #[error("Invalid DOS header size or alignment")]
-    InvalidDosHeaderSizeOrAlignment,
+    /// Invalid DOS header.
+    #[error("invalid DOS header size or alignment")]
+    InvalidDosHeader,
 
-    /// Invalid NT headers size or alignment.
-    #[error("Invalid NT headers size or alignment")]
-    InvalidNtHeadersSizeOrAlignment,
+    /// Invalid NT headers.
+    #[error("invalid NT headers size or alignment")]
+    InvalidNtHeaders,
 
     /// Invalid PE magic.
-    #[error("Invalid PE magic")]
+    #[error("invalid PE magic")]
     InvalidPeMagic,
 
-    /// Invalid PE optional header magic.
-    #[error("Invalid PE optional header magic")]
-    InvalidPeOptionalHeaderMagic,
+    /// Invalid optional header magic.
+    #[error("invalid PE optional header magic")]
+    InvalidOptionalHeaderMagic,
 
-    /// PE optional header size is too small.
-    #[error("PE optional header size is too small")]
-    PeOptionalHeaderSizeTooSmall,
+    /// PE optional header too small.
+    #[error("PE optional header too small")]
+    OptionalHeaderTooSmall,
 
-    /// Invalid PE optional header size.
-    #[error("Invalid PE optional header size")]
-    InvalidPeOptionalHeaderSize,
+    /// Invalid optional header size.
+    #[error("invalid PE optional header size")]
+    InvalidOptionalHeaderSize,
 
-    /// Invalid PE number of RVA and sizes.
-    #[error("Invalid PE number of RVA and sizes")]
-    InvalidPeNumberOfRvaAndSizes,
+    /// Invalid data directory count.
+    #[error("invalid data directory count")]
+    InvalidDataDirectoryCount,
 
     /// Invalid export table.
-    #[error("Invalid export table")]
+    #[error("invalid export table")]
     InvalidExportTable,
 
     /// Invalid section table.
-    #[error("Invalid section table")]
+    #[error("invalid section table")]
     InvalidSectionTable,
 
     /// Invalid RVA.
-    #[error("Invalid RVA: {0}")]
+    #[error("invalid RVA: {0}")]
     InvalidRva(u32),
 }

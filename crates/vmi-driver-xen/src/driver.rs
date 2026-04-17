@@ -15,7 +15,7 @@ use xen::{
     ctrl::VmEventRing,
 };
 
-use crate::{ArchAdapter, Error, IntoExt as _};
+use crate::{ArchAdapter, IntoExt as _, XenDriverError};
 
 /// VMI driver for Xen hypervisor.
 pub struct XenDriver<Arch>
@@ -52,7 +52,7 @@ impl<Arch> XenDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    pub fn new(domain_id: XenDomainId) -> Result<Self, Error> {
+    pub fn new(domain_id: XenDomainId) -> Result<Self, XenDriverError> {
         let xc = XenControl::new()?;
         let domain = xc.domain(domain_id)?;
         domain.set_max_mem(u64::MAX)?;
@@ -81,7 +81,7 @@ where
         })
     }
 
-    pub fn info(&self) -> Result<VmiInfo, Error> {
+    pub fn info(&self) -> Result<VmiInfo, XenDriverError> {
         Ok(VmiInfo {
             page_size: Arch::PAGE_SIZE,
             page_shift: Arch::PAGE_SHIFT,
@@ -90,30 +90,34 @@ where
         })
     }
 
-    pub fn pause(&self) -> Result<(), Error> {
+    pub fn pause(&self) -> Result<(), XenDriverError> {
         Ok(self.domain.pause()?)
     }
 
-    pub fn resume(&self) -> Result<(), Error> {
+    pub fn resume(&self) -> Result<(), XenDriverError> {
         Ok(self.domain.unpause()?)
     }
 
-    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, Error> {
+    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, XenDriverError> {
         Arch::registers(self, vcpu)
     }
 
-    pub fn set_registers(&self, vcpu: VcpuId, registers: Arch::Registers) -> Result<(), Error> {
+    pub fn set_registers(
+        &self,
+        vcpu: VcpuId,
+        registers: Arch::Registers,
+    ) -> Result<(), XenDriverError> {
         Arch::set_registers(self, vcpu, registers)
     }
 
-    pub fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, Error> {
+    pub fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, XenDriverError> {
         if view.0 == 0 {
             return Ok(self.domain.get_mem_access(gfn.0)?.into_ext());
         }
 
         match self.views.borrow().get(&view.0) {
             Some(view) => Ok(view.get_mem_access(gfn.0)?.into_ext()),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
@@ -122,7 +126,7 @@ where
         gfn: Gfn,
         view: View,
         access: MemoryAccess,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         tracing::trace!(%gfn, %view, %access, "set memory access");
 
         if view.0 == 0 {
@@ -131,7 +135,7 @@ where
 
         match self.views.borrow().get(&view.0) {
             Some(view) => Ok(view.set_mem_access(gfn.into(), access.into_ext())?),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
@@ -141,14 +145,14 @@ where
         view: View,
         access: MemoryAccess,
         options: MemoryAccessOptions,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         tracing::trace!(%gfn, %view, %access, "set memory access");
 
         let mut xen_access = access.into_ext();
 
         if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
             if access != MemoryAccess::R {
-                return Err(Error::NotSupported);
+                return Err(XenDriverError::NotSupported);
             }
 
             xen_access = xen::MemoryAccess::R_PW;
@@ -160,11 +164,11 @@ where
 
         match self.views.borrow().get(&view.0) {
             Some(view) => Ok(view.set_mem_access(gfn.into(), xen_access)?),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
-    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, Error> {
+    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, XenDriverError> {
         let page = self.foreign_memory.map(
             self.domain.id(),
             XenForeignMemoryProtection::READ,
@@ -180,7 +184,7 @@ where
         gfn: Gfn,
         offset: u64,
         content: &[u8],
-    ) -> Result<VmiMappedPage, Error> {
+    ) -> Result<VmiMappedPage, XenDriverError> {
         let mut page = self.foreign_memory.map(
             self.domain.id(),
             XenForeignMemoryProtection::WRITE,
@@ -190,7 +194,7 @@ where
 
         let offset = offset as usize;
         if offset + content.len() > Arch::PAGE_SIZE as usize {
-            return Err(Error::OutOfBounds);
+            return Err(XenDriverError::OutOfBounds);
         }
 
         page[offset..offset + content.len()].copy_from_slice(content);
@@ -198,17 +202,17 @@ where
         Ok(VmiMappedPage::new(page))
     }
 
-    pub fn allocate_gfn(&self) -> Result<Gfn, Error> {
+    pub fn allocate_gfn(&self) -> Result<Gfn, XenDriverError> {
         let gfn = Gfn::new(self.domain.maximum_gpfn()?) + 1;
         self.allocate_gfn_at(gfn)?;
         Ok(gfn)
     }
 
-    pub fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), Error> {
+    pub fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), XenDriverError> {
         Ok(self.domain.populate_physmap_exact(0, 0, &[gfn.into()])?)
     }
 
-    pub fn free_gfn(&self, gfn: Gfn) -> Result<(), Error> {
+    pub fn free_gfn(&self, gfn: Gfn) -> Result<(), XenDriverError> {
         Ok(self.domain.decrease_reservation_exact(0, &[gfn.into()])?)
     }
 
@@ -216,7 +220,7 @@ where
         View(0)
     }
 
-    pub fn create_view(&self, default_access: MemoryAccess) -> Result<View, Error> {
+    pub fn create_view(&self, default_access: MemoryAccess) -> Result<View, XenDriverError> {
         let view = self.altp2m.create_view(default_access.into_ext())?;
 
         let id = view.id();
@@ -225,7 +229,7 @@ where
         Ok(View(id))
     }
 
-    pub fn destroy_view(&self, view: View) -> Result<(), Error> {
+    pub fn destroy_view(&self, view: View) -> Result<(), XenDriverError> {
         if view.0 == 0 {
             return Ok(());
         }
@@ -233,22 +237,27 @@ where
         match self.views.borrow_mut().remove(&view.0) {
             // View is destroyed automatically when it goes out of scope
             Some(_view) => Ok(()),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
-    pub fn switch_to_view(&self, view: View) -> Result<(), Error> {
+    pub fn switch_to_view(&self, view: View) -> Result<(), XenDriverError> {
         if view.0 == 0 {
             return Ok(self.altp2m.reset_view()?);
         }
 
         match self.views.borrow().get(&view.0) {
             Some(view) => Ok(view.switch()?),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
-    pub fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), Error> {
+    pub fn change_view_gfn(
+        &self,
+        view: View,
+        old_gfn: Gfn,
+        new_gfn: Gfn,
+    ) -> Result<(), XenDriverError> {
         if view.0 == 0 {
             return Ok(());
         }
@@ -256,11 +265,11 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => Ok(view.change_gfn(old_gfn.into(), new_gfn.into())?),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
-    pub fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), Error> {
+    pub fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), XenDriverError> {
         if view.0 == 0 {
             return Ok(());
         }
@@ -268,19 +277,23 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => Ok(view.change_gfn(gfn.into(), u64::MAX)?),
-            None => Err(Error::ViewNotFound),
+            None => Err(XenDriverError::ViewNotFound),
         }
     }
 
-    pub fn monitor_enable(&self, option: Arch::EventMonitor) -> Result<(), Error> {
+    pub fn monitor_enable(&self, option: Arch::EventMonitor) -> Result<(), XenDriverError> {
         Arch::monitor_enable(self, option)
     }
 
-    pub fn monitor_disable(&self, option: Arch::EventMonitor) -> Result<(), Error> {
+    pub fn monitor_disable(&self, option: Arch::EventMonitor) -> Result<(), XenDriverError> {
         Arch::monitor_disable(self, option)
     }
 
-    pub fn inject_interrupt(&self, vcpu: VcpuId, interrupt: Arch::Interrupt) -> Result<(), Error> {
+    pub fn inject_interrupt(
+        &self,
+        vcpu: VcpuId,
+        interrupt: Arch::Interrupt,
+    ) -> Result<(), XenDriverError> {
         Arch::inject_interrupt(self, vcpu, interrupt)
     }
 
@@ -296,7 +309,7 @@ where
         &self,
         timeout: Duration,
         mut handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         let mut fds = [libc::pollfd {
             fd: self.evtchn.as_raw_fd(),
             events: libc::POLLIN | libc::POLLERR,
@@ -306,7 +319,7 @@ where
         let timeout = timeout
             .as_millis()
             .try_into()
-            .map_err(|_| Error::InvalidTimeout)?;
+            .map_err(|_| XenDriverError::InvalidTimeout)?;
 
         #[rustfmt::skip]
         let poll_result = unsafe {
@@ -318,8 +331,8 @@ where
         };
 
         match poll_result {
-            0 => return Err(Error::Timeout),
-            -1 => return Err(Error::Io(std::io::Error::last_os_error())),
+            0 => return Err(XenDriverError::Timeout),
+            -1 => return Err(XenDriverError::Io(std::io::Error::last_os_error())),
             _ => (),
         }
 
@@ -370,7 +383,7 @@ where
         Ok(())
     }
 
-    pub fn reset_state(&self) -> Result<(), Error> {
+    pub fn reset_state(&self) -> Result<(), XenDriverError> {
         Arch::reset_state(self)
     }
 }

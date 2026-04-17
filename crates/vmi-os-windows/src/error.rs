@@ -4,14 +4,14 @@ use vmi_core::VcpuId;
 #[derive(thiserror::Error, Debug)]
 pub enum WindowsError {
     /// Corrupted struct.
-    #[error("Corrupted struct: {0}")]
+    #[error("corrupted struct: {0}")]
     CorruptedStruct(&'static str),
 
     /// Invalid processor.
-    #[error("Invalid processor: {0}")]
+    #[error("invalid processor: {0}")]
     InvalidProcessor(VcpuId),
 
-    /// Corrupted struct.
+    /// PE parsing error.
     #[error(transparent)]
     Pe(#[from] crate::PeError),
 }

@@ -2,7 +2,7 @@
 #[derive(thiserror::Error, Debug)]
 pub enum LinuxError {
     /// Corrupted struct.
-    #[error("Corrupted struct: {0}")]
+    #[error("corrupted struct: {0}")]
     CorruptedStruct(&'static str),
 }
 

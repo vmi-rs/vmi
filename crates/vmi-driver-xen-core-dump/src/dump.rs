@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use xen::sys::vcpu_guest_context;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::Error;
+use crate::XenCoreDumpError;
 
 pub struct Dump {
     mmap: Mmap,
@@ -18,7 +18,7 @@ pub struct Dump {
 }
 
 impl Dump {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, XenCoreDumpError> {
         let file = File::open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
 

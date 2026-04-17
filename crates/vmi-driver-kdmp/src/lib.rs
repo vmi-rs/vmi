@@ -17,7 +17,7 @@ pub use self::{
         ArchAdapter,
         header64::{ExceptionRecord64, Header64},
     },
-    error::Error,
+    error::KdmpDriverError,
 };
 
 /// VMI driver for kernel memory dump.

@@ -3,7 +3,7 @@ use std::path::Path;
 use kdmp_parser::{gxa::Gpa, map::MappedFileReader, parse::KernelDumpParser, phys::Reader};
 use vmi_core::{Gfn, VcpuId, VmiInfo, VmiMappedPage};
 
-use crate::{ArchAdapter, Error};
+use crate::{ArchAdapter, KdmpDriverError};
 
 /// VMI driver for Xen core dump.
 pub struct KdmpDriver<Arch>
@@ -18,7 +18,7 @@ impl<Arch> KdmpDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, KdmpDriverError> {
         let dump = KernelDumpParser::with_reader(MappedFileReader::new(path)?)?;
 
         Ok(Self {
@@ -31,7 +31,7 @@ where
         Arch::header(self)
     }
 
-    pub fn info(&self) -> Result<VmiInfo, Error> {
+    pub fn info(&self) -> Result<VmiInfo, KdmpDriverError> {
         Ok(VmiInfo {
             page_size: 4096,
             page_shift: 12,
@@ -40,11 +40,11 @@ where
         })
     }
 
-    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, Error> {
+    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, KdmpDriverError> {
         Arch::registers(self, vcpu)
     }
 
-    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, Error> {
+    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, KdmpDriverError> {
         let reader = Reader::new(&self.dump);
 
         let mut content = [0u8; 4096];

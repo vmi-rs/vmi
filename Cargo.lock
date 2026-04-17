@@ -2073,6 +2073,7 @@ version = "0.5.0"
 dependencies = [
  "kdmp-parser",
  "memmap2",
+ "thiserror 2.0.18",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",
@@ -2085,6 +2086,7 @@ version = "0.5.0"
 dependencies = [
  "libc",
  "libxen",
+ "thiserror 2.0.18",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",
@@ -2097,6 +2099,7 @@ dependencies = [
  "elf",
  "libxen",
  "memmap2",
+ "thiserror 2.0.18",
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",

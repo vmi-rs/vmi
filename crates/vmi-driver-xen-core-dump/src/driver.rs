@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use vmi_core::{Gfn, VcpuId, VmiInfo, VmiMappedPage};
 
-use crate::{ArchAdapter, Error, dump::Dump};
+use crate::{ArchAdapter, XenCoreDumpError, dump::Dump};
 
 /// VMI driver for Xen core dump.
 pub struct XenCoreDumpDriver<Arch>
@@ -19,7 +19,7 @@ impl<Arch> XenCoreDumpDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, XenCoreDumpError> {
         let dump = Dump::new(path)?;
 
         let mut pfn_cache = HashMap::new();
@@ -45,7 +45,7 @@ where
         })
     }
 
-    pub fn info(&self) -> Result<VmiInfo, Error> {
+    pub fn info(&self) -> Result<VmiInfo, XenCoreDumpError> {
         Ok(VmiInfo {
             page_size: self.dump.page_size(),
             page_shift: 12,
@@ -54,16 +54,16 @@ where
         })
     }
 
-    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, Error> {
+    pub fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, XenCoreDumpError> {
         Arch::registers(self, vcpu)
     }
 
-    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, Error> {
+    pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, XenCoreDumpError> {
         let index = self
             .pfn_cache
             .get(&gfn)
             .copied()
-            .ok_or(Error::OutOfBounds)?;
+            .ok_or(XenCoreDumpError::OutOfBounds)?;
 
         let pages = self.dump.xen_pages()?;
         let start = index * self.dump.page_size() as usize;

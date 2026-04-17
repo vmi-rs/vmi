@@ -12,7 +12,7 @@ use vmi_core::{
     driver::{VmiQueryRegisters, VmiRead},
 };
 
-pub use self::error::Error;
+pub use self::error::XenCoreDumpError;
 use self::{arch::ArchAdapter, driver::XenCoreDumpDriver};
 
 /// VMI driver for Xen core dump.

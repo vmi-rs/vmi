@@ -8,7 +8,7 @@ use super::{
     ArchAdapter,
     header64::{ExceptionRecord64, Header64},
 };
-use crate::{Error, KdmpDriver};
+use crate::{KdmpDriver, KdmpDriverError};
 
 impl ArchAdapter for Amd64 {
     type Header = Header64;
@@ -61,7 +61,10 @@ impl ArchAdapter for Amd64 {
         }
     }
 
-    fn registers(driver: &KdmpDriver<Self>, _vcpu: VcpuId) -> Result<Self::Registers, Error> {
+    fn registers(
+        driver: &KdmpDriver<Self>,
+        _vcpu: VcpuId,
+    ) -> Result<Self::Registers, KdmpDriverError> {
         let headers = driver.dump.headers();
         let ctx = driver.dump.context_record();
 

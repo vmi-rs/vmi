@@ -9,12 +9,15 @@ use xen::ctrl::{
     VmEvent, VmEventData, VmEventFastSinglestep, VmEventFlag, VmEventFlagOptions, VmEventRegs,
 };
 
-use crate::{ArchAdapter, Error, IntoExt as _, TryFromExt as _, XenDriver};
+use crate::{ArchAdapter, IntoExt as _, TryFromExt as _, XenDriver, XenDriverError};
 
 impl ArchAdapter for Amd64 {
     type XenArch = xen::arch::x86::Amd64;
 
-    fn registers(driver: &XenDriver<Self>, vcpu: VcpuId) -> Result<Self::Registers, Error> {
+    fn registers(
+        driver: &XenDriver<Self>,
+        vcpu: VcpuId,
+    ) -> Result<Self::Registers, XenDriverError> {
         Ok(driver.domain.get_context_cpu(vcpu.into_ext())?.into_ext())
     }
 
@@ -22,13 +25,16 @@ impl ArchAdapter for Amd64 {
         driver: &XenDriver<Self>,
         vcpu: VcpuId,
         registers: Self::Registers,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         Ok(driver
             .domain
             .set_context_cpu(vcpu.into_ext(), registers.into_ext())?)
     }
 
-    fn monitor_enable(driver: &XenDriver<Self>, option: Self::EventMonitor) -> Result<(), Error> {
+    fn monitor_enable(
+        driver: &XenDriver<Self>,
+        option: Self::EventMonitor,
+    ) -> Result<(), XenDriverError> {
         const ENABLE: bool = true;
         const SYNC: bool = true;
         const ON_CHANGE_ONLY: bool = true;
@@ -51,7 +57,7 @@ impl ArchAdapter for Amd64 {
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::DebugException => driver.monitor.debug_exceptions(ENABLE, SYNC)?,
                 ExceptionVector::Breakpoint => driver.monitor.software_breakpoint(ENABLE)?,
-                _ => return Err(Error::NotSupported),
+                _ => return Err(XenDriverError::NotSupported),
             },
             EventMonitor::Singlestep => driver.monitor.singlestep(ENABLE)?,
             EventMonitor::Hypercall { allow_userspace } => {
@@ -66,7 +72,10 @@ impl ArchAdapter for Amd64 {
         Ok(())
     }
 
-    fn monitor_disable(driver: &XenDriver<Self>, option: Self::EventMonitor) -> Result<(), Error> {
+    fn monitor_disable(
+        driver: &XenDriver<Self>,
+        option: Self::EventMonitor,
+    ) -> Result<(), XenDriverError> {
         const DISABLE: bool = false;
         const SYNC: bool = true;
         const ON_CHANGE_ONLY: bool = true;
@@ -91,7 +100,7 @@ impl ArchAdapter for Amd64 {
                     driver.monitor.debug_exceptions(DISABLE, SYNC)?
                 }
                 ExceptionVector::Breakpoint => driver.monitor.software_breakpoint(DISABLE)?,
-                _ => return Err(Error::NotSupported),
+                _ => return Err(XenDriverError::NotSupported),
             },
             EventMonitor::Singlestep => {
                 for vcpu in 0..=driver.info.max_vcpu_id {
@@ -112,7 +121,7 @@ impl ArchAdapter for Amd64 {
         driver: &XenDriver<Self>,
         vcpu: VcpuId,
         interrupt: Self::Interrupt,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         Ok(driver.devicemodel.inject_event(
             vcpu.into_ext(),
             interrupt.vector.into_ext(),
@@ -127,11 +136,11 @@ impl ArchAdapter for Amd64 {
         driver: &XenDriver<Self>,
         event: &mut VmEvent,
         mut handler: impl FnMut(&VmiEvent<Self>) -> VmiEventResponse<Self>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), XenDriverError> {
         // Convert the Xen event to a VMI event.
         let vmi_reason = match EventReason::try_from_ext(&event.reason) {
             Ok(reason) => reason,
-            Err(_) => return Err(Error::NotSupported),
+            Err(_) => return Err(XenDriverError::NotSupported),
         };
 
         let mut registers = match &event.data {
@@ -251,7 +260,7 @@ impl ArchAdapter for Amd64 {
         Ok(())
     }
 
-    fn reset_state(driver: &XenDriver<Self>) -> Result<(), Error> {
+    fn reset_state(driver: &XenDriver<Self>) -> Result<(), XenDriverError> {
         let _ = driver.monitor_disable(EventMonitor::Io);
         let _ = driver.monitor_disable(EventMonitor::CpuId);
         let _ = driver.monitor_disable(EventMonitor::Hypercall {

@@ -113,7 +113,7 @@ impl ImageDosHeader {
     pub fn parse(data: &[u8], offset: &mut u64) -> Result<ImageDosHeader, PeError> {
         let dos_header = data
             .read_at::<OImageDosHeader>(0)
-            .map_err(|_| PeError::InvalidDosHeaderSizeOrAlignment)?;
+            .map_err(|_| PeError::InvalidDosHeader)?;
 
         if dos_header.e_magic.get(LE) != IMAGE_DOS_SIGNATURE {
             return Err(PeError::InvalidDosMagic);
@@ -221,14 +221,14 @@ impl ImageNtHeaders {
     {
         let nt_headers = data
             .read::<Pe>(offset)
-            .map_err(|_| PeError::InvalidNtHeadersSizeOrAlignment)?;
+            .map_err(|_| PeError::InvalidNtHeaders)?;
 
         if nt_headers.signature() != IMAGE_NT_SIGNATURE {
             return Err(PeError::InvalidPeMagic);
         }
 
         if !nt_headers.is_valid_optional_magic() {
-            return Err(PeError::InvalidPeOptionalHeaderMagic);
+            return Err(PeError::InvalidOptionalHeaderMagic);
         }
 
         Ok(Self::from(*nt_headers))
@@ -679,18 +679,18 @@ impl PeHeader {
         // the data directories from that.
         let optional_data_size = u64::from(nt_headers.file_header().size_of_optional_header())
             .checked_sub(nt_headers.optional_header().size() as u64)
-            .ok_or(PeError::PeOptionalHeaderSizeTooSmall)?;
+            .ok_or(PeError::OptionalHeaderTooSmall)?;
 
         let optional_data = data
             .read_bytes(&mut offset, optional_data_size)
-            .map_err(|_| PeError::InvalidPeOptionalHeaderSize)?;
+            .map_err(|_| PeError::InvalidOptionalHeaderSize)?;
 
         let data_directories = optional_data
             .read_slice_at(
                 0,
                 nt_headers.optional_header().number_of_rva_and_sizes() as usize,
             )
-            .map_err(|_| PeError::InvalidPeNumberOfRvaAndSizes)?;
+            .map_err(|_| PeError::InvalidDataDirectoryCount)?;
 
         Ok(Self {
             dos_header,
