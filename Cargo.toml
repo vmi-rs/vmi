@@ -51,7 +51,7 @@ isr-core = "0.5.0"
 isr-dl-windows = "0.5.0"
 isr-macros = "0.5.0"
 
-xen = { package = "libxen", version = "0.4.0" }
+xen = { package = "libxen", version = "0.5.0" }
 
 #
 # For development.
@@ -62,7 +62,7 @@ xen = { package = "libxen", version = "0.4.0" }
 # isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.5.0" }
 # isr-macros = { path = "../isr/crates/isr-macros", version = "0.5.0" }
 
-# xen = { path = "../xen", package = "libxen", version = "0.4.0" }
+# xen = { path = "../xen", package = "libxen", version = "0.5.0" }
 
 vmi = { path = ".", version = "0.5.0" }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.5.0" }

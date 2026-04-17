@@ -946,9 +946,9 @@ dependencies = [
 
 [[package]]
 name = "libxen"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57118aaeded8f00ee98e63d1967349fe8f6df0750cfe3052aabaf857a27b4f31"
+checksum = "cd27e3ce6767b604a65459922d8c73f9b195bc1464ae3a711d5d945f948e26cc"
 dependencies = [
  "bitflags",
  "libc",
@@ -959,9 +959,9 @@ dependencies = [
 
 [[package]]
 name = "libxen-sys"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a09d92c3dd52db420599817340972b21fd8e92be361ebbe4de601f31e19449f"
+checksum = "736245d88277d5e0ca0ec741bb8532d4d64a51373b6e0b0b1fab0feb1b6a7c2b"
 dependencies = [
  "bindgen",
  "pkg-config",
