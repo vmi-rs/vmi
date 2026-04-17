@@ -8,10 +8,7 @@ use super::arch::GpRegistersAdapter;
 ///
 /// # Architecture-specific
 ///
-/// - **AMD64**: value1–value4 map to `RAX`, `RBX`, `RCX`, `RDX`.
-///
-/// See the [`arch::amd64`](super::arch) module for the full register
-/// layout.
+/// - **AMD64**: value1-value4 map to `RAX`, `RBX`, `RCX`, `RDX`.
 #[derive(Debug)]
 pub struct BridgeResponse<T = ()> {
     value1: Option<u64>,

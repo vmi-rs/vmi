@@ -16,8 +16,8 @@ use super::ArchAdapter;
 ///
 /// # Architecture-specific
 ///
-/// See the [`arch::amd64`](super::arch) module for the register-to-field
-/// mapping on AMD64.
+/// The per-architecture register-to-field mapping is documented on
+/// [`ArchAdapter::read_packet`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct BridgePacket {
     magic: u32,

@@ -627,7 +627,7 @@ where
     /// `LastStatusValue` is a `NTSTATUS` value, whereas `LastError` is a Win32
     /// error code. The two values are related but not identical. You can obtain
     /// the Win32 error code by calling
-    /// [`VmiOs::last_error`](crate::VmiOs::last_error).
+    /// [`VmiOs::last_error`].
     ///
     /// # Implementation Details
     ///

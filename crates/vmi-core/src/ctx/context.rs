@@ -10,6 +10,7 @@ use crate::{VmiCore, VmiEvent, VmiOs};
 /// This structure is created inside the [`VmiSession::handle`] method and
 /// passed to the [`VmiHandler::handle_event`] method to handle VMI events.
 ///
+/// [`VmiSession::handle`]: super::VmiSession::handle
 /// [`VmiHandler::handle_event`]: crate::VmiHandler::handle_event
 pub struct VmiContext<'a, Os>
 where

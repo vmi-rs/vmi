@@ -260,8 +260,7 @@ pub enum EventMonitor {
     ///
     /// This method allows for setting up event triggers when certain CPU
     /// registers are accessed or modified. The specific registers that can
-    /// be monitored depend on the architecture and are defined by the
-    /// [`Architecture::MonitorRegisterOptions`] type.
+    /// be monitored are defined by the [`ControlRegister`] enum.
     ///
     /// When enabled, relevant events will be passed to the event callback
     /// function.
@@ -283,8 +282,7 @@ pub enum EventMonitor {
     ///
     /// This method sets up event triggers for specified interrupt events. The
     /// types of interrupts that can be monitored are defined by the
-    /// [`Architecture::MonitorInterruptOptions`] type, which is specific to
-    /// the architecture being used.
+    /// [`ExceptionVector`] enum.
     ///
     /// When an interrupt event occurs, it will be passed to the event callback
     /// function.

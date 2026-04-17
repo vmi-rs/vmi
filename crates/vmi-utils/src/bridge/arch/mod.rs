@@ -25,8 +25,6 @@ pub trait ArchAdapter: Architecture + Sized + 'static {
     ///   `subleaf` (ECX), values from `R8`-`R11`.
     /// - **AMD64 (x86, CPUID)**: magic from `leaf` (EAX), request+method from
     ///   `subleaf` (ECX), values from `EBX`, `EDX`, `ESI`, `EDI`.
-    ///
-    /// See the [`amd64`] module docs for the full register layout.
     fn read_packet(event: &VmiEvent<Self>) -> BridgePacket;
 }
 

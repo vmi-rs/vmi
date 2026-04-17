@@ -96,8 +96,8 @@ where
 
 /// Interface that architecture-specific page table monitors must implement.
 ///
-/// See [`PageTableMonitor`](super::PageTableMonitor) for the public API that
-/// delegates to these methods.
+/// See [`PageTableMonitor`] for the public API that delegates to these
+/// methods.
 pub trait PageTableMonitorAdapter<Driver, Tag>
 where
     Driver: VmiDriver,

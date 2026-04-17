@@ -585,8 +585,8 @@ where
 
 /// Unwinds a leaf function (no RUNTIME_FUNCTION entry).
 ///
-/// For leaf functions, the return address is at [RSP] and the
-/// caller's RSP is RSP + 8. This is also useful as a fallback
+/// For leaf functions, the return address is at `[RSP]` and the
+/// caller's RSP is `RSP + 8`. This is also useful as a fallback
 /// when .pdata is unavailable (e.g., file-backed pages missing
 /// from a crash dump).
 pub fn unwind_leaf<Driver>(
