@@ -500,13 +500,17 @@ where
     /// The function iterates over the VAD tree of the process.
     fn regions(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsRegion<'a, Driver>, VmiError>>, VmiError> {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsRegion<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let vmi = self.vmi;
         let iterator = match self.vad_root()? {
-            Some(vad_root) => TreeNodeIterator::new(self.vmi, vad_root.va()),
-            None => TreeNodeIterator::empty(self.vmi),
+            Some(vad_root) => TreeNodeIterator::new(vmi, vad_root.va()),
+            None => TreeNodeIterator::empty(vmi),
         };
 
-        Ok(iterator.map(move |result| result.map(|vad| WindowsRegion::new(self.vmi, vad))))
+        Ok(iterator.map(move |result| result.map(|vad| WindowsRegion::new(vmi, vad))))
     }
 
     /// Finds the memory region (VAD) containing the given address.
@@ -563,19 +567,21 @@ where
     fn threads(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<<Self::Os as vmi_core::VmiOs>::Thread<'a>, VmiError>>,
+        impl Iterator<Item = Result<<Self::Os as vmi_core::VmiOs>::Thread<'a>, VmiError>>
+        + use<'a, Driver>,
         VmiError,
     > {
         let offsets = self.offsets();
         let EPROCESS = &offsets._EPROCESS;
         let ETHREAD = &offsets._ETHREAD;
 
+        let vmi = self.vmi;
         Ok(ListEntryIterator::new(
-            self.vmi,
+            vmi,
             self.va + EPROCESS.ThreadListHead.offset(),
             ETHREAD.ThreadListEntry.offset(),
         )
-        .map(move |result| result.map(|entry| WindowsThread::new(self.vmi, ThreadObject(entry)))))
+        .map(move |result| result.map(|entry| WindowsThread::new(vmi, ThreadObject(entry)))))
     }
 
     /// Checks whether the given virtual address is valid in the process.

@@ -1,10 +1,14 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Error, GenericParam, Generics, Ident, ItemImpl, Result, Visibility, parse_macro_input};
+use syn::{
+    CapturedParam, Error, GenericParam, Generics, Ident, ItemImpl, Lifetime, Result, Visibility,
+    parse_macro_input,
+};
 
 use crate::{
     common::{self, __vmi_lifetime},
     method::{FnArgExt, ItemExt, ItemFnExt},
+    transform,
 };
 
 struct TraitFn {
@@ -12,7 +16,12 @@ struct TraitFn {
     os_context_fn: TokenStream,
 }
 
-fn generate_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) -> Option<TraitFn> {
+fn generate_trait_fn(
+    item_fn: impl ItemFnExt,
+    helper_trait_name: &Ident,
+    trait_capture_extras: &[CapturedParam],
+    impl_capture_extras: &[CapturedParam],
+) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let ident = &sig.ident;
     let generics = &sig.generics;
@@ -22,18 +31,27 @@ fn generate_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) -> Opti
     let (args, arg_names) = common::build_args(sig)?;
     let where_clause = common::build_where_clause(sig);
 
-    // Generate the implementation for `VmiOsContext`.
+    // The trait declaration and trait impl introduce in-scope generics
+    // beyond the source method (`Self`, `'__vmi`) that Rust 2024 requires
+    // to be listed in every `use<...>` bound. Append them here before
+    // emitting each variant.
+    let mut trait_return_type = return_type.clone();
+    transform::extend_precise_captures(&mut trait_return_type, trait_capture_extras);
+
+    let mut impl_return_type = return_type.clone();
+    transform::extend_precise_captures(&mut impl_return_type, impl_capture_extras);
+
     let doc = item_fn.doc();
     let os_context_sig = quote! {
         #(#doc)*
-        fn #ident #generics(&self, #(#args),*) #return_type
+        fn #ident #generics(&self, #(#args),*) #trait_return_type
             #where_clause;
     };
 
     let doc = item_fn.doc();
     let os_context_fn = quote! {
         #(#doc)*
-        fn #ident #generics(&self, #(#args),*) #return_type
+        fn #ident #generics(&self, #(#args),*) #impl_return_type
             #where_clause
         {
             <<Self as #helper_trait_name>::Os>::#ident(self.state(), #(#arg_names),*)
@@ -53,7 +71,12 @@ fn filter_pub(item: impl ItemFnExt) -> Option<impl ItemFnExt> {
     }
 }
 
-fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) -> Option<TraitFn> {
+fn transform_fn_to_trait_fn(
+    item_fn: impl ItemFnExt,
+    helper_trait_name: &Ident,
+    trait_capture_extras: &[CapturedParam],
+    impl_capture_extras: &[CapturedParam],
+) -> Option<TraitFn> {
     let sig = item_fn.sig();
     let mut inputs = sig.inputs.iter();
 
@@ -69,7 +92,12 @@ fn transform_fn_to_trait_fn(item_fn: impl ItemFnExt, helper_trait_name: &Ident) 
         return None;
     }
 
-    generate_trait_fn(item_fn, helper_trait_name)
+    generate_trait_fn(
+        item_fn,
+        helper_trait_name,
+        trait_capture_extras,
+        impl_capture_extras,
+    )
 }
 
 fn verify_generics(generics: &Generics) -> Result<()> {
@@ -119,12 +147,36 @@ pub fn derive_trait_from_impl(
     };
     let where_clause = input.generics.where_clause.as_ref();
     let helper_trait_name = format_ident!("__{os_context_name}VmiOsStateExt");
+
+    // The generated trait and its impl introduce in-scope generics beyond
+    // what the source method declares. Rust 2024 requires every `use<...>`
+    // bound to list them, so we append them when copying the return type.
+    //
+    // The trait (`trait Foo<'__vmi, Driver>`) adds the `'__vmi` lifetime
+    // and carries an implicit `Self` type parameter.
+    //
+    // The trait impl (`impl<'__vmi, Driver> Foo for VmiOsState<'__vmi, _>`)
+    // adds `'__vmi`; `Self` there is an alias for the concrete impl type
+    // and must NOT appear in `use<...>`.
+    let vmi_param = CapturedParam::Lifetime(Lifetime::new("'__vmi", Span::call_site()));
+    let self_param = CapturedParam::Ident(Ident::new("Self", Span::call_site()));
+
+    let trait_capture_extras = vec![vmi_param.clone(), self_param];
+    let impl_capture_extras = vec![vmi_param];
+
     let fns = input
         .items
         .iter()
         .filter_map(ItemExt::as_fn)
         .filter_map(filter_pub)
-        .filter_map(|item_fn| transform_fn_to_trait_fn(item_fn, &helper_trait_name))
+        .filter_map(|item_fn| {
+            transform_fn_to_trait_fn(
+                item_fn,
+                &helper_trait_name,
+                &trait_capture_extras,
+                &impl_capture_extras,
+            )
+        })
         .collect::<Vec<_>>();
 
     let os_context_sigs = fns.iter().map(|m| &m.os_context_sig);

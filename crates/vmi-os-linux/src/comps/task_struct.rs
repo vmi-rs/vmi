@@ -270,8 +270,10 @@ where
 
     fn regions(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         let mut result = Vec::new();
 
         let mm = match self.mm()? {
@@ -279,11 +281,12 @@ where
             None => return Ok(result.into_iter()),
         };
 
+        let vmi = self.vmi;
         let mt = mm.mm_mt()?;
         mt.enumerate(|node| {
             println!("XXXNode: {}", node);
             if !node.is_null() {
-                result.push(Ok(LinuxVmAreaStruct::new(self.vmi, node)));
+                result.push(Ok(LinuxVmAreaStruct::new(vmi, node)));
             }
             true
         })?;
@@ -300,8 +303,10 @@ where
 
     fn threads(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
