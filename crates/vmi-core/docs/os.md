@@ -29,6 +29,7 @@ cases where an OS-specific implementation is not available or required.
   - **Thread**: Represented via the [`VmiOsThread`] trait.
   - **Executable Image**: Represented via the [`VmiOsImage`] trait.
   - **Kernel Module**: Represented via the [`VmiOsModule`] trait.
+  - **User-mode Module**: Represented via the [`VmiOsUserModule`] trait.
   - **Memory Region**: Represented via the [`VmiOsRegion`] trait.
   - **Mapped Region**: Represented via the [`VmiOsMapped`] trait.
 
@@ -84,6 +85,12 @@ cases where an OS-specific implementation is not available or required.
 
   Offers an abstraction for kernel module introspection, providing methods to
   access a module’s base address, size, and name.
+
+- **[`VmiOsUserModule`]**
+
+  The user-mode counterpart to [`VmiOsModule`]. Abstracts over modules loaded
+  into a process's address space (executables and shared libraries), providing
+  the module's base address, size, and name.
 
 - **[`VmiOsImage`]**
 
