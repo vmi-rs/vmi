@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WindowsSession::processes`, and the corresponding Windows and Linux
   implementations. Enables patterns such as `vmi.os().modules()?`
   where the iterator outlives the temporary `VmiOsState`.
+- `BreakpointManager::get_by_event` migrated from `+ '_` to
+  `+ use<'_, Key, Tag>` for consistency.
 - `vmi-macros` now carries precise-capture bounds through
   `derive_os_wrapper` and `derive_trait_from_impl` expansion,
   rewriting `Self` to `Os` in the generated `VmiOsState` wrappers and
