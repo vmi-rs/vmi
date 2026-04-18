@@ -1,5 +1,5 @@
 mod control_area;
-mod handle_table;
+pub(crate) mod handle_table;
 mod handle_table_entry;
 mod image;
 mod key_control_block;
