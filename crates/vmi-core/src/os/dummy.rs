@@ -46,18 +46,20 @@ where
         unimplemented!()
     }
 
-    fn modules(
-        _vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
+    fn modules<'a>(
+        _vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
         }
     }
 
-    fn processes(
-        _vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Process<'_>, VmiError>> + '_, VmiError> {
+    fn processes<'a>(
+        _vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
@@ -235,8 +237,10 @@ where
 
     fn regions(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'_>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
@@ -252,8 +256,10 @@ where
 
     fn threads(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>

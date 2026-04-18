@@ -117,11 +117,15 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InLoadOrderModuleList`.
     pub fn in_load_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        VmiError,
+    > {
+        let vmi = self.vmi;
+        let root = self.root;
         Ok(self
             .in_load_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(self.vmi, va, self.root))))
+            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 
     /// Returns an iterator over modules in memory order.
@@ -131,11 +135,15 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InMemoryOrderModuleList`.
     pub fn in_memory_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        VmiError,
+    > {
+        let vmi = self.vmi;
+        let root = self.root;
         Ok(self
             .in_memory_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(self.vmi, va, self.root))))
+            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 
     /// Returns an iterator over modules in initialization order.
@@ -145,11 +153,15 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InInitializationOrderModuleList`.
     pub fn in_initialization_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        VmiError,
+    > {
+        let vmi = self.vmi;
+        let root = self.root;
         Ok(self
             .in_initialization_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(self.vmi, va, self.root))))
+            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 
     fn in_load_order_modules_inner(&self) -> ListEntryIteratorBase<'a, Driver, Layout> {
@@ -179,14 +191,6 @@ where
         link_offset: u64,
     ) -> ListEntryIteratorBase<'a, Driver, Layout> {
         ListEntryIteratorBase::new(self.vmi, list_head, link_offset, self.root)
-    }
-
-    /// Returns a `WindowsUserModule` for the given virtual address.
-    ///
-    /// This (private) method is needed for `WindowsPebLdrDataWrapper`, which
-    /// doesn't have access to the `vmi` and `root` fields.
-    fn make_user_module(&self, va: Va) -> WindowsUserModule<'a, Driver> {
-        WindowsUserModule::new(self.vmi, va, self.root)
     }
 }
 
@@ -222,49 +226,68 @@ where
 
     fn in_load_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
-        let iter = match self {
-            Self::W32(inner) => ListEntryIterator::from(inner.in_load_order_modules_inner()),
-            Self::W64(inner) => ListEntryIterator::from(inner.in_load_order_modules_inner()),
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let (iter, vmi, root) = match self {
+            Self::W32(inner) => (
+                ListEntryIterator::from(inner.in_load_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
+            Self::W64(inner) => (
+                ListEntryIterator::from(inner.in_load_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| self.make_user_module(va))))
+        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 
     fn in_memory_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
-        let iter = match self {
-            Self::W32(inner) => ListEntryIterator::from(inner.in_memory_order_modules_inner()),
-            Self::W64(inner) => ListEntryIterator::from(inner.in_memory_order_modules_inner()),
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let (iter, vmi, root) = match self {
+            Self::W32(inner) => (
+                ListEntryIterator::from(inner.in_memory_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
+            Self::W64(inner) => (
+                ListEntryIterator::from(inner.in_memory_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| self.make_user_module(va))))
+        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 
     fn in_initialization_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
-        let iter = match self {
-            Self::W32(inner) => {
-                ListEntryIterator::from(inner.in_initialization_order_modules_inner())
-            }
-            Self::W64(inner) => {
-                ListEntryIterator::from(inner.in_initialization_order_modules_inner())
-            }
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let (iter, vmi, root) = match self {
+            Self::W32(inner) => (
+                ListEntryIterator::from(inner.in_initialization_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
+            Self::W64(inner) => (
+                ListEntryIterator::from(inner.in_initialization_order_modules_inner()),
+                inner.vmi,
+                inner.root,
+            ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| self.make_user_module(va))))
-    }
-
-    fn make_user_module(&self, va: Va) -> WindowsUserModule<'a, Driver> {
-        match self {
-            Self::W32(inner) => inner.make_user_module(va),
-            Self::W64(inner) => inner.make_user_module(va),
-        }
+        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
     }
 }
 
@@ -353,8 +376,10 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InLoadOrderModuleList`.
     pub fn in_load_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         self.inner.in_load_order_modules()
     }
 
@@ -365,8 +390,10 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InMemoryOrderModuleList`.
     pub fn in_memory_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         self.inner.in_memory_order_modules()
     }
 
@@ -377,8 +404,10 @@ where
     /// Corresponds to `_PEB_LDR_DATA.InInitializationOrderModuleList`.
     pub fn in_initialization_order_modules(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>>, VmiError>
-    {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         self.inner.in_initialization_order_modules()
     }
 }

@@ -1201,7 +1201,7 @@ where
         vmi: VmiState<'a, Self>,
         list_head: Va,
         offset: u64,
-    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
+    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + use<'a, Driver>, VmiError> {
         Ok(ListEntryIterator::new(vmi, list_head, offset))
     }
 
@@ -1412,9 +1412,10 @@ where
     /// It reads the `PsLoadedModuleList` symbol from the kernel image and
     /// iterates over the linked list of `KLDR_DATA_TABLE_ENTRY` structures
     /// representing each loaded module.
-    fn modules(
-        vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
+    fn modules<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         let PsLoadedModuleList = Self::kernel_image_base(vmi)? + symbol!(vmi, PsLoadedModuleList);
         let KLDR_DATA_TABLE_ENTRY = offset!(vmi, _KLDR_DATA_TABLE_ENTRY);
 
@@ -1431,9 +1432,10 @@ where
     /// This method returns an iterator over all Windows processes. It reads the
     /// `PsActiveProcessHead` symbol from the kernel image and iterates over the
     /// linked list of `EPROCESS` structures representing each process.
-    fn processes(
-        vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Process<'_>, VmiError>> + '_, VmiError> {
+    fn processes<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         let PsActiveProcessHead = Self::kernel_image_base(vmi)? + symbol!(vmi, PsActiveProcessHead);
         let EPROCESS = offset!(vmi, _EPROCESS);
 

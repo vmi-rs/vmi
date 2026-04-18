@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Fixed
 
+- Iterator-returning methods now use Rust 2024 `use<...>` precise
+  capturing bounds, so the returned iterators are no longer tied to
+  the lifetime of the receiver borrow. Affects `VmiOs::modules` /
+  `processes`, `VmiOsProcess::regions` / `threads`, all three
+  `WindowsPebLdrData` module-order walkers, `WindowsDirectoryObject::iter`,
+  `WindowsSession::processes`, and the corresponding Windows and Linux
+  implementations. Enables patterns such as `vmi.os().modules()?`
+  where the iterator outlives the temporary `VmiOsState`.
+- `vmi-macros` now carries precise-capture bounds through
+  `derive_os_wrapper` and `derive_trait_from_impl` expansion,
+  rewriting `Self` to `Os` in the generated `VmiOsState` wrappers and
+  appending the macro-introduced `'__vmi` lifetime (and `Self`) to
+  every copied `use<...>` list as Rust 2024 requires.
+
 ## [0.5.1] - 2026-04-18
 
 ### Fixed

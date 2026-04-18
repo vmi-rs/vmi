@@ -117,7 +117,7 @@ where
         vmi: VmiState<'a, Self>,
         list_head: Va,
         offset: u64,
-    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + 'a, VmiError> {
+    ) -> Result<impl Iterator<Item = Result<Va, VmiError>> + use<'a, Driver>, VmiError> {
         Ok(ListEntryIterator::new(vmi, list_head, offset))
     }
 
@@ -190,18 +190,20 @@ where
         unimplemented!()
     }
 
-    fn modules(
-        _vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Module<'_>, VmiError>> + '_, VmiError> {
+    fn modules<'a>(
+        _vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         #[allow(unreachable_code)]
         {
             unimplemented!() as Result<std::iter::Empty<_>, VmiError>
         }
     }
 
-    fn processes(
-        vmi: VmiState<'_, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Process<'_>, VmiError>> + '_, VmiError> {
+    fn processes<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + use<'a, Driver>, VmiError>
+    {
         let __init_task = symbol!(vmi, init_task);
         let __task_struct = &offset!(vmi, task_struct);
 

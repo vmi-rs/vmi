@@ -67,17 +67,21 @@ where
     ///
     /// Corresponds to `_MM_SESSION_SPACE.ProcessList`.
     pub fn processes(
-        &'a self,
-    ) -> Result<impl Iterator<Item = Result<WindowsProcess<'a, Driver>, VmiError>>, VmiError> {
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsProcess<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         let offsets = self.offsets();
         let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
         let EPROCESS = &offsets._EPROCESS;
 
+        let vmi = self.vmi;
         Ok(ListEntryIterator::new(
-            self.vmi,
+            vmi,
             self.va + MM_SESSION_SPACE.ProcessList.offset(),
             EPROCESS.SessionProcessLinks.offset(),
         )
-        .map(move |result| result.map(|entry| WindowsProcess::new(self.vmi, ProcessObject(entry)))))
+        .map(move |result| result.map(|entry| WindowsProcess::new(vmi, ProcessObject(entry)))))
     }
 }

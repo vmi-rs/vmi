@@ -110,7 +110,10 @@ where
     /// Returns an iterator over the process's memory regions.
     fn regions(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>>, VmiError>;
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>> + use<'a, Driver, Self>,
+        VmiError,
+    >;
 
     /// Finds the memory region containing the given address.
     fn find_region(&self, address: Va)
@@ -123,7 +126,10 @@ where
     /// - **Windows**: `_EPROCESS.ThreadListHead`.
     fn threads(
         &self,
-    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>>, VmiError>;
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::Thread<'a>, VmiError>> + use<'a, Driver, Self>,
+        VmiError,
+    >;
 
     /// Checks whether the given virtual address is valid in the process.
     ///

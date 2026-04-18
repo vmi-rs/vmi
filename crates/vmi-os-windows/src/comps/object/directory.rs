@@ -71,7 +71,10 @@ where
     /// Iterates over the objects in the directory.
     pub fn iter(
         &self,
-    ) -> Result<impl Iterator<Item = Result<WindowsObject<'a, Driver>, VmiError>>, VmiError> {
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsObject<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
         let offsets = self.offsets();
         let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
         let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;

@@ -120,7 +120,7 @@ where
     /// - **Linux**: Retrieves information from the `modules` list.
     fn modules<'a>(
         vmi: VmiState<'a, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + 'a, VmiError>;
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>> + use<'a, Self>, VmiError>;
 
     /// Returns an iterator over the processes.
     ///
@@ -130,7 +130,7 @@ where
     /// - **Linux**: Retrieves information from the `tasks` list.
     fn processes<'a>(
         vmi: VmiState<'a, Self>,
-    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + 'a, VmiError>;
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>> + use<'a, Self>, VmiError>;
 
     /// Returns the process corresponding to the given process object.
     fn process<'a>(
