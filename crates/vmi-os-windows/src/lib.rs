@@ -83,8 +83,8 @@ pub use self::error::WindowsError;
 
 mod iter;
 pub use self::iter::{
-    HandleTableEntryIterator, ListEntry, ListEntryIterator, ListEntryIteratorBase, ListEntryLayout,
-    TreeNodeIterator,
+    DirectoryObjectIterator, HandleTableEntryIterator, ListEntry, ListEntryIterator,
+    ListEntryIteratorBase, ListEntryLayout, TreeNodeIterator,
 };
 
 pub mod pe;
