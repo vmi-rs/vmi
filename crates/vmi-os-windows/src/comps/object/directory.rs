@@ -1,7 +1,7 @@
-use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
-use crate::{ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, DirectoryObjectIterator, WindowsOs};
 
 /// A Windows directory object.
 ///
@@ -75,34 +75,7 @@ where
         impl Iterator<Item = Result<WindowsObject<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        let offsets = self.offsets();
-        let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
-        let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
-
-        let mut entries = Vec::new();
-
-        for i in 0..37 {
-            let hash_bucket = self
-                .vmi
-                .read_va_native(self.va + OBJECT_DIRECTORY.HashBuckets.offset() + i * 8)?;
-
-            let mut entry = hash_bucket;
-            while !entry.is_null() {
-                let object = self
-                    .vmi
-                    .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset())?;
-
-                let object = WindowsObject::new(self.vmi, object);
-
-                entries.push(Ok(object));
-
-                entry = self
-                    .vmi
-                    .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset())?;
-            }
-        }
-
-        Ok(entries.into_iter())
+        Ok(DirectoryObjectIterator::new(self.vmi, self.va))
     }
 
     /// Performs a lookup in the directory.
@@ -114,37 +87,30 @@ where
         let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
         let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
 
+        let address_width = self.vmi.registers().address_width() as u64;
         let needle = needle.as_ref();
 
-        for i in 0..37 {
-            println!("i: {}", i);
-
-            let hash_bucket = self
-                .vmi
-                .read_va_native(self.va + OBJECT_DIRECTORY.HashBuckets.offset() + i * 8)?;
+        for bucket in 0..37 {
+            let hash_bucket = self.vmi.read_va_native(
+                self.va + OBJECT_DIRECTORY.HashBuckets.offset() + bucket * address_width,
+            )?;
 
             let mut entry = hash_bucket;
             while !entry.is_null() {
-                println!("  entry: {}", entry);
-
                 let object = self
                     .vmi
                     .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset())?;
-                println!("    object: {}", object);
 
-                let hash_value = self
-                    .vmi
-                    .read_u32(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset())?;
-                println!("    hash_value: {}", hash_value);
+                // let hash_value = self
+                //     .vmi
+                //     .read_u32(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset())?;
 
                 let object = WindowsObject::new(self.vmi, object);
 
-                if let Some(name) = object.name()? {
-                    println!("    name: {name}");
-
-                    if name == needle {
-                        return Ok(Some(object));
-                    }
+                if let Some(name) = object.name()?
+                    && name == needle
+                {
+                    return Ok(Some(object));
                 }
 
                 entry = self
