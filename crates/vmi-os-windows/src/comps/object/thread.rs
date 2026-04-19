@@ -5,7 +5,9 @@ use vmi_core::{
 };
 
 use super::{
-    super::{WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets},
+    super::{
+        WindowsProcessorMode, WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets,
+    },
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess,
 };
 use crate::{ArchAdapter, WindowsOs};
@@ -380,6 +382,41 @@ where
         let next_processor = next_processor & 0x7FFFFFFF;
 
         Ok(VcpuId(next_processor as u16))
+    }
+
+    /// Returns whether the thread is currently alertable.
+    ///
+    /// # Notes
+    ///
+    /// Usually only trustworthy when `_KTHREAD.State == Waiting`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.Alertable`.
+    pub fn alertable(&self) -> Result<bool, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let alertable = self.vmi.read_field(self.va, &KTHREAD.Alertable)?;
+
+        Ok(KTHREAD.Alertable.extract(alertable) != 0)
+    }
+
+    /// Returns the thread's wait mode.
+    ///
+    /// # Notes
+    ///
+    /// Usually only trustworthy when `_KTHREAD.State == Waiting`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.WaitMode`.
+    pub fn wait_mode(&self) -> Result<WindowsProcessorMode, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let value = self.vmi.read_u8(self.va + KTHREAD.WaitMode.offset())?;
+        Ok(WindowsProcessorMode::from(value))
     }
 
     /// Returns the thread's wait reason.

@@ -247,11 +247,13 @@ offsets! {
         }
 
         struct _KTHREAD {
+            Alertable: Bitfield,            // part of ULONG MiscFlags
             TrapFrame: Field,
             ApcState: Field,
             ApcStateIndex: Field,
             SavedApcState: Field,
             NextProcessor: Field,           // ULONG
+            WaitMode: Field,                // CCHAR - KPROCESSOR_MODE enum
             WaitReason: Field,              // UCHAR - KWAIT_REASON enum
             Teb: Field,
             Process: Field,

@@ -105,8 +105,8 @@ pub use self::comps::{
     WindowsHandleTableEntry, WindowsImage, WindowsKernelProcessorBlock, WindowsModule,
     WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType,
     WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
-    WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase, WindowsRegion,
-    WindowsSectionObject, WindowsSession, WindowsTeb, WindowsTebBase, WindowsThread,
+    WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode,
+    WindowsRegion, WindowsSectionObject, WindowsSession, WindowsTeb, WindowsTebBase, WindowsThread,
     WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame, WindowsUserModule,
     WindowsWow64Kind,
 };

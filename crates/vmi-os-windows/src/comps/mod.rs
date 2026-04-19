@@ -53,3 +53,27 @@ pub use self::{
         WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsWow64Kind,
     },
 };
+
+/// A Windows processor mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsProcessorMode {
+    /// Request originated from kernel-mode code.
+    KernelMode,
+
+    /// Request originated from user-mode code.
+    UserMode,
+}
+
+impl From<u8> for WindowsProcessorMode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::KernelMode,
+            1 => Self::UserMode,
+            _ => {
+                // Assume any non-0 value is user mode.
+                tracing::warn!(value, "unknown processor mode value");
+                Self::UserMode
+            }
+        }
+    }
+}
