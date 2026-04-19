@@ -1,11 +1,22 @@
 use serde::{Deserialize, Serialize};
 
-use super::macros::impl_ops;
+use super::impl_ops;
 use crate::AddressContext;
 
-impl_ops!(Gfn, u64, "Guest Frame Number");
-impl_ops!(Pa, u64, "Guest Physical Address");
-impl_ops!(Va, u64, "Guest Virtual Address");
+impl_ops! {
+    /// A Guest Frame Number.
+    Gfn, u64
+}
+
+impl_ops! {
+    /// A Guest Physical Address.
+    Pa, u64
+}
+
+impl_ops! {
+    /// A Guest Virtual Address.
+    Va, u64
+}
 
 impl Va {
     /// Checks if the virtual address is NULL.

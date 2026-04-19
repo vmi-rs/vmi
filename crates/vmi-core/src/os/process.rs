@@ -1,39 +1,23 @@
-use serde::{Deserialize, Serialize};
-
-use super::{VmiOs, VmiOsImageArchitecture};
+use super::{VmiOs, VmiOsImageArchitecture, impl_ops};
 use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
-/// A process ID within a system.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub struct ProcessId(pub u32);
-
-impl From<u32> for ProcessId {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
+impl_ops! {
+    /// A process ID within a system.
+    ProcessId, u32
 }
 
-impl From<ProcessId> for u32 {
-    fn from(value: ProcessId) -> Self {
-        value.0
-    }
+impl_ops! {
+    /// A process object within a system.
+    ///
+    /// Equivalent to `EPROCESS*` on Windows or `task_struct*` on Linux.
+    ProcessObject, Va
 }
 
-impl std::fmt::Display for ProcessId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{}", self.0)
+impl VmiVa for ProcessObject {
+    fn va(&self) -> Va {
+        self.0
     }
 }
-
-/// A process object within a system.
-///
-/// Equivalent to `EPROCESS*` on Windows or `task_struct*` on Linux.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub struct ProcessObject(pub Va);
 
 impl ProcessObject {
     /// Checks if the process object is a null reference.
@@ -44,24 +28,6 @@ impl ProcessObject {
     /// Converts the process object to a 64-bit unsigned integer.
     pub fn to_u64(&self) -> u64 {
         self.0.0
-    }
-}
-
-impl From<Va> for ProcessObject {
-    fn from(value: Va) -> Self {
-        Self(value)
-    }
-}
-
-impl From<ProcessObject> for Va {
-    fn from(value: ProcessObject) -> Self {
-        value.0
-    }
-}
-
-impl std::fmt::Display for ProcessObject {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

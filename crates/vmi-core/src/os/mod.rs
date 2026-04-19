@@ -2,6 +2,7 @@
 
 mod dummy;
 mod image;
+mod macros;
 mod mapped;
 mod module;
 mod process;
@@ -12,6 +13,7 @@ mod user_module;
 
 use vmi_macros::derive_os_wrapper;
 
+use self::macros::impl_ops;
 pub use self::{
     dummy::NoOS,
     image::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},

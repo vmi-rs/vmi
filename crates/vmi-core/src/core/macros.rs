@@ -1,6 +1,9 @@
 macro_rules! impl_ops {
-    ($name:ident, $type:ty, $doc:expr) => {
-        #[doc = concat!("A ", $doc, ".")]
+    (
+        $(#[$meta:meta])*
+        $name:ident, $type:ty
+    ) => {
+        $(#[$meta])*
         #[derive(
             Default,
             Clone,
