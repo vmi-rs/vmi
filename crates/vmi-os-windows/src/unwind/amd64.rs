@@ -8,7 +8,7 @@ use object::{endian::LittleEndian as LE, from_bytes, pe::ImageRuntimeFunctionEnt
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 use zerocopy::{FromBytes, IntoBytes};
 
-use super::{StackFrame, StackUnwind};
+use super::{StackFrame, StackUnwind, Unwound};
 use crate::{ArchAdapter, WindowsOs, pe::PeImage};
 
 // Reference:
@@ -351,7 +351,7 @@ where
         image_base: Va,
         image: &impl PeImage,
         context: &mut UnwindContextAmd64,
-    ) -> Result<Option<StackFrame>, VmiError> {
+    ) -> Result<Unwound, VmiError> {
         // Compute RVA of the current instruction pointer.
         let rva = context.rip.saturating_sub(image_base.0) as u32;
 
@@ -527,13 +527,13 @@ where
         // If a machine frame was encountered, RIP/RSP are already set.
         if machine_frame {
             if context.rip == 0 {
-                return Ok(None);
+                return Ok(Unwound::MachineEnd);
             }
 
             // Read home space from the caller's RSP.
             let params = read_params(vmi, Va(context.rsp));
 
-            return Ok(Some(StackFrame {
+            return Ok(Unwound::Frame(StackFrame {
                 instruction_pointer: Va(context.rip),
                 stack_pointer: Va(context.rsp),
                 params,
@@ -546,7 +546,7 @@ where
         context.rsp += 8;
 
         if return_addr == 0 {
-            return Ok(None);
+            return Ok(Unwound::End);
         }
 
         context.rip = return_addr;
@@ -555,7 +555,7 @@ where
         // return address, RSP points to the start of the home space).
         let params = read_params(vmi, Va(context.rsp));
 
-        Ok(Some(StackFrame {
+        Ok(Unwound::Frame(StackFrame {
             instruction_pointer: Va(return_addr),
             stack_pointer: Va(context.rsp),
             params,
@@ -592,7 +592,7 @@ where
 pub fn unwind_leaf<Driver>(
     vmi: &VmiState<WindowsOs<Driver>>,
     context: &mut UnwindContextAmd64,
-) -> Result<Option<StackFrame>, VmiError>
+) -> Result<Unwound, VmiError>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
@@ -601,7 +601,7 @@ where
     context.rsp += 8;
 
     if return_addr == 0 {
-        return Ok(None);
+        return Ok(Unwound::End);
     }
 
     context.rip = return_addr;
@@ -609,7 +609,7 @@ where
     // Read home space from the caller's RSP.
     let params = read_params(vmi, Va(context.rsp));
 
-    Ok(Some(StackFrame {
+    Ok(Unwound::Frame(StackFrame {
         instruction_pointer: Va(return_addr),
         stack_pointer: Va(context.rsp),
         params,

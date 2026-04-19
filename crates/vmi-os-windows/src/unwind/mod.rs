@@ -27,6 +27,20 @@ pub struct StackFrame {
     pub machine_frame: bool,
 }
 
+/// Outcome of one unwind step.
+#[derive(Debug, Clone)]
+pub enum Unwound {
+    /// A frame was successfully unwound.
+    Frame(StackFrame),
+
+    /// Bottom of the stack reached via a normal zero return address.
+    End,
+
+    /// Bottom of the stack reached via `UWOP_PUSH_MACHFRAME` with a zero
+    /// RIP. Signals a trap handler at the bottom of the stack.
+    MachineEnd,
+}
+
 /// Trait for stack unwinding implementations.
 ///
 /// Given the current unwind context and image, produces the next
@@ -41,15 +55,11 @@ where
     type Context;
 
     /// Unwinds one stack frame.
-    ///
-    /// Returns `Ok(Some(frame))` if a frame was successfully unwound,
-    /// `Ok(None)` if the bottom of the stack was reached (return address
-    /// is zero), or `Err` on failure.
     fn unwind(
         &self,
         vmi: &VmiState<WindowsOs<Driver>>,
         image_base: Va,
         image: &impl PeImage,
         context: &mut Self::Context,
-    ) -> Result<Option<StackFrame>, VmiError>;
+    ) -> Result<Unwound, VmiError>;
 }
