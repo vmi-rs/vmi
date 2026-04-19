@@ -19,7 +19,7 @@ pub use self::{
     object_type::WindowsObjectType,
     process::WindowsProcess,
     section::WindowsSectionObject,
-    thread::{WindowsThread, WindowsThreadState},
+    thread::{WindowsThread, WindowsThreadState, WindowsThreadWaitReason},
 };
 use super::{
     WindowsObjectHeaderNameInfo,

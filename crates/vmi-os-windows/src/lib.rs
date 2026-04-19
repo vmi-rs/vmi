@@ -107,7 +107,8 @@ pub use self::comps::{
     WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
     WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase, WindowsRegion,
     WindowsSectionObject, WindowsSession, WindowsTeb, WindowsTebBase, WindowsThread,
-    WindowsThreadState, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
+    WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame, WindowsUserModule,
+    WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

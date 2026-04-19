@@ -252,6 +252,7 @@ offsets! {
             ApcStateIndex: Field,
             SavedApcState: Field,
             NextProcessor: Field,           // ULONG
+            WaitReason: Field,              // UCHAR - KWAIT_REASON enum
             Teb: Field,
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY

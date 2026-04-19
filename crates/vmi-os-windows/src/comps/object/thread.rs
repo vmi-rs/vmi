@@ -55,6 +55,160 @@ impl From<u8> for WindowsThreadState {
     }
 }
 
+/// Windows thread wait reason (`KWAIT_REASON`).
+///
+/// The unprefixed variants `Executive`..`UserRequest` are the kernel's own
+/// waits. Their `Wr`-prefixed duals `WrExecutive`..`WrUserRequest` are the
+/// same waits performed on behalf of user mode, set when
+/// `KeWaitForSingleObject` is called with `WaitMode = UserMode`. Variants past
+/// `WrUserRequest` identify specific subsystems such as LPC, MM, scheduler,
+/// and locks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsThreadWaitReason {
+    /// Kernel-initiated generic synchronization wait on an executive object.
+    Executive,
+    /// Waiting for a free page in the zero/free page lists.
+    FreePage,
+    /// Waiting for an in-progress hard-fault page read to complete.
+    PageIn,
+    /// Waiting for paged or nonpaged pool to have memory available.
+    PoolAllocation,
+    /// Self-initiated sleep via `KeDelayExecutionThread`.
+    DelayExecution,
+    /// Thread is suspended via `NtSuspendThread` or an APC.
+    Suspended,
+    /// User-mode wait issued by a routine such as `WaitForSingleObject`.
+    UserRequest,
+
+    /// Waiting on an executive object on behalf of user mode.
+    WrExecutive,
+    /// User-mode free-page wait, typically for paging.
+    WrFreePage,
+    /// Hard page-in wait on behalf of user mode.
+    WrPageIn,
+    /// Pool-allocation wait on behalf of user mode.
+    WrPoolAllocation,
+    /// User-mode delayed execution via `NtDelayExecution`.
+    WrDelayExecution,
+    /// User-mode thread suspension.
+    WrSuspended,
+    /// Alertable user-mode wait on an object.
+    WrUserRequest,
+    /// Waiting on an LPC event pair for a paired client/server handshake.
+    WrEventPair,
+    /// Waiting for a `KQUEUE` entry used by I/O completion and worker
+    /// threads.
+    WrQueue,
+    /// LPC server waiting to receive a message from a client.
+    WrLpcReceive,
+    /// LPC client waiting for a reply from the server.
+    WrLpcReply,
+    /// Waiting on a virtual-memory operation that mutates the address space.
+    WrVirtualMemory,
+    /// Waiting for modified-page writer to complete a page-out.
+    WrPageOut,
+    /// Waiting at a rendezvous point for another thread/processor.
+    WrRendezvous,
+    /// Waiting on a keyed event, used by critical sections.
+    WrKeyedEvent,
+    /// Thread has terminated. Wait is for teardown bookkeeping.
+    WrTerminated,
+    /// Waiting for the process to be swapped back into memory.
+    WrProcessInSwap,
+    /// Blocked by CPU rate-control / job CPU throttling.
+    WrCpuRateControl,
+    /// Waiting on a user-mode stack-switch callout.
+    WrCalloutStack,
+    /// Generic in-kernel wait not covered by a specific reason.
+    WrKernel,
+    /// Contending for an `ERESOURCE` executive resource.
+    WrResource,
+    /// Contending for an `EX_PUSH_LOCK`.
+    WrPushLock,
+    /// Waiting to acquire a `KMUTEX` / `KMUTANT`.
+    WrMutex,
+    /// Quantum has ended. Rescheduled pending context switch.
+    WrQuantumEnd,
+    /// Awaiting a dispatch interrupt to run the scheduler.
+    WrDispatchInt,
+    /// Preempted by a higher-priority thread.
+    WrPreempted,
+    /// Voluntarily yielded CPU via `NtYieldExecution`.
+    WrYieldExecution,
+    /// Contending for a `FAST_MUTEX`.
+    WrFastMutex,
+    /// Contending for a `KGUARDED_MUTEX`.
+    WrGuardedMutex,
+    /// Blocked on an `EX_RUNDOWN_REF` rundown-protection drain.
+    WrRundown,
+    /// Blocked on `NtWaitForAlertByThreadId` / thread-ID alert.
+    WrAlertByThreadId,
+    /// Preemption deferred pending a scheduler decision.
+    WrDeferredPreempt,
+    /// Waiting to service a hardware/physical memory fault.
+    WrPhysicalFault,
+    /// Blocked on an I/O ring submission/completion.
+    WrIoRing,
+    /// Waiting for an MDL cache slot to become available.
+    WrMdlCache,
+    /// Blocked inside an RCU grace period.
+    WrRcu,
+
+    /// Unknown wait reason value not covered by known variants.
+    Unknown(u8),
+}
+
+impl From<u8> for WindowsThreadWaitReason {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Executive,
+            1 => Self::FreePage,
+            2 => Self::PageIn,
+            3 => Self::PoolAllocation,
+            4 => Self::DelayExecution,
+            5 => Self::Suspended,
+            6 => Self::UserRequest,
+            7 => Self::WrExecutive,
+            8 => Self::WrFreePage,
+            9 => Self::WrPageIn,
+            10 => Self::WrPoolAllocation,
+            11 => Self::WrDelayExecution,
+            12 => Self::WrSuspended,
+            13 => Self::WrUserRequest,
+            14 => Self::WrEventPair, // WrSpare0 since Windows 8.1
+            15 => Self::WrQueue,
+            16 => Self::WrLpcReceive,
+            17 => Self::WrLpcReply,
+            18 => Self::WrVirtualMemory,
+            19 => Self::WrPageOut,
+            20 => Self::WrRendezvous,
+            21 => Self::WrKeyedEvent,
+            22 => Self::WrTerminated,
+            23 => Self::WrProcessInSwap,
+            24 => Self::WrCpuRateControl,
+            25 => Self::WrCalloutStack,
+            26 => Self::WrKernel,
+            27 => Self::WrResource,
+            28 => Self::WrPushLock,
+            29 => Self::WrMutex,
+            30 => Self::WrQuantumEnd,
+            31 => Self::WrDispatchInt,
+            32 => Self::WrPreempted,
+            33 => Self::WrYieldExecution,
+            34 => Self::WrFastMutex,
+            35 => Self::WrGuardedMutex,
+            36 => Self::WrRundown,
+            37 => Self::WrAlertByThreadId,
+            38 => Self::WrDeferredPreempt,
+            39 => Self::WrPhysicalFault,
+            40 => Self::WrIoRing,
+            41 => Self::WrMdlCache,
+            42 => Self::WrRcu,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
 /// A Windows thread.
 ///
 /// A thread in Windows is represented by the `_ETHREAD` structure,
@@ -226,6 +380,23 @@ where
         let next_processor = next_processor & 0x7FFFFFFF;
 
         Ok(VcpuId(next_processor as u16))
+    }
+
+    /// Returns the thread's wait reason.
+    ///
+    /// # Notes
+    ///
+    /// Usually only trustworthy when `_KTHREAD.State == Waiting`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.WaitReason`.
+    pub fn wait_reason(&self) -> Result<WindowsThreadWaitReason, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let value = self.vmi.read_u8(self.va + KTHREAD.WaitReason.offset())?;
+        Ok(WindowsThreadWaitReason::from(value))
     }
 
     /// Returns the thread's TEB.

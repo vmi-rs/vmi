@@ -31,7 +31,7 @@ pub use self::{
     object::{
         FromWindowsObject, ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject,
         WindowsObject, WindowsObjectType, WindowsObjectTypeKind, WindowsProcess,
-        WindowsSectionObject, WindowsThread, WindowsThreadState,
+        WindowsSectionObject, WindowsThread, WindowsThreadState, WindowsThreadWaitReason,
     },
     object_attributes::WindowsObjectAttributes,
     peb::{Peb, PebLayout, WindowsPeb, WindowsPebBase},
