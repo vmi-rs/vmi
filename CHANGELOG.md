@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Added
 
+- `WindowsThread::next_processor` exposing `_KTHREAD.NextProcessor`.
+
 ## Fixed
 
 - Iterator-returning methods now use Rust 2024 `use<...>` precise

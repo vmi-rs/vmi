@@ -1,5 +1,5 @@
 use vmi_core::{
-    Architecture, Va, VmiError, VmiState, VmiVa,
+    Architecture, Va, VcpuId, VmiError, VmiState, VmiVa,
     driver::VmiRead,
     os::{ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread},
 };
@@ -188,6 +188,44 @@ where
         }
 
         Ok(Some(WindowsProcess::new(self.vmi, ProcessObject(process))))
+    }
+
+    /// Returns the ID of the processor the thread is bound to.
+    ///
+    /// For a [`Running`] thread this is the CPU currently executing it.
+    /// For a [`Ready`] or [`Standby`] thread this is the CPU the scheduler
+    /// has selected for its next run.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.NextProcessor`.
+    ///
+    /// [`Running`]: WindowsThreadState::Running
+    /// [`Ready`]: WindowsThreadState::Ready
+    /// [`Standby`]: WindowsThreadState::Standby
+    pub fn next_processor(&self) -> Result<VcpuId, VmiError> {
+        let offsets = self.offsets();
+        let KTHREAD = &offsets._KTHREAD;
+
+        let next_processor = self
+            .vmi
+            .read_u32(self.va + KTHREAD.NextProcessor.offset())?;
+
+        // In newer Windows versions, the `NextProcessor` field is a union:
+        //
+        //     union {
+        //       volatile ULONG NextProcessor;
+        //
+        //       struct {
+        //         ULONG NextProcessorNumber : 31;
+        //         ULONG SharedReadyQueue    : 1;
+        //       };
+        //     };
+
+        // Mask out the `SharedReadyQueue` bit.
+        let next_processor = next_processor & 0x7FFFFFFF;
+
+        Ok(VcpuId(next_processor as u16))
     }
 
     /// Returns the thread's TEB.

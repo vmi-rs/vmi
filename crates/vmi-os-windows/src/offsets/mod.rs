@@ -251,6 +251,7 @@ offsets! {
             ApcState: Field,
             ApcStateIndex: Field,
             SavedApcState: Field,
+            NextProcessor: Field,           // ULONG
             Teb: Field,
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY
