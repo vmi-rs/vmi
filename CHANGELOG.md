@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `WindowsHandleTable::iter` now returns
   `impl Iterator<Item = Result<(u64, WindowsHandleTableEntry<'a, Driver>), VmiError>>`
 - `WindowsDirectoryObject::iter` is now lazy
-- **Breaking:** `StackUnwind::unwind` (and `unwind::amd64::unwind_leaf`)
+- **Breaking:** `StackUnwind` trait renamed to `Unwinder`,
+  `StackUnwindAmd64` renamed to `UnwinderAmd64`, and `StackFrame`
+  renamed to `Frame`.
+- **Breaking:** `Unwinder::unwind` (and `unwind::amd64::unwind_leaf`)
   now return `Result<Unwound, VmiError>` instead of
   `Result<Option<StackFrame>, VmiError>`.
 

@@ -11,7 +11,7 @@ use crate::{ArchAdapter, WindowsOs, pe::PeImage};
 
 /// A single frame in a stack trace.
 #[derive(Debug, Clone)]
-pub struct StackFrame {
+pub struct Frame {
     /// The instruction pointer for this frame.
     pub instruction_pointer: Va,
 
@@ -31,7 +31,7 @@ pub struct StackFrame {
 #[derive(Debug, Clone)]
 pub enum Unwound {
     /// A frame was successfully unwound.
-    Frame(StackFrame),
+    Frame(Frame),
 
     /// Bottom of the stack reached via a normal zero return address.
     End,
@@ -41,17 +41,17 @@ pub enum Unwound {
     MachineEnd,
 }
 
-/// Trait for stack unwinding implementations.
+/// A stack unwinder for a specific architecture.
 ///
 /// Given the current unwind context and image, produces the next
-/// stack frame by reading unwind metadata from the PE exception
-/// directory and adjusting the context accordingly.
-pub trait StackUnwind<Driver>
+/// frame by reading unwind metadata from the PE exception directory
+/// and adjusting the context accordingly.
+pub trait Unwinder<Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    /// The context type used by this unwinder.
+    /// Architecture-specific register.
     type Context;
 
     /// Unwinds one stack frame.

@@ -8,7 +8,7 @@ use object::{endian::LittleEndian as LE, from_bytes, pe::ImageRuntimeFunctionEnt
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 use zerocopy::{FromBytes, IntoBytes};
 
-use super::{StackFrame, StackUnwind, Unwound};
+use super::{Frame, Unwinder, Unwound};
 use crate::{ArchAdapter, WindowsOs, pe::PeImage};
 
 // Reference:
@@ -336,9 +336,9 @@ impl UnwindContextAmd64 {
 /// Implements stack unwinding for the Windows x64 ABI by reading
 /// .pdata RUNTIME_FUNCTION entries and processing UNWIND_INFO
 /// structures to recover the caller's register state.
-pub struct StackUnwindAmd64;
+pub struct UnwinderAmd64;
 
-impl<Driver> StackUnwind<Driver> for StackUnwindAmd64
+impl<Driver> Unwinder<Driver> for UnwinderAmd64
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
@@ -533,7 +533,7 @@ where
             // Read home space from the caller's RSP.
             let params = read_params(vmi, Va(context.rsp));
 
-            return Ok(Unwound::Frame(StackFrame {
+            return Ok(Unwound::Frame(Frame {
                 instruction_pointer: Va(context.rip),
                 stack_pointer: Va(context.rsp),
                 params,
@@ -555,7 +555,7 @@ where
         // return address, RSP points to the start of the home space).
         let params = read_params(vmi, Va(context.rsp));
 
-        Ok(Unwound::Frame(StackFrame {
+        Ok(Unwound::Frame(Frame {
             instruction_pointer: Va(return_addr),
             stack_pointer: Va(context.rsp),
             params,
@@ -609,7 +609,7 @@ where
     // Read home space from the caller's RSP.
     let params = read_params(vmi, Va(context.rsp));
 
-    Ok(Unwound::Frame(StackFrame {
+    Ok(Unwound::Frame(Frame {
         instruction_pointer: Va(return_addr),
         stack_pointer: Va(context.rsp),
         params,
