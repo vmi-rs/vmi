@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Changed
 
+## Added
+
+## Fixed
+
+## [0.6.0] - 2026-04-20
+
+## Changed
+
 - **Breaking:** `WindowsHandleTable::iter` now returns
   `impl Iterator<Item = Result<(u64, WindowsHandleTableEntry<'a, Driver>), VmiError>>`
 - `WindowsDirectoryObject::iter` is now lazy
