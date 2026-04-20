@@ -744,9 +744,9 @@ dependencies = [
 
 [[package]]
 name = "isr"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c95c1ec8327feedcc6aefcec7f01e6e9b729279a2631310f9e118abf845fac1"
+checksum = "5f457d952dc5710e472822020b4bf926fe087aeaf0d780edd90da38f3d57c17d"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -758,9 +758,9 @@ dependencies = [
 
 [[package]]
 name = "isr-cache"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4893c8a046febd26146d51c0623365e433dea817476a9b5022daaa488698283b"
+checksum = "11bbd26e93f8913d7b0a5281df9d33a8582939f1fec9a783f14584c4c4ae34e3"
 dependencies = [
  "isr-core",
  "isr-dl",
@@ -776,9 +776,9 @@ dependencies = [
 
 [[package]]
 name = "isr-core"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98142461c2bd40ca882082e3bb81dfb455ea0cce349aefc13c366d7a48ad5528"
+checksum = "d68e5b1b06bfae6f6d3e7f6b3b0a9defa1d8c6bb5e53f8fcd45b72a75df2c86d"
 dependencies = [
  "indexmap",
  "rkyv",
@@ -787,9 +787,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dl"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c818eeeca7cb4807a2d7657be0dab10afc84da11240e62131f14f9e5ad0508b5"
+checksum = "2da4883de25393e2ee9a3bad9801b6311dc1f34c1f6292400da9f15b3298e6b0"
 dependencies = [
  "thiserror 2.0.18",
  "url",
@@ -797,9 +797,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-windows"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f26ea7985ea44aa2060e04853d3b592dfbc49eff90c22a991372e097523bcde"
+checksum = "c2fbcb5bdc8537776220ab5113cf329e2a7cb27aa8a6dc1f5cb30be7c9e8a318"
 dependencies = [
  "bon",
  "isr-dl",
@@ -812,9 +812,9 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a3a911aba0b3d687f88abcb90f39d9d0f650ff08255a6881033db45e6b8bf22"
+checksum = "30e1cf3a8d87f8aa9c59adeda37faeff7c7dbca16324eeabe932b2d48150ca17"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -824,9 +824,9 @@ dependencies = [
 
 [[package]]
 name = "isr-pdb"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "670e4d32c3b1d4dadf1302e11a228302669c06402f7993ab497a4fcebf5ab912"
+checksum = "91daf1d3b38328920117c57010ca2f575f7badf6f26756948cab5f73fe70c9a3"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -2188,9 +2188,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
-version = "1.0.2+wasi-0.2.9"
+version = "1.0.3+wasi-0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9517f9239f02c069db75e65f174b3da828fe5f5b945c4dd26bd25d89c03ebcf5"
+checksum = "20064672db26d7cdc89c7798c48a0fdfac8213434a1186e5ef29fd560ae223d6"
 dependencies = [
  "wit-bindgen",
 ]
@@ -2547,9 +2547,9 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.51.0"
+version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
+checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "writeable"

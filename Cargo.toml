@@ -46,10 +46,10 @@ tracing-subscriber = "0.3"
 # For release.
 #
 
-isr = "0.5.0"
-isr-core = "0.5.0"
-isr-dl-windows = "0.5.0"
-isr-macros = "0.5.0"
+isr = "0.6.0"
+isr-core = "0.6.0"
+isr-dl-windows = "0.6.0"
+isr-macros = "0.6.0"
 
 xen = { package = "libxen", version = "0.5.0" }
 
@@ -57,10 +57,10 @@ xen = { package = "libxen", version = "0.5.0" }
 # For development.
 #
 
-# isr = { path = "../isr", version = "0.5.0" }
-# isr-core = { path = "../isr/crates/isr-core", version = "0.5.0" }
-# isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.5.0" }
-# isr-macros = { path = "../isr/crates/isr-macros", version = "0.5.0" }
+# isr = { path = "../isr", version = "0.6.0" }
+# isr-core = { path = "../isr/crates/isr-core", version = "0.6.0" }
+# isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.6.0" }
+# isr-macros = { path = "../isr/crates/isr-macros", version = "0.6.0" }
 
 # xen = { path = "../xen", package = "libxen", version = "0.5.0" }
 
