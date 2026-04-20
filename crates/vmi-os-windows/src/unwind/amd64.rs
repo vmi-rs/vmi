@@ -5,6 +5,7 @@
 //! processing UNWIND_INFO structures to recover caller register state.
 
 use object::{endian::LittleEndian as LE, from_bytes, pe::ImageRuntimeFunctionEntry};
+use vmi_arch_amd64::Registers;
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -295,6 +296,23 @@ pub struct UnwindContextAmd64 {
     pub r14: u64,
     /// R15 - callee-saved.
     pub r15: u64,
+}
+
+impl From<&Registers> for UnwindContextAmd64 {
+    fn from(value: &Registers) -> Self {
+        Self {
+            rip: value.rip,
+            rsp: value.rsp,
+            rbp: value.rbp,
+            rbx: value.rbx,
+            rsi: value.rsi,
+            rdi: value.rdi,
+            r12: value.r12,
+            r13: value.r13,
+            r14: value.r14,
+            r15: value.r15,
+        }
+    }
 }
 
 impl UnwindContextAmd64 {
