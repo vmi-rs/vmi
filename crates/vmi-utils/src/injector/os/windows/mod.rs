@@ -14,7 +14,7 @@ use vmi_os_windows::WindowsOs;
 use self::{kernel_mode::KernelInjectorHandler, user_mode::UserInjectorHandler};
 use super::{
     super::{
-        BridgeDispatch, CallBuilder, InjectorExecutionAdapter, InjectorResultCode, KernelMode,
+        BridgeDispatch, CallBuilder, InjectorExecutionAdapter, InjectorStatusCode, KernelMode,
         UserMode, arch::ArchAdapter as _,
     },
     OsAdapter,
@@ -30,7 +30,7 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<Self, InjectorResultCode>,
+    Bridge: BridgeDispatch<Self, InjectorStatusCode>,
 {
     type Handler = KernelInjectorHandler<Driver, T, Bridge>;
 }
@@ -44,7 +44,7 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<Self, InjectorResultCode>,
+    Bridge: BridgeDispatch<Self, InjectorStatusCode>,
 {
     type Handler = UserInjectorHandler<Driver, T, Bridge>;
 }

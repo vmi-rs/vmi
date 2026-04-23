@@ -11,7 +11,7 @@ use vmi_core::{
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
 use super::super::super::{
-    InjectorHandlerAdapter, InjectorResultCode, Recipe, RecipeExecutor, UserMode,
+    InjectorHandlerAdapter, InjectorStatusCode, Recipe, RecipeExecutor, UserMode,
 };
 use crate::bridge::{BridgeDispatch, BridgePacket};
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
@@ -36,13 +36,13 @@ enum InjectorState {
     /// Monitoring torn down; waiting for bridge communication.
     Bridge,
     /// Injection complete; result is available.
-    Complete(Result<InjectorResultCode, BridgePacket>),
+    Complete(Result<InjectorStatusCode, BridgePacket>),
 }
 
 pub struct UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64> + VmiRead,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
 {
     /// Process ID being injected into.
     pid: Option<ProcessId>,
@@ -79,7 +79,7 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
 {
     fn with_bridge(
         vmi: &VmiSession<WindowsOs<Driver>>,
@@ -118,7 +118,7 @@ where
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
 {
     #[tracing::instrument(
         name = "injector",
@@ -491,9 +491,9 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorResultCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
 {
-    type Output = Result<InjectorResultCode, BridgePacket>;
+    type Output = Result<InjectorStatusCode, BridgePacket>;
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
