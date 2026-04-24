@@ -1,4 +1,4 @@
-use vmi_arch_amd64::{Amd64, ControlRegister, EventMonitor, EventReason, Interrupt};
+use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, Interrupt, Msr};
 use vmi_core::{
     Architecture as _, Hex, MemoryAccess, Pa, Registers as _, Va, VcpuId, View, VmiContext,
     VmiError, VmiEventResponse, VmiHandler, VmiSession,
@@ -21,7 +21,7 @@ const INVALID_VIEW: View = View(0xffff);
 
 /// Lifecycle state of the user-mode injector.
 enum InjectorState {
-    /// Waiting for target process CR3 write; scanning trap frames for
+    /// Waiting for target process MSR write; scanning trap frames for
     /// a viable user-mode instruction pointer to hijack.
     PreHijack,
     /// Thread hijacked; executing the injection recipe.
@@ -88,7 +88,7 @@ where
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
-        vmi.monitor_enable(EventMonitor::Register(ControlRegister::Cr3))?;
+        vmi.monitor_enable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
         Ok(Self {
@@ -134,8 +134,8 @@ where
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         match vmi.event().reason() {
             EventReason::MemoryAccess(_) => self.on_memory_access(vmi),
-            EventReason::WriteCr(_) => {
-                let _ = self.on_write_cr(vmi);
+            EventReason::WriteMsr(_) => {
+                let _ = self.on_write_msr(vmi);
                 Ok(VmiEventResponse::default())
             }
             EventReason::Singlestep(_) => self.on_singlestep(vmi),
@@ -144,14 +144,14 @@ where
         }
     }
 
-    #[tracing::instrument(name = "write_cr", skip_all)]
-    fn on_write_cr(
+    #[tracing::instrument(name = "write_msr", skip_all)]
+    fn on_write_msr(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         //
         // Early exit if the thread has already been hijacked.
-        // (Besides, in such case, this CR3 monitoring is being disabled anyway.)
+        // (Besides, in such case, this MSR monitoring is being disabled anyway.)
         //
 
         if !matches!(self.state, InjectorState::PreHijack) {
@@ -338,7 +338,7 @@ where
         }
 
         //
-        // Hijack the thread, save the current registers, and disable CR3 monitoring.
+        // Hijack the thread, save the current registers, and disable MSR monitoring.
         //
 
         if matches!(self.state, InjectorState::PreHijack) {
@@ -356,7 +356,7 @@ where
             );
 
             self.state = InjectorState::Executing;
-            vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))?;
+            vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
         }
 
         //
@@ -390,7 +390,7 @@ where
         let gfn = Driver::Architecture::gfn_from_pa(memory_access.pa);
 
         // The GFN of the accessed page should match the GFN of the page we
-        // set permissions for in `on_write_cr`.
+        // set permissions for in `on_write_msr`.
         debug_assert_eq!(Some(gfn), self.ip_pa.map(Driver::Architecture::gfn_from_pa));
 
         self.state = InjectorState::Teardown(vmi.event().vcpu_id());
@@ -519,7 +519,7 @@ where
         // Destroyed when transitioning from `Teardown` to `Bridge` or `Complete`.
         let mut destroy_view = false;
         // Disabled when transitioning from `PreHijack` to `Executing`.
-        let mut disable_write_cr = false;
+        let mut disable_write_msr = false;
         // Disabled when transitioning from `Bridge` to `Complete`.
         let mut disable_hypercall = false;
 
@@ -527,7 +527,7 @@ where
             InjectorState::PreHijack => {
                 restore_memory_access = true;
                 destroy_view = true;
-                disable_write_cr = true;
+                disable_write_msr = true;
             }
             InjectorState::Executing => {
                 restore_memory_access = true;
@@ -553,10 +553,10 @@ where
             tracing::error!(%err, "failed to destroy view");
         }
 
-        if disable_write_cr
-            && let Err(err) = vmi.monitor_disable(EventMonitor::Register(ControlRegister::Cr3))
+        if disable_write_msr
+            && let Err(err) = vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))
         {
-            tracing::error!(%err, "failed to disable CR3 monitor");
+            tracing::error!(%err, "failed to disable MSR monitor");
         }
 
         if disable_hypercall
