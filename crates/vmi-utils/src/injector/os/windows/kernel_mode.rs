@@ -108,13 +108,8 @@ where
         let vmi = vmi.with_registers(&registers);
 
         let kernel_image_base = vmi.os().kernel_image_base()?;
-        tracing::info!(%kernel_image_base);
-
         let system_process = vmi.os().system_process()?;
-        tracing::info!(system_process = %system_process.object()?);
-
         let root = system_process.translation_root()?;
-        tracing::info!(%root);
 
         // SeAccessCheck is chosen because it is one of the most frequently called
         // functions in the Windows kernel, so a hijack breakpoint here is almost
@@ -128,7 +123,6 @@ where
             .with_tag("SeAccessCheck");
         bpm.insert(&vmi, bp_SeAccessCheck)?;
         ptm.monitor(&vmi, cx_SeAccessCheck, view, "SeAccessCheck")?;
-        tracing::info!(%va_SeAccessCheck);
 
         Ok(Self {
             pid: None,
@@ -173,7 +167,6 @@ where
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        tracing::trace!(reason = ?vmi.event().reason(), "handling event");
         match vmi.event().reason() {
             EventReason::MemoryAccess(_) => self.on_memory_access(vmi),
             EventReason::Interrupt(_) => self.on_interrupt(vmi),
@@ -234,7 +227,7 @@ where
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {
                     // This breakpoint was not set by us. Reinject it.
-                    tracing::warn!("Unknown breakpoint, reinjecting");
+                    tracing::warn!("unknown breakpoint, reinjecting");
                     return Ok(VmiEventResponse::reinject_interrupt());
                 }
                 else {
@@ -242,7 +235,7 @@ where
                     // breakpoint instruction at the current memory location.
                     // This can happen if the event was triggered by a breakpoint
                     // we just removed.
-                    tracing::warn!("Ignoring old breakpoint event");
+                    tracing::warn!("ignoring old breakpoint event");
                     return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
                 }
             }
@@ -406,7 +399,7 @@ where
                     tracing::error!(
                         request = packet.request(),
                         method = packet.method(),
-                        "Empty bridge response"
+                        "empty bridge response"
                     );
                     Some(Err(packet))
                 }
