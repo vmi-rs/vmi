@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsMapped};
 
 use super::{macros::impl_offsets, object::WindowsFileObject};
-use crate::{ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 
 /// A Windows control area.
 ///
@@ -53,19 +53,12 @@ where
     /// Corresponds to `_CONTROL_AREA.FilePointer` (with reference count masked out).
     pub fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
         let offsets = self.offsets();
-        let EX_FAST_REF = &offsets._EX_FAST_REF;
         let CONTROL_AREA = &offsets._CONTROL_AREA;
 
         let file_pointer = self
             .vmi
-            .read_va_native(self.va + CONTROL_AREA.FilePointer.offset())?;
-
-        // The file pointer is in fact an `_EX_FAST_REF` structure,
-        // where the low bits are used to store the reference count.
-        debug_assert_eq!(EX_FAST_REF.RefCnt.offset(), 0);
-        debug_assert_eq!(EX_FAST_REF.RefCnt.bit_position(), 0);
-        let file_pointer = file_pointer & !((1 << EX_FAST_REF.RefCnt.bit_length()) - 1);
-        //let file_pointer = file_pointer & !0xf;
+            .os()
+            .read_fast_ref(self.va + CONTROL_AREA.FilePointer.offset())?;
 
         if file_pointer.is_null() {
             return Ok(None);

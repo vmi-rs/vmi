@@ -416,7 +416,7 @@ offsets! {
 
         struct _CONTROL_AREA {
             Flags: Field,
-            FilePointer: Field,
+            FilePointer: Field,             // _EX_FAST_REF (_FILE_OBJECT*)
         }
 
         struct _FILE_OBJECT {

@@ -840,6 +840,22 @@ where
         Ok(WindowsObjectAttributes::new(vmi, object_attributes))
     }
 
+    /// Reads an `_EX_FAST_REF` and returns the referenced object's
+    /// virtual address, with the low reference-count bits masked off.
+    pub fn read_fast_ref(vmi: VmiState<Self>, va: Va) -> Result<Va, VmiError> {
+        let EX_FAST_REF = offset!(vmi, _EX_FAST_REF);
+        debug_assert_eq!(EX_FAST_REF.RefCnt.offset(), 0);
+        debug_assert_eq!(EX_FAST_REF.RefCnt.bit_position(), 0);
+
+        let object = vmi.read_va_native(va)?;
+
+        // For Amd64:
+        //   let object = object & !0xf;
+        // For x86:
+        //   let object = object & !0x7;
+        Ok(object & !((1 << EX_FAST_REF.RefCnt.bit_length()) - 1))
+    }
+
     /// Reads string of bytes from an `_ANSI_STRING` structure.
     ///
     /// This method reads a native `_ANSI_STRING` structure which contains
