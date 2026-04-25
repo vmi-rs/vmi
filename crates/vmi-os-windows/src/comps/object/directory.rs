@@ -78,45 +78,121 @@ where
         Ok(DirectoryObjectIterator::new(self.vmi, self.va))
     }
 
-    /// Performs a lookup in the directory.
+    /// Resolves a relative path to a descendant object.
+    ///
+    /// Splits `path` on `\\` and descends one component at a time. Empty
+    /// segments are ignored. Name comparison is ASCII-case-insensitive.
+    /// Each intermediate component must resolve to a `Directory` object.
+    ///
+    /// Returns `Ok(None)` if a component does not exist or an intermediate
+    /// is some other object type. The final component may be any type. An
+    /// empty path returns this directory.
+    ///
+    /// Does not follow `SymbolicLink` objects.
     pub fn lookup(
         &self,
-        needle: impl AsRef<str>,
+        path: impl AsRef<str>,
     ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
+        let path = path.as_ref();
+        let mut components = path.split('\\').filter(|component| !component.is_empty());
+
+        let first = match components.next() {
+            Some(first) => first,
+            None => return Ok(Some(WindowsObject::new(self.vmi, self.va))),
+        };
+
+        let mut directory = WindowsDirectoryObject::new(self.vmi, self.va);
+        let mut next = first;
+        for component in components {
+            let object = match directory.child(next)? {
+                Some(object) => object,
+                None => return Ok(None),
+            };
+
+            directory = match WindowsDirectoryObject::from_object(object)? {
+                Some(dir) => dir,
+                None => return Ok(None),
+            };
+
+            next = component;
+        }
+
+        directory.child(next)
+    }
+
+    /// Returns the direct entry with the given name, if any.
+    ///
+    /// `name` is treated as a single component. It is not split on `\\`,
+    /// so `child("Device\\HarddiskVolume4")` will never match a real entry -
+    /// use [`lookup`] for path traversal.
+    ///
+    /// Walks every hash bucket and matches names with ASCII-case-insensitive
+    /// comparison.
+    ///
+    /// Per-bucket read errors do not abort the search. A paged-out bucket
+    /// head or chain-link page would otherwise mask matches in other buckets.
+    /// Errors are skipped.
+    ///
+    /// [`lookup`]: Self::lookup
+    pub fn child(
+        &self,
+        name: impl AsRef<str>,
+    ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
+        const NUMBER_HASH_BUCKETS: u64 = 37;
+
         let offsets = self.offsets();
         let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
+
+        let name = name.as_ref();
+        let address_width = self.vmi.registers().address_width() as u64;
+
+        for index in 0..NUMBER_HASH_BUCKETS {
+            let bucket = self.va + OBJECT_DIRECTORY.HashBuckets.offset() + index * address_width;
+
+            match self.lookup_in_bucket(bucket, name) {
+                Ok(Some(object)) => return Ok(Some(object)),
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::trace!(%err, index, "skipping directory bucket after read error");
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Walks one hash bucket linked list looking for `name`.
+    fn lookup_in_bucket(
+        &self,
+        bucket: Va,
+        name: &str,
+    ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
+        let offsets = self.offsets();
         let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
 
-        let address_width = self.vmi.registers().address_width() as u64;
-        let needle = needle.as_ref();
+        let mut entry = self.vmi.read_va_native(bucket)?;
+        while !entry.is_null() {
+            let object = self
+                .vmi
+                .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset())?;
 
-        for bucket in 0..37 {
-            let hash_bucket = self.vmi.read_va_native(
-                self.va + OBJECT_DIRECTORY.HashBuckets.offset() + bucket * address_width,
-            )?;
+            let object = WindowsObject::new(self.vmi, object);
 
-            let mut entry = hash_bucket;
-            while !entry.is_null() {
-                let object = self
-                    .vmi
-                    .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.Object.offset())?;
-
-                // let hash_value = self
-                //     .vmi
-                //     .read_u32(entry + OBJECT_DIRECTORY_ENTRY.HashValue.offset())?;
-
-                let object = WindowsObject::new(self.vmi, object);
-
-                if let Some(name) = object.name()?
-                    && name == needle
-                {
-                    return Ok(Some(object));
+            match object.name() {
+                Ok(Some(entry_name)) => {
+                    if entry_name.eq_ignore_ascii_case(name) {
+                        return Ok(Some(object));
+                    }
                 }
-
-                entry = self
-                    .vmi
-                    .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset())?;
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::trace!(%err, "skipping directory entry with unreadable name");
+                }
             }
+
+            entry = self
+                .vmi
+                .read_va_native(entry + OBJECT_DIRECTORY_ENTRY.ChainLink.offset())?;
         }
 
         Ok(None)

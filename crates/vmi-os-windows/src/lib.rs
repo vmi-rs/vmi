@@ -840,6 +840,25 @@ where
         Ok(WindowsObjectAttributes::new(vmi, object_attributes))
     }
 
+    /// Resolves an absolute object-namespace path to a named object.
+    ///
+    /// Descends from the root directory ([`object_root_directory`]) one
+    /// component at a time.
+    ///
+    /// Returns `Ok(None)` when a component does not exist, or when an
+    /// intermediate component resolves to something other than a
+    /// `Directory`. The final component may be any object type.
+    ///
+    /// Does not follow `SymbolicLink` objects.
+    ///
+    /// [`object_root_directory`]: Self::object_root_directory
+    pub fn lookup_object<'a>(
+        vmi: VmiState<'a, Self>,
+        path: impl AsRef<str>,
+    ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
+        Self::object_root_directory(vmi)?.lookup(path)
+    }
+
     /// Reads an `_EX_FAST_REF` and returns the referenced object's
     /// virtual address, with the low reference-count bits masked off.
     pub fn read_fast_ref(vmi: VmiState<Self>, va: Va) -> Result<Va, VmiError> {

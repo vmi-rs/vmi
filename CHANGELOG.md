@@ -10,8 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Changed
 
 - **Breaking:** `InjectorResultCode` renamed to `InjectorStatusCode`.
+- **Breaking:** `WindowsDirectoryObject::lookup` now traverses
+  `\`-separated paths instead of matching a single-component name. Name
+  comparison is ASCII-case-insensitive. Per-bucket read errors are
+  skipped instead of aborting the search. For the previous
+  single-component behavior, use `WindowsDirectoryObject::child`.
 
 ## Added
+
+- `WindowsDirectoryObject::child` for a direct single-component lookup
+  within a directory.
+- `WindowsOs::lookup_object` for resolving an absolute object-namespace
+  path from the root directory.
 
 ## Fixed
 
