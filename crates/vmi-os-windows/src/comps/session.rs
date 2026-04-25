@@ -3,6 +3,47 @@ use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::ProcessObject
 use super::{WindowsProcess, macros::impl_offsets};
 use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
 
+//
+// The `_MM_SESSION_SPACE` structure got replaced in Windows 11 24H2
+// with `_PSP_SESSION_SPACE`, however, its fields aren't included in
+// the PDB symbols anymore.
+//
+// Fortunately, the layout of the beginning of the structure (up to
+// and including the `ProcessList` field) appears to be unchanged so far,
+// so, with heavy heart, we'll just hardcode the offsets.
+//
+// ```ignore
+// typedef struct _MM_SESSION_SPACE {
+//     /* 0x0000 */ volatile LONG ReferenceCount;
+//     /* 0x0004 */ ULONG Flags;
+//     /* 0x0008 */ ULONG SessionId;
+//     /* 0x0010 */ LIST_ENTRY ProcessList;
+//     ...
+// } MM_SESSION_SPACE, *PMM_SESSION_SPACE;
+// ```
+//
+
+struct Field {
+    offset: u64,
+}
+
+impl Field {
+    const fn offset(&self) -> u64 {
+        self.offset
+    }
+}
+
+#[expect(non_camel_case_types)]
+struct _MM_SESSION_SPACE {
+    SessionId: Field,
+    ProcessList: Field,
+}
+
+const MM_SESSION_SPACE: _MM_SESSION_SPACE = _MM_SESSION_SPACE {
+    SessionId: Field { offset: 0x0008 },
+    ProcessList: Field { offset: 0x0010 },
+};
+
 /// A Windows session space.
 ///
 /// The session space is a kernel structure that contains the
@@ -54,8 +95,8 @@ where
     ///
     /// Corresponds to `_MM_SESSION_SPACE.SessionId`.
     pub fn id(&self) -> Result<u32, VmiError> {
-        let offsets = self.offsets();
-        let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
+        //let offsets = self.offsets();
+        //let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
 
         self.vmi
             .read_u32(self.va + MM_SESSION_SPACE.SessionId.offset())
@@ -73,7 +114,7 @@ where
         VmiError,
     > {
         let offsets = self.offsets();
-        let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
+        //let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
         let EPROCESS = &offsets._EPROCESS;
 
         let vmi = self.vmi;

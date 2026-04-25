@@ -348,10 +348,14 @@ offsets! {
             DosPath: Field,                 // _UNICODE_STRING
         }
 
-        struct _MM_SESSION_SPACE {
-            SessionId: Field,               // ULONG
-            ProcessList: Field,             // _LIST_ENTRY
-        }
+        //
+        // See session.rs on why is this commented out.
+        //
+        // struct _MM_SESSION_SPACE {
+        //     SessionId: Field,               // ULONG
+        //     ProcessList: Field,             // _LIST_ENTRY
+        // }
+        //
 
         struct _MMPFN {
             ReferenceCount: Field,          // USHORT

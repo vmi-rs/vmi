@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Fixed
 
+- `WindowsSession::id()` and `WindowsSession::processes()` on Windows 11
+  24H2, where `_MM_SESSION_SPACE` was replaced by `_PSP_SESSION_SPACE`
+  and its fields are no longer exposed in PDB symbols. The
+  `SessionId` and `ProcessList` offsets are now hardcoded.
+
 ## [0.6.0] - 2026-04-20
 
 ## Changed
