@@ -309,15 +309,21 @@ pub struct WindowsExceptionRecord {
 
 macro_rules! offset {
     ($vmi:expr, $field:ident) => {
-        &this!($vmi).offsets.$field
+        &$vmi.underlying_os().offsets.$field
     };
 }
 
+#[expect(unused)]
+pub(crate) use offset;
+
 macro_rules! symbol {
     ($vmi:expr, $field:ident) => {
-        this!($vmi).symbols.$field
+        $vmi.underlying_os().symbols.$field
     };
 }
+
+#[expect(unused)]
+pub(crate) use symbol;
 
 macro_rules! this {
     ($vmi:expr) => {
