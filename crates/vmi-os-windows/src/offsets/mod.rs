@@ -382,6 +382,7 @@ offsets! {
             VadType: Bitfield,              // ULONG (3 bits)
             Protection: Bitfield,           // ULONG bitfield (5 bits)
             PrivateMemory: Bitfield,        // ULONG bitfield (1 bit)
+            CommitCharge: Option<Bitfield>, // ULONG bitfield (31 bits, might be in _MMVAD_FLAGS1)
             MemCommit: Option<Bitfield>,    // ULONG bitfield (1 bit, might be in _MMVAD_FLAGS1)
         }
 
@@ -419,8 +420,20 @@ offsets! {
         }
 
         struct _CONTROL_AREA {
+            Segment: Field,                 // _SEGMENT*
             Flags: Field,
             FilePointer: Field,             // _EX_FAST_REF (_FILE_OBJECT*)
+            CommittedPageCount: Option<Bitfield>,   // Since Win10 1703/RS2 (15063)
+                                                    // ULONG : 36 [x64]
+                                                    // ULONG : 20 [x86]
+        }
+
+        struct _SEGMENT {
+            ControlArea: Field,             // _CONTROL_AREA*
+            TotalNumberOfPtes: Field,       // ULONG
+            SegmentFlags: Field,            // _SEGMENT_FLAGS
+            NumberOfCommittedPages: Field,  // SIZE_T
+            SizeOfSegment: Field,           // UINT64
         }
 
         struct _FILE_OBJECT {

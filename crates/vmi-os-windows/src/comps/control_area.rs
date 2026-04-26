@@ -1,6 +1,6 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsMapped};
 
-use super::{macros::impl_offsets, object::WindowsFileObject};
+use super::{WindowsSegment, macros::impl_offsets, object::WindowsFileObject};
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
 
 /// A Windows control area.
@@ -46,6 +46,22 @@ where
         Self { vmi, va }
     }
 
+    /// Returns the segment that backs the control area.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CONTROL_AREA.Segment`.
+    pub fn segment(&self) -> Result<WindowsSegment<'a, Driver>, VmiError> {
+        let offsets = self.offsets();
+        let CONTROL_AREA = &offsets._CONTROL_AREA;
+
+        let segment = self
+            .vmi
+            .read_va_native(self.va + CONTROL_AREA.Segment.offset())?;
+
+        Ok(WindowsSegment::new(self.vmi, segment))
+    }
+
     /// Returns the file object associated with the control area.
     ///
     /// # Implementation Details
@@ -65,6 +81,26 @@ where
         }
 
         Ok(Some(WindowsFileObject::new(self.vmi, file_pointer)))
+    }
+
+    /// Returns the committed page count for the section.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CONTROL_AREA.u3.CommittedPageCount` on Windows 10 1703+
+    /// for pagefile-backed sections, and `_SEGMENT.NumberOfCommittedPages` for
+    /// everything else.
+    pub fn committed_pages(&self) -> Result<u64, VmiError> {
+        let offsets = self.offsets();
+        let CONTROL_AREA = &offsets._CONTROL_AREA;
+
+        if self.file_object()?.is_none()
+            && let Some(CommittedPageCount) = &CONTROL_AREA.CommittedPageCount
+        {
+            return self.vmi.read_field(self.va, CommittedPageCount);
+        }
+
+        self.segment()?.number_of_committed_pages()
     }
 }
 

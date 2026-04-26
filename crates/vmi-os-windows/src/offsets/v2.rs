@@ -36,7 +36,8 @@ offsets! {
         }
 
         struct _MMVAD_FLAGS1 {
-            MemCommit: Bitfield,            // ULONG bitfield (1 bit, might be in _MMVAD_FLAGS1)
+            CommitCharge: Bitfield,         // ULONG : 31
+            MemCommit: Bitfield,            // ULONG : 1
         }
 
     }

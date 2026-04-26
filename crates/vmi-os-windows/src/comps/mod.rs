@@ -13,6 +13,7 @@ mod peb;
 mod peb_ldr_data;
 mod process_parameters;
 mod region;
+mod segment;
 mod session;
 mod teb;
 mod trap_frame;
@@ -44,6 +45,7 @@ pub use self::{
         WindowsProcessParameters, WindowsProcessParametersBase,
     },
     region::WindowsRegion,
+    segment::WindowsSegment,
     session::WindowsSession,
     teb::{Teb, TebLayout, WindowsTeb, WindowsTebBase},
     trap_frame::WindowsTrapFrame,

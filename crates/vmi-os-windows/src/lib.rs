@@ -106,9 +106,9 @@ pub use self::comps::{
     WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType,
     WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
     WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode,
-    WindowsRegion, WindowsSectionObject, WindowsSession, WindowsTeb, WindowsTebBase, WindowsThread,
-    WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame, WindowsUserModule,
-    WindowsWow64Kind,
+    WindowsRegion, WindowsSectionObject, WindowsSegment, WindowsSession, WindowsTeb,
+    WindowsTebBase, WindowsThread, WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame,
+    WindowsUserModule, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -313,7 +313,6 @@ macro_rules! offset {
     };
 }
 
-#[expect(unused)]
 pub(crate) use offset;
 
 macro_rules! symbol {

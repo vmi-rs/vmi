@@ -177,6 +177,41 @@ where
         Ok(MMVAD_FLAGS.PrivateMemory.extract(vad_flags) != 0)
     }
 
+    /// Returns the commit charge of the VAD.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_MMVAD_SHORT.VadFlags.CommitCharge` (Windows 7) or
+    /// `_MMVAD_SHORT.VadFlags1.CommitCharge` (Windows 8+).
+    pub fn commit_charge(&self) -> Result<u64, VmiError> {
+        let offsets = self.offsets();
+        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
+        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+
+        // If `CommitCharge` is present in `MMVAD_FLAGS`, then we fetch the
+        // value from it. Otherwise, we load the `VadFlags1` field from the VAD
+        // and fetch it from there.
+        let commit_charge = match MMVAD_FLAGS.CommitCharge {
+            Some(CommitCharge) => {
+                let vad_flags = self.vad_flags()?;
+
+                CommitCharge.extract(vad_flags)
+            }
+            None => match (&self.offsets().ext(), MMVAD_SHORT.VadFlags1) {
+                (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
+                    let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
+                    let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
+                    MMVAD_FLAGS1.CommitCharge.extract(vad_flags1)
+                }
+                _ => {
+                    panic!("Failed to read CommitCharge from VAD");
+                }
+            },
+        };
+
+        Ok(commit_charge)
+    }
+
     /// Checks if the memory of the VAD is committed.
     ///
     /// # Implementation Details
@@ -188,14 +223,16 @@ where
         let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
         let MMVAD_SHORT = &offsets._MMVAD_SHORT;
 
-        let vad_flags = self.vad_flags()?;
-
         // If `MMVAD_FLAGS.MemCommit` is present (Windows 7), then we fetch the
         // value from it. Otherwise, we load the `VadFlags1` field from the VAD
         // and fetch it from there.
         let mem_commit = match MMVAD_FLAGS.MemCommit {
             // `MemCommit` is present in `MMVAD_FLAGS`
-            Some(MemCommit) => MemCommit.extract(vad_flags) != 0,
+            Some(MemCommit) => {
+                let vad_flags = self.vad_flags()?;
+
+                MemCommit.extract(vad_flags) != 0
+            }
             None => match (&self.offsets().ext(), MMVAD_SHORT.VadFlags1) {
                 // `MemCommit` is present in `MMVAD_FLAGS1`
                 (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
