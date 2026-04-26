@@ -136,20 +136,23 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KPRCB.Context` or `_KPRCB.ProcessorState.ContextFrame`.
+    /// Corresponds to `_KPRCB.Context` if non-NULL,
+    /// otherwise `_KPRCB.ProcessorState.ContextFrame`.
     pub fn processor_context(&self) -> Result<impl WindowsContext, VmiError> {
         let offsets = self.offsets();
         let KPRCB = &offsets._KPRCB;
         let KPROCESSOR_STATE = &offsets._KPROCESSOR_STATE;
 
-        // KPRCB::Context is present since Windows 7. It is a pointer that
-        // normally points to ProcessorState.ContextFrame, but may point to a
+        // `KPRCB::Context` is present since Windows 7. It is a pointer that
+        // normally points to `ProcessorState.ContextFrame`, but may point to a
         // larger dynamically-allocated buffer when the CPU supports extended
         // state (XSAVE/AVX).
         //
         // On pre-Win7 systems the field doesn't exist, and during very early
-        // boot (before KiInitializePcr runs) it may be NULL.  In either case,
-        // fall back to reading ProcessorState.ContextFrame directly.
+        // boot (before `KiInitializePcr` runs) it may be NULL.
+        //
+        // In either case, fall back to reading `ProcessorState.ContextFrame`
+        // directly.
 
         let addr = self.vmi.read_va_native(self.va + KPRCB.Context.offset())?;
 
@@ -161,5 +164,25 @@ where
         else {
             self.vmi.read_struct::<CONTEXT_AMD64>(addr)
         }
+    }
+
+    /// Returns the processor's saved thread context, read directly from the
+    /// embedded `ProcessorState.ContextFrame`.
+    ///
+    /// Useful when the `_KPRCB.Context` is unpopulated. Crash dumps from older
+    /// Windows builds (Windows 7) leave `_KPRCB.Context` zero on the crashing
+    /// CPU and write the registers into the embedded frame instead.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KPRCB.ProcessorState.ContextFrame`.
+    pub fn processor_context_frame(&self) -> Result<impl WindowsContext, VmiError> {
+        let offsets = self.offsets();
+        let KPRCB = &offsets._KPRCB;
+        let KPROCESSOR_STATE = &offsets._KPROCESSOR_STATE;
+
+        self.vmi.read_struct::<CONTEXT_AMD64>(
+            self.va + KPRCB.ProcessorState.offset() + KPROCESSOR_STATE.ContextFrame.offset(),
+        )
     }
 }

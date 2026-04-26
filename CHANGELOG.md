@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within a directory.
 - `WindowsOs::lookup_object` for resolving an absolute object-namespace
   path from the root directory.
+- `WindowsKernelProcessorBlock::processor_context_frame` exposing
+  `_KPRCB.ProcessorState.ContextFrame` directly.
 
 ## Fixed
 
