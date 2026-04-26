@@ -414,8 +414,17 @@ where
 
             // Compute FrameBase (per Microsoft spec, computed ONCE before
             // processing codes). SAVE_NONVOL offsets are relative to this.
+            //
+            // `wrapping_sub`: when the prolog has not yet executed the LEA
+            // that establishes the frame register, the register holds an
+            // unrelated value that may be smaller than `frame_offset * 16`.
+            // Frame base is unread in that case (the gate at line below
+            // and the `code_offset > rip_offset` skip in the loop both
+            // exclude it), so an underflowing computation is harmless.
             let frame_base = if frame_register != 0 {
-                context.get_register(frame_register) - (frame_offset as u64) * 16
+                context
+                    .get_register(frame_register)
+                    .wrapping_sub((frame_offset as u64) * 16)
             }
             else {
                 context.rsp
@@ -476,15 +485,19 @@ where
                     }
                     UWOP_SAVE_NONVOL => {
                         // Offset is relative to FrameBase, NOT current RSP.
+                        // `wrapping_add`: if frame_base underflowed above,
+                        // the resulting address is bogus and the read will
+                        // fail with VmiError instead of panicking.
                         let offset = read_u16_from_codes(&codes_data, slot + 1) as u64 * 8;
-                        let value = vmi.read_u64(Va(frame_base + offset))?;
+                        let value = vmi.read_u64(Va(frame_base.wrapping_add(offset)))?;
                         context.set_register(info, value);
                         slot += 2;
                     }
                     UWOP_SAVE_NONVOL_FAR => {
                         // Offset is relative to FrameBase, NOT current RSP.
+                        // `wrapping_add`: see UWOP_SAVE_NONVOL above.
                         let offset = read_u32_from_codes(&codes_data, slot + 1) as u64;
-                        let value = vmi.read_u64(Va(frame_base + offset))?;
+                        let value = vmi.read_u64(Va(frame_base.wrapping_add(offset)))?;
                         context.set_register(info, value);
                         slot += 3;
                     }
