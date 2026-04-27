@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## Changed
+### Changed
 
 - **Breaking:** `InjectorResultCode` renamed to `InjectorStatusCode`.
 - **Breaking:** `WindowsDirectoryObject::lookup` now traverses
@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skipped instead of aborting the search. For the previous
   single-component behavior, use `WindowsDirectoryObject::child`.
 
-## Added
+### Added
 
 - `WindowsDirectoryObject::child` for a direct single-component lookup
   within a directory.
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `CmpHiveListHead`.
   - `WindowsOs::lookup_key` / `WindowsHive::lookup`.
 
-## Fixed
+### Fixed
 
 - `WindowsSession::id()` and `WindowsSession::processes()` on Windows 11
   24H2, where `_MM_SESSION_SPACE` was replaced by `_PSP_SESSION_SPACE`
@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-04-20
 
-## Changed
+### Changed
 
 - **Breaking:** `WindowsHandleTable::iter` now returns
   `impl Iterator<Item = Result<(u64, WindowsHandleTableEntry<'a, Driver>), VmiError>>`
@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now return `Result<Unwound, VmiError>` instead of
   `Result<Option<StackFrame>, VmiError>`.
 
-## Added
+### Added
 
 - `WindowsThread::next_processor` exposing `_KTHREAD.NextProcessor`.
 - `WindowsThread::alertable` exposing `_KTHREAD.Alertable`.
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsThread::wait_reason` exposing `_KTHREAD.WaitReason` as a
   `WindowsThreadWaitReason` enum.
 
-## Fixed
+### Fixed
 
 - Iterator-returning methods now use Rust 2024 `use<...>` precise
   capturing bounds, so the returned iterators are no longer tied to
