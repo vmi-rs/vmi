@@ -20,7 +20,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_CONTROL_AREA` structure.
+    /// Address of the `_CONTROL_AREA` structure.
     va: Va,
 }
 

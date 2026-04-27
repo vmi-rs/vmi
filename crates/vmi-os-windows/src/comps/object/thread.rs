@@ -225,7 +225,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_ETHREAD` structure.
+    /// Address of the `_ETHREAD` structure.
     va: Va,
 }
 

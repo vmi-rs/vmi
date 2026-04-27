@@ -82,7 +82,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_PEB_LDR_DATA` structure.
+    /// Address of the `_PEB_LDR_DATA` structure.
     va: Va,
 
     /// The translation root.

@@ -20,7 +20,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_LDR_DATA_TABLE_ENTRY` structure.
+    /// Address of the `_LDR_DATA_TABLE_ENTRY` structure.
     va: Va,
 
     /// The user-mode translation root.

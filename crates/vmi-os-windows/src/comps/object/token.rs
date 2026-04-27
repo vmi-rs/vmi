@@ -228,7 +228,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_TOKEN_SOURCE` structure.
+    /// Address of the `_TOKEN_SOURCE` structure.
     va: Va,
 }
 

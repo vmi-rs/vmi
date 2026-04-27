@@ -225,7 +225,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_SID_AND_ATTRIBUTES` structure.
+    /// Address of the `_SID_AND_ATTRIBUTES` structure.
     va: Va,
 }
 

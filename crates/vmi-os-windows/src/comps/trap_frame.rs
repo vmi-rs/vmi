@@ -20,7 +20,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_KTRAP_FRAME` structure.
+    /// Address of the `_KTRAP_FRAME` structure.
     va: Va,
 }
 

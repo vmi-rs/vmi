@@ -107,7 +107,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_HANDLE_TABLE_ENTRY` structure.
+    /// Address of the `_HANDLE_TABLE_ENTRY` structure.
     va: Va,
 }
 
@@ -164,7 +164,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_HANDLE_TABLE_ENTRY` structure.
+    /// Address of the `_HANDLE_TABLE_ENTRY` structure.
     va: Va,
 }
 

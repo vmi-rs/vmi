@@ -20,7 +20,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_OBJECT_TYPE` structure.
+    /// Address of the `_OBJECT_TYPE` structure.
     va: Va,
 }
 

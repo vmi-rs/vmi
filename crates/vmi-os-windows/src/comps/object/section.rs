@@ -176,10 +176,10 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_SECTION_OBJECT` structure.
+    /// Address of the `_SECTION_OBJECT` structure.
     va: Va,
 
-    /// Cached virtual address of the `_SEGMENT_OBJECT` structure.
+    /// Cached address of the `_SEGMENT_OBJECT` structure.
     segment: OnceCell<Va>,
 }
 
@@ -271,7 +271,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_SECTION` structure.
+    /// Address of the `_SECTION` structure.
     va: Va,
 }
 

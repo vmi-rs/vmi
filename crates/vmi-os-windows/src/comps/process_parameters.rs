@@ -76,7 +76,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
+    /// Address of the `_RTL_USER_PROCESS_PARAMETERS` structure.
     va: Va,
 
     /// The translation root.

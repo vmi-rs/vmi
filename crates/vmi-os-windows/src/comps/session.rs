@@ -63,7 +63,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_MM_SESSION_SPACE` structure.
+    /// Address of the `_MM_SESSION_SPACE` structure.
     va: Va,
 }
 

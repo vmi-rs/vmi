@@ -19,7 +19,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_OBJECT_HEADER_NAME_INFO` structure.
+    /// Address of the `_OBJECT_HEADER_NAME_INFO` structure.
     va: Va,
 }
 

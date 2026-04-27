@@ -32,7 +32,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_EPROCESS` structure.
+    /// Address of the `_EPROCESS` structure.
     va: Va,
 }
 

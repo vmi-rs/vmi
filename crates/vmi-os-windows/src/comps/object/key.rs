@@ -26,10 +26,10 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_CM_KEY_BODY` structure.
+    /// Address of the `_CM_KEY_BODY` structure.
     va: Va,
 
-    /// Cached virtual address of the `_CM_KEY_CONTROL_BLOCK` structure.
+    /// Cached address of the `_CM_KEY_CONTROL_BLOCK` structure.
     key_control_block: OnceCell<Va>,
 }
 

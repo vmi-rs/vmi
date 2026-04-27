@@ -25,7 +25,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_MMVAD` structure.
+    /// Address of the `_MMVAD` structure.
     va: Va,
 
     /// Cached VAD flags.

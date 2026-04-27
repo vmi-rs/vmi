@@ -20,7 +20,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the handle table.
+    /// Address of the handle table.
     va: Va,
 
     /// Corresponds to `_HANDLE_TABLE.TableCode`.

@@ -56,7 +56,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the object.
+    /// Address of the object.
     va: Va,
 }
 
