@@ -105,15 +105,16 @@ pub use self::comps::{
     WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
     WindowsHandleTableEntry, WindowsHive, WindowsHiveBaseBlock, WindowsHiveCellIndex,
     WindowsHiveMapDirectory, WindowsHiveMapEntry, WindowsHiveMapTable, WindowsHiveStorageType,
-    WindowsImage, WindowsKernelProcessorBlock, WindowsKeyControlBlock, WindowsKeyIndex,
-    WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags,
-    WindowsKeyValueType, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    WindowsImage, WindowsImpersonationLevel, WindowsKernelProcessorBlock, WindowsKeyControlBlock,
+    WindowsKeyIndex, WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags,
+    WindowsKeyValueType, WindowsLuid, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
-    WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess,
+    WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess,
     WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsRegion,
-    WindowsSectionObject, WindowsSegment, WindowsSession, WindowsTeb, WindowsTebBase,
-    WindowsThread, WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame,
-    WindowsUserModule, WindowsWow64Kind,
+    WindowsSectionObject, WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes,
+    WindowsSidAttributes, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
+    WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
+    WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

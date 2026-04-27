@@ -415,6 +415,14 @@ offsets! {
         struct _ETHREAD {
             Cid: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY
+            ClientSecurity: Field,          // _PS_CLIENT_SECURITY_CONTEXT
+
+            // union {
+            //     ULONG CrossThreadFlags;
+            //     struct {
+            ActiveImpersonationInfo: Bitfield, // ULONG : 1
+            //     };
+            // };
         }
 
         struct _KPROCESS {
@@ -432,6 +440,7 @@ offsets! {
             Peb: Field,
             Session: Field,                 // _MM_SESSION_SPACE*
             ObjectTable: Field,
+            Token: Field,                   // _EX_FAST_REF (_TOKEN*)
             #[isr(alias = "Wow64Process")]
             WoW64Process: Field,
             ImageFileName: Field,
@@ -439,6 +448,62 @@ offsets! {
                                             // _RTL_AVL_TREE (Windows 10+)
             VadHint: Option<Field>,         // PVOID (Windows 10+, _MM_AVL_TABLE.NodeHint on Windows 7)
             ThreadListHead: Field,          // _LIST_ENTRY
+        }
+
+        struct _SID {
+            Revision: Field,               // UCHAR
+            SubAuthorityCount: Field,      // UCHAR
+            IdentifierAuthority: Field,    // struct { UCHAR Value[6]; }
+            SubAuthority: Field,           // ULONG[1] (variable length)
+        }
+
+        struct _SID_AND_ATTRIBUTES {
+            Sid: Field,                    // _SID*
+            Attributes: Field,             // ULONG
+        }
+
+        struct _PS_CLIENT_SECURITY_CONTEXT {
+            ImpersonationToken: Field,       // _EX_FAST_REF (_TOKEN*)
+        }
+
+        struct _SEP_TOKEN_PRIVILEGES {
+            Present: Field,                // ULONGLONG
+            Enabled: Field,                // ULONGLONG
+            EnabledByDefault: Field,       // ULONGLONG
+        }
+
+        struct _TOKEN_SOURCE {
+            SourceName: Field,             // CHAR[8]
+            SourceIdentifier: Field,       // _LUID
+        }
+
+        struct _TOKEN {
+            TokenSource: Field,             // _TOKEN_SOURCE
+            TokenId: Field,                 // _LUID
+            AuthenticationId: Field,        // _LUID
+            ParentTokenId: Field,           // _LUID
+            // ExpirationTime: Field,          // _LARGE_INTEGER
+            ModifiedId: Field,              // _LUID
+            Privileges: Field,              // _SEP_TOKEN_PRIVILEGES
+            // AuditPolicy: Field,             // _SEP_AUDIT_POLICY
+            SessionId: Field,               // ULONG
+            UserAndGroupCount: Field,       // ULONG
+            RestrictedSidCount: Field,      // ULONG
+            // VariableLength: Field,          // ULONG
+            // DynamicCharged: Field,          // ULONG
+            // DynamicAvailable: Field,        // ULONG
+            DefaultOwnerIndex: Field,       // ULONG
+            UserAndGroups: Field,           // _SID_AND_ATTRIBUTES*
+            RestrictedSids: Field,          // _SID_AND_ATTRIBUTES*
+            PrimaryGroup: Field,            // PVOID
+            TokenType: Field,               // enum _TOKEN_TYPE
+            ImpersonationLevel: Field,      // enum _SECURITY_IMPERSONATION_LEVEL
+            TokenFlags: Field,              // ULONG
+            TokenInUse: Field,              // UCHAR
+            // IntegrityLevelIndex: Field,     // ULONG
+            // MandatoryPolicy: Field,         // ULONG
+            // LogonSession: Field,            // _SEP_LOGON_SESSION_REFERENCES*
+            OriginatingLogonSession: Field, // _LUID
         }
 
         // Unfortunately, _PEB32 and _PEB64 are not defined in 32-bit ntoskrnl.

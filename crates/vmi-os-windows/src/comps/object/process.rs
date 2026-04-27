@@ -10,10 +10,10 @@ use super::{
         WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind,
         macros::impl_offsets,
     },
-    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread,
+    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread, WindowsToken,
 };
 use crate::{
-    ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs,
+    ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs, WindowsOsExt as _,
     offsets::{v1, v2},
 };
 
@@ -182,6 +182,23 @@ where
         }
 
         Ok(Some(WindowsSession::new(self.vmi, session)))
+    }
+
+    /// Returns the primary access token of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.Token` (with reference count masked out).
+    pub fn token(&self) -> Result<WindowsToken<'a, Driver>, VmiError> {
+        let offsets = self.offsets();
+        let EPROCESS = &offsets._EPROCESS;
+
+        let token = self
+            .vmi
+            .os()
+            .read_fast_ref(self.va + EPROCESS.Token.offset())?;
+
+        Ok(WindowsToken::new(self.vmi, token))
     }
 
     /// Returns the handle table of the process.

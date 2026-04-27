@@ -5,6 +5,7 @@ mod object_type;
 mod process;
 mod section;
 mod thread;
+mod token;
 
 use vmi_core::{
     Va, VmiError, VmiState, VmiVa,
@@ -20,6 +21,10 @@ pub use self::{
     process::WindowsProcess,
     section::WindowsSectionObject,
     thread::{WindowsThread, WindowsThreadState, WindowsThreadWaitReason},
+    token::{
+        WindowsImpersonationLevel, WindowsPrivilege, WindowsToken, WindowsTokenFlags,
+        WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
+    },
 };
 use super::{
     WindowsObjectHeaderNameInfo,
@@ -292,6 +297,9 @@ where
             Some(WindowsObjectTypeKind::Thread) => {
                 WindowsObjectKind::Thread(WindowsThread::new(self.vmi, ThreadObject(self.va)))
             }
+            Some(WindowsObjectTypeKind::Token) => {
+                WindowsObjectKind::Token(WindowsToken::new(self.vmi, self.va))
+            }
             Some(WindowsObjectTypeKind::Type) => {
                 WindowsObjectKind::Type(WindowsObjectType::new(self.vmi, self.va))
             }
@@ -345,6 +353,14 @@ where
     pub fn as_thread(&self) -> Result<Option<WindowsThread<'a, Driver>>, VmiError> {
         match self.kind()? {
             Some(WindowsObjectKind::Thread(thread)) => Ok(Some(thread)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Returns the object as a token (`_TOKEN`).
+    pub fn as_token(&self) -> Result<Option<WindowsToken<'a, Driver>>, VmiError> {
+        match self.kind()? {
+            Some(WindowsObjectKind::Token(token)) => Ok(Some(token)),
             _ => Ok(None),
         }
     }
@@ -846,6 +862,9 @@ where
 
     /// A thread object (`_ETHREAD`).
     Thread(WindowsThread<'a, Driver>),
+
+    /// A token object (`_TOKEN`).
+    Token(WindowsToken<'a, Driver>),
 
     /// An object type object (`_OBJECT_TYPE`).
     Type(WindowsObjectType<'a, Driver>),

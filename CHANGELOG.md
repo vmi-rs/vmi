@@ -38,6 +38,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `WindowsOs::hives` iterator over loaded hives, sourced from
     `CmpHiveListHead`.
   - `WindowsOs::lookup_key` / `WindowsHive::lookup`.
+- Access tokens:
+  - `WindowsToken` for `_TOKEN` objects.
+  - `WindowsTokenFlags` bitflags for `_TOKEN.TokenFlags`.
+  - `WindowsTokenType` and `WindowsImpersonationLevel` enums for
+    `_TOKEN_TYPE` and `_SECURITY_IMPERSONATION_LEVEL`.
+  - `WindowsTokenSource` accessor for `_TOKEN_SOURCE`.
+  - `WindowsPrivilege` for `_LUID` privileges.
+  - `WindowsTokenPrivilege` for `_SEP_TOKEN_PRIVILEGES` entries.
+  - `WindowsProcess::token` resolving `_EPROCESS.Token`.
+  - `WindowsThread::impersonation_token` resolving
+    `_ETHREAD.ClientSecurity.ImpersonationToken`,
+    gated on `_ETHREAD.ActiveImpersonationInfo`.
+- Security identifiers:
+  - `WindowsSid` accessor for `_SID`.
+  - `WindowsSidAndAttributes` accessor for `_SID_AND_ATTRIBUTES`.
+  - `WindowsSidAttributes` bitflags covering the `SE_GROUP_*`
+    attribute bits.
+- `WindowsLuid` value type for `_LUID`.
 
 ### Fixed
 

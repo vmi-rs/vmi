@@ -4,6 +4,7 @@ mod handle_table_entry;
 pub(crate) mod hive;
 mod image;
 mod kprcb;
+mod luid;
 pub(crate) mod macros;
 mod module;
 mod name_info;
@@ -15,6 +16,7 @@ mod process_parameters;
 mod region;
 mod segment;
 mod session;
+mod sid;
 mod teb;
 mod trap_frame;
 mod user_module;
@@ -32,12 +34,15 @@ pub use self::{
     },
     image::WindowsImage,
     kprcb::WindowsKernelProcessorBlock,
+    luid::WindowsLuid,
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
     object::{
         FromWindowsObject, ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject,
-        WindowsObject, WindowsObjectType, WindowsObjectTypeKind, WindowsProcess,
-        WindowsSectionObject, WindowsThread, WindowsThreadState, WindowsThreadWaitReason,
+        WindowsImpersonationLevel, WindowsObject, WindowsObjectType, WindowsObjectTypeKind,
+        WindowsPrivilege, WindowsProcess, WindowsSectionObject, WindowsThread, WindowsThreadState,
+        WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
+        WindowsTokenSource, WindowsTokenType,
     },
     object_attributes::WindowsObjectAttributes,
     peb::{Peb, PebLayout, WindowsPeb, WindowsPebBase},
@@ -52,6 +57,7 @@ pub use self::{
     region::WindowsRegion,
     segment::WindowsSegment,
     session::WindowsSession,
+    sid::{WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes},
     teb::{Teb, TebLayout, WindowsTeb, WindowsTebBase},
     trap_frame::WindowsTrapFrame,
     user_module::WindowsUserModule,

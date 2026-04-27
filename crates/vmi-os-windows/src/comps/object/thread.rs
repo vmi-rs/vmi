@@ -8,9 +8,9 @@ use super::{
     super::{
         WindowsProcessorMode, WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets,
     },
-    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess,
+    FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess, WindowsToken,
 };
-use crate::{ArchAdapter, WindowsOs};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// Windows kernel thread state (`KTHREAD_STATE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -344,6 +344,34 @@ where
         }
 
         Ok(Some(WindowsProcess::new(self.vmi, ProcessObject(process))))
+    }
+
+    /// Returns the thread's impersonation token, or `None` when the
+    /// thread is not currently impersonating.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_ETHREAD.ClientSecurity.ImpersonationToken`, gated
+    /// on `_ETHREAD.ActiveImpersonationInfo`.
+    pub fn impersonation_token(&self) -> Result<Option<WindowsToken<'a, Driver>>, VmiError> {
+        let ETHREAD = offset!(self.vmi, _ETHREAD);
+        let PS_CLIENT_SECURITY_CONTEXT = offset!(self.vmi, _PS_CLIENT_SECURITY_CONTEXT);
+
+        let active = self
+            .vmi
+            .read_field(self.va, &ETHREAD.ActiveImpersonationInfo)?;
+
+        if ETHREAD.ActiveImpersonationInfo.extract(active) == 0 {
+            return Ok(None);
+        }
+
+        let token = self.vmi.os().read_fast_ref(
+            self.va
+                + ETHREAD.ClientSecurity.offset()
+                + PS_CLIENT_SECURITY_CONTEXT.ImpersonationToken.offset(),
+        )?;
+
+        Ok(Some(WindowsToken::new(self.vmi, token)))
     }
 
     /// Returns the ID of the processor the thread is bound to.
