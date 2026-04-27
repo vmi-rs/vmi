@@ -1,8 +1,8 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsError, WindowsOs};
+use super::{WindowsHive, WindowsHiveCellIndex, WindowsKeyNode};
+use crate::{ArchAdapter, WindowsError, WindowsOs, offset};
 
 /// A Windows registry key control block.
 ///
@@ -21,10 +21,10 @@ where
     /// The VMI state.
     vmi: VmiState<'a, WindowsOs<Driver>>,
 
-    /// The virtual address of the `_CM_KEY_CONTROL_BLOCK` structure.
+    /// Address of the `_CM_KEY_CONTROL_BLOCK` structure.
     va: Va,
 
-    /// Cached virtual address of the `_CM_NAME_CONTROL_BLOCK` structure.
+    /// Cached address of the `_CM_NAME_CONTROL_BLOCK` structure.
     name_block: OnceCell<Va>,
 }
 
@@ -43,8 +43,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows key control block.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self {
@@ -54,14 +52,47 @@ where
         }
     }
 
+    /// Returns the reference count of the key control block.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CM_KEY_CONTROL_BLOCK.RefCount`.
+    pub fn refcount(&self) -> Result<u64, VmiError> {
+        let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
+
+        let refcount = self
+            .vmi
+            .read_field(self.va, &CM_KEY_CONTROL_BLOCK.RefCount)?;
+
+        Ok(refcount)
+    }
+
+    /// Returns whether the key control block has been marked as discarded.
+    ///
+    /// A discarded KCB no longer backs a live key node. The cache slot is
+    /// kept alive only until its reference count drops to zero.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CM_KEY_CONTROL_BLOCK.Discarded` or
+    /// `_CM_KEY_CONTROL_BLOCK.Delete`.
+    pub fn discarded(&self) -> Result<bool, VmiError> {
+        let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
+
+        let discarded = self
+            .vmi
+            .read_field(self.va, &CM_KEY_CONTROL_BLOCK.Discarded)?;
+
+        Ok(CM_KEY_CONTROL_BLOCK.Discarded.extract(discarded) != 0)
+    }
+
     /// Returns the parent key control block.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_CM_KEY_CONTROL_BLOCK.ParentKcb`.
     pub fn parent(&self) -> Result<Option<WindowsKeyControlBlock<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let CM_KEY_CONTROL_BLOCK = &offsets._CM_KEY_CONTROL_BLOCK;
+        let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
 
         let parent_kcb = self
             .vmi
@@ -80,11 +111,10 @@ where
     ///
     /// Corresponds to `_CM_KEY_CONTROL_BLOCK.NameBlock`.
     /// If the `_CM_NAME_CONTROL_BLOCK.Compressed` field is set, the name is
-    /// read as a multibyte string. Otherwise, the name is read as a UTF-16
+    /// read as an ASCII string. Otherwise, the name is read as a UTF-16
     /// string.
     pub fn name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let CM_NAME_CONTROL_BLOCK = &offsets._CM_NAME_CONTROL_BLOCK;
+        let CM_NAME_CONTROL_BLOCK = offset!(self.vmi, _CM_NAME_CONTROL_BLOCK);
 
         let name_block = self.name_block()?;
 
@@ -116,8 +146,7 @@ where
     fn name_block(&self) -> Result<Va, VmiError> {
         self.name_block
             .get_or_try_init(|| {
-                let offsets = self.offsets();
-                let CM_KEY_CONTROL_BLOCK = &offsets._CM_KEY_CONTROL_BLOCK;
+                let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
 
                 let name_block = self
                     .vmi
@@ -132,5 +161,51 @@ where
                 Ok(name_block)
             })
             .copied()
+    }
+
+    /// Returns the hive that owns this key control block.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_CM_KEY_CONTROL_BLOCK.KeyHive`.
+    pub fn hive(&self) -> Result<Option<WindowsHive<'a, Driver>>, VmiError> {
+        let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
+
+        let key_hive = self
+            .vmi
+            .read_va_native(self.va + CM_KEY_CONTROL_BLOCK.KeyHive.offset())?;
+
+        if key_hive.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsHive::new(self.vmi, key_hive)))
+    }
+
+    /// Returns the key node backing this key control block.
+    ///
+    /// # Implementation Details
+    ///
+    /// Resolves `_CM_KEY_CONTROL_BLOCK.KeyCell` against
+    /// `_CM_KEY_CONTROL_BLOCK.KeyHive`.
+    pub fn key_node(&self) -> Result<Option<WindowsKeyNode<'a, Driver>>, VmiError> {
+        let CM_KEY_CONTROL_BLOCK = offset!(self.vmi, _CM_KEY_CONTROL_BLOCK);
+
+        let hive = match self.hive()? {
+            Some(hive) => hive,
+            None => return Ok(None),
+        };
+
+        let key_cell = self
+            .vmi
+            .read_u32(self.va + CM_KEY_CONTROL_BLOCK.KeyCell.offset())?;
+
+        if key_cell == 0 {
+            return Ok(None);
+        }
+
+        Ok(hive
+            .cell(WindowsHiveCellIndex::new(key_cell))?
+            .map(|va| WindowsKeyNode::new(self.vmi, hive.va, va)))
     }
 }

@@ -18,6 +18,8 @@ symbols! {
         KiDispatchException: Option<u64>,
         DbgkpSendErrorMessage: Option<u64>,
 
+        CmpHiveListHead: u64, // _LIST_ENTRY (_CMHIVE*)
+
         KeNumberProcessors: u64,
         KiProcessorBlock: u64,
 
@@ -206,11 +208,159 @@ offsets! {
             Name: Field,
         }
 
+        /*
+
+        Win7:
+
+            typedef struct _HMAP_ENTRY
+            {
+                ULONG_PTR BlockAddress;
+                ULONG_PTR BinAddress;
+                struct _CM_VIEW_OF_FILE* CmView;
+                unsigned long MemAlloc;
+            } HMAP_ENTRY, *PHMAP_ENTRY;
+
+        Win10 TH1/TH2:
+
+            typedef union _EX_RUNDOWN_REF
+            {
+                ULONG Count;
+                PVOID Ptr;
+            } EX_RUNDOWN_REF, *PEX_RUNDOWN_REF;
+
+            typedef struct _HMAP_ENTRY
+            {
+                ULONG BlockOffset;
+                ULONG PermanentBinAddress;
+                ULONG TemporaryBinAddress;
+                EX_RUNDOWN_REF TemporaryBinRundown;
+                ULONG MemAlloc;
+            } HMAP_ENTRY, *PHMAP_ENTRY;
+
+        Win10 RS4+:
+
+            typedef struct _HMAP_ENTRY
+            {
+                ULONG_PTR BlockOffset;
+                ULONG_PTR PermanentBinAddress;
+                ULONG MemAlloc;
+            } HMAP_ENTRY, *PHMAP_ENTRY;
+
+         */
+
+        struct _HBASE_BLOCK {
+            // #define HBASE_BLOCK_SIGNATURE   0x66676572  // "regf"
+            Signature: Field,               // ULONG
+            Major: Field,                   // ULONG
+            Minor: Field,                   // ULONG
+            Type: Field,                    // ULONG
+            Format: Field,                  // ULONG
+            RootCell: Field,                // ULONG
+            FileName: Field,                // CHAR[64]
+        }
+
+        struct _DUAL {
+            Map: Field,                     // _HMAP_DIRECTORY*
+        }
+
+        struct _HMAP_DIRECTORY {
+            Directory: Field,               // _HMAP_TABLE*[1024]
+        }
+
+        struct _HMAP_TABLE {
+            Table: Field,                   // _HMAP_ENTRY[512]
+        }
+
+        struct _HMAP_ENTRY {
+            BlockAddress: Option<Field>,          // ULONG_PTR (Win7) or ULONG (Win10 RS4+)
+
+            BlockOffset: Option<Field>,             //  ULONG_PTR
+            PermanentBinAddress: Option<Field>,     //  ULONG_PTR
+        }
+
+        struct _CMHIVE {
+            // struct _HHIVE {
+            // #define HHIVE_SIGNATURE 0xBEE0BEE0
+            Signature: Field,               // ULONG
+            BaseBlock: Field,               // struct _HBASE_BLOCK*
+            Flat: Bitfield,                 // UCHAR or UCHAR : 1 (bitfield)
+            Version: Field,                 // ULONG
+            Storage: Field,                 // _DUAL[2]
+            // } Hive;
+            HiveList: Field,                // _LIST_ENTRY
+            KcbCacheTable: Field,           // _CM_KEY_HASH_TABLE_ENTRY*
+            KcbCacheTableSize: Field,       // ULONG
+
+            FileFullPath: Field,            // _UNICODE_STRING
+            FileUserName: Field,            // _UNICODE_STRING
+            HiveRootPath: Field,            // _UNICODE_STRING
+        }
+
+        struct _CM_KEY_HASH_TABLE_ENTRY {
+            Owner: Field,                   // _ETHREAD*
+            Entry: Field,                   // _CM_KEY_HASH*
+        }
+
+        struct _CM_KEY_HASH {
+            NextHash: Field,                // _CM_KEY_HASH*
+            KeyHive: Field,                 // _HHIVE*
+            KeyCell: Field,                 // ULONG
+        }
+
+        struct _CHILD_LIST {
+            Count: Field,                   // ULONG
+            List: Field,                    // ULONG
+        }
+
+        struct _CM_KEY_NODE {
+            Signature: Field,               // USHORT
+            Flags: Field,                   // USHORT
+            SubKeyCounts: Field,            // ULONG[2]
+            SubKeyLists: Field,             // ULONG[2]
+            ValueList: Field,               // _CHILD_LIST
+            NameLength: Field,              // USHORT
+            Name: Field,                    // WCHAR[1] (variable length)
+        }
+
+        struct _CM_KEY_INDEX {
+            Signature: Field,               // USHORT
+            Count: Field,                   // USHORT
+            List: Field,                    // ULONG[1]
+        }
+
+        struct _CM_KEY_VALUE {
+            Signature: Field,               // USHORT
+            NameLength: Field,              // USHORT
+            DataLength: Field,              // ULONG
+            Data: Field,                    // ULONG
+            Type: Field,                    // ULONG
+            Flags: Field,                   // USHORT
+            Name: Field,                    // WCHAR[1] (variable length)
+        }
+
+        struct _CM_BIG_DATA {
+            Signature: Field,               // USHORT
+            Count: Field,                   // USHORT
+            List: Field,                    // ULONG
+        }
+
         struct _CM_KEY_BODY {
             KeyControlBlock: Field,
         }
 
         struct _CM_KEY_CONTROL_BLOCK {
+            RefCount: Field,                // ULONG before Win10 1903/19H1 (18362)
+                                            // ULONGLONG after
+            // struct {
+            #[isr(alias = "Delete")]        // Before Win10 1607 RS1 (14393)
+            Discarded: Bitfield,            // ULONG: 1
+            // } /* flags */
+
+            KeyHash: Field,                 // _CM_KEY_HASH
+            NextHash: Field,                // _CM_KEY_HASH*
+            KeyHive: Field,                 // _HHIVE*
+            KeyCell: Field,                 // ULONG
+
             ParentKcb: Field,               // _CM_KEY_CONTROL_BLOCK*
             NameBlock: Field,               // _CM_NAME_CONTROL_BLOCK*
 

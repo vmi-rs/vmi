@@ -1,8 +1,8 @@
 mod control_area;
 pub(crate) mod handle_table;
 mod handle_table_entry;
+pub(crate) mod hive;
 mod image;
-mod key_control_block;
 mod kprcb;
 pub(crate) mod macros;
 mod module;
@@ -24,8 +24,13 @@ pub use self::{
     control_area::WindowsControlArea,
     handle_table::WindowsHandleTable,
     handle_table_entry::WindowsHandleTableEntry,
+    hive::{
+        WindowsHive, WindowsHiveBaseBlock, WindowsHiveCellIndex, WindowsHiveMapDirectory,
+        WindowsHiveMapEntry, WindowsHiveMapTable, WindowsHiveStorageType, WindowsKeyControlBlock,
+        WindowsKeyIndex, WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData,
+        WindowsKeyValueFlags, WindowsKeyValueType,
+    },
     image::WindowsImage,
-    key_control_block::WindowsKeyControlBlock,
     kprcb::WindowsKernelProcessorBlock,
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,

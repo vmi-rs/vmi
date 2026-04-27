@@ -83,8 +83,9 @@ pub use self::error::WindowsError;
 
 mod iter;
 pub use self::iter::{
-    DirectoryObjectIterator, HandleTableEntryIterator, ListEntry, ListEntryIterator,
-    ListEntryIteratorBase, ListEntryLayout, TreeNodeIterator,
+    DirectoryObjectIterator, HandleTableEntryIterator, KeyControlBlockIterator, KeyNodeIterator,
+    KeyValueIterator, ListEntry, ListEntryIterator, ListEntryIteratorBase, ListEntryLayout,
+    TreeNodeIterator,
 };
 
 pub mod pe;
@@ -102,12 +103,16 @@ pub use self::comps::{
     RtlUserProcessParametersLayout, Teb, TebLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED,
     WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO,
     WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
-    WindowsHandleTableEntry, WindowsImage, WindowsKernelProcessorBlock, WindowsModule,
-    WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectType,
-    WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
-    WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode,
-    WindowsRegion, WindowsSectionObject, WindowsSegment, WindowsSession, WindowsTeb,
-    WindowsTebBase, WindowsThread, WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame,
+    WindowsHandleTableEntry, WindowsHive, WindowsHiveBaseBlock, WindowsHiveCellIndex,
+    WindowsHiveMapDirectory, WindowsHiveMapEntry, WindowsHiveMapTable, WindowsHiveStorageType,
+    WindowsImage, WindowsKernelProcessorBlock, WindowsKeyControlBlock, WindowsKeyIndex,
+    WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags,
+    WindowsKeyValueType, WindowsModule, WindowsObject, WindowsObjectAttributes,
+    WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
+    WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsProcess,
+    WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsRegion,
+    WindowsSectionObject, WindowsSegment, WindowsSession, WindowsTeb, WindowsTebBase,
+    WindowsThread, WindowsThreadState, WindowsThreadWaitReason, WindowsTrapFrame,
     WindowsUserModule, WindowsWow64Kind,
 };
 
@@ -862,6 +867,110 @@ where
         path: impl AsRef<str>,
     ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         Self::object_root_directory(vmi)?.lookup(path)
+    }
+
+    /// Returns an iterator over all loaded registry hives.
+    ///
+    /// This method returns an iterator over all loaded registry hives. It
+    /// reads the `CmpHiveListHead` symbol from the kernel image and iterates
+    /// over the linked list of `_CMHIVE` structures representing each hive.
+    pub fn hives<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsHive<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let CmpHiveListHead = Self::kernel_image_base(vmi)? + symbol!(vmi, CmpHiveListHead);
+        let CMHIVE = offset!(vmi, _CMHIVE);
+
+        Ok(
+            ListEntryIterator::new(vmi, CmpHiveListHead, CMHIVE.HiveList.offset())
+                .map(move |result| result.map(|entry| WindowsHive::new(vmi, entry))),
+        )
+    }
+
+    /// Resolves an absolute registry path against the loaded hive set.
+    ///
+    /// Picks the hive whose `HiveRootPath` is the longest component-aligned
+    /// case-insensitive prefix of `path`, strips that prefix, and forwards
+    /// the remainder to [`WindowsHive::lookup`].
+    ///
+    /// Returns `Ok(None)` when no hive root prefixes the path or when the
+    /// descent does not find the key.
+    ///
+    /// Hives with an empty `HiveRootPath` match any input at depth zero,
+    /// so they only win when no loaded hive owns a real prefix.
+    ///
+    /// Does not follow `HIVE_EXIT` links into other hives.
+    pub fn lookup_key<'a>(
+        vmi: VmiState<'a, Self>,
+        path: impl AsRef<str>,
+    ) -> Result<Option<WindowsKeyNode<'a, Driver>>, VmiError> {
+        let path = path.as_ref();
+        let path_components = path
+            .split('\\')
+            .filter(|component| !component.is_empty())
+            .collect::<Vec<_>>();
+
+        let mut best = None;
+
+        for hive in Self::hives(vmi)? {
+            let hive = match hive {
+                Ok(hive) => hive,
+                Err(err) => {
+                    tracing::trace!(%err, "skipping unreadable hive entry");
+                    continue;
+                }
+            };
+
+            let root = match hive.hive_root_path() {
+                Ok(root) => root,
+                Err(err) => {
+                    tracing::trace!(%err, "skipping hive with unreadable HiveRootPath");
+                    continue;
+                }
+            };
+
+            let mut depth = 0;
+            let mut matched = true;
+            for root_component in root.split('\\').filter(|component| !component.is_empty()) {
+                let path_component = match path_components.get(depth) {
+                    Some(path_component) => path_component,
+                    None => {
+                        matched = false;
+                        break;
+                    }
+                };
+
+                if !path_component.eq_ignore_ascii_case(root_component) {
+                    matched = false;
+                    break;
+                }
+
+                depth += 1;
+            }
+
+            if !matched {
+                continue;
+            }
+
+            let beats_best = match &best {
+                Some((_, best_depth)) => depth > *best_depth,
+                None => true,
+            };
+
+            if beats_best {
+                best = Some((hive, depth));
+            }
+        }
+
+        match best {
+            Some((hive, depth)) => {
+                let rest = path_components[depth..].join("\\");
+                hive.lookup(rest)
+            }
+            None => Ok(None),
+        }
     }
 
     /// Reads an `_EX_FAST_REF` and returns the referenced object's

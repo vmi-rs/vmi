@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path from the root directory.
 - `WindowsKernelProcessorBlock::processor_context_frame` exposing
   `_KPRCB.ProcessorState.ContextFrame` directly.
+- Registry hive walking:
+  - `WindowsHive` wraps `_CMHIVE`, with cell
+    resolution through `WindowsHiveMapDirectory` / `WindowsHiveMapTable` /
+    `WindowsHiveMapEntry` and `WindowsHiveCellIndex` /
+    `WindowsHiveStorageType`.
+  - `WindowsKeyNode` (`_CM_KEY_NODE`), `WindowsKeyIndex` (`_CM_KEY_INDEX`),
+    and `WindowsKeyValue` (`_CM_KEY_VALUE`) with `WindowsKeyValueData`,
+    `WindowsKeyValueFlags`, and `WindowsKeyValueType`, for reading
+    registry keys and values out of a hive.
+  - `KeyControlBlockIterator`, `KeyNodeIterator`, and `KeyValueIterator`
+    for walking the KCB cache, subkeys, and values.
+  - `WindowsOs::hives` iterator over loaded hives, sourced from
+    `CmpHiveListHead`.
+  - `WindowsOs::lookup_key` / `WindowsHive::lookup`.
 
 ## Fixed
 
