@@ -2,13 +2,10 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
-    super::{
-        WindowsControlArea,
-        macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
-    },
-    FromWindowsObject, WindowsFileObject, WindowsObject, WindowsObjectTypeKind,
+    super::WindowsControlArea, FromWindowsObject, WindowsFileObject, WindowsObject,
+    WindowsObjectTypeKind,
 };
-use crate::{ArchAdapter, OffsetsExt, WindowsOs};
+use crate::{ArchAdapter, OffsetsExt, WindowsOs, offset, offset_ext_v1, offset_ext_v2};
 
 /// A Windows section object.
 ///
@@ -191,9 +188,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-    impl_offsets_ext_v1!();
-
     fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self {
             vmi,
@@ -203,8 +197,7 @@ where
     }
 
     fn start(&self) -> Result<Va, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION_OBJECT = &offsets_ext._SECTION_OBJECT;
+        let SECTION_OBJECT = offset_ext_v1!(self.vmi, _SECTION_OBJECT);
 
         let starting_vpn = self.vmi.read_field(self.va, &SECTION_OBJECT.StartingVa)?;
 
@@ -212,8 +205,7 @@ where
     }
 
     fn end(&self) -> Result<Va, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION_OBJECT = &offsets_ext._SECTION_OBJECT;
+        let SECTION_OBJECT = offset_ext_v1!(self.vmi, _SECTION_OBJECT);
 
         let ending_vpn = self.vmi.read_field(self.va, &SECTION_OBJECT.EndingVa)?;
 
@@ -221,8 +213,7 @@ where
     }
 
     fn size(&self) -> Result<u64, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SEGMENT_OBJECT = &offsets_ext._SEGMENT_OBJECT;
+        let SEGMENT_OBJECT = offset_ext_v1!(self.vmi, _SEGMENT_OBJECT);
 
         let size = self
             .vmi
@@ -232,8 +223,7 @@ where
     }
 
     fn flags(&self) -> Result<u64, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SEGMENT_OBJECT = &offsets_ext._SEGMENT_OBJECT;
+        let SEGMENT_OBJECT = offset_ext_v1!(self.vmi, _SEGMENT_OBJECT);
 
         let flags = Va(self
             .vmi
@@ -243,10 +233,8 @@ where
     }
 
     fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let offsets_ext = self.offsets_ext();
-        let SEGMENT_OBJECT = &offsets_ext._SEGMENT_OBJECT;
-        let MMSECTION_FLAGS = &offsets._MMSECTION_FLAGS;
+        let SEGMENT_OBJECT = offset_ext_v1!(self.vmi, _SEGMENT_OBJECT);
+        let MMSECTION_FLAGS = offset!(self.vmi, _MMSECTION_FLAGS);
 
         let flags = self.flags()?;
         let file = MMSECTION_FLAGS.File.extract(flags) != 0;
@@ -265,8 +253,7 @@ where
     fn segment(&self) -> Result<Va, VmiError> {
         self.segment
             .get_or_try_init(|| {
-                let offsets_ext = self.offsets_ext();
-                let SECTION_OBJECT = &offsets_ext._SECTION_OBJECT;
+                let SECTION_OBJECT = offset_ext_v1!(self.vmi, _SECTION_OBJECT);
 
                 let segment = self.vmi.read_field(self.va, &SECTION_OBJECT.Segment)?;
 
@@ -293,16 +280,12 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-    impl_offsets_ext_v2!();
-
     fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
     fn start(&self) -> Result<Va, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION = &offsets_ext._SECTION;
+        let SECTION = offset_ext_v2!(self.vmi, _SECTION);
 
         let starting_vpn = self.vmi.read_field(self.va, &SECTION.StartingVpn)?;
 
@@ -310,8 +293,7 @@ where
     }
 
     fn end(&self) -> Result<Va, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION = &offsets_ext._SECTION;
+        let SECTION = offset_ext_v2!(self.vmi, _SECTION);
 
         let ending_vpn = self.vmi.read_field(self.va, &SECTION.EndingVpn)?;
 
@@ -319,24 +301,20 @@ where
     }
 
     fn size(&self) -> Result<u64, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION = &offsets_ext._SECTION;
+        let SECTION = offset_ext_v2!(self.vmi, _SECTION);
 
         self.vmi.read_field(self.va, &SECTION.SizeOfSection)
     }
 
     fn flags(&self) -> Result<u64, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let SECTION = &offsets_ext._SECTION;
+        let SECTION = offset_ext_v2!(self.vmi, _SECTION);
 
         self.vmi.read_field(self.va, &SECTION.Flags)
     }
 
     fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let offsets_ext = self.offsets_ext();
-        let MMSECTION_FLAGS = &offsets._MMSECTION_FLAGS;
-        let SECTION = &offsets_ext._SECTION;
+        let MMSECTION_FLAGS = offset!(self.vmi, _MMSECTION_FLAGS);
+        let SECTION = offset_ext_v2!(self.vmi, _SECTION);
 
         let flags = self.flags()?;
         let file = MMSECTION_FLAGS.File.extract(flags) != 0;

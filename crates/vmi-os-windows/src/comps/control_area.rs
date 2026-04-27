@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsMapped};
 
-use super::{WindowsSegment, macros::impl_offsets, object::WindowsFileObject};
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use super::{WindowsSegment, object::WindowsFileObject};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows control area.
 ///
@@ -39,8 +39,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows control area.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -52,8 +50,7 @@ where
     ///
     /// Corresponds to `_CONTROL_AREA.Segment`.
     pub fn segment(&self) -> Result<WindowsSegment<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let CONTROL_AREA = &offsets._CONTROL_AREA;
+        let CONTROL_AREA = offset!(self.vmi, _CONTROL_AREA);
 
         let segment = self
             .vmi
@@ -68,8 +65,7 @@ where
     ///
     /// Corresponds to `_CONTROL_AREA.FilePointer` (with reference count masked out).
     pub fn file_object(&self) -> Result<Option<WindowsFileObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let CONTROL_AREA = &offsets._CONTROL_AREA;
+        let CONTROL_AREA = offset!(self.vmi, _CONTROL_AREA);
 
         let file_pointer = self
             .vmi
@@ -91,8 +87,7 @@ where
     /// for pagefile-backed sections, and `_SEGMENT.NumberOfCommittedPages` for
     /// everything else.
     pub fn committed_pages(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let CONTROL_AREA = &offsets._CONTROL_AREA;
+        let CONTROL_AREA = offset!(self.vmi, _CONTROL_AREA);
 
         if self.file_object()?.is_none()
             && let Some(CommittedPageCount) = &CONTROL_AREA.CommittedPageCount

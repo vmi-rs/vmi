@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::ProcessObject};
 
-use super::{WindowsProcess, macros::impl_offsets};
-use crate::{ArchAdapter, ListEntryIterator, WindowsOs};
+use super::WindowsProcess;
+use crate::{ArchAdapter, ListEntryIterator, WindowsOs, offset};
 
 //
 // The `_MM_SESSION_SPACE` structure got replaced in Windows 11 24H2
@@ -82,8 +82,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows session space.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -95,8 +93,7 @@ where
     ///
     /// Corresponds to `_MM_SESSION_SPACE.SessionId`.
     pub fn id(&self) -> Result<u32, VmiError> {
-        //let offsets = self.offsets();
-        //let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
+        //let MM_SESSION_SPACE = offset!(self.vmi, _MM_SESSION_SPACE);
 
         self.vmi
             .read_u32(self.va + MM_SESSION_SPACE.SessionId.offset())
@@ -113,9 +110,8 @@ where
         impl Iterator<Item = Result<WindowsProcess<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        let offsets = self.offsets();
-        //let MM_SESSION_SPACE = &offsets._MM_SESSION_SPACE;
-        let EPROCESS = &offsets._EPROCESS;
+        //let MM_SESSION_SPACE = offset!(self.vmi, _MM_SESSION_SPACE);
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let vmi = self.vmi;
         Ok(ListEntryIterator::new(

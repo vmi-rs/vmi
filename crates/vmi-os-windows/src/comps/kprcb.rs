@@ -1,9 +1,8 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::ThreadObject};
 
-use super::macros::impl_offsets;
 use crate::{
     ArchAdapter, CONTEXT_AMD64, KSPECIAL_REGISTERS_AMD64, WindowsContext, WindowsError, WindowsOs,
-    WindowsSpecialRegisters, WindowsThread,
+    WindowsSpecialRegisters, WindowsThread, offset,
 };
 
 /// A Windows kernel processor control block (KPRCB).
@@ -44,8 +43,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new kernel processor control block.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -57,8 +54,7 @@ where
     ///
     /// Corresponds to `_KPRCB.CurrentThread`.
     pub fn current_thread(&self) -> Result<WindowsThread<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
+        let KPRCB = offset!(self.vmi, _KPRCB);
 
         let result = self
             .vmi
@@ -77,8 +73,7 @@ where
     ///
     /// Corresponds to `_KPRCB.NextThread`.
     pub fn next_thread(&self) -> Result<Option<WindowsThread<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
+        let KPRCB = offset!(self.vmi, _KPRCB);
 
         let result = self
             .vmi
@@ -98,8 +93,7 @@ where
     ///
     /// Corresponds to `_KPRCB.IdleThread`.
     pub fn idle_thread(&self) -> Result<WindowsThread<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
+        let KPRCB = offset!(self.vmi, _KPRCB);
 
         let result = self
             .vmi
@@ -118,9 +112,8 @@ where
     ///
     /// Corresponds to `_KPRCB.ProcessorState.SpecialRegisters`.
     pub fn processor_special_registers(&self) -> Result<impl WindowsSpecialRegisters, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
-        let KPROCESSOR_STATE = &offsets._KPROCESSOR_STATE;
+        let KPRCB = offset!(self.vmi, _KPRCB);
+        let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);
 
         self.vmi.read_struct::<KSPECIAL_REGISTERS_AMD64>(
             self.va + KPRCB.ProcessorState.offset() + KPROCESSOR_STATE.SpecialRegisters.offset(),
@@ -139,9 +132,8 @@ where
     /// Corresponds to `_KPRCB.Context` if non-NULL,
     /// otherwise `_KPRCB.ProcessorState.ContextFrame`.
     pub fn processor_context(&self) -> Result<impl WindowsContext, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
-        let KPROCESSOR_STATE = &offsets._KPROCESSOR_STATE;
+        let KPRCB = offset!(self.vmi, _KPRCB);
+        let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);
 
         // `KPRCB::Context` is present since Windows 7. It is a pointer that
         // normally points to `ProcessorState.ContextFrame`, but may point to a
@@ -177,9 +169,8 @@ where
     ///
     /// Corresponds to `_KPRCB.ProcessorState.ContextFrame`.
     pub fn processor_context_frame(&self) -> Result<impl WindowsContext, VmiError> {
-        let offsets = self.offsets();
-        let KPRCB = &offsets._KPRCB;
-        let KPROCESSOR_STATE = &offsets._KPROCESSOR_STATE;
+        let KPRCB = offset!(self.vmi, _KPRCB);
+        let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);
 
         self.vmi.read_struct::<CONTEXT_AMD64>(
             self.va + KPRCB.ProcessorState.offset() + KPROCESSOR_STATE.ContextFrame.offset(),

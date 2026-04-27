@@ -1,7 +1,6 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsModule};
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows kernel module.
 ///
@@ -38,8 +37,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows kernel module.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -51,8 +48,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.EntryPoint`.
     pub fn entry_point(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .read_va_native(self.va + KLDR_DATA_TABLE_ENTRY.EntryPoint.offset())
@@ -64,8 +60,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.FullDllName`.
     pub fn full_name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .os()
@@ -78,8 +73,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.TimeDateStamp`.
     pub fn time_date_stamp(&self) -> Result<u32, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .read_u32(self.va + KLDR_DATA_TABLE_ENTRY.TimeDateStamp.offset())
@@ -99,8 +93,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.DllBase`.
     fn base_address(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .read_va_native(self.va + KLDR_DATA_TABLE_ENTRY.DllBase.offset())
@@ -112,8 +105,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.SizeOfImage`.
     fn size(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         Ok(self
             .vmi
@@ -126,8 +118,7 @@ where
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.BaseDllName`.
     fn name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let KLDR_DATA_TABLE_ENTRY = &offsets._KLDR_DATA_TABLE_ENTRY;
+        let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .os()

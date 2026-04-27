@@ -1,7 +1,6 @@
 use vmi_core::{Pa, Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsUserModule};
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows user-mode module.
 ///
@@ -43,8 +42,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows user-mode module.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va, root: Pa) -> Self {
         Self { vmi, va, root }
@@ -56,8 +53,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.EntryPoint`.
     pub fn entry_point(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         self.vmi.read_va_native_in((
             self.va + LDR_DATA_TABLE_ENTRY.EntryPoint.offset(),
@@ -71,8 +67,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.FullDllName`.
     pub fn full_name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         self.vmi.os().read_unicode_string_in((
             self.va + LDR_DATA_TABLE_ENTRY.FullDllName.offset(),
@@ -86,8 +81,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.TimeDateStamp`.
     pub fn time_date_stamp(&self) -> Result<u32, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         self.vmi.read_u32_in((
             self.va + LDR_DATA_TABLE_ENTRY.TimeDateStamp.offset(),
@@ -109,8 +103,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.DllBase`.
     fn base_address(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         self.vmi
             .read_va_native_in((self.va + LDR_DATA_TABLE_ENTRY.DllBase.offset(), self.root))
@@ -122,8 +115,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.SizeOfImage`.
     fn size(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         Ok(self.vmi.read_u32_in((
             self.va + LDR_DATA_TABLE_ENTRY.SizeOfImage.offset(),
@@ -137,8 +129,7 @@ where
     ///
     /// Corresponds to `_LDR_DATA_TABLE_ENTRY.BaseDllName`.
     fn name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let LDR_DATA_TABLE_ENTRY = &offsets._LDR_DATA_TABLE_ENTRY;
+        let LDR_DATA_TABLE_ENTRY = offset!(self.vmi, _LDR_DATA_TABLE_ENTRY);
 
         self.vmi.os().read_unicode_string_in((
             self.va + LDR_DATA_TABLE_ENTRY.BaseDllName.offset(),

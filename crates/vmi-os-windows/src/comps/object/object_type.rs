@@ -2,8 +2,8 @@ use std::str::FromStr as _;
 
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use super::{FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows object type object.
 ///
@@ -62,8 +62,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows directory object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -85,8 +83,7 @@ where
             return Ok(object_name.clone());
         }
 
-        let offsets = self.offsets();
-        let OBJECT_TYPE = &offsets._OBJECT_TYPE;
+        let OBJECT_TYPE = offset!(self.vmi, _OBJECT_TYPE);
 
         let object_name = self
             .vmi

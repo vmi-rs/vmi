@@ -1,7 +1,7 @@
 use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
-use crate::{ArchAdapter, DirectoryObjectIterator, WindowsOs};
+use super::{FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
+use crate::{ArchAdapter, DirectoryObjectIterator, WindowsOs, offset};
 
 /// A Windows directory object.
 ///
@@ -61,8 +61,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows directory object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -140,8 +138,7 @@ where
     ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         const NUMBER_HASH_BUCKETS: u64 = 37;
 
-        let offsets = self.offsets();
-        let OBJECT_DIRECTORY = &offsets._OBJECT_DIRECTORY;
+        let OBJECT_DIRECTORY = offset!(self.vmi, _OBJECT_DIRECTORY);
 
         let name = name.as_ref();
         let address_width = self.vmi.registers().address_width() as u64;
@@ -167,8 +164,7 @@ where
         bucket: Va,
         name: &str,
     ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_DIRECTORY_ENTRY = &offsets._OBJECT_DIRECTORY_ENTRY;
+        let OBJECT_DIRECTORY_ENTRY = offset!(self.vmi, _OBJECT_DIRECTORY_ENTRY);
 
         let mut entry = self.vmi.read_va_native(bucket)?;
         while !entry.is_null() {

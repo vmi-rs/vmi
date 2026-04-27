@@ -1,10 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{
-    WindowsObject,
-    macros::{impl_offsets, impl_offsets_ext_v1, impl_offsets_ext_v2},
-};
-use crate::{ArchAdapter, OffsetsExt, WindowsOs};
+use super::WindowsObject;
+use crate::{ArchAdapter, OffsetsExt, WindowsOs, offset, offset_ext_v1, offset_ext_v2};
 
 /// A Windows handle table entry.
 ///
@@ -119,19 +116,13 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-    impl_offsets_ext_v1!();
-
     fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
     fn object(&self) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let offsets_ext = self.offsets_ext();
-
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
-        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+        let HANDLE_TABLE_ENTRY = offset_ext_v1!(self.vmi, _HANDLE_TABLE_ENTRY);
+        let OBJECT_HEADER = offset!(self.vmi, _OBJECT_HEADER);
 
         let object = self.vmi.read_field(self.va, &HANDLE_TABLE_ENTRY.Object)?;
         let object = Va(object & !OBJ_HANDLE_ATTRIBUTES);
@@ -146,8 +137,7 @@ where
     }
 
     fn attributes(&self) -> Result<u32, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
+        let HANDLE_TABLE_ENTRY = offset_ext_v1!(self.vmi, _HANDLE_TABLE_ENTRY);
 
         let attributes = self
             .vmi
@@ -158,8 +148,7 @@ where
     }
 
     fn granted_access(&self) -> Result<u32, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
+        let HANDLE_TABLE_ENTRY = offset_ext_v1!(self.vmi, _HANDLE_TABLE_ENTRY);
 
         Ok(self
             .vmi
@@ -184,18 +173,13 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-    impl_offsets_ext_v2!();
-
     fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
     fn object(&self) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let offsets_ext = self.offsets_ext();
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
-        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+        let HANDLE_TABLE_ENTRY = offset_ext_v2!(self.vmi, _HANDLE_TABLE_ENTRY);
+        let OBJECT_HEADER = offset!(self.vmi, _OBJECT_HEADER);
 
         let object_pointer_bits = self
             .vmi
@@ -216,8 +200,7 @@ where
     }
 
     fn attributes(&self) -> Result<u32, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
+        let HANDLE_TABLE_ENTRY = offset_ext_v2!(self.vmi, _HANDLE_TABLE_ENTRY);
 
         let attributes = self
             .vmi
@@ -227,8 +210,7 @@ where
     }
 
     fn granted_access(&self) -> Result<u32, VmiError> {
-        let offsets_ext = self.offsets_ext();
-        let HANDLE_TABLE_ENTRY = &offsets_ext._HANDLE_TABLE_ENTRY;
+        let HANDLE_TABLE_ENTRY = offset_ext_v2!(self.vmi, _HANDLE_TABLE_ENTRY);
 
         let granted_access = self
             .vmi

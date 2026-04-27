@@ -1,8 +1,8 @@
 use once_cell::unsync::OnceCell;
 use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsHandleTableEntry, macros::impl_offsets};
-use crate::{ArchAdapter, HandleTableEntryIterator, OffsetsExt, WindowsOs};
+use super::WindowsHandleTableEntry;
+use crate::{ArchAdapter, HandleTableEntryIterator, OffsetsExt, WindowsOs, offset};
 
 /// A Windows handle table.
 ///
@@ -45,8 +45,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows module object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self {
@@ -69,8 +67,7 @@ where
     pub fn table_code(&self) -> Result<u64, VmiError> {
         self.table_code
             .get_or_try_init(|| {
-                let offsets = self.offsets();
-                let HANDLE_TABLE = &offsets._HANDLE_TABLE;
+                let HANDLE_TABLE = offset!(self.vmi, _HANDLE_TABLE);
 
                 self.vmi.read_field(self.va, &HANDLE_TABLE.TableCode)
             })
@@ -92,8 +89,7 @@ where
     pub fn next_handle_needing_pool(&self) -> Result<u64, VmiError> {
         self.next_handle_needing_pool
             .get_or_try_init(|| {
-                let offsets = self.offsets();
-                let HANDLE_TABLE = &offsets._HANDLE_TABLE;
+                let HANDLE_TABLE = offset!(self.vmi, _HANDLE_TABLE);
 
                 self.vmi
                     .read_field(self.va, &HANDLE_TABLE.NextHandleNeedingPool)

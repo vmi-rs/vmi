@@ -2,10 +2,9 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{
-    super::{WindowsKeyControlBlock, macros::impl_offsets},
-    FromWindowsObject, WindowsObject, WindowsObjectTypeKind,
+    super::WindowsKeyControlBlock, FromWindowsObject, WindowsObject, WindowsObjectTypeKind,
 };
-use crate::{ArchAdapter, WindowsError, WindowsOs};
+use crate::{ArchAdapter, WindowsError, WindowsOs, offset};
 
 /// A Windows registry key.
 ///
@@ -72,8 +71,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows registry key.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self {
@@ -119,8 +116,7 @@ where
     fn key_control_block(&self) -> Result<Va, VmiError> {
         self.key_control_block
             .get_or_try_init(|| {
-                let offsets = self.offsets();
-                let CM_KEY_BODY = &offsets._CM_KEY_BODY;
+                let CM_KEY_BODY = offset!(self.vmi, _CM_KEY_BODY);
 
                 let key_control_block = self
                     .vmi

@@ -5,8 +5,8 @@ use vmi_core::{
     os::{VmiOsRegion, VmiOsRegionKind},
 };
 
-use super::{WindowsControlArea, macros::impl_offsets};
-use crate::{ArchAdapter, OffsetsExt, WindowsOs};
+use super::WindowsControlArea;
+use crate::{ArchAdapter, OffsetsExt, WindowsOs, offset};
 
 /// A Windows memory region.
 ///
@@ -67,8 +67,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows memory region.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, vad: Va) -> Self {
         Self {
@@ -85,8 +83,7 @@ where
     /// The starting VPN is calculated from `_MMVAD_SHORT.StartingVpn` and,
     /// if present, `_MMVAD_SHORT.StartingVpnHigh` fields.
     pub fn starting_vpn(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         let starting_vpn_low = self.vmi.read_field(self.va, &MMVAD_SHORT.StartingVpn)?;
         let starting_vpn_high = match &MMVAD_SHORT.StartingVpnHigh {
@@ -104,8 +101,7 @@ where
     /// The ending VPN is calculated from `_MMVAD_SHORT.EndingVpn` and,
     /// if present, `_MMVAD_SHORT.EndingVpnHigh` fields.
     pub fn ending_vpn(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         let ending_vpn_low = self.vmi.read_field(self.va, &MMVAD_SHORT.EndingVpn)?;
         let ending_vpn_high = match &MMVAD_SHORT.EndingVpnHigh {
@@ -128,8 +124,7 @@ where
     pub fn vad_flags(&self) -> Result<u64, VmiError> {
         self.vad_flags
             .get_or_try_init(|| {
-                let offsets = self.offsets();
-                let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+                let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
                 self.vmi.read_field(self.va, &MMVAD_SHORT.VadFlags)
             })
@@ -142,8 +137,7 @@ where
     ///
     /// Corresponds to `_MMVAD_SHORT.VadFlags.VadType`.
     pub fn vad_type(&self) -> Result<u8, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
+        let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
 
         let vad_flags = self.vad_flags()?;
         Ok(MMVAD_FLAGS.VadType.extract(vad_flags) as u8)
@@ -155,8 +149,7 @@ where
     ///
     /// Calculated from `_MMVAD_SHORT.VadFlags.Protection` field.
     pub fn vad_protection(&self) -> Result<u8, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
+        let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
 
         let flags = self.vad_flags()?;
         let protection = MMVAD_FLAGS.Protection.extract(flags) as u8;
@@ -170,8 +163,7 @@ where
     ///
     /// Corresponds to `_MMVAD_SHORT.VadFlags.PrivateMemory`.
     pub fn private_memory(&self) -> Result<bool, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
+        let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
 
         let vad_flags = self.vad_flags()?;
         Ok(MMVAD_FLAGS.PrivateMemory.extract(vad_flags) != 0)
@@ -184,9 +176,8 @@ where
     /// Corresponds to `_MMVAD_SHORT.VadFlags.CommitCharge` (Windows 7) or
     /// `_MMVAD_SHORT.VadFlags1.CommitCharge` (Windows 8+).
     pub fn commit_charge(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         // If `CommitCharge` is present in `MMVAD_FLAGS`, then we fetch the
         // value from it. Otherwise, we load the `VadFlags1` field from the VAD
@@ -197,7 +188,10 @@ where
 
                 CommitCharge.extract(vad_flags)
             }
-            None => match (&self.offsets().ext(), MMVAD_SHORT.VadFlags1) {
+            None => match (
+                &self.vmi.underlying_os().offsets.ext(),
+                MMVAD_SHORT.VadFlags1,
+            ) {
                 (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
                     let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
                     let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
@@ -219,9 +213,8 @@ where
     /// Corresponds to `_MMVAD_SHORT.VadFlags.MemCommit` (Windows 7) or
     /// `_MMVAD_SHORT.VadFlags1.MemCommit` (Windows 8+).
     pub fn mem_commit(&self) -> Result<bool, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_FLAGS = &offsets._MMVAD_FLAGS;
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         // If `MMVAD_FLAGS.MemCommit` is present (Windows 7), then we fetch the
         // value from it. Otherwise, we load the `VadFlags1` field from the VAD
@@ -233,7 +226,10 @@ where
 
                 MemCommit.extract(vad_flags) != 0
             }
-            None => match (&self.offsets().ext(), MMVAD_SHORT.VadFlags1) {
+            None => match (
+                &self.vmi.underlying_os().offsets.ext(),
+                MMVAD_SHORT.VadFlags1,
+            ) {
                 // `MemCommit` is present in `MMVAD_FLAGS1`
                 (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
                     let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
@@ -255,8 +251,7 @@ where
     ///
     /// Corresponds to `_MMVAD_SHORT.Left`.
     pub fn left_child(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         let left_child = self.vmi.read_field(self.va, &MMVAD_SHORT.Left)?;
 
@@ -273,8 +268,7 @@ where
     ///
     /// Corresponds to `_MMVAD_SHORT.Right`.
     pub fn right_child(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD_SHORT = &offsets._MMVAD_SHORT;
+        let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
         let right_child = self.vmi.read_field(self.va, &MMVAD_SHORT.Right)?;
 
@@ -343,9 +337,8 @@ where
 
     /// Returns the memory region's kind.
     fn kind(&self) -> Result<VmiOsRegionKind<'a, Self::Os>, VmiError> {
-        let offsets = self.offsets();
-        let MMVAD = &offsets._MMVAD;
-        let SUBSECTION = &offsets._SUBSECTION;
+        let MMVAD = offset!(self.vmi, _MMVAD);
+        let SUBSECTION = offset!(self.vmi, _SUBSECTION);
 
         /*
         const VadImageMap: u8 = 2;

@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsObject, macros::impl_offsets};
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use super::WindowsObject;
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A name information for a Windows object.
 ///
@@ -54,8 +54,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows object header name info.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -67,8 +65,7 @@ where
     ///
     /// Corresponds to `_OBJECT_HEADER_NAME_INFO.Directory`.
     pub fn directory(&self) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_HEADER_NAME_INFO = &offsets._OBJECT_HEADER_NAME_INFO;
+        let OBJECT_HEADER_NAME_INFO = offset!(self.vmi, _OBJECT_HEADER_NAME_INFO);
 
         let directory = self
             .vmi
@@ -87,8 +84,7 @@ where
     ///
     /// Corresponds to `_OBJECT_HEADER_NAME_INFO.Name`.
     pub fn name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_HEADER_NAME_INFO = &offsets._OBJECT_HEADER_NAME_INFO;
+        let OBJECT_HEADER_NAME_INFO = offset!(self.vmi, _OBJECT_HEADER_NAME_INFO);
 
         self.vmi
             .os()

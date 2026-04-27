@@ -1,7 +1,6 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::macros::impl_offsets;
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows object attributes.
 ///
@@ -35,8 +34,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows object attributes.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -48,8 +45,7 @@ where
     ///
     /// Corresponds to `_OBJECT_ATTRIBUTES.RootDirectory`.
     pub fn root_directory(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_ATTRIBUTES = &offsets._OBJECT_ATTRIBUTES;
+        let OBJECT_ATTRIBUTES = offset!(self.vmi, _OBJECT_ATTRIBUTES);
 
         self.vmi
             .read_va_native(self.va + OBJECT_ATTRIBUTES.RootDirectory.offset())
@@ -61,8 +57,7 @@ where
     ///
     /// Corresponds to `_OBJECT_ATTRIBUTES.ObjectName`.
     pub fn object_name(&self) -> Result<Option<String>, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_ATTRIBUTES = &offsets._OBJECT_ATTRIBUTES;
+        let OBJECT_ATTRIBUTES = offset!(self.vmi, _OBJECT_ATTRIBUTES);
 
         let object_name = self
             .vmi
@@ -81,8 +76,7 @@ where
     ///
     /// Corresponds to `_OBJECT_ATTRIBUTES.Attributes`.
     pub fn attributes(&self) -> Result<u32, VmiError> {
-        let offsets = self.offsets();
-        let OBJECT_ATTRIBUTES = &offsets._OBJECT_ATTRIBUTES;
+        let OBJECT_ATTRIBUTES = offset!(self.vmi, _OBJECT_ATTRIBUTES);
 
         self.vmi
             .read_u32(self.va + OBJECT_ATTRIBUTES.Attributes.offset())

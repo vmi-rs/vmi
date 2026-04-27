@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{super::macros::impl_offsets, FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
-use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _};
+use super::{FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
+use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
 
 /// A Windows file object.
 ///
@@ -62,8 +62,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows file object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -75,8 +73,7 @@ where
     ///
     /// Corresponds to `_FILE_OBJECT.DeviceObject`.
     pub fn device_object(&self) -> Result<WindowsObject<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let FILE_OBJECT = &offsets._FILE_OBJECT;
+        let FILE_OBJECT = offset!(self.vmi, _FILE_OBJECT);
 
         let device_object = self
             .vmi
@@ -95,8 +92,7 @@ where
     ///
     /// This operation might fail as the filename is allocated from paged pool.
     pub fn filename(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let FILE_OBJECT = &offsets._FILE_OBJECT;
+        let FILE_OBJECT = offset!(self.vmi, _FILE_OBJECT);
 
         // Note that filename is allocated from paged pool,
         // so this read might fail.

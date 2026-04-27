@@ -6,14 +6,12 @@ use vmi_core::{
 };
 
 use super::{
-    super::{
-        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind,
-        macros::impl_offsets,
-    },
+    super::{WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind},
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread, WindowsToken,
 };
 use crate::{
     ArchAdapter, ListEntryIterator, OffsetsExt, TreeNodeIterator, WindowsOs, WindowsOsExt as _,
+    offset,
     offsets::{v1, v2},
 };
 
@@ -78,8 +76,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows process.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, process: ProcessObject) -> Self {
         Self { vmi, va: process.0 }
@@ -91,8 +87,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.WoW64Process != NULL`.
     pub fn is_wow64(&self) -> Result<bool, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let wow64process = self
             .vmi
@@ -110,8 +105,7 @@ where
     /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
     /// to get the 32-bit PEB.
     pub fn peb(&self) -> Result<Option<WindowsPeb<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let wow64 = self
             .vmi
@@ -121,7 +115,7 @@ where
             return self.native_peb();
         }
 
-        let va = match &offsets.ext {
+        let va = match &self.vmi.underlying_os().offsets.ext {
             Some(OffsetsExt::V1(_)) => wow64,
             Some(OffsetsExt::V2(v2)) => self
                 .vmi
@@ -149,8 +143,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.Peb`.
     pub fn native_peb(&self) -> Result<Option<WindowsPeb<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let va = self.vmi.read_va_native(self.va + EPROCESS.Peb.offset())?;
 
@@ -170,8 +163,7 @@ where
 
     /// Returns the session of the process.
     pub fn session(&self) -> Result<Option<WindowsSession<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let session = self
             .vmi
@@ -190,8 +182,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.Token` (with reference count masked out).
     pub fn token(&self) -> Result<WindowsToken<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let token = self
             .vmi
@@ -207,8 +198,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.ObjectTable`.
     pub fn handle_table(&self) -> Result<Option<WindowsHandleTable<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let handle_table = self
             .vmi
@@ -283,7 +273,7 @@ where
     /// Corresponds to `_EPROCESS.VadRoot->BalancedRoot` for Windows 7 and
     /// `_EPROCESS.VadRoot->Root` for Windows 8.1 and later.
     pub fn vad_root(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
-        let node = match &self.offsets().ext() {
+        let node = match &self.vmi.underlying_os().offsets.ext() {
             Some(OffsetsExt::V1(offsets)) => self.vad_root_v1(offsets)?,
             Some(OffsetsExt::V2(offsets)) => self.vad_root_v2(offsets)?,
             None => panic!("OffsetsExt not set"),
@@ -297,8 +287,7 @@ where
     }
 
     fn vad_root_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
         let MM_AVL_TABLE = &offsets_ext._MM_AVL_TABLE;
 
         // The `_MM_AVL_TABLE::BalancedRoot` field is of `_MMADDRESS_NODE` type,
@@ -309,8 +298,7 @@ where
     }
 
     fn vad_root_v2(&self, offsets_ext: &v2::Offsets) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
         let RTL_AVL_TREE = &offsets_ext._RTL_AVL_TREE;
 
         // The `RTL_AVL_TREE::Root` field is of pointer type (`_RTL_BALANCED_NODE*`),
@@ -332,7 +320,7 @@ where
     /// Corresponds to `_EPROCESS.VadRoot->NodeHint` for Windows 7 and
     /// `_EPROCESS.VadRoot->Hint` for Windows 8.1 and later.
     pub fn vad_hint(&self) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
-        let node = match &self.offsets().ext() {
+        let node = match &self.vmi.underlying_os().offsets.ext() {
             Some(OffsetsExt::V1(offsets)) => self.vad_hint_v1(offsets)?,
             Some(OffsetsExt::V2(offsets)) => self.vad_hint_v2(offsets)?,
             None => panic!("OffsetsExt not set"),
@@ -346,8 +334,7 @@ where
     }
 
     fn vad_hint_v1(&self, offsets_ext: &v1::Offsets) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
         let MM_AVL_TABLE = &offsets_ext._MM_AVL_TABLE;
 
         self.vmi
@@ -355,8 +342,7 @@ where
     }
 
     fn vad_hint_v2(&self, _offsets_ext: &v2::Offsets) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let VadHint = EPROCESS
             .VadHint
@@ -379,8 +365,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.UniqueProcessId`.
     fn id(&self) -> Result<ProcessId, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let result = self
             .vmi
@@ -400,8 +385,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.ImageFileName`.
     fn name(&self) -> Result<String, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         self.vmi
             .read_string(self.va + EPROCESS.ImageFileName.offset())
@@ -413,8 +397,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.InheritedFromUniqueProcessId`.
     fn parent_id(&self) -> Result<ProcessId, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let result = self
             .vmi
@@ -431,8 +414,7 @@ where
     /// process is a 32-bit process. If the field is `NULL`, the process is 64-bit.
     /// Otherwise, the process is 32-bit.
     fn architecture(&self) -> Result<VmiOsImageArchitecture, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         let wow64process = self
             .vmi
@@ -452,8 +434,7 @@ where
     ///
     /// Corresponds to `_KPROCESS.DirectoryTableBase`.
     fn translation_root(&self) -> Result<Pa, VmiError> {
-        let offsets = self.offsets();
-        let KPROCESS = &offsets._KPROCESS;
+        let KPROCESS = offset!(self.vmi, _KPROCESS);
 
         // let current_process = self.vmi.os().current_process()?.object()?;
         //
@@ -478,8 +459,7 @@ where
     ///
     /// Corresponds to `_KPROCESS.UserDirectoryTableBase`.
     fn user_translation_root(&self) -> Result<Pa, VmiError> {
-        let offsets = self.offsets();
-        let KPROCESS = &offsets._KPROCESS;
+        let KPROCESS = offset!(self.vmi, _KPROCESS);
         let UserDirectoryTableBase = match &KPROCESS.UserDirectoryTableBase {
             Some(UserDirectoryTableBase) => UserDirectoryTableBase,
             None => return self.translation_root(),
@@ -503,8 +483,7 @@ where
     ///
     /// Corresponds to `_EPROCESS.SectionBaseAddress`.
     fn image_base(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
 
         self.vmi
             .read_va_native(self.va + EPROCESS.SectionBaseAddress.offset())
@@ -588,9 +567,8 @@ where
         + use<'a, Driver>,
         VmiError,
     > {
-        let offsets = self.offsets();
-        let EPROCESS = &offsets._EPROCESS;
-        let ETHREAD = &offsets._ETHREAD;
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
+        let ETHREAD = offset!(self.vmi, _ETHREAD);
 
         let vmi = self.vmi;
         Ok(ListEntryIterator::new(

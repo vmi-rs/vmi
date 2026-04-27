@@ -321,13 +321,34 @@ macro_rules! offset {
 
 pub(crate) use offset;
 
+macro_rules! offset_ext_v1 {
+    ($vmi:expr, $field:ident) => {
+        match $vmi.underlying_os().offsets.ext() {
+            Some($crate::offsets::OffsetsExt::V1(offsets)) => &offsets.$field,
+            _ => unreachable!(),
+        }
+    };
+}
+
+pub(crate) use offset_ext_v1;
+
+macro_rules! offset_ext_v2 {
+    ($vmi:expr, $field:ident) => {
+        match $vmi.underlying_os().offsets.ext() {
+            Some($crate::offsets::OffsetsExt::V2(offsets)) => &offsets.$field,
+            _ => unreachable!(),
+        }
+    };
+}
+
+pub(crate) use offset_ext_v2;
+
 macro_rules! symbol {
     ($vmi:expr, $field:ident) => {
         $vmi.underlying_os().symbols.$field
     };
 }
 
-#[expect(unused)]
 pub(crate) use symbol;
 
 macro_rules! this {

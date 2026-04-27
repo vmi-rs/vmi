@@ -1,7 +1,7 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsObject, macros::impl_offsets};
-use crate::{ArchAdapter, WindowsOs};
+use super::WindowsObject;
+use crate::{ArchAdapter, WindowsOs, offset};
 
 /// A Windows trap frame.
 ///
@@ -49,8 +49,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows trap frame.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -62,8 +60,7 @@ where
     ///
     /// Corresponds to `_KTRAP_FRAME.Rip`.
     pub fn instruction_pointer(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let KTRAP_FRAME = &offsets._KTRAP_FRAME;
+        let KTRAP_FRAME = offset!(self.vmi, _KTRAP_FRAME);
 
         self.vmi.read_va_native(self.va + KTRAP_FRAME.Rip.offset())
     }
@@ -74,8 +71,7 @@ where
     ///
     /// Corresponds to `_KTRAP_FRAME.Rsp`.
     pub fn stack_pointer(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let KTRAP_FRAME = &offsets._KTRAP_FRAME;
+        let KTRAP_FRAME = offset!(self.vmi, _KTRAP_FRAME);
 
         self.vmi.read_va_native(self.va + KTRAP_FRAME.Rsp.offset())
     }

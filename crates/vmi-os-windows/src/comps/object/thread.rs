@@ -5,9 +5,7 @@ use vmi_core::{
 };
 
 use super::{
-    super::{
-        WindowsProcessorMode, WindowsTeb, WindowsTrapFrame, WindowsWow64Kind, macros::impl_offsets,
-    },
+    super::{WindowsProcessorMode, WindowsTeb, WindowsTrapFrame, WindowsWow64Kind},
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess, WindowsToken,
 };
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
@@ -271,8 +269,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
     /// Creates a new Windows thread.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, thread: ThreadObject) -> Self {
         Self { vmi, va: thread.0 }
@@ -284,8 +280,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.Process`.
     pub fn process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let process = self
             .vmi
@@ -300,8 +295,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.ApcStateIndex != 0`.
     pub fn is_attached(&self) -> Result<bool, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let apc_state_index = self.vmi.read_u8(self.va + KTHREAD.ApcStateIndex.offset())?;
 
@@ -314,9 +308,8 @@ where
     ///
     /// Corresponds to `_KTHREAD.ApcState.Process`.
     pub fn current_process(&self) -> Result<WindowsProcess<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
-        let KAPC_STATE = &offsets._KAPC_STATE;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+        let KAPC_STATE = offset!(self.vmi, _KAPC_STATE);
 
         let process = self
             .vmi
@@ -331,9 +324,8 @@ where
     ///
     /// Corresponds to `_KTHREAD.SavedApcState.Process`.
     pub fn saved_process(&self) -> Result<Option<WindowsProcess<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
-        let KAPC_STATE = &offsets._KAPC_STATE;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+        let KAPC_STATE = offset!(self.vmi, _KAPC_STATE);
 
         let process = self.vmi.read_va_native(
             self.va + KTHREAD.SavedApcState.offset() + KAPC_STATE.Process.offset(),
@@ -388,8 +380,7 @@ where
     /// [`Ready`]: WindowsThreadState::Ready
     /// [`Standby`]: WindowsThreadState::Standby
     pub fn next_processor(&self) -> Result<VcpuId, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let next_processor = self
             .vmi
@@ -422,8 +413,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.Alertable`.
     pub fn alertable(&self) -> Result<bool, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let alertable = self.vmi.read_field(self.va, &KTHREAD.Alertable)?;
 
@@ -440,8 +430,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.WaitMode`.
     pub fn wait_mode(&self) -> Result<WindowsProcessorMode, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let value = self.vmi.read_u8(self.va + KTHREAD.WaitMode.offset())?;
         Ok(WindowsProcessorMode::from(value))
@@ -457,8 +446,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.WaitReason`.
     pub fn wait_reason(&self) -> Result<WindowsThreadWaitReason, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let value = self.vmi.read_u8(self.va + KTHREAD.WaitReason.offset())?;
         Ok(WindowsThreadWaitReason::from(value))
@@ -471,8 +459,7 @@ where
     /// Corresponds to `_KTHREAD.Teb` for the native TEB, and
     /// `Teb64 + ROUND_TO_PAGES(sizeof(TEB))` for the WoW64 TEB.
     pub fn teb(&self) -> Result<Option<WindowsTeb<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let TEB = &offsets._TEB;
+        let TEB = offset!(self.vmi, _TEB);
 
         let teb = match self.native_teb()? {
             Some(teb) => teb,
@@ -504,8 +491,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.Teb`.
     pub fn native_teb(&self) -> Result<Option<WindowsTeb<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let va = self.vmi.read_va_native(self.va + KTHREAD.Teb.offset())?;
 
@@ -536,8 +522,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.TrapFrame`.
     pub fn trap_frame(&self) -> Result<Option<WindowsTrapFrame<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let va = self
             .vmi
@@ -556,8 +541,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.State`.
     pub fn state(&self) -> Result<WindowsThreadState, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         let value = self.vmi.read_u8(self.va + KTHREAD.State.offset())?;
         Ok(WindowsThreadState::from(value))
@@ -572,8 +556,7 @@ where
     ///
     /// Corresponds to `_KTHREAD.KernelStack`.
     pub fn kernel_stack(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let KTHREAD = &offsets._KTHREAD;
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
 
         self.vmi
             .read_va_native(self.va + KTHREAD.KernelStack.offset())
@@ -593,9 +576,8 @@ where
     ///
     /// Corresponds to `_ETHREAD.Cid.UniqueThread`.
     fn id(&self) -> Result<ThreadId, VmiError> {
-        let offsets = self.offsets();
-        let ETHREAD = &offsets._ETHREAD;
-        let CLIENT_ID = &offsets._CLIENT_ID;
+        let ETHREAD = offset!(self.vmi, _ETHREAD);
+        let CLIENT_ID = offset!(self.vmi, _CLIENT_ID);
 
         let result = self
             .vmi

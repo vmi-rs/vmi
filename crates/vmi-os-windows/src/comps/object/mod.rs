@@ -26,11 +26,8 @@ pub use self::{
         WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
     },
 };
-use super::{
-    WindowsObjectHeaderNameInfo,
-    macros::{impl_offsets, impl_symbols},
-};
-use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter};
+use super::WindowsObjectHeaderNameInfo;
+use crate::{WindowsOs, WindowsOsExt, arch::ArchAdapter, offset, symbol};
 
 /// Trait for types that can be converted from a [`WindowsObject`].
 pub trait FromWindowsObject<'a, Driver>: Sized
@@ -105,9 +102,6 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_symbols!();
-    impl_offsets!();
-
     /// Creates a new Windows object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
@@ -119,18 +113,15 @@ where
     ///
     /// `_OBJECT_HEADER` is always at the beginning of the object.
     pub fn header(&self) -> Va {
-        let offsets = self.offsets();
-        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+        let OBJECT_HEADER = offset!(self.vmi, _OBJECT_HEADER);
 
         self.va - OBJECT_HEADER.Body.offset()
     }
 
     /// Returns the name information of the object.
     pub fn name_info(&self) -> Result<Option<WindowsObjectHeaderNameInfo<'a, Driver>>, VmiError> {
-        let symbols = self.symbols();
-        let offsets = self.offsets();
-        let ObpInfoMaskToOffset = symbols.ObpInfoMaskToOffset;
-        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+        let ObpInfoMaskToOffset = symbol!(self.vmi, ObpInfoMaskToOffset);
+        let OBJECT_HEADER = offset!(self.vmi, _OBJECT_HEADER);
 
         let info_mask = self
             .vmi
@@ -223,10 +214,8 @@ where
     /// by the object header cookie, ensuring accurate type identification even
     /// on systems with this security feature enabled.
     pub fn object_type(&self) -> Result<WindowsObjectType<'a, Driver>, VmiError> {
-        let symbols = self.symbols();
-        let offsets = self.offsets();
-        let ObTypeIndexTable = symbols.ObTypeIndexTable;
-        let OBJECT_HEADER = &offsets._OBJECT_HEADER;
+        let ObTypeIndexTable = symbol!(self.vmi, ObTypeIndexTable);
+        let OBJECT_HEADER = offset!(self.vmi, _OBJECT_HEADER);
 
         let object_header = self.va - OBJECT_HEADER.Body.offset();
         let type_index = self

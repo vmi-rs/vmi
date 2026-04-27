@@ -5,7 +5,6 @@ pub(crate) mod hive;
 mod image;
 mod kprcb;
 mod luid;
-pub(crate) mod macros;
 mod module;
 mod name_info;
 mod object;
