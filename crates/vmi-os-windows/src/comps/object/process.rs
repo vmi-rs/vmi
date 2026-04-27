@@ -115,7 +115,7 @@ where
             return self.native_peb();
         }
 
-        let va = match &self.vmi.underlying_os().offsets.ext {
+        let va = match &self.vmi.underlying_os().offsets.ext() {
             Some(OffsetsExt::V1(_)) => wow64,
             Some(OffsetsExt::V2(v2)) => self
                 .vmi
