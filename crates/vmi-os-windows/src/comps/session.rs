@@ -35,8 +35,8 @@ impl Field {
 
 #[expect(non_camel_case_types)]
 struct _MM_SESSION_SPACE {
-    SessionId: Field,
-    ProcessList: Field,
+    SessionId: Field,   // ULONG
+    ProcessList: Field, // _LIST_ENTRY
 }
 
 const MM_SESSION_SPACE: _MM_SESSION_SPACE = _MM_SESSION_SPACE {
