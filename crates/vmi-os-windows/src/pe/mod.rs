@@ -1,37 +1,35 @@
-//! Portable Executable (PE) module.
+//! Portable Executable (PE) parsing.
 //!
-//! This module provides high-level abstractions for parsing and analyzing
-//! **Portable Executable (PE)** files, which are the standard executable
-//! format for Windows operating systems.
+//! Parses PE/COFF binaries from VMI memory or file buffers, exposing the
+//! DOS and NT headers, the data directory array, and the standard export,
+//! debug, and exception directory layouts.
 
 mod error;
 mod file;
+mod headers;
 
-pub use isr_dl_windows::CodeView; // re-export the CodeView struct from the isr-dl-windows crate
-pub use object::pe::{ImageDataDirectory, ImageDebugDirectory, ImageRuntimeFunctionEntry};
-use object::{
-    endian::LittleEndian as LE,
-    pe::{
-        IMAGE_DEBUG_TYPE_CODEVIEW, IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC,
-        IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
-        ImageDosHeader as OImageDosHeader, ImageFileHeader as OImageFileHeader,
-        ImageNtHeaders32 as OImageNtHeaders32, ImageNtHeaders64 as OImageNtHeaders64,
-        ImageOptionalHeader32 as OImageOptionalHeader32,
-        ImageOptionalHeader64 as OImageOptionalHeader64,
-    },
-    read::{
-        ReadRef as _,
-        pe::{
-            Export, ExportTable, ImageNtHeaders as OImageNtHeaders, ImageOptionalHeader as _,
-            optional_header_magic,
-        },
-    },
-    slice_from_all_bytes,
-};
+pub use isr_dl_windows::CodeView; // Intentional re-export.
 use vmi_core::VmiError;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-pub use self::{error::PeError, file::PeFile};
+pub use self::{
+    error::PeError,
+    file::PeFile,
+    headers::{
+        Export, ExportTable, ExportTarget, IMAGE_DEBUG_TYPE_CODEVIEW,
+        IMAGE_DIRECTORY_ENTRY_ARCHITECTURE, IMAGE_DIRECTORY_ENTRY_BASERELOC,
+        IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR,
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        IMAGE_DIRECTORY_ENTRY_GLOBALPTR, IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, IMAGE_DIRECTORY_ENTRY_RESOURCE,
+        IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DOS_SIGNATURE,
+        IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE,
+        IMAGE_NUMBEROF_DIRECTORY_ENTRIES, ImageDataDirectory, ImageDebugDirectory, ImageDosHeader,
+        ImageFileHeader, ImageNtHeaders, ImageOptionalHeader, ImageOptionalHeader32,
+        ImageOptionalHeader64, ImageRuntimeFunctionEntry, ImageSectionHeader,
+    },
+};
 
 /// Trait for reading PE image data.
 ///
@@ -85,375 +83,20 @@ where
     fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError>;
 }
 
-macro_rules! impl_image_methods {
-    (
-        $(
-            $( #[$meta:meta] )*
-            $name:ident: $ty:ty
-        ),+ $(,)?
-    ) => {
-        $(
-            $( #[$meta] )*
-            pub fn $name(&self) -> $ty {
-                self.0.$name.get(LE)
-            }
-        )*
-    }
-}
-
-/// Portable Executable (PE) DOS Header.
+/// PE export directory accessor.
 ///
-/// Represents the **DOS Header** in a **PE file**, which is the initial structure
-/// at the beginning of the file. It contains legacy information from the MS-DOS
-/// executable format and a pointer to the NT headers.
-pub struct ImageDosHeader(OImageDosHeader);
-
-impl ImageDosHeader {
-    /// Parses the DOS header.
-    pub fn parse(data: &[u8], offset: &mut u64) -> Result<ImageDosHeader, PeError> {
-        let dos_header = data
-            .read_at::<OImageDosHeader>(0)
-            .map_err(|_| PeError::InvalidDosHeader)?;
-
-        if dos_header.e_magic.get(LE) != IMAGE_DOS_SIGNATURE {
-            return Err(PeError::InvalidDosMagic);
-        }
-
-        *offset = dos_header.nt_headers_offset() as u64;
-
-        Ok(ImageDosHeader(*dos_header))
-    }
-
-    /// Return the file offset of the nt_headers.
-    pub fn nt_headers_offset(&self) -> u32 {
-        self.e_lfanew()
-    }
-
-    impl_image_methods!(
-        /// Magic number.
-        e_magic: u16,
-
-        /// Bytes on last page of file.
-        e_cblp: u16,
-
-        /// Pages in file.
-        e_cp: u16,
-
-        /// Relocations.
-        e_crlc: u16,
-
-        /// Size of header in paragraphs.
-        e_cparhdr: u16,
-
-        /// Minimum extra paragraphs needed.
-        e_minalloc: u16,
-
-        /// Maximum extra paragraphs needed.
-        e_maxalloc: u16,
-
-        /// Initial (relative) SS value.
-        e_ss: u16,
-
-        /// Initial SP value.
-        e_sp: u16,
-
-        /// Checksum.
-        e_csum: u16,
-
-        /// Initial IP value.
-        e_ip: u16,
-
-        /// Initial (relative) CS value.
-        e_cs: u16,
-
-        /// File address of relocation table.
-        e_lfarlc: u16,
-
-        /// Overlay number.
-        e_ovno: u16,
-
-        /// OEM identifier (for e_oeminfo).
-        e_oemid: u16,
-
-        /// OEM information; e_oemid specific.
-        e_oeminfo: u16,
-
-        /// File address of new exe header.
-        e_lfanew: u32,
-    );
-}
-
-/// Portable Executable (PE) NT Headers.
+/// # Implementation Details
 ///
-/// Represents the **NT Headers** in a **PE file**, which contain crucial
-/// metadata for Windows executables and DLLs.
-pub struct ImageNtHeaders {
-    /// The PE signature.
-    signature: u32,
-
-    /// The file header.
-    file_header: ImageFileHeader,
-
-    /// The optional header.
-    optional_header: ImageOptionalHeader,
-}
-
-impl ImageNtHeaders {
-    /// Parses the NT headers.
-    pub fn parse(data: &[u8], offset: &mut u64) -> Result<Self, PeError> {
-        let magic = optional_header_magic(data).map_err(|_| PeError::InvalidPeMagic)?;
-
-        match magic {
-            IMAGE_NT_OPTIONAL_HDR32_MAGIC => {
-                ImageNtHeaders::parse_inner::<OImageNtHeaders32>(data, offset)
-            }
-            IMAGE_NT_OPTIONAL_HDR64_MAGIC => {
-                ImageNtHeaders::parse_inner::<OImageNtHeaders64>(data, offset)
-            }
-            _ => Err(PeError::InvalidPeMagic),
-        }
-    }
-
-    fn parse_inner<Pe>(data: &[u8], offset: &mut u64) -> Result<Self, PeError>
-    where
-        Self: From<Pe>,
-        Pe: OImageNtHeaders,
-    {
-        let nt_headers = data
-            .read::<Pe>(offset)
-            .map_err(|_| PeError::InvalidNtHeaders)?;
-
-        if nt_headers.signature() != IMAGE_NT_SIGNATURE {
-            return Err(PeError::InvalidPeMagic);
-        }
-
-        if !nt_headers.is_valid_optional_magic() {
-            return Err(PeError::InvalidOptionalHeaderMagic);
-        }
-
-        Ok(Self::from(*nt_headers))
-    }
-
-    /// Returns the PE signature.
-    pub fn signature(&self) -> u32 {
-        self.signature
-    }
-
-    /// Return the file header.
-    pub fn file_header(&self) -> &ImageFileHeader {
-        &self.file_header
-    }
-
-    /// Return the optional header.
-    pub fn optional_header(&self) -> &ImageOptionalHeader {
-        &self.optional_header
-    }
-}
-
-impl From<OImageNtHeaders32> for ImageNtHeaders {
-    fn from(value: OImageNtHeaders32) -> Self {
-        Self {
-            signature: value.signature.get(LE),
-            file_header: ImageFileHeader(value.file_header),
-            optional_header: ImageOptionalHeader::ImageOptionalHeader32(value.optional_header),
-        }
-    }
-}
-
-impl From<OImageNtHeaders64> for ImageNtHeaders {
-    fn from(value: OImageNtHeaders64) -> Self {
-        Self {
-            signature: value.signature.get(LE),
-            file_header: ImageFileHeader(value.file_header),
-            optional_header: ImageOptionalHeader::ImageOptionalHeader64(value.optional_header),
-        }
-    }
-}
-
-/// Portable Executable (PE) File Header.
-///
-/// Represents the **File Header** in a **PE file**, containing metadata about
-/// the target architecture, number of sections, timestamps, and characteristics.
-pub struct ImageFileHeader(OImageFileHeader);
-
-impl ImageFileHeader {
-    impl_image_methods!(
-        /// Returns the target machine architecture.
-        machine: u16,
-
-        /// Returns the number of sections in the PE file.
-        number_of_sections: u16,
-
-        /// Returns the timestamp of when the PE file was created.
-        time_date_stamp: u32,
-
-        /// Returns the file offset of the symbol table (deprecated).
-        pointer_to_symbol_table: u32,
-
-        /// Returns the number of symbols in the symbol table (deprecated).
-        number_of_symbols: u32,
-
-        /// Returns the size of the optional header.
-        size_of_optional_header: u16,
-
-        /// Returns the characteristics flags of the PE file.
-        characteristics: u16,
-    );
-}
-
-/// Portable Executable (PE) Optional Header.
-///
-/// Represents the **Optional Header** in a **PE file**, supporting both
-/// **32-bit (PE32)** and **64-bit (PE32+)** formats. It contains essential
-/// metadata for loading, memory layout, and execution.
-pub enum ImageOptionalHeader {
-    /// 32-bit (PE32) optional header.
-    ImageOptionalHeader32(OImageOptionalHeader32),
-
-    /// 64-bit (PE32+) optional header.
-    ImageOptionalHeader64(OImageOptionalHeader64),
-}
-
-macro_rules! impl_image_optional_header_methods {
-    (
-        $(
-            $( #[$meta:meta] )*
-            $name:ident: $ty:ty
-        ),+ $(,)?
-    ) => {
-        $(
-            $( #[$meta] )*
-            pub fn $name(&self) -> $ty {
-                match self {
-                    Self::ImageOptionalHeader32(hdr32) => hdr32.$name(),
-                    Self::ImageOptionalHeader64(hdr64) => hdr64.$name(),
-                }
-            }
-        )*
-    }
-}
-
-impl ImageOptionalHeader {
-    /// Returns the size of the optional header.
-    pub fn size(&self) -> usize {
-        match self {
-            Self::ImageOptionalHeader32(_) => size_of::<OImageOptionalHeader32>(),
-            Self::ImageOptionalHeader64(_) => size_of::<OImageOptionalHeader64>(),
-        }
-    }
-
-    impl_image_optional_header_methods!(
-        /// Returns the PE format identifier (PE32 or PE32+).
-        magic: u16,
-
-        /// Returns the major linker version.
-        major_linker_version: u8,
-
-        /// Returns the minor linker version.
-        minor_linker_version: u8,
-
-        /// Returns the size of the executable code section.
-        size_of_code: u32,
-
-        /// Returns the size of initialized data (data section).
-        size_of_initialized_data: u32,
-
-        /// Returns the size of uninitialized data (bss section).
-        size_of_uninitialized_data: u32,
-
-        /// Returns the relative virtual address (RVA) of the entry point.
-        ///
-        /// When the image is loaded, this is the actual memory address.
-        address_of_entry_point: u32,
-
-        /// Returns the RVA of the start of the code section.
-        base_of_code: u32,
-
-        /// Returns the RVA of the start of the data section (PE32 only).
-        base_of_data: Option<u32>,
-
-        /// Returns the preferred load address in memory.
-        ///
-        /// The actual base address may change due to ASLR or conflicts.
-        image_base: u64,
-
-        /// Returns the section alignment in memory.
-        /// This may change when the image is loaded by the OS.
-        section_alignment: u32,
-
-        /// Returns the section alignment on disk.
-        file_alignment: u32,
-
-        /// Returns the major operating system version required.
-        major_operating_system_version: u16,
-
-        /// Returns the minor operating system version required.
-        minor_operating_system_version: u16,
-
-        /// Returns the major image version.
-        major_image_version: u16,
-
-        /// Returns the minor image version.
-        minor_image_version: u16,
-
-        /// Returns the major subsystem version.
-        major_subsystem_version: u16,
-
-        /// Returns the minor subsystem version.
-        minor_subsystem_version: u16,
-
-        /// Returns the reserved Windows version value (should be zero).
-        win32_version_value: u32,
-
-        /// Returns the total size of the image in memory, including headers.
-        size_of_image: u32,
-
-        /// Returns the size of all headers (DOS header, PE header, section table).
-        size_of_headers: u32,
-
-        /// Returns the checksum of the image.
-        check_sum: u32,
-
-        /// Returns the subsystem type (e.g., GUI, console, driver).
-        subsystem: u16,
-
-        /// Returns the DLL characteristics (e.g., ASLR, DEP, CFG).
-        dll_characteristics: u16,
-
-        /// Returns the reserved stack size.
-        size_of_stack_reserve: u64,
-
-        /// Returns the committed stack size.
-        size_of_stack_commit: u64,
-
-        /// Returns the reserved heap size.
-        size_of_heap_reserve: u64,
-
-        /// Returns the committed heap size.
-        size_of_heap_commit: u64,
-
-        /// Returns the reserved loader flags (should be zero).
-        loader_flags: u32,
-
-        /// Returns the number of data directories in the optional header.
-        number_of_rva_and_sizes: u32,
-    );
-}
-
-/// Portable Executable (PE) Export Directory.
-///
-/// Represents the **Export Directory** in a **PE file**, which contains
-/// metadata about exported functions, symbols, and addresses. This structure
-/// abstracts the export table, storing raw data and directory information.
+/// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]`.
 pub struct PeExportDirectory<'a, Image: PeImage> {
-    /// The PE image containing the export directory.
+    /// Owning image.
     #[expect(unused)]
     image: &'a Image,
 
-    /// The export directory entry.
+    /// Directory entry that located the export table.
     entry: ImageDataDirectory,
 
-    /// The export directory data.
+    /// Raw bytes read at the directory's RVA.
     data: Vec<u8>,
 }
 
@@ -465,7 +108,7 @@ impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
 
     /// Returns the list of exported symbols.
     pub fn exports(&self) -> Result<Vec<Export<'_>>, PeError> {
-        let export_table = ExportTable::parse(&self.data, self.entry.virtual_address.get(LE))
+        let export_table = ExportTable::parse(&self.data, self.entry.virtual_address)
             .map_err(|_| PeError::InvalidExportTable)?;
 
         export_table
@@ -474,16 +117,19 @@ impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
     }
 }
 
-/// Portable Executable (PE) Exception Directory.
+/// PE exception directory accessor (.pdata section).
 ///
-/// Represents the **Exception Directory** (.pdata section) in a **PE file**,
-/// which contains `RUNTIME_FUNCTION` entries for stack unwinding on x64.
+/// Holds the `RUNTIME_FUNCTION` table used for x64 stack unwinding.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION]`.
 pub struct PeExceptionDirectory<'a, Image: PeImage> {
-    /// The PE image containing the exception directory.
+    /// Owning image.
     #[expect(unused)]
     image: &'a Image,
 
-    /// The exception directory data.
+    /// Raw bytes read at the directory's RVA.
     data: Vec<u8>,
 }
 
@@ -493,28 +139,30 @@ impl<'a, Image: PeImage> PeExceptionDirectory<'a, Image> {
         Self { image, data }
     }
 
-    /// Returns the RUNTIME_FUNCTION entries as a slice.
+    /// Returns the `RUNTIME_FUNCTION` entries as a slice.
     pub fn runtime_functions(&self) -> Option<&[ImageRuntimeFunctionEntry]> {
-        slice_from_all_bytes::<ImageRuntimeFunctionEntry>(&self.data).ok()
+        <[ImageRuntimeFunctionEntry]>::ref_from_bytes(&self.data).ok()
     }
 
-    /// Finds the RUNTIME_FUNCTION entry containing the given RVA.
+    /// Finds the `RUNTIME_FUNCTION` entry containing the given RVA.
     ///
     /// Uses binary search over the sorted entries.
     pub fn find(&self, rva: u32) -> Option<&ImageRuntimeFunctionEntry> {
         let entries = self.runtime_functions()?;
         let index = entries
             .binary_search_by(|entry| {
-                let begin = entry.begin_address.get(LE);
-                let end = entry.end_address.get(LE);
+                use std::cmp::Ordering;
+
+                let begin = entry.begin_address;
+                let end = entry.end_address;
                 if rva < begin {
-                    std::cmp::Ordering::Greater
+                    Ordering::Greater
                 }
                 else if rva >= end {
-                    std::cmp::Ordering::Less
+                    Ordering::Less
                 }
                 else {
-                    std::cmp::Ordering::Equal
+                    Ordering::Equal
                 }
             })
             .ok()?;
@@ -523,15 +171,16 @@ impl<'a, Image: PeImage> PeExceptionDirectory<'a, Image> {
     }
 }
 
-/// Portable Executable (PE) Debug Directory.
+/// PE debug directory accessor.
 ///
-/// Represents the **Debug Directory** in a **PE file**, which contains
-/// debugging information such as symbols, timestamps, and PDB references.
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG]`.
 pub struct PeDebugDirectory<'a, Image: PeImage> {
-    /// The PE image containing the debug directory.
+    /// Owning image.
     image: &'a Image,
 
-    /// The debug directory data.
+    /// Raw bytes read at the directory's RVA.
     data: Vec<u8>,
 }
 
@@ -543,18 +192,16 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
 
     /// Returns the list of debug directories.
     pub fn debug_directories(&self) -> Option<&[ImageDebugDirectory]> {
-        slice_from_all_bytes::<ImageDebugDirectory>(&self.data).ok()
+        <[ImageDebugDirectory]>::ref_from_bytes(&self.data).ok()
     }
 
     /// Finds a debug directory by type.
     ///
     /// A debug directory type is represented by `IMAGE_DEBUG_TYPE_*` constants.
     pub fn find_debug_directory(&self, typ: u32) -> Option<&ImageDebugDirectory> {
-        self.debug_directories()?.iter().find(|dir| {
-            dir.typ.get(LE) == typ
-                && dir.address_of_raw_data.get(LE) != 0
-                && dir.size_of_data.get(LE) != 0
-        })
+        self.debug_directories()?
+            .iter()
+            .find(|dir| dir.typ == typ && dir.address_of_raw_data != 0 && dir.size_of_data != 0)
     }
 
     /// Returns the CodeView debug information.
@@ -578,7 +225,7 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
             None => return Ok(None),
         };
 
-        if directory.size_of_data.get(LE) < size_of::<CvInfoPdb70>() as u32 {
+        if directory.size_of_data < size_of::<CvInfoPdb70>() as u32 {
             tracing::warn!("Invalid CodeView Info size");
             return Ok(None);
         }
@@ -587,8 +234,8 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
         // Read the CodeView debug info.
         //
 
-        let rva = directory.address_of_raw_data.get(LE);
-        let info_size = directory.size_of_data.get(LE) as usize;
+        let rva = directory.address_of_raw_data;
+        let info_size = directory.size_of_data as usize;
 
         let mut info_data = vec![0u8; info_size];
         self.image.read_at_rva(rva, &mut info_data)?;
@@ -648,12 +295,10 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
     }
 }
 
-/// Portable Executable (PE) Representation (32-bit & 64-bit).
+/// Parsed PE/COFF header.
 ///
-/// A high-level representation of a **PE file**, supporting both
-/// **32-bit (PE32) and 64-bit (PE32+)** formats. It encapsulates
-/// the **DOS header, NT headers, and data directories**, providing
-/// essential metadata for parsing and analyzing PE binaries.
+/// Same shape for PE32 and PE32+, with the bitness recoverable from
+/// [`ImageOptionalHeader::magic`].
 pub struct PeHeader {
     /// The DOS header.
     dos_header: ImageDosHeader,
@@ -664,12 +309,13 @@ pub struct PeHeader {
     /// The data directories.
     data_directories: [ImageDataDirectory; IMAGE_NUMBEROF_DIRECTORY_ENTRIES],
 
-    /// The file offset of the section table.
+    /// The file offset where the section table begins.
     section_table_offset: u64,
 }
 
 impl PeHeader {
-    /// Creates a `PeHeader` instance by parsing raw PE data.
+    /// Parses the DOS header, NT headers, and data directory array from
+    /// raw PE bytes.
     pub fn parse(data: &[u8]) -> Result<Self, PeError> {
         let mut offset = 0;
         let dos_header = ImageDosHeader::parse(data, &mut offset)?;
@@ -677,20 +323,23 @@ impl PeHeader {
 
         // Read the rest of the optional header, and then read
         // the data directories from that.
-        let optional_data_size = u64::from(nt_headers.file_header().size_of_optional_header())
-            .checked_sub(nt_headers.optional_header().size() as u64)
+        let optional_data_size = u64::from(nt_headers.file_header.size_of_optional_header)
+            .checked_sub(nt_headers.optional_header.size() as u64)
             .ok_or(PeError::OptionalHeaderTooSmall)?;
 
         let optional_data = data
-            .read_bytes(&mut offset, optional_data_size)
-            .map_err(|_| PeError::InvalidOptionalHeaderSize)?;
+            .get(offset as usize..)
+            .ok_or(PeError::InvalidOptionalHeaderSize)?
+            .get(..optional_data_size as usize)
+            .ok_or(PeError::InvalidOptionalHeaderSize)?;
 
-        let data_directories = optional_data
-            .read_slice_at(
-                0,
-                nt_headers.optional_header().number_of_rva_and_sizes() as usize,
-            )
-            .map_err(|_| PeError::InvalidDataDirectoryCount)?;
+        offset += optional_data_size;
+
+        let (data_directories, _) = <[ImageDataDirectory]>::ref_from_prefix_with_elems(
+            optional_data,
+            nt_headers.optional_header.number_of_rva_and_sizes() as usize,
+        )
+        .map_err(|_| PeError::InvalidDataDirectoryCount)?;
 
         Ok(Self {
             dos_header,
@@ -700,8 +349,8 @@ impl PeHeader {
                     .get(i)
                     .copied()
                     .unwrap_or(ImageDataDirectory {
-                        virtual_address: Default::default(),
-                        size: Default::default(),
+                        virtual_address: 0,
+                        size: 0,
                     })
             }),
             section_table_offset: offset,

@@ -294,12 +294,12 @@ where
         None => return Ok(None),
     };
 
-    let optional_header = image.nt_headers()?.optional_header();
+    let nt_headers = image.nt_headers()?;
 
     Ok(Some(WindowsKernelInformation {
         base_address: image.base_address(),
-        version_major: optional_header.major_operating_system_version(),
-        version_minor: optional_header.minor_operating_system_version(),
+        version_major: nt_headers.optional_header.major_operating_system_version(),
+        version_minor: nt_headers.optional_header.minor_operating_system_version(),
         codeview,
     }))
 }

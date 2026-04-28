@@ -1,18 +1,15 @@
 //! File-backed PE image implementation.
 
-use object::{
-    endian::LittleEndian as LE,
-    pe::{
-        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        ImageDataDirectory, ImageSectionHeader,
-    },
-    read::ReadRef as _,
-};
 use vmi_core::VmiError;
+use zerocopy::FromBytes as _;
 
 use super::{
-    ImageDosHeader, ImageNtHeaders, PeDebugDirectory, PeError, PeExceptionDirectory,
-    PeExportDirectory, PeHeader, PeImage,
+    PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage,
+    error::PeError,
+    headers::{
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        ImageDataDirectory, ImageDosHeader, ImageNtHeaders, ImageSectionHeader,
+    },
 };
 use crate::WindowsError;
 
@@ -29,13 +26,18 @@ impl<'data> PeFile<'data> {
     /// Creates a new `PeFile` from raw PE data.
     pub fn new(data: &'data [u8]) -> Result<Self, PeError> {
         let pe_header = PeHeader::parse(data)?;
+        let nt_headers = pe_header.nt_headers();
 
         let section_table_offset = pe_header.section_table_offset();
-        let number_of_sections = pe_header.nt_headers().file_header().number_of_sections() as usize;
+        let number_of_sections = nt_headers.file_header.number_of_sections as usize;
 
-        let sections = data
-            .read_slice_at(section_table_offset, number_of_sections)
-            .map_err(|_| PeError::InvalidSectionTable)?;
+        let sections_data = data
+            .get(section_table_offset as usize..)
+            .ok_or(PeError::InvalidSectionTable)?;
+
+        let (sections, _) =
+            <[ImageSectionHeader]>::ref_from_prefix_with_elems(sections_data, number_of_sections)
+                .map_err(|_| PeError::InvalidSectionTable)?;
 
         Ok(Self {
             pe_header,
@@ -51,7 +53,7 @@ impl<'data> PeFile<'data> {
             None => return Ok(None),
         };
 
-        if entry.virtual_address.get(LE) == 0 || entry.size.get(LE) == 0 {
+        if entry.virtual_address == 0 || entry.size == 0 {
             return Ok(None);
         }
 
@@ -60,8 +62,8 @@ impl<'data> PeFile<'data> {
 
     /// Reads the contents of a data directory entry.
     fn read_data_directory(&self, entry: &ImageDataDirectory) -> Result<Vec<u8>, VmiError> {
-        let mut data = vec![0; entry.size.get(LE) as usize];
-        self.read_at_rva(entry.virtual_address.get(LE), &mut data)?;
+        let mut data = vec![0; entry.size as usize];
+        self.read_at_rva(entry.virtual_address, &mut data)?;
         Ok(data)
     }
 }

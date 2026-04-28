@@ -1,11 +1,3 @@
-use object::{
-    endian::LittleEndian as LE,
-    pe::{
-        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        ImageDataDirectory,
-    },
-    read::pe::ExportTarget,
-};
 use once_cell::unsync::OnceCell;
 use vmi_core::{
     Architecture, Va, VmiError, VmiState, VmiVa,
@@ -16,8 +8,10 @@ use vmi_core::{
 use crate::{
     ArchAdapter, WindowsError, WindowsOs,
     pe::{
-        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory,
-        PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage,
+        ExportTarget, IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION,
+        IMAGE_DIRECTORY_ENTRY_EXPORT, ImageDataDirectory, ImageDosHeader, ImageNtHeaders,
+        ImageOptionalHeader, PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader,
+        PeImage,
     },
 };
 
@@ -81,9 +75,9 @@ where
             None => return Ok(None),
         };
 
-        if entry.virtual_address.get(LE) == 0
-            || entry.size.get(LE) == 0
-            || entry.size.get(LE) > Self::MAX_DATA_DIRECTORY_SIZE
+        if entry.virtual_address == 0
+            || entry.size == 0
+            || entry.size > Self::MAX_DATA_DIRECTORY_SIZE
         {
             return Ok(None);
         }
@@ -93,9 +87,9 @@ where
 
     /// Reads the contents of a data directory entry.
     fn read_data_directory(&self, entry: &ImageDataDirectory) -> Result<Vec<u8>, VmiError> {
-        let mut data = vec![0; entry.size.get(LE) as usize];
+        let mut data = vec![0; entry.size as usize];
         self.vmi
-            .read(self.va + entry.virtual_address.get(LE) as u64, &mut data)?;
+            .read(self.va + entry.virtual_address as u64, &mut data)?;
 
         Ok(data)
     }
@@ -172,7 +166,9 @@ where
 
     /// Returns the target architecture for which the image was compiled.
     fn architecture(&self) -> Result<Option<VmiOsImageArchitecture>, VmiError> {
-        match self.pe()?.nt_headers().optional_header() {
+        let nt_headers = self.pe()?.nt_headers();
+
+        match &nt_headers.optional_header {
             ImageOptionalHeader::ImageOptionalHeader32(_) => Ok(Some(VmiOsImageArchitecture::X86)),
             ImageOptionalHeader::ImageOptionalHeader64(_) => {
                 Ok(Some(VmiOsImageArchitecture::Amd64))

@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comparison is ASCII-case-insensitive. Per-bucket read errors are
   skipped instead of aborting the search. For the previous
   single-component behavior, use `WindowsDirectoryObject::child`.
+- **Breaking:** PE header types now live in `crate::pe` as `#[repr(C, packed)]`
+  zerocopy mirrors of `object::pe`'s `IMAGE_*` layouts. `ImageDosHeader`,
+  `ImageNtHeaders`, `ImageFileHeader`, `ImageDataDirectory`,
+  `ImageDebugDirectory`, `ImageRuntimeFunctionEntry`, and
+  `ImageSectionHeader` expose bare scalar fields (`u16`, `u32`, `u64`)
+  instead of `object`'s endian wrappers, so call sites use direct field
+  access in place of `.get(LE)`.
+- **Breaking:** `ImageNtHeaders::file_header()` / `optional_header()`
+  accessors removed - read the `file_header` / `optional_header` fields
+  directly. The macro-generated `ImageFileHeader` accessors
+  (`number_of_sections()`, `time_date_stamp()`, ...) are likewise
+  replaced by public fields.
+- `Export`, `ExportTable`, `ExportTarget`, and the
+  `IMAGE_DIRECTORY_ENTRY_*` / `IMAGE_DEBUG_TYPE_*` / `IMAGE_DOS_SIGNATURE` /
+  `IMAGE_NT_*` constants are re-exported from `crate::pe`, so callers no
+  longer need to depend on `object::pe` directly.
 
 ### Added
 

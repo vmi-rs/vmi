@@ -4,13 +4,15 @@
 //! RUNTIME_FUNCTION entries from the PE exception directory and
 //! processing UNWIND_INFO structures to recover caller register state.
 
-use object::{endian::LittleEndian as LE, from_bytes, pe::ImageRuntimeFunctionEntry};
 use vmi_arch_amd64::Registers;
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 use zerocopy::{FromBytes, IntoBytes};
 
 use super::{Frame, Unwinder, Unwound};
-use crate::{ArchAdapter, WindowsOs, pe::PeImage};
+use crate::{
+    ArchAdapter, WindowsOs,
+    pe::{ImageRuntimeFunctionEntry, PeImage},
+};
 
 // Reference:
 // https://github.com/dotnet/coreclr/blob/a9f3fc16483eecfc47fb79c362811d870be02249/src/unwinder/amd64/unwinder_amd64.cpp
@@ -385,8 +387,8 @@ where
             }
         };
 
-        let begin_address = entry.begin_address.get(LE);
-        let unwind_data_rva = entry.unwind_info_address_or_data.get(LE);
+        let begin_address = entry.begin_address;
+        let unwind_data_rva = entry.unwind_info_address_or_data;
         let mut unwind_rva = unwind_data_rva;
 
         // RIP offset within the function, for prolog detection.
@@ -671,8 +673,8 @@ pub fn resolve_primary_function(image: &impl PeImage, rva: u32) -> Result<Option
         None => return Ok(None),
     };
 
-    let mut begin_address = entry.begin_address.get(LE);
-    let mut unwind_rva = entry.unwind_info_address_or_data.get(LE);
+    let mut begin_address = entry.begin_address;
+    let mut unwind_rva = entry.unwind_info_address_or_data;
 
     for _ in 0..UNWIND_CHAIN_LIMIT {
         let header = image.read_struct_at_rva::<UNWIND_INFO>(unwind_rva)?;
@@ -681,23 +683,12 @@ pub fn resolve_primary_function(image: &impl PeImage, rva: u32) -> Result<Option
             break;
         }
 
-        // The chained RUNTIME_FUNCTION sits after the unwind codes.
-        // TODO: we should make our own ImageRuntimeFunctionEntry that
-        //       implements FromBytes directly
-        let chain_rva = unwind_rva + header.codes_end_offset();
-        let mut chain_buffer = [0u8; 12];
-        image.read_at_rva(chain_rva, &mut chain_buffer)?;
+        let entry = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(
+            unwind_rva + header.codes_end_offset(),
+        )?;
 
-        let entry = match from_bytes::<ImageRuntimeFunctionEntry>(&chain_buffer) {
-            Ok((entry, _)) => entry,
-            Err(_) => {
-                tracing::warn!("failed to parse chained RUNTIME_FUNCTION");
-                return Ok(None);
-            }
-        };
-
-        begin_address = entry.begin_address.get(LE);
-        unwind_rva = entry.unwind_info_address_or_data.get(LE);
+        begin_address = entry.begin_address;
+        unwind_rva = entry.unwind_info_address_or_data;
     }
 
     Ok(Some(begin_address))
