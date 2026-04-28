@@ -257,6 +257,7 @@ where
     ki_kva_shadow: OnceCell<bool>,
     mm_pfn_database: OnceCell<Va>,     // _MMPFN*
     mm_unloaded_drivers: OnceCell<Va>, // _UNLOADED_DRIVERS*
+    nt_build_number: OnceCell<u32>,    // ULONG
     nt_build_lab: OnceCell<String>,
     nt_build_lab_ex: OnceCell<String>,
     ps_idle_process: OnceCell<Va>, // _EPROCESS*
@@ -404,6 +405,7 @@ where
             ki_kva_shadow: OnceCell::new(),
             mm_pfn_database: OnceCell::new(),
             mm_unloaded_drivers: OnceCell::new(),
+            nt_build_number: OnceCell::new(),
             nt_build_lab: OnceCell::new(),
             nt_build_lab_ex: OnceCell::new(),
             ps_idle_process: OnceCell::new(),
@@ -432,6 +434,27 @@ where
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<WindowsKernelInformation>, VmiError> {
         Driver::Architecture::find_kernel(vmi, registers)
+    }
+
+    /// Returns the kernel build number.
+    ///
+    /// # Notes
+    ///
+    /// The value is cached after the first read.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `NtBuildNumber` symbol.
+    pub fn kernel_build_number(vmi: VmiState<Self>) -> Result<u32, VmiError> {
+        this!(vmi)
+            .nt_build_number
+            .get_or_try_init(|| {
+                let NtBuildNumber = symbol!(vmi, NtBuildNumber);
+
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                vmi.read_u32(kernel_image_base + NtBuildNumber)
+            })
+            .cloned()
     }
 
     /// Returns the kernel information string.

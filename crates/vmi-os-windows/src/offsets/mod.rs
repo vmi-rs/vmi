@@ -51,6 +51,7 @@ symbols! {
         MiInsertVad: Option<u64>,
         MiRemoveVadAndView: Option<u64>,
 
+        NtBuildNumber: u64,  // ULONG
         NtBuildLab: u64,
         NtBuildLabEx: Option<u64>,
 

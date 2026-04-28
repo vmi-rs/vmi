@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsUnloadedDriver` accessor for `_UNLOADED_DRIVERS` records.
 - `WindowsOs::unloaded_modules` iterator over `MmUnloadedDrivers`
   and `MmLastUnloadedDriver`.
+- `WindowsOs::kernel_build_number` exposing `NtBuildNumber`.
 - Registry hive walking:
   - `WindowsHive` wraps `_CMHIVE`, with cell
     resolution through `WindowsHiveMapDirectory` / `WindowsHiveMapTable` /
