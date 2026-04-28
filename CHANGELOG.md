@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path from the root directory.
 - `WindowsKernelProcessorBlock::processor_context_frame` exposing
   `_KPRCB.ProcessorState.ContextFrame` directly.
+- `WindowsUnloadedDriver` accessor for `_UNLOADED_DRIVERS` records.
+- `WindowsOs::unloaded_modules` iterator over `MmUnloadedDrivers`
+  and `MmLastUnloadedDriver`.
 - Registry hive walking:
   - `WindowsHive` wraps `_CMHIVE`, with cell
     resolution through `WindowsHiveMapDirectory` / `WindowsHiveMapTable` /

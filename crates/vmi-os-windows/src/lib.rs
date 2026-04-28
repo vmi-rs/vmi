@@ -114,7 +114,8 @@ pub use self::comps::{
     WindowsSectionObject, WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes,
     WindowsSidAttributes, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
     WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
-    WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUserModule, WindowsWow64Kind,
+    WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUnloadedDriver,
+    WindowsUserModule, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -254,7 +255,8 @@ where
     ke_number_processors: OnceCell<u16>,   // CCHAR
     ki_processor_block: OnceCell<Vec<Va>>, // _KPRCB*[]
     ki_kva_shadow: OnceCell<bool>,
-    mm_pfn_database: OnceCell<Va>, // _MMPFN*
+    mm_pfn_database: OnceCell<Va>,     // _MMPFN*
+    mm_unloaded_drivers: OnceCell<Va>, // _UNLOADED_DRIVERS*
     nt_build_lab: OnceCell<String>,
     nt_build_lab_ex: OnceCell<String>,
     ps_idle_process: OnceCell<Va>, // _EPROCESS*
@@ -401,6 +403,7 @@ where
             ki_processor_block: OnceCell::new(),
             ki_kva_shadow: OnceCell::new(),
             mm_pfn_database: OnceCell::new(),
+            mm_unloaded_drivers: OnceCell::new(),
             nt_build_lab: OnceCell::new(),
             nt_build_lab_ex: OnceCell::new(),
             ps_idle_process: OnceCell::new(),
@@ -538,6 +541,72 @@ where
         let highest_user_address = Self::highest_user_address(vmi)?;
 
         Ok(address >= lowest_user_address && address <= highest_user_address)
+    }
+
+    /// Returns an iterator over recently unloaded drivers.
+    ///
+    /// Walks the kernel's fixed-size circular buffer of unloaded driver
+    /// records, newest first. The iterator stops at the first empty slot
+    /// or after the buffer's 50-entry capacity has been visited.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `MmUnloadedDrivers` and `MmLastUnloadedDriver`.
+    pub fn unloaded_modules<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUnloadedDriver<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        // Note that the value of `MmLastUnloadedDriver` is intentionally
+        // not cached.
+        let MmLastUnloadedDriver = symbol!(vmi, MmLastUnloadedDriver);
+
+        let kernel_image_base = Self::kernel_image_base(vmi)?;
+        let mm_last_unloaded_driver = vmi.read_u32(kernel_image_base + MmLastUnloadedDriver)?;
+
+        let mm_unloaded_drivers = this!(vmi)
+            .mm_unloaded_drivers
+            .get_or_try_init(|| {
+                let MmUnloadedDrivers = symbol!(vmi, MmUnloadedDrivers);
+
+                let kernel_image_base = Self::kernel_image_base(vmi)?;
+                vmi.read_va_native(kernel_image_base + MmUnloadedDrivers)
+            })
+            .copied()?;
+
+        // Hardcoded in dbgeng.dll.
+        const MI_UNLOADED_DRIVERS: u32 = 50;
+
+        // Corresponds to `_UNLOADED_DRIVERS.Name.Buffer` offset.
+        const UNLOADED_DRIVERS_Name_Buffer: u64 = 0x08; // 32-bit: 0x04
+
+        // Corresponds to `sizeof(_UNLOADED_DRIVERS)`.
+        const UNLOADED_DRIVERS_sizeof: u64 = 0x28; // 32-bit: 0x18
+
+        let mut index = mm_last_unloaded_driver;
+        let mut count = 0;
+
+        Ok(std::iter::from_fn(move || {
+            if count >= MI_UNLOADED_DRIVERS {
+                return None;
+            }
+
+            index = index.checked_sub(1).unwrap_or(MI_UNLOADED_DRIVERS - 1);
+            count += 1;
+
+            let va = mm_unloaded_drivers + index as u64 * UNLOADED_DRIVERS_sizeof;
+            let name_buffer = match vmi.read_va_native(va + UNLOADED_DRIVERS_Name_Buffer) {
+                Ok(name_buffer) => name_buffer,
+                Err(err) => return Some(Err(err)),
+            };
+
+            if name_buffer.is_null() {
+                return None;
+            }
+
+            Some(Ok(WindowsUnloadedDriver::new(vmi, va)))
+        }))
     }
 
     /// Returns the number of active processors in the system.

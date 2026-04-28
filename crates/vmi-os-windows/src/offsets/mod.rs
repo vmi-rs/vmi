@@ -35,6 +35,9 @@ symbols! {
         KiInitializeContextThread: Option<u64>,
         KeTerminateThread: Option<u64>,
 
+        MmUnloadedDrivers: u64,     // _UNLOADED_DRIVERS*[MI_UNLOADED_DRIVERS /* 50 */]
+        MmLastUnloadedDriver: u64,  // ULONG
+
         MmPfnDatabase: u64,
         MmHighestUserAddress: u64,
 
@@ -157,6 +160,17 @@ offsets! {
             BaseDllName: Field,             // _UNICODE_STRING
             TimeDateStamp: Field,           // ULONG
         }
+
+        //
+        // See unloaded_driver.rs on why is this commented out.
+        //
+        // struct _UNLOADED_DRIVERS {
+        //     Name: Field,                    // _UNICODE_STRING
+        //     StartAddress: Field,            // PVOID
+        //     EndAddress: Field,              // PVOID
+        //     CurrentTime: Field,             // LARGE_INTEGER
+        // }
+        //
 
         struct _CLIENT_ID {
             UniqueProcess: Field,

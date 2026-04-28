@@ -18,6 +18,7 @@ mod session;
 mod sid;
 mod teb;
 mod trap_frame;
+mod unloaded_driver;
 mod user_module;
 mod wow64;
 
@@ -59,6 +60,7 @@ pub use self::{
     sid::{WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes},
     teb::{Teb, TebLayout, WindowsTeb, WindowsTebBase},
     trap_frame::WindowsTrapFrame,
+    unloaded_driver::WindowsUnloadedDriver,
     user_module::WindowsUserModule,
     wow64::{
         WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST,
