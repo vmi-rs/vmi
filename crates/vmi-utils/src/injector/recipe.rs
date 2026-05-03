@@ -37,7 +37,7 @@ pub type SymbolCache = HashMap<String, Va>;
 pub type ImageSymbolCache = HashMap<String, SymbolCache>;
 
 /// A sequence of injection steps to be executed in order.
-pub struct Recipe<Os, T>
+pub struct Recipe<Os, T = ()>
 where
     Os: VmiOs,
 {
@@ -48,18 +48,23 @@ where
     pub(super) data: T,
 }
 
-impl<Os, T> Recipe<Os, T>
+impl<Os> Recipe<Os, ()>
 where
     Os: VmiOs,
 {
     /// Creates a new recipe with the given data.
-    pub fn new(data: T) -> Self {
-        Self {
+    pub fn new<T>(data: T) -> Recipe<Os, T> {
+        Recipe {
             steps: Vec::new(),
             data,
         }
     }
+}
 
+impl<Os, T> Recipe<Os, T>
+where
+    Os: VmiOs,
+{
     /// Adds a new step to the recipe.
     pub fn step<F>(mut self, f: F) -> Self
     where
