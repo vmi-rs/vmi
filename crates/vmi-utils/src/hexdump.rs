@@ -36,7 +36,7 @@ where
         match representation {
             Representation::U8 => {
                 for &byte in chunk {
-                    print!(" {:02X}", byte);
+                    print!(" {byte:02X}");
                 }
 
                 if chunk.len() < 16 {
