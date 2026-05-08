@@ -19,6 +19,11 @@ repository = "https://github.com/vmi-rs/vmi"
 missing_docs = "warn"
 
 [workspace.lints.clippy]
+# pedantic = { level = "warn", priority = -1 }
+# restriction = { level = "warn", priority = -2 }
+# only if we really want to torture ourselves:
+# nursery = { level = "warn", priority = -3 }
+
 doc_overindented_list_items = "allow"
 
 [workspace.dependencies]

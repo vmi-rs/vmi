@@ -1,4 +1,4 @@
-//! VMI utilities
+//! VMI utilities.
 
 #[cfg(feature = "bpm")]
 pub mod bpm;

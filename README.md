@@ -76,7 +76,7 @@ library, providing version-agnostic access to OS internals.
 Let's be honest, VMI doesn't get the love it deserves. While incredibly
 useful, it's not as widely supported as it should be. Xen is currently
 the champion of VMI support among major hypervisors. Other hypervisors,
-like VMware, Hyper-V, and VirtualBox, haven't quite jumped on the VMI
+like `VMware`, Hyper-V, and `VirtualBox`, haven't quite jumped on the VMI
 bandwagon yet.
 
 There have been attempts to bring VMI to other platforms, such as the
@@ -526,7 +526,7 @@ version-agnostic OS introspection. It avoids the need for hardcoding
 offsets and makes the code adaptable to different OS versions.
 
 - [`IsrCache`]: Manages symbol files (PDB for Windows, DWARF for Linux).
-  Automatically downloads and caches PDBs based on CodeView information
+  Automatically downloads and caches PDBs based on `CodeView` information
   (Windows) or kernel version banner (Linux).
 
 - [`symbols!`] macro: Defines symbols for lookup.

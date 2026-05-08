@@ -1,3 +1,3 @@
 <!-- readme start -->
-VMI utilities
+VMI utilities.
 <!-- readme end -->
