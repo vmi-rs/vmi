@@ -131,7 +131,7 @@ impl WindowsHiveCellIndex {
 }
 
 impl std::fmt::Debug for WindowsHiveCellIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("WindowsHiveCellIndex")
             .field("storage", &self.storage())
             .field("table", &self.table())
