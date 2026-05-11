@@ -148,6 +148,7 @@ where
             }
 
             match self.wait_for_event(timeout, &mut handler) {
+                Ok(_) => {}
                 Err(VmiError::Timeout) => {
                     tracing::trace!("timeout");
                     handler.handle_timeout(self);
@@ -158,7 +159,6 @@ where
                     break;
                 }
                 Err(err) => return Err(err),
-                Ok(_) => {}
             }
         }
 
