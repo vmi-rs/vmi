@@ -385,7 +385,8 @@ where
         &mut self,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
-    ) -> Option<impl Iterator<Item = Breakpoint<Key, Tag>> + use<'_, Interface, Key, Tag>> {
+    ) -> Option<impl ExactSizeIterator<Item = Breakpoint<Key, Tag>> + use<'_, Interface, Key, Tag>>
+    {
         let (ctx, pa, view) = self.address_for_event(event)?;
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
