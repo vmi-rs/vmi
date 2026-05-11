@@ -11,7 +11,7 @@ use vmi_core::{Architecture, VmiDriver};
 use super::{PageTableMonitorAdapter, TagType};
 
 /// Adapter type trait for architecture-specific page table monitor implementations.
-pub trait ArchAdapter<Driver, Tag>: Architecture
+pub trait ArchAdapter<Driver, Tag = &'static str>: Architecture
 where
     Driver: VmiDriver,
     Tag: TagType,
