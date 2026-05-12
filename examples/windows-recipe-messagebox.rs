@@ -48,7 +48,7 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     recipe![
-        Recipe::<WindowsOs<Driver>, _>::new(data),
+        Recipe::<WindowsOs<Driver>>::new(data),
         {
             inject! {
                 user32!MessageBoxA(
