@@ -289,17 +289,32 @@ where
         Ok(WindowsProcess::new(self.vmi, ProcessObject(process)))
     }
 
+    /// Returns the index into `KTHREAD.ApcStatePointer` selecting the
+    /// thread's currently-active APC environment.
+    ///
+    /// * `0` (`OriginalApcEnvironment`): thread is running in its original
+    ///   process.
+    /// * `1` (`AttachedApcEnvironment`): thread is temporarily attached
+    ///   to a foreign process via `KeStackAttachProcess` / `KeAttachProcess`.
+    ///
+    ///   The original `KTHREAD.ApcState` is preserved in `KTHREAD.SavedApcState`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.ApcStateIndex`.
+    pub fn apc_state_index(&self) -> Result<u8, VmiError> {
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+
+        self.vmi.read_u8(self.va + KTHREAD.ApcStateIndex.offset())
+    }
+
     /// Checks if the thread is currently attached to foreign process context.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `_KTHREAD.ApcStateIndex != 0`.
     pub fn is_attached(&self) -> Result<bool, VmiError> {
-        let KTHREAD = offset!(self.vmi, _KTHREAD);
-
-        let apc_state_index = self.vmi.read_u8(self.va + KTHREAD.ApcStateIndex.offset())?;
-
-        Ok(apc_state_index != 0)
+        Ok(self.apc_state_index()? != 0)
     }
 
     /// Returns the process whose address space the thread is currently executing in.

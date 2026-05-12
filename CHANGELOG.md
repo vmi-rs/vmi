@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `WindowsThread::apc_state_index` exposing `_KTHREAD.ApcStateIndex`.
 - `WindowsProcess::create_time` exposing `_EPROCESS.CreateTime`.
 - `WindowsProcess::exit_time` exposing `_EPROCESS.ExitTime`.
 - `WindowsDirectoryObject::child` for a direct single-component lookup
