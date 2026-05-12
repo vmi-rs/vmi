@@ -81,6 +81,28 @@ where
         Self { vmi, va: process.0 }
     }
 
+    /// Returns the creation time of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.CreateTime`.
+    pub fn create_time(&self) -> Result<u64, VmiError> {
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
+
+        self.vmi.read_u64(self.va + EPROCESS.CreateTime.offset())
+    }
+
+    /// Returns the exit time of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.ExitTime`.
+    pub fn exit_time(&self) -> Result<u64, VmiError> {
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
+
+        self.vmi.read_u64(self.va + EPROCESS.ExitTime.offset())
+    }
+
     /// Checks if the process is a WoW64 process.
     ///
     /// # Implementation Details

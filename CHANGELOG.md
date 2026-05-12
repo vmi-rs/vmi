@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `WindowsProcess::create_time` exposing `_EPROCESS.CreateTime`.
+- `WindowsProcess::exit_time` exposing `_EPROCESS.ExitTime`.
 - `WindowsDirectoryObject::child` for a direct single-component lookup
   within a directory.
 - `WindowsOs::lookup_object` for resolving an absolute object-namespace
