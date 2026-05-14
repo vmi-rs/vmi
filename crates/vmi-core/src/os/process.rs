@@ -39,7 +39,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver = Driver>;
+    type Os: VmiOs<Driver = Driver, Process<'a> = Self>;
 
     /// Returns the process ID.
     fn id(&self) -> Result<ProcessId, VmiError>;

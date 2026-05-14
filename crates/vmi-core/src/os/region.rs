@@ -9,7 +9,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver = Driver>;
+    type Os: VmiOs<Driver = Driver, Region<'a> = Self>;
 
     /// Returns the starting virtual address of the memory region.
     fn start(&self) -> Result<Va, VmiError>;

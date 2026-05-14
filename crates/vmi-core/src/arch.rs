@@ -46,7 +46,7 @@ pub trait Architecture {
     ///
     /// This type should include general-purpose registers, and all control and
     /// special registers.
-    type Registers: Registers;
+    type Registers: Registers<Architecture = Self>;
 
     /// An enumeration representing the levels of page tables in the
     /// architecture's paging structure.
@@ -169,7 +169,7 @@ where
     Self: Debug + Default + Clone + Copy,
 {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture;
+    type Architecture: Architecture<Registers = Self>;
 
     /// General-purpose registers of the architecture.
     ///

@@ -12,7 +12,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver = Driver>;
+    type Os: VmiOs<Driver = Driver, Image<'a> = Self>;
 
     /// Returns the base address of the image.
     fn base_address(&self) -> Va;

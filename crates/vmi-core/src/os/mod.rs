@@ -40,37 +40,37 @@ where
     type Driver: VmiDriver<Architecture = Self::Architecture>;
 
     /// The process type.
-    type Process<'a>: VmiOsProcess<'a, Self::Driver> + 'a
+    type Process<'a>: VmiOsProcess<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The thread type.
-    type Thread<'a>: VmiOsThread<'a, Self::Driver> + 'a
+    type Thread<'a>: VmiOsThread<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The image type.
-    type Image<'a>: VmiOsImage<'a, Self::Driver> + 'a
+    type Image<'a>: VmiOsImage<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The kernel module type.
-    type Module<'a>: VmiOsModule<'a, Self::Driver> + 'a
+    type Module<'a>: VmiOsModule<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The user-mode module type.
-    type UserModule<'a>: VmiOsUserModule<'a, Self::Driver> + 'a
+    type UserModule<'a>: VmiOsUserModule<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The memory region type.
-    type Region<'a>: VmiOsRegion<'a, Self::Driver> + 'a
+    type Region<'a>: VmiOsRegion<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 
     /// The memory mapped region type.
-    type Mapped<'a>: VmiOsMapped<'a, Self::Driver> + 'a
+    type Mapped<'a>: VmiOsMapped<'a, Self::Driver, Os = Self> + 'a
     where
         Self: 'a;
 

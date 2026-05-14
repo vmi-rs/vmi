@@ -39,7 +39,7 @@ where
     Driver: VmiDriver,
 {
     /// The VMI OS type.
-    type Os: VmiOs<Driver = Driver>;
+    type Os: VmiOs<Driver = Driver, Thread<'a> = Self>;
 
     /// Returns the thread ID.
     fn id(&self) -> Result<ThreadId, VmiError>;
