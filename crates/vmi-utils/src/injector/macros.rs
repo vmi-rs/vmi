@@ -16,8 +16,7 @@ pub mod __private {
         },
     };
 
-    use super::super::RecipeContext;
-    use crate::injector::recipe::SymbolCache;
+    use super::super::recipe::{RecipeContext, SymbolCache};
 
     /// Search kind for symbol lookup.
     #[derive(Debug)]
@@ -315,7 +314,7 @@ macro_rules! _private_recipe {
                                     vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError},
                                     zerocopy::{Immutable, IntoBytes},
                                 },
-                                ArchAdapter as _,
+                                ArchAdapter,
                             };
 
                             fn __copy_to_stack<Driver, T>(
@@ -325,7 +324,7 @@ macro_rules! _private_recipe {
                             ) -> Result<Va, VmiError>
                             where
                                 Driver: VmiDriver,
-                                Driver::Architecture: vmi::utils::injector::ArchAdapter<Driver>,
+                                Driver::Architecture: ArchAdapter<Driver>,
                                 T: IntoBytes + Immutable,
                             {
                                 Driver::Architecture::copy_to_stack(vmi, registers, data)
