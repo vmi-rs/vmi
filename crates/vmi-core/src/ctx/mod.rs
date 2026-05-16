@@ -6,6 +6,6 @@ mod state;
 pub use self::{
     context::{VmiContext, VmiOsContext},
     prober::VmiProber,
-    session::VmiSession,
+    session::{VmiSession, VmiSessionPauseGuard},
     state::{VmiOsState, VmiState},
 };

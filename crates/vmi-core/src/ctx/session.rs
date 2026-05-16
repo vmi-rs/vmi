@@ -2,7 +2,8 @@ use std::{io::ErrorKind, time::Duration};
 
 use super::{VmiState, context::VmiContext};
 use crate::{
-    Architecture, VmiCore, VmiError, VmiEventControl, VmiHandler, VmiVmControl,
+    Architecture, VcpuId, VmiCore, VmiError, VmiHandler,
+    driver::{VmiDriver, VmiEventControl, VmiQueryRegisters, VmiVmControl},
     os::{NoOS, VmiOs},
 };
 
@@ -167,7 +168,7 @@ where
         self.core.reset_state()?;
         tracing::trace!(pending_events = self.events_pending());
 
-        let _pause_guard = self.pause_guard()?;
+        let _pause_guard = self.core().pause_guard()?;
         if self.events_pending() > 0 {
             match self.wait_for_event(Duration::from_millis(0), &mut handler) {
                 Err(VmiError::Timeout) => {
@@ -179,5 +180,83 @@ where
         }
 
         Ok(result)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VmiQueryRegisters + VmiVmControl
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'a, Os> VmiSession<'a, Os>
+where
+    Os: VmiOs,
+    Os::Driver: VmiQueryRegisters + VmiVmControl,
+{
+    /// Pauses the virtual machine, snapshots the boot CPU registers, and
+    /// returns a guard that resumes the VM when dropped.
+    pub fn pause_guard(&self) -> Result<VmiSessionPauseGuard<'_, Os>, VmiError> {
+        VmiSessionPauseGuard::new(self)
+    }
+}
+
+/// A guard that pauses the virtual machine and snapshots the boot CPU
+/// registers on creation, then resumes the VM on drop.
+///
+/// Unlike [`VmiPauseGuard`], this guard carries enough register context to
+/// build a [`VmiState`] via [`state`], so callers can introspect the paused
+/// guest without separately querying registers.
+///
+/// [`VmiPauseGuard`]: crate::VmiPauseGuard
+/// [`state`]: Self::state
+pub struct VmiSessionPauseGuard<'a, Os>
+where
+    Os: VmiOs,
+    Os::Driver: VmiQueryRegisters + VmiVmControl,
+{
+    session: &'a VmiSession<'a, Os>,
+    registers: <<Os::Driver as VmiDriver>::Architecture as Architecture>::Registers,
+}
+
+impl<'a, Os> VmiSessionPauseGuard<'a, Os>
+where
+    Os: VmiOs,
+    Os::Driver: VmiQueryRegisters + VmiVmControl,
+{
+    /// Creates a new pause guard.
+    pub fn new(session: &'a VmiSession<'a, Os>) -> Result<Self, VmiError> {
+        session.driver().pause()?;
+
+        let registers = match session.registers(VcpuId(0)) {
+            Ok(registers) => registers,
+            Err(err) => {
+                if let Err(resume_err) = session.driver().resume() {
+                    tracing::error!(
+                        err = %resume_err,
+                        "failed to resume after register-query failure"
+                    );
+                }
+                return Err(err);
+            }
+        };
+
+        Ok(Self { session, registers })
+    }
+
+    /// Returns the state captured when the guard was created, bound to
+    /// the boot CPU (`VcpuId(0)`) registers.
+    pub fn state(&self) -> VmiState<'_, Os> {
+        VmiState::new(self.session, &self.registers)
+    }
+}
+
+impl<Os> Drop for VmiSessionPauseGuard<'_, Os>
+where
+    Os: VmiOs,
+    Os::Driver: VmiQueryRegisters + VmiVmControl,
+{
+    fn drop(&mut self) {
+        if let Err(err) = self.session.driver().resume() {
+            tracing::error!(%err, "failed to resume the virtual machine");
+        }
     }
 }

@@ -22,7 +22,9 @@ pub use self::{
         AccessContext, AddressContext, Gfn, Hex, MemoryAccess, MemoryAccessOptions, Pa,
         TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
     },
-    ctx::{VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiState},
+    ctx::{
+        VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiSessionPauseGuard, VmiState,
+    },
     driver::{
         VmiDriver, VmiEventControl, VmiFullDriver, VmiMemory, VmiProtection, VmiQueryProtection,
         VmiQueryRegisters, VmiRead, VmiReadAccess, VmiRegisters, VmiSetProtection, VmiSetRegisters,

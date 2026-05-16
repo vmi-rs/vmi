@@ -102,10 +102,9 @@ where
 
         let mut bpm = BreakpointManager::new();
         let mut ptm = PageTableMonitor::new();
-        let _pause_guard = vmi.pause_guard()?;
 
-        let registers = vmi.registers(VcpuId(0))?;
-        let vmi = vmi.with_registers(&registers);
+        let paused = vmi.pause_guard()?;
+        let vmi = paused.state();
 
         let kernel_image_base = vmi.os().kernel_image_base()?;
         let system_process = vmi.os().system_process()?;

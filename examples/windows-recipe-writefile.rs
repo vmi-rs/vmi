@@ -26,7 +26,7 @@
 mod common;
 
 use vmi::{
-    Hex, Va, VcpuId,
+    Hex, Va,
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
@@ -207,10 +207,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This block is used to drop the pause guard after the PID is found.
         // If the `session.handle()` would be called with the VM paused, no
         // events would be triggered.
-        let _pause_guard = session.pause_guard()?;
+        let paused = session.pause_guard()?;
 
-        let registers = session.registers(VcpuId(0))?;
-        let vmi = session.with_registers(&registers);
+        let vmi = paused.state();
 
         let explorer = match common::find_process(&vmi, "explorer.exe")? {
             Some(explorer) => explorer,

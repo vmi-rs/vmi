@@ -180,11 +180,10 @@
 //!     let session = VmiSession::new(&core, &os);
 //!
 //!     // Pause the VM again to get consistent state.
-//!     let _pause_guard = session.pause_guard()?;
+//!     let paused = session.pause_guard()?;
 //!
-//!     // Create a new `VmiState` with the current register.
-//!     let registers = session.registers(VcpuId(0))?;
-//!     let vmi = session.with_registers(&registers);
+//!     // Create a new `VmiState` with the boot CPU registers.
+//!     let vmi = paused.state();
 //!
 //!     // Get the list of processes and print them.
 //!     for process in vmi.os().processes()? {
