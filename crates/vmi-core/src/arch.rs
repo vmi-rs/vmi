@@ -155,19 +155,12 @@ pub trait Architecture {
 ///
 /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
 ///   `R8`-`R15`, `RIP` and `RFLAGS`.
-pub trait GpRegisters
-where
-    Self: Debug + Default + Clone + Copy,
-{
-}
+pub trait GpRegisters: Debug + Default + Clone + Copy {}
 
 /// Complete set of CPU registers for a specific architecture.
 ///
 /// Provides methods to access and modify key registers and register sets.
-pub trait Registers
-where
-    Self: Debug + Default + Clone + Copy,
-{
+pub trait Registers: Debug + Default + Clone + Copy {
     /// The specific CPU architecture implementation.
     type Architecture: Architecture<Registers = Self>;
 
@@ -268,10 +261,7 @@ where
 }
 
 /// A memory access event, providing details about the accessed memory.
-pub trait EventMemoryAccess
-where
-    Self: Debug + Clone + Copy,
-{
+pub trait EventMemoryAccess: Debug + Clone + Copy {
     /// The specific CPU architecture implementation.
     type Architecture: Architecture;
 
@@ -286,10 +276,7 @@ where
 }
 
 /// An interrupt event, providing details about the interrupt.
-pub trait EventInterrupt
-where
-    Self: Debug + Clone + Copy,
-{
+pub trait EventInterrupt: Debug + Clone + Copy {
     /// The specific CPU architecture implementation.
     type Architecture: Architecture;
 
@@ -300,12 +287,9 @@ where
 
 /// The reason for a VM exit or similar event, allowing for type-safe access
 /// to specific event details.
-pub trait EventReason
-where
-    Self: Debug + Clone + Copy,
-{
+pub trait EventReason: Debug + Clone + Copy {
     /// The specific CPU architecture implementation.
-    type Architecture: Architecture;
+    type Architecture: Architecture<EventReason = Self>;
 
     /// If the event was caused by a memory access, returns the details
     /// of that access.

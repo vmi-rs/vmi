@@ -38,10 +38,7 @@ pub use self::{
 /// as default methods.
 ///
 /// [`WindowsImage`]: crate::WindowsImage
-pub trait PeImage
-where
-    Self: Sized,
-{
+pub trait PeImage: Sized {
     /// Reads data at the given RVA within the image.
     fn read_at_rva(&self, rva: u32, buf: &mut [u8]) -> Result<(), VmiError>;
 

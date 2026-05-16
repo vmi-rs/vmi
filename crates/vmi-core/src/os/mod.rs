@@ -29,10 +29,7 @@ use crate::{Architecture, Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
 #[derive_os_wrapper(VmiOsState)]
-pub trait VmiOs
-where
-    Self: Sized,
-{
+pub trait VmiOs: Sized {
     /// The architecture.
     type Architecture: Architecture;
 

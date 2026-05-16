@@ -202,19 +202,19 @@ pub trait VmiVmControl: VmiDriver {
 
 /// Combined page read and write access.
 pub trait VmiMemory: VmiRead + VmiWrite {}
-impl<T: VmiRead + VmiWrite> VmiMemory for T {}
+impl<T> VmiMemory for T where T: VmiRead + VmiWrite {}
 
 /// Combined memory access read and write.
 pub trait VmiProtection: VmiQueryProtection + VmiSetProtection {}
-impl<T: VmiQueryProtection + VmiSetProtection> VmiProtection for T {}
+impl<T> VmiProtection for T where T: VmiQueryProtection + VmiSetProtection {}
 
 /// Combined register read and write access.
 pub trait VmiRegisters: VmiQueryRegisters + VmiSetRegisters {}
-impl<T: VmiQueryRegisters + VmiSetRegisters> VmiRegisters for T {}
+impl<T> VmiRegisters for T where T: VmiQueryRegisters + VmiSetRegisters {}
 
 /// All read-only VMI capabilities.
 pub trait VmiReadAccess: VmiRead + VmiQueryProtection + VmiQueryRegisters {}
-impl<T: VmiRead + VmiQueryProtection + VmiQueryRegisters> VmiReadAccess for T {}
+impl<T> VmiReadAccess for T where T: VmiRead + VmiQueryProtection + VmiQueryRegisters {}
 
 /// All write/control VMI capabilities.
 pub trait VmiWriteAccess: VmiWrite + VmiSetProtection + VmiSetRegisters {}

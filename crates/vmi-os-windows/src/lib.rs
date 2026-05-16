@@ -1266,10 +1266,14 @@ where
             return Ok(Vec::new());
         }
 
+        // We intentionally skip reading the MaximumLength field,
+        // since we don't actually need it.
         // let string_maximum_length = u16::from_le_bytes([buffer[2], buffer[3]]);
+
+        #[rustfmt::skip]
         let string_buffer = u64::from_le_bytes([
-            buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14],
-            buffer[15],
+            buffer[ 8], buffer[ 9], buffer[10], buffer[11],
+            buffer[12], buffer[13], buffer[14], buffer[15],
         ]);
 
         if string_buffer == 0 {

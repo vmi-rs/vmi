@@ -59,6 +59,10 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.FullDllName`.
+    ///
+    /// # Notes
+    ///
+    /// This operation might fail as the filename is allocated from paged pool.
     pub fn full_name(&self) -> Result<String, VmiError> {
         let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
@@ -117,6 +121,11 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KLDR_DATA_TABLE_ENTRY.BaseDllName`.
+    ///
+    /// # Notes
+    ///
+    /// This operation is expected to succeed as the name is allocated from
+    /// non-paged pool.
     fn name(&self) -> Result<String, VmiError> {
         let KLDR_DATA_TABLE_ENTRY = offset!(self.vmi, _KLDR_DATA_TABLE_ENTRY);
 
