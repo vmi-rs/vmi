@@ -71,7 +71,7 @@ pub trait Architecture {
     type EventMonitor;
 
     /// Architecture-specific event details.
-    type EventReason: EventReason;
+    type EventReason: EventReason<Architecture = Self>;
 
     /// Converts a guest physical address (GPA) to a guest frame number (GFN).
     ///
