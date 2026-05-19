@@ -531,20 +531,17 @@ where
         Ok(iterator.map(move |result| result.map(|vad| WindowsRegion::new(vmi, vad))))
     }
 
-    /// Finds the memory region (VAD) containing the given address.
+    /// Returns the memory region (VAD) containing the given address.
     ///
-    /// This method efficiently searches the VAD tree to find the VAD node that
-    /// corresponds to the given virtual address within the process's address
-    /// space.
-    ///
-    /// Returns the matching VAD if found, or `None` if the address is not
-    /// within any VAD.
+    /// Searches the VAD tree to find the VAD node that covers the given
+    /// virtual address within the process's address space. Returns `None`
+    /// if no VAD covers the address.
     ///
     /// # Implementation Details
     ///
     /// The functionality is similar to the Windows kernel's internal
     /// `MiLocateAddress()` function.
-    fn find_region(&self, address: Va) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
+    fn lookup_region(&self, address: Va) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let vad = match self.vad_hint()? {
             Some(vad) => vad,
             None => return Ok(None),
@@ -631,7 +628,7 @@ where
             return Ok(Some(true));
         }
 
-        let vad = match self.find_region(address)? {
+        let vad = match self.lookup_region(address)? {
             Some(vad) => vad,
             None => return Ok(Some(false)),
         };

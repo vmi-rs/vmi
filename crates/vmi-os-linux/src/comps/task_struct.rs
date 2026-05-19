@@ -294,7 +294,7 @@ where
         Ok(result.into_iter())
     }
 
-    fn find_region(
+    fn lookup_region(
         &self,
         _address: Va,
     ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError> {

@@ -81,9 +81,11 @@ where
         VmiError,
     >;
 
-    /// Finds the memory region containing the given address.
-    fn find_region(&self, address: Va)
-    -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError>;
+    /// Returns the memory region containing the given address.
+    fn lookup_region(
+        &self,
+        address: Va,
+    ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError>;
 
     /// Returns an iterator over the threads in the process.
     ///

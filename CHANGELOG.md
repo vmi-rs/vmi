@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiOsProcess::find_region` renamed to
+  `VmiOsProcess::lookup_region`.
 - **Breaking:** `InjectorResultCode` renamed to `InjectorStatusCode`.
 - **Breaking:** `WindowsDirectoryObject::lookup` now traverses
   `\`-separated paths instead of matching a single-component name. Name
