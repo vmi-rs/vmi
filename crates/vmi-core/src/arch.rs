@@ -257,7 +257,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// - **AMD64**: Value at the top of the stack (i.e. `RSP`)
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
     where
-        Driver: VmiRead;
+        Driver: VmiRead<Architecture = Self::Architecture>;
 }
 
 /// A memory access event, providing details about the accessed memory.
