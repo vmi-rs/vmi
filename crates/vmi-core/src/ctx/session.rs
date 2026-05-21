@@ -242,6 +242,17 @@ where
         Ok(Self { session, registers })
     }
 
+    /// Returns the VMI session.
+    pub fn session(&self) -> &VmiSession<'a, Os> {
+        self.session
+    }
+
+    /// Returns the boot CPU (`VcpuId(0)`) registers captured when
+    /// the guard was created.
+    pub fn registers(&self) -> &<Os::Architecture as Architecture>::Registers {
+        &self.registers
+    }
+
     /// Returns the state captured when the guard was created, bound to
     /// the boot CPU (`VcpuId(0)`) registers.
     pub fn state(&self) -> VmiState<'_, Os> {
