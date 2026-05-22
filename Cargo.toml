@@ -44,6 +44,8 @@ tracing = "0.1"
 zerocopy = "0.8"
 
 # [workspace.dev-dependencies]
+anyhow = "1"
+hex = "0.4"
 signal-hook = "0.4"
 tracing-subscriber = "0.3"
 
@@ -159,9 +161,12 @@ utils = [
 ]
 
 [dev-dependencies]
+anyhow = { workspace = true }
+bitflags = { workspace = true }
+hex = { workspace = true }
 signal-hook = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zerocopy = { workspace = true }
 
 isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
@@ -215,5 +220,11 @@ required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 [[example]]
 name = "windows-recipe-writefile-advanced"
 path = "examples/windows-recipe-writefile-advanced.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
+name = "windows-reactor"
+path = "examples/windows-reactor/main.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
