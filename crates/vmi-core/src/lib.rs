@@ -9,6 +9,7 @@ mod event;
 mod handler;
 pub mod os;
 mod page;
+pub mod trace;
 
 use std::{cell::RefCell, num::NonZeroUsize, time::Duration};
 
