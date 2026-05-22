@@ -15,6 +15,9 @@ pub mod interceptor;
 #[cfg(feature = "ptm")]
 pub mod ptm;
 
+#[cfg(feature = "reactor")]
+pub mod reactor;
+
 #[cfg(feature = "resolver")]
 pub mod resolver;
 

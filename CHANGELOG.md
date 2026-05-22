@@ -98,6 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `WindowsSidAttributes` bitflags covering the `SE_GROUP_*`
     attribute bits.
 - `WindowsLuid` value type for `_LUID`.
+- `vmi_utils::reactor` - symbol-driven VMI event loop.
+  `Reactor` couples a `BreakpointManager` with a `PageTableMonitor` so
+  breakpoints installed at named kernel / module symbols survive
+  paging, and PatchGuard reads of the kernel image are served from
+  a clean view.
+  The monitored surface is described via the `define_modules!` and
+  `define_events!` macros.
+  A `#[resolver]` marker on the module enum emits a resolver producing
+  `ResolvedEvent`s consumed by `Reactor::new`.
 - `vmi_utils::resolver` - locates loaded kernel and user modules in
   guest memory and extracts the `DebugSignature` (`CodeView` on
   Windows) needed to fetch debug symbols via `isr-cache`.

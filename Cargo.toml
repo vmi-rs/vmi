@@ -154,6 +154,7 @@ utils = [
     "vmi-utils/injector",
     "vmi-utils/interceptor",
     "vmi-utils/ptm",
+    "vmi-utils/reactor",
     "vmi-utils/resolver",
 ]
 

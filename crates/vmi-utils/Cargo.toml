@@ -45,4 +45,6 @@ bridge = []
 injector = ["bridge"]
 interceptor = []
 ptm = []
+# TODO: remove dependency on `arch-amd64` and `os-windows`
+reactor = ["arch-amd64", "bpm", "os-windows", "resolver"]
 resolver = []
