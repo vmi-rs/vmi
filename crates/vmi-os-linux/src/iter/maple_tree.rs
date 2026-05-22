@@ -262,7 +262,7 @@ where
             Some(MapleType::Arange64) => {
                 self.enumerate_arange64(mt, entry, min, max, callback)?;
             }
-            None => tracing::warn!(?typ, "Unknown node type"),
+            None => tracing::warn!(?typ, "unknown node type"),
         }
 
         Ok(())
@@ -562,7 +562,7 @@ where
             Some(MapleType::Arange64) => {
                 self.dump_arange64(mt, entry, min, max, depth)?;
             }
-            None => tracing::warn!(?typ, "Unknown node type"),
+            None => tracing::warn!(?typ, "unknown node type"),
         }
 
         Ok(())

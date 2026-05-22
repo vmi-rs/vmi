@@ -1128,7 +1128,7 @@ where
 {
     fn drop(&mut self) {
         if let Err(err) = self.driver.resume() {
-            tracing::error!(%err, "Failed to resume the virtual machine");
+            tracing::error!(%err, "failed to resume the virtual machine");
         }
     }
 }

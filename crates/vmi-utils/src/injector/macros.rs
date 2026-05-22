@@ -138,7 +138,7 @@ pub mod __private {
                     Ok(Some(va))
                 }
                 None => {
-                    tracing::error!(cache_hit = true, "Symbol not found");
+                    tracing::error!(cache_hit = true, "symbol not found");
                     Ok(None)
                 }
             },
@@ -146,7 +146,7 @@ pub mod __private {
                 let symbols = match exported_symbols(ctx.vmi, filename, kind)? {
                     Some(symbols) => symbols,
                     None => {
-                        tracing::error!(cache_hit = false, "Image not found");
+                        tracing::error!(cache_hit = false, "image not found");
                         return Ok(None);
                     }
                 };
@@ -154,7 +154,7 @@ pub mod __private {
                 let va = match symbols.get(symbol).copied() {
                     Some(va) => va,
                     None => {
-                        tracing::error!(cache_hit = false, "Symbol not found");
+                        tracing::error!(cache_hit = false, "symbol not found");
                         return Ok(None);
                     }
                 };

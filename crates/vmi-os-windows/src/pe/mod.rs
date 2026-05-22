@@ -245,7 +245,7 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
         };
 
         if directory.size_of_data < size_of::<CvInfoPdb70>() as u32 {
-            tracing::warn!("Invalid CodeView Info size");
+            tracing::warn!("invalid CodeView Info size");
             return Ok(None);
         }
 
@@ -269,13 +269,13 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
         let info = match CvInfoPdb70::ref_from_bytes(info) {
             Ok(info) => info,
             Err(err) => {
-                tracing::warn!(%err, "Invalid CodeView Info address");
+                tracing::warn!(%err, "invalid CodeView Info address");
                 return Ok(None);
             }
         };
 
         if info.signature != CV_SIGNATURE_RSDS {
-            tracing::warn!("Invalid CodeView signature");
+            tracing::warn!("invalid CodeView signature");
             return Ok(None);
         }
 

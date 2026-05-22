@@ -90,7 +90,7 @@ where
         }
 
         tracing::warn!(
-            "No banner found within {} MB",
+            "no banner found within {} MB",
             MAX_BACKWARD_SEARCH / 1024 / 1024
         );
 

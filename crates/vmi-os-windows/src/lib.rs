@@ -1231,7 +1231,7 @@ where
             tracing::warn!(
                 addr = %Hex(ctx.address),
                 len = string_length,
-                "String buffer is NULL"
+                "string buffer is NULL"
             );
 
             return Ok(Vec::new());
@@ -1280,7 +1280,7 @@ where
             tracing::warn!(
                 addr = %Hex(ctx.address),
                 len = string_length,
-                "String buffer is NULL"
+                "string buffer is NULL"
             );
 
             return Ok(Vec::new());
@@ -1539,7 +1539,7 @@ where
             flags = %Hex(flags),
             page_location,
             increment,
-            "Modifying PFN reference count"
+            "modifying PFN reference count"
         );
 
         //
@@ -1557,7 +1557,7 @@ where
                 flags = %Hex(flags),
                 page_location,
                 increment,
-                "Page is not active and valid"
+                "page is not active and valid"
             );
             return Ok(None);
         }
@@ -1569,7 +1569,7 @@ where
                 flags = %Hex(flags),
                 page_location,
                 increment,
-                "Page is not initialized"
+                "page is not initialized"
             );
             return Ok(None);
         }
@@ -1583,7 +1583,7 @@ where
                     flags = %Hex(flags),
                     page_location,
                     increment,
-                    "Page is at maximum reference count"
+                    "page is at maximum reference count"
                 );
                 return Ok(None);
             }

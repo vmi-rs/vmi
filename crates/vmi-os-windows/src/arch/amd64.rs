@@ -164,13 +164,13 @@ where
 
                     tracing::trace!(%name, "found non-kernel image");
                 }
-                Ok(None) => tracing::trace!("No codeview found"),
-                Err(err) => tracing::trace!(%err, "Error parsing PE"),
+                Ok(None) => tracing::trace!("no codeview found"),
+                Err(err) => tracing::trace!(%err, "error parsing PE"),
             };
         }
 
         tracing::trace!(
-            "No codeview found within {} MB",
+            "no codeview found within {} MB",
             MAX_BACKWARD_SEARCH / 1024 / 1024
         );
 

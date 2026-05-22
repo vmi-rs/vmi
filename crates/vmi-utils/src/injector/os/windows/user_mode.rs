@@ -465,7 +465,7 @@ where
                     tracing::error!(
                         request = packet.request(),
                         method = packet.method(),
-                        "Empty bridge response"
+                        "empty bridge response"
                     );
                     Some(Err(packet))
                 }

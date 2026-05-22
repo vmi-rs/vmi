@@ -222,7 +222,7 @@ impl ArchAdapter for Amd64 {
                 }
                 _ => {
                     tracing::warn!(
-                        "Attempted to reinject interrupt when current event is not an interrupt"
+                        "attempted to reinject interrupt when current event is not an interrupt"
                     );
                 }
             },
