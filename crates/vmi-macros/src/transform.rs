@@ -1,19 +1,50 @@
 use syn::{
-    AngleBracketedGenericArguments, CapturedParam, GenericArgument, Ident, Path, PathArguments,
-    PreciseCapture, ReturnType, TraitBound, Type, TypeImplTrait, TypeParamBound, TypePath,
-    TypeReference,
+    AngleBracketedGenericArguments, CapturedParam, FnArg, GenericArgument, GenericParam, Ident,
+    Path, PathArguments, PreciseCapture, ReturnType, Signature, TraitBound, Type, TypeImplTrait,
+    TypeParamBound, TypePath, TypeReference, WherePredicate,
 };
 
-/// Rewrites every occurrence of `Self` in `return_type` to `Os`, both as a
-/// path segment (for example `Self::Module<'a>` -> `Os::Module<'a>`) and
-/// as an identifier in `use<...>` precise-capture bounds.
+/// Rewrites every occurrence of `Self` in `sig` to `Os`, both as a path
+/// segment (for example `Self::Module<'a>` -> `Os::Module<'a>`) and as an
+/// identifier in `use<...>` precise-capture bounds.
+///
+/// Walks typed arguments, generic-parameter bounds, where-clause
+/// predicates, and the return type. The receiver (`self` / `&self`) is
+/// left alone, since in the generated wrapper it refers to the wrapper
+/// type, not to the OS.
 ///
 /// Used when copying a trait method signature into an inherent-style
 /// wrapper impl where `Self` would be an alias for the concrete wrapper
 /// type and `Os` is the in-scope generic parameter carrying the original
 /// trait type.
-pub fn replace_self_with_os(return_type: &mut ReturnType) {
-    replace_in_return_type(return_type);
+pub fn replace_self_with_os(sig: &mut Signature) {
+    for input in &mut sig.inputs {
+        if let FnArg::Typed(pat_type) = input {
+            replace_in_type(&mut pat_type.ty);
+        }
+    }
+
+    for param in &mut sig.generics.params {
+        if let GenericParam::Type(type_param) = param {
+            for bound in &mut type_param.bounds {
+                replace_in_type_param_bound(bound);
+            }
+        }
+    }
+
+    if let Some(where_clause) = &mut sig.generics.where_clause {
+        for predicate in &mut where_clause.predicates {
+            if let WherePredicate::Type(predicate_type) = predicate {
+                replace_in_type(&mut predicate_type.bounded_ty);
+
+                for bound in &mut predicate_type.bounds {
+                    replace_in_type_param_bound(bound);
+                }
+            }
+        }
+    }
+
+    replace_in_return_type(&mut sig.output);
 }
 
 fn replace_in_return_type(return_type: &mut ReturnType) {

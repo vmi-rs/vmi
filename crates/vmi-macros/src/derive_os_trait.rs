@@ -13,18 +13,15 @@ struct TraitFn {
 }
 
 fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
-    let sig = item_fn.sig();
+    let mut sig = item_fn.sig().clone();
+    transform::replace_self_with_os(&mut sig);
+
     let ident = &sig.ident;
     let generics = &sig.generics;
     let return_type = &sig.output;
-    //let receiver = sig.receiver()?;
 
-    let (args, arg_names) = common::build_args(sig)?;
-    let where_clause = common::build_where_clause(sig);
-
-    // Replace `Self` with `Os` in the return type.
-    let mut return_type = return_type.clone();
-    transform::replace_self_with_os(&mut return_type);
+    let (args, arg_names) = common::build_args(&sig)?;
+    let where_clause = common::build_where_clause(&sig);
 
     // Generate the implementation for `VmiOsContext`.
     let doc = item_fn.doc();
