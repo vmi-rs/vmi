@@ -1,5 +1,36 @@
-use super::VmiOs;
+use super::{VmiOs, VmiOsMapped as _, impl_predicate};
 use crate::{MemoryAccess, Va, VmiDriver, VmiError, VmiVa};
+
+impl_predicate! {
+    /// Predicate used by [`VmiOsProcessExt::find_region`].
+    ///
+    /// [`VmiOsProcessExt::find_region`]: super::VmiOsProcessExt::find_region
+    pub trait RegionPredicate & impl for &str {
+        /// Matches a mapped region whose backing file path equals `self`
+        /// case-insensitively.
+        ///
+        /// Private regions and mapped regions without a backing path
+        /// always return `Ok(false)`. Regions do not carry a name of their
+        /// own, so the backing-file path is the only string identifier a
+        /// `&str` predicate can sensibly compare against.
+        fn matches(&self, region: &Os::Region<'_>) -> Result<bool, VmiError> {
+            match region.kind()?.into_mapped() {
+                Some(mapped) if let Some(path) = mapped.path()?.as_deref() => {
+                    let name = match path.rsplit_once(['\\', '/']) {
+                        Some((_, name)) => name,
+                        None => path,
+                    };
+
+                    Ok(name.eq_ignore_ascii_case(self))
+                }
+                _ => Ok(false),
+            }
+        }
+    }
+
+    #[any]
+    pub struct AnyRegion;
+}
 
 /// A trait for memory regions.
 ///

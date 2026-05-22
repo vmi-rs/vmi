@@ -1,4 +1,4 @@
-use super::{VmiOs, VmiOsImageArchitecture, impl_ops};
+use super::{RegionPredicate, VmiOs, VmiOsImageArchitecture, impl_ops, impl_predicate};
 use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
 impl_ops! {
@@ -28,6 +28,29 @@ impl ProcessObject {
     /// Converts the process object to a 64-bit unsigned integer.
     pub fn to_u64(&self) -> u64 {
         self.0.0
+    }
+}
+
+impl_predicate! {
+    /// Predicate used by [`VmiOsExt::find_process`].
+    ///
+    /// [`VmiOsExt::find_process`]: super::VmiOsExt::find_process
+    pub trait ProcessPredicate & impl for &str {
+        fn matches(&self, process: &Os::Process<'_>) -> Result<bool, VmiError> {
+            Ok(process.name()?.eq_ignore_ascii_case(self))
+        }
+    }
+
+    #[any]
+    pub struct AnyProcess;
+}
+
+impl<Os> ProcessPredicate<Os> for ProcessId
+where
+    Os: VmiOs,
+{
+    fn matches(&self, process: &Os::Process<'_>) -> Result<bool, VmiError> {
+        Ok(process.id()? == *self)
     }
 }
 
@@ -104,4 +127,63 @@ where
     /// This method checks if page-faulting on the address would result in
     /// a successful access.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError>;
+}
+
+/// Extension methods on [`VmiOsProcess`].
+///
+/// The blanket impl is the only impl of this trait, so implementors of
+/// [`VmiOsProcess`] cannot override the default bodies.
+pub trait VmiOsProcessExt<'a, Driver>: VmiOsProcess<'a, Driver>
+where
+    Driver: VmiDriver,
+{
+    /// Returns the first memory region matching `predicate`, or
+    /// `Ok(None)` if no region in the process matches.
+    fn find_region(
+        &self,
+        predicate: impl RegionPredicate<Self::Os>,
+    ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError> {
+        for region in self.regions()? {
+            let region = region?;
+
+            if predicate.matches(&region)? {
+                return Ok(Some(region));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns an iterator over the memory regions matching `predicate`.
+    fn filter_regions(
+        &self,
+        predicate: impl RegionPredicate<Self::Os>,
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::Region<'a>, VmiError>>, VmiError>
+    {
+        let mut regions = self.regions()?;
+
+        Ok(std::iter::from_fn(move || {
+            for region in regions.by_ref() {
+                let region = match region {
+                    Ok(region) => region,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                match predicate.matches(&region) {
+                    Ok(true) => return Some(Ok(region)),
+                    Ok(false) => continue,
+                    Err(err) => return Some(Err(err)),
+                }
+            }
+
+            None
+        }))
+    }
+}
+
+impl<'a, Driver, T> VmiOsProcessExt<'a, Driver> for T
+where
+    Driver: VmiDriver,
+    T: VmiOsProcess<'a, Driver>,
+{
 }

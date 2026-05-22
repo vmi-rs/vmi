@@ -1,5 +1,17 @@
-use super::VmiOs;
+use super::{VmiOs, impl_predicate};
 use crate::{Va, VmiDriver, VmiError, VmiVa};
+
+impl_predicate! {
+    /// Predicate used for filtering user modules.
+    pub trait UserModulePredicate & impl for &str {
+        fn matches(&self, module: &Os::UserModule<'_>) -> Result<bool, VmiError> {
+            Ok(module.name()?.eq_ignore_ascii_case(self))
+        }
+    }
+
+    #[any]
+    pub struct AnyUserModule;
+}
 
 /// A trait for user-mode modules.
 ///

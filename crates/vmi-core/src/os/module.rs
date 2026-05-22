@@ -1,5 +1,19 @@
-use super::VmiOs;
+use super::{VmiOs, impl_predicate};
 use crate::{Va, VmiDriver, VmiError, VmiVa};
+
+impl_predicate! {
+    /// Predicate used by [`VmiOsExt::find_module`].
+    ///
+    /// [`VmiOsExt::find_module`]: super::VmiOsExt::find_module
+    pub trait ModulePredicate & impl for &str {
+        fn matches(&self, module: &Os::Module<'_>) -> Result<bool, VmiError> {
+            Ok(module.name()?.eq_ignore_ascii_case(self))
+        }
+    }
+
+    #[any]
+    pub struct AnyModule;
+}
 
 /// A trait for kernel modules.
 ///

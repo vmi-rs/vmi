@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The captured state is exposed as a `VmiState` via
   `VmiSessionPauseGuard::state()`, so callers can introspect the paused
   guest without a separate register query.
+- Predicate-based lookups across OS collections:
+  - `VmiOsExt::find_process` / `filter_processes`.
+  - `VmiOsExt::find_module` / `filter_modules`.
+  - `VmiOsProcessExt::find_region` / `filter_regions`.
+  - `ProcessPredicate`, `ModulePredicate`, `RegionPredicate`, and
+    `UserModulePredicate` traits.
+  - `AnyProcess`, `AnyModule`, `AnyRegion`, and `AnyUserModule` match
+    everything.
 - `WindowsThread::apc_state_index` exposing `_KTHREAD.ApcStateIndex`.
 - `WindowsProcess::create_time` exposing `_EPROCESS.CreateTime`.
 - `WindowsProcess::exit_time` exposing `_EPROCESS.ExitTime`.

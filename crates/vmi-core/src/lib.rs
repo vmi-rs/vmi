@@ -34,7 +34,7 @@ pub use self::{
     error::{PageFaults, VmiError},
     event::{VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse},
     handler::VmiHandler,
-    os::VmiOs,
+    os::{VmiOs, VmiOsExt},
     page::VmiMappedPage,
 };
 

@@ -13,17 +13,19 @@ mod user_module;
 
 use vmi_macros::derive_os_wrapper;
 
-use self::macros::impl_ops;
+use self::macros::{impl_ops, impl_predicate};
 pub use self::{
     dummy::NoOS,
     image::{VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
     mapped::VmiOsMapped,
-    module::VmiOsModule,
-    process::{ProcessId, ProcessObject, VmiOsProcess},
-    region::{VmiOsRegion, VmiOsRegionKind},
+    module::{AnyModule, ModulePredicate, VmiOsModule},
+    process::{
+        AnyProcess, ProcessId, ProcessObject, ProcessPredicate, VmiOsProcess, VmiOsProcessExt,
+    },
+    region::{AnyRegion, RegionPredicate, VmiOsRegion, VmiOsRegionKind},
     struct_reader::StructReader,
     thread::{ThreadId, ThreadObject, VmiOsThread},
-    user_module::VmiOsUserModule,
+    user_module::{AnyUserModule, UserModulePredicate, VmiOsUserModule},
 };
 use crate::{Architecture, Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
@@ -215,3 +217,96 @@ pub trait VmiOs: Sized {
     ///   - See also: [`WindowsOs::last_status()`](../../../../vmi_os_windows/struct.WindowsOs.html#method.last_status)
     fn last_error(vmi: VmiState<Self>) -> Result<Option<u32>, VmiError>;
 }
+
+/// Extension methods on [`VmiOs`].
+///
+/// The blanket impl is the only impl of this trait, so implementors of
+/// [`VmiOs`] cannot override the default bodies.
+#[derive_os_wrapper(VmiOsState)]
+pub trait VmiOsExt: VmiOs {
+    /// Returns the first process matching `predicate`, or `Ok(None)`
+    /// if no live process matches.
+    fn find_process<'a>(
+        vmi: VmiState<'a, Self>,
+        predicate: impl ProcessPredicate<Self>,
+    ) -> Result<Option<Self::Process<'a>>, VmiError> {
+        for process in Self::processes(vmi)? {
+            let process = process?;
+
+            if predicate.matches(&process)? {
+                return Ok(Some(process));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns an iterator over the processes matching `predicate`.
+    fn filter_processes<'a>(
+        vmi: VmiState<'a, Self>,
+        predicate: impl ProcessPredicate<Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Process<'a>, VmiError>>, VmiError> {
+        let mut processes = Self::processes(vmi)?;
+
+        Ok(std::iter::from_fn(move || {
+            for process in processes.by_ref() {
+                let process = match process {
+                    Ok(process) => process,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                match predicate.matches(&process) {
+                    Ok(true) => return Some(Ok(process)),
+                    Ok(false) => continue,
+                    Err(err) => return Some(Err(err)),
+                }
+            }
+
+            None
+        }))
+    }
+
+    /// Returns the first kernel module matching `predicate`, or
+    /// `Ok(None)` if no loaded module matches.
+    fn find_module<'a>(
+        vmi: VmiState<'a, Self>,
+        predicate: impl ModulePredicate<Self>,
+    ) -> Result<Option<Self::Module<'a>>, VmiError> {
+        for module in Self::modules(vmi)? {
+            let module = module?;
+
+            if predicate.matches(&module)? {
+                return Ok(Some(module));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns an iterator over the kernel modules matching `predicate`.
+    fn filter_modules<'a>(
+        vmi: VmiState<'a, Self>,
+        predicate: impl ModulePredicate<Self>,
+    ) -> Result<impl Iterator<Item = Result<Self::Module<'a>, VmiError>>, VmiError> {
+        let mut modules = Self::modules(vmi)?;
+
+        Ok(std::iter::from_fn(move || {
+            for module in modules.by_ref() {
+                let module = match module {
+                    Ok(module) => module,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                match predicate.matches(&module) {
+                    Ok(true) => return Some(Ok(module)),
+                    Ok(false) => continue,
+                    Err(err) => return Some(Err(err)),
+                }
+            }
+
+            None
+        }))
+    }
+}
+
+impl<T> VmiOsExt for T where T: VmiOs {}
