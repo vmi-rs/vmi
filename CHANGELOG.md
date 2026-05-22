@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsOs::unloaded_modules` iterator over `MmUnloadedDrivers`
   and `MmLastUnloadedDriver`.
 - `WindowsOs::kernel_build_number` exposing `NtBuildNumber`.
+- `PeImageExt::codeview` - shortcut for
+  `debug_directory()?.codeview()`.
 - Registry hive walking:
   - `WindowsHive` wraps `_CMHIVE`, with cell
     resolution through `WindowsHiveMapDirectory` / `WindowsHiveMapTable` /

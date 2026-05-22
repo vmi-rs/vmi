@@ -89,7 +89,7 @@ pub use self::iter::{
 };
 
 pub mod pe;
-pub use self::pe::{CodeView, PeError, PeFile, PeHeader, PeImage};
+pub use self::pe::{CodeView, PeError, PeFile, PeHeader, PeImage, PeImageExt};
 
 pub mod unwind;
 

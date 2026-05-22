@@ -80,6 +80,28 @@ pub trait PeImage: Sized {
     fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError>;
 }
 
+/// Extension methods on [`PeImage`].
+pub trait PeImageExt: PeImage {
+    /// Returns the CodeView debug information.
+    ///
+    /// The [`CodeView`] debug information is located in the debug directory
+    /// with type [`IMAGE_DEBUG_TYPE_CODEVIEW`].
+    ///
+    /// Shortcut for [`self.debug_directory()?.codeview()`].
+    ///
+    /// [`self.debug_directory()?.codeview()`]: PeDebugDirectory::codeview
+    fn codeview(&self) -> Result<Option<CodeView>, VmiError> {
+        let debug_directory = match self.debug_directory()? {
+            Some(debug_directory) => debug_directory,
+            None => return Ok(None),
+        };
+
+        debug_directory.codeview()
+    }
+}
+
+impl<T> PeImageExt for T where T: PeImage {}
+
 /// PE export directory accessor.
 ///
 /// # Implementation Details
