@@ -410,7 +410,33 @@ impl Amd64 {
     }
 }
 
-impl vmi_core::arch::GpRegisters for GpRegisters {}
+impl vmi_core::arch::GpRegisters for GpRegisters {
+    type Architecture = Amd64;
+
+    fn instruction_pointer(&self) -> u64 {
+        self.rip
+    }
+
+    fn set_instruction_pointer(&mut self, ip: u64) {
+        self.rip = ip;
+    }
+
+    fn stack_pointer(&self) -> u64 {
+        self.rsp
+    }
+
+    fn set_stack_pointer(&mut self, sp: u64) {
+        self.rsp = sp;
+    }
+
+    fn result(&self) -> u64 {
+        self.rax
+    }
+
+    fn set_result(&mut self, result: u64) {
+        self.rax = result;
+    }
+}
 
 impl vmi_core::arch::Registers for Registers {
     type Architecture = Amd64;

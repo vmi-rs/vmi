@@ -155,7 +155,52 @@ pub trait Architecture {
 ///
 /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
 ///   `R8`-`R15`, `RIP` and `RFLAGS`.
-pub trait GpRegisters: Debug + Default + Clone + Copy {}
+pub trait GpRegisters: Debug + Default + Clone + Copy {
+    /// The specific CPU architecture implementation.
+    type Architecture: Architecture;
+
+    /// Returns the current value of the instruction pointer.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RIP`
+    fn instruction_pointer(&self) -> u64;
+
+    /// Sets the value of the instruction pointer.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RIP`
+    fn set_instruction_pointer(&mut self, ip: u64);
+
+    /// Returns the current value of the stack pointer.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RSP`
+    fn stack_pointer(&self) -> u64;
+
+    /// Sets the value of the stack pointer.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RSP`
+    fn set_stack_pointer(&mut self, sp: u64);
+
+    /// Returns the current value of the result register.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RAX`
+    fn result(&self) -> u64;
+
+    /// Sets the value of the result register.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `RAX`
+    fn set_result(&mut self, result: u64);
+}
 
 /// Complete set of CPU registers for a specific architecture.
 ///
@@ -170,7 +215,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     ///
     /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
     ///   `R8`-`R15`, `RIP` and `RFLAGS`.
-    type GpRegisters: GpRegisters;
+    type GpRegisters: GpRegisters<Architecture = Self::Architecture>;
 
     /// Returns the current value of the instruction pointer.
     ///
