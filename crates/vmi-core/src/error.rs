@@ -19,6 +19,10 @@ pub enum VmiError {
     #[error(transparent)]
     Isr(#[from] isr_macros::Error),
 
+    /// An error occurred while working with the ISR cache.
+    #[error(transparent)]
+    IsrCache(#[from] isr_cache::Error),
+
     /// A translation error occurred.
     #[error("translation error ({:?}, len: {})", .0[0], .0.len())]
     Translation(PageFaults),

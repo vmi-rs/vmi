@@ -98,6 +98,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `WindowsSidAttributes` bitflags covering the `SE_GROUP_*`
     attribute bits.
 - `WindowsLuid` value type for `_LUID`.
+- `vmi_utils::resolver` - locates loaded kernel and user modules in
+  guest memory and extracts the `DebugSignature` (`CodeView` on
+  Windows) needed to fetch debug symbols via `isr-cache`.
+  `resolve_kernel_module` and `resolve_user_module` return a
+  `Resolved` value carrying the load address and signature.
 
 ### Fixed
 

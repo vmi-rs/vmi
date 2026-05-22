@@ -18,26 +18,31 @@ keywords = [
 workspace = true
 
 [dependencies]
+memmap2 = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
+
+isr-cache = { workspace = true }
+isr-core = { workspace = true }
+isr-dl-windows = { workspace = true, optional = true } # CodeView
+isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
-vmi = { workspace = true }
+vmi = { workspace = true, features = ["arch-amd64", "os-windows", "utils"] }
 
 [features]
 default = []
 
 arch-amd64 = ["vmi-arch-amd64"]
-os-windows = [
-    "vmi-os-windows",
-]
+os-windows = ["vmi-os-windows", "isr-cache/windows", "isr-dl-windows"]
 
 bpm = ["interceptor", "ptm"]
 bridge = []
 injector = ["bridge"]
 interceptor = []
 ptm = []
+resolver = []

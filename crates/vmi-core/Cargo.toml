@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
 
+isr-cache = { workspace = true }
 isr-core = { workspace = true }
 isr-macros = { workspace = true }
 

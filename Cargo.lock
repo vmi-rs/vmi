@@ -2054,6 +2054,7 @@ version = "0.6.0"
 dependencies = [
  "bitflags",
  "indexmap",
+ "isr-cache",
  "isr-core",
  "isr-macros",
  "lru",
@@ -2151,6 +2152,11 @@ dependencies = [
 name = "vmi-utils"
 version = "0.6.0"
 dependencies = [
+ "isr-cache",
+ "isr-core",
+ "isr-dl-windows",
+ "isr-macros",
+ "memmap2",
  "tracing",
  "vmi",
  "vmi-arch-amd64",
