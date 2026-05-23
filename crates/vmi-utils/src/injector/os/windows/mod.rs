@@ -3,11 +3,12 @@ mod user_mode;
 
 use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
-    Hex, VmiCore, VmiError,
+    VmiCore, VmiError,
     driver::{
         VmiDriver, VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
         VmiVmControl, VmiWrite,
     },
+    trace::Hex,
 };
 use vmi_os_windows::WindowsOs;
 

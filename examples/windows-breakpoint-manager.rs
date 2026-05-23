@@ -9,14 +9,15 @@ use std::sync::{
 
 use isr::{Profile, cache::IsrCache, macros::symbols};
 use vmi::{
-    Hex, MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse,
-    VmiHandler, VmiSession,
+    MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse, VmiHandler,
+    VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::{VmiFullDriver, xen::VmiXenDriver},
     os::{
         ProcessObject, VmiOsProcess as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
     },
+    trace::Hex,
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
         ptm::PageTableMonitor,

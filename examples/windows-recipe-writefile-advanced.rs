@@ -52,10 +52,11 @@
 mod common;
 
 use vmi::{
-    Hex, Va,
+    Va,
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
+    trace::Hex,
     utils::injector::{Recipe, RecipeControlFlow, UserInjectorHandler, recipe},
 };
 

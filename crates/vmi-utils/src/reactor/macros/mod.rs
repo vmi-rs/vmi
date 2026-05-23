@@ -21,7 +21,9 @@ pub mod __private {
     }
 
     use isr_cache::{Entry as IsrEntry, IsrCache};
-    use vmi_core::{Hex, VmiError, VmiOs, VmiSession, driver::VmiFullDriver, os::AnyProcess};
+    use vmi_core::{
+        VmiError, VmiOs, VmiSession, driver::VmiFullDriver, os::AnyProcess, trace::Hex,
+    };
     use vmi_os_windows::{ArchAdapter, WindowsOs};
 
     use super::super::{

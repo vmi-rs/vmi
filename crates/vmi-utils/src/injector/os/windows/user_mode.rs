@@ -1,12 +1,13 @@
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, Interrupt, Msr};
 use vmi_core::{
-    Architecture as _, Hex, MemoryAccess, Pa, Registers as _, Va, VcpuId, View, VmiContext,
-    VmiError, VmiEventResponse, VmiHandler, VmiSession,
+    Architecture as _, MemoryAccess, Pa, Registers as _, Va, VcpuId, View, VmiContext, VmiError,
+    VmiEventResponse, VmiHandler, VmiSession,
     driver::{
         VmiDriver, VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl,
         VmiWrite,
     },
     os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
+    trace::Hex,
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 

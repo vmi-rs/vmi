@@ -81,7 +81,7 @@ macro_rules! impl_ops {
 /// # Examples
 ///
 /// ```
-/// # use vmi_core::Hex;
+/// # use vmi_core::trace::Hex;
 /// assert_eq!(format!("{}", Hex(42u16)), "0x002a");
 /// ```
 pub struct Hex<T>(pub T);

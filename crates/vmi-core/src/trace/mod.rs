@@ -23,6 +23,9 @@
 //! fn dispatch(...) { ... }
 //! ```
 
+mod hex;
+
+pub use self::hex::Hex;
 use crate::{
     Architecture, VmiEvent, VmiState,
     driver::VmiDriver,

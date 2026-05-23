@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer need to depend on `object::pe` directly.
 - **Breaking:** `GpRegisters` now carries an `Architecture` associated
   type and requires member accessors for the common registers.
+- **Breaking:** `vmi_core::Hex` moved to `vmi_core::trace::Hex`.
 
 ### Added
 

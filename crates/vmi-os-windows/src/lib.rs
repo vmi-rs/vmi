@@ -61,10 +61,11 @@ use std::{cell::RefCell, collections::HashMap};
 use isr_core::Profile;
 use once_cell::unsync::OnceCell;
 use vmi_core::{
-    AccessContext, Architecture, Gfn, Hex, Pa, Registers as _, Va, VcpuId, VmiCore, VmiDriver,
-    VmiError, VmiState,
+    AccessContext, Architecture, Gfn, Pa, Registers as _, Va, VcpuId, VmiCore, VmiDriver, VmiError,
+    VmiState,
     driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
+    trace::Hex,
 };
 use vmi_macros::derive_trait_from_impl;
 use zerocopy::{FromBytes, IntoBytes};

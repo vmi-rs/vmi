@@ -1,7 +1,8 @@
 use vmi::{
-    Hex, VmiContext, VmiError, VmiOs,
+    VmiContext, VmiError, VmiOs,
     driver::VmiRead,
     os::windows::{ArchAdapter, WindowsFileObject, WindowsOs, WindowsOsExt as _},
+    trace::Hex,
     utils::reactor::Action,
 };
 

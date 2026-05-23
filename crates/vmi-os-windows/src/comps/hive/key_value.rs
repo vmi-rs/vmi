@@ -1,4 +1,4 @@
-use vmi_core::{Hex, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, trace::Hex};
 
 use super::{HCELL_INDEX_SIZE, WindowsHive, WindowsHiveCellIndex};
 use crate::{ArchAdapter, KeyValueIterator, WindowsError, WindowsOs, offset};
