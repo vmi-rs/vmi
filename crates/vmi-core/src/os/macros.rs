@@ -1,7 +1,7 @@
 macro_rules! impl_ops {
     (
         $(#[$meta:meta])*
-        $name:ident, $type:ty
+        $vis:vis struct $name:ident($inner_vis:vis $inner:ty);
     ) => {
         $(#[$meta])*
         #[derive(
@@ -17,16 +17,16 @@ macro_rules! impl_ops {
             ::serde::Serialize,
             ::serde::Deserialize,
         )]
-        pub struct $name(pub $type);
+        $vis struct $name($inner_vis $inner);
 
-        impl From<$type> for $name {
-            fn from(value: $type) -> Self {
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
                 Self(value)
             }
         }
 
-        impl From<$name> for $type {
-            fn from(value: $name) -> $type {
+        impl From<$name> for $inner {
+            fn from(value: $name) -> $inner {
                 value.0
             }
         }

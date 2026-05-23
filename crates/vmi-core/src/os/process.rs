@@ -3,14 +3,14 @@ use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
 impl_ops! {
     /// A process ID within a system.
-    ProcessId, u32
+    pub struct ProcessId(pub u32);
 }
 
 impl_ops! {
     /// A process object within a system.
     ///
     /// Equivalent to `EPROCESS*` on Windows or `task_struct*` on Linux.
-    ProcessObject, Va
+    pub struct ProcessObject(pub Va);
 }
 
 impl VmiVa for ProcessObject {

@@ -3,14 +3,14 @@ use crate::{Va, VmiDriver, VmiError, VmiVa};
 
 impl_ops! {
     /// A thread ID within a system.
-    ThreadId, u32
+    pub struct ThreadId(pub u32);
 }
 
 impl_ops! {
     /// A thread object within a system.
     ///
     /// Equivalent to `ETHREAD*` on Windows.
-    ThreadObject, Va
+    pub struct ThreadObject(pub Va);
 }
 
 impl VmiVa for ThreadObject {
