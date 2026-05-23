@@ -9,7 +9,7 @@
 //!   their inner primitive, so structured-output subscribers emit a
 //!   number rather than a `Debug`-formatted struct.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```ignore
 //! #[tracing::instrument(

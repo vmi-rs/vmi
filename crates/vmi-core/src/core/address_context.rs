@@ -15,7 +15,7 @@ use super::{Pa, Va};
 /// translation functions in VMI tools, ensuring that the correct translation
 /// context is applied for each memory operation.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```no_run
 /// # use vmi_core::{AddressContext, Pa, Va};

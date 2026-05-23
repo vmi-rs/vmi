@@ -23,7 +23,7 @@
 //! appropriately, as VMI operations can fail due to various reasons (e.g.,
 //! invalid memory access, incompatible Windows version).
 //!
-//! ## Example
+//! ## Examples
 //!
 //! ```no_run
 //! # use vmi::{

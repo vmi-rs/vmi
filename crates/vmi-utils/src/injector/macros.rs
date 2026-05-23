@@ -260,7 +260,7 @@ macro_rules! _private_recipe {
                     /// It is the user's responsibility to ensure that the function
                     /// is called with the correct number and types of arguments.
                     ///
-                    /// # Example
+                    /// # Examples
                     ///
                     /// ```compile_fail
                     /// inject! {
@@ -290,7 +290,7 @@ macro_rules! _private_recipe {
                     ///
                     /// Returns the guest virtual address of the copied data on the stack.
                     ///
-                    /// # Example
+                    /// # Examples
                     ///
                     /// ```compile_fail
                     /// // Allocate a value on the stack to store the output parameter.

@@ -24,7 +24,7 @@ introspecting, as kernel structures may vary between versions. Handle errors
 appropriately, as VMI operations can fail due to various reasons (e.g.,
 invalid memory access, incompatible Windows version).
 
-## Example
+## Examples
 
 ```rust,ignore
 let _guard = vmi.pause_guard()?;
