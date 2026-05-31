@@ -245,3 +245,9 @@ name = "windows-reactor"
 path = "examples/windows-reactor/main.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
+name = "kvm-windows-reactor"
+path = "examples/kvm-windows-reactor/main.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
