@@ -1,5 +1,9 @@
 //! Conversions between KVM register structs and the amd64 `Registers` type.
 
+use kvm::{
+    KvmVmiEvent, KvmVmiRegs,
+    arch::x86::{KvmSegmentX86, KvmVmiRegsX86},
+};
 use vmi_arch_amd64::{Gdtr, Granularity, Idtr, Registers, SegmentAccess, SegmentDescriptor};
 
 use crate::convert::FromExt;
@@ -145,10 +149,10 @@ impl FromExt<kvm::arch::x86::Registers> for Registers {
     }
 }
 
-impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
-    fn from_ext(value: &kvm::sys::kvm_vmi_regs) -> Self {
+impl FromExt<&KvmVmiRegsX86> for Registers {
+    fn from_ext(value: &KvmVmiRegsX86) -> Self {
         /// Reconstructs a `SegmentDescriptor` from the packed in-event segment.
-        fn iseg(s: &kvm::sys::kvm_vmi_regs__bindgen_ty_1) -> SegmentDescriptor {
+        fn iseg(s: &KvmSegmentX86) -> SegmentDescriptor {
             let access = segment_access_from_vmx_ar(s.ar);
             let limit = match access.granularity() {
                 Granularity::Byte => s.limit,
@@ -222,16 +226,16 @@ impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
     }
 }
 
-impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
+impl FromExt<&Registers> for KvmVmiRegsX86 {
     fn from_ext(value: &Registers) -> Self {
         /// Packs a `SegmentDescriptor` into the in-event segment layout, where
         /// the limit is stored in the same granularity the `ar` byte encodes.
-        fn iseg(d: &SegmentDescriptor) -> kvm::sys::kvm_vmi_regs__bindgen_ty_1 {
+        fn iseg(d: &SegmentDescriptor) -> KvmSegmentX86 {
             let limit = match d.access.granularity() {
                 Granularity::Byte => d.limit,
                 Granularity::Page4K => d.limit >> 12,
             };
-            kvm::sys::kvm_vmi_regs__bindgen_ty_1 {
+            KvmSegmentX86 {
                 base: d.base,
                 limit,
                 selector: d.selector.into(),
@@ -279,6 +283,13 @@ impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
             msr_kernel_gs_base: value.shadow_gs,
             msr_tsc_aux: value.msr_tsc_aux,
         }
+    }
+}
+
+impl FromExt<&KvmVmiEvent> for Registers {
+    fn from_ext(value: &KvmVmiEvent) -> Self {
+        let KvmVmiRegs::X86(regs) = value.regs;
+        Registers::from_ext(&regs)
     }
 }
 

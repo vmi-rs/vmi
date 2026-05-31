@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use kvm::KvmVmiEvent;
 use vmi_arch_amd64::{
     Amd64, ControlRegister, EventMonitor, ExceptionVector, Interrupt, InterruptType, Msr, Registers,
 };
@@ -122,33 +123,31 @@ fn inject_event_arg(vcpu: VcpuId, interrupt: Interrupt) -> kvm::sys::kvm_vmi_inj
     }
 }
 
-/// Translates a VMI response into the KVM ring-slot response flags, writing
-/// back registers and view as needed.
-fn apply_response(slot: &mut kvm::sys::kvm_vmi_ring_event, response: VmiEventResponse<Amd64>) {
-    let mut flags = kvm::sys::KVM_VMI_RESPONSE_CONTINUE;
+/// Translates a VMI response into a native `KvmVmiResponse`. When the handler
+/// overrides registers, this reconstructs the full register set from the
+/// in-event snapshot, applies the new GP registers, and packs it back.
+fn build_response(event: &KvmVmiEvent, response: VmiEventResponse<Amd64>) -> kvm::KvmVmiResponse {
+    let action = match response.action {
+        VmiEventAction::Continue => kvm::KvmResponseAction::Continue,
+        VmiEventAction::Deny => kvm::KvmResponseAction::Deny,
+        VmiEventAction::Emulate => kvm::KvmResponseAction::Emulate,
+        VmiEventAction::ReinjectInterrupt => kvm::KvmResponseAction::Reinject,
+        VmiEventAction::Singlestep => kvm::KvmResponseAction::Singlestep,
+        VmiEventAction::FastSinglestep => kvm::KvmResponseAction::FastSinglestep,
+    };
 
-    if let Some(new_registers) = response.registers {
-        let mut registers = Registers::from_ext(&slot.regs);
-        registers.set_gp_registers(&new_registers);
-        slot.regs = kvm::sys::kvm_vmi_regs::from_ext(&registers);
-        flags |= kvm::sys::KVM_VMI_RESPONSE_SET_REGS;
+    let regs = response.registers.map(|new_registers| {
+        let kvm::KvmVmiRegs::X86(in_event) = event.regs;
+        let mut full = Registers::from_ext(&in_event);
+        full.set_gp_registers(&new_registers);
+        kvm::KvmVmiRegs::X86(kvm::arch::x86::KvmVmiRegsX86::from_ext(&full))
+    });
+
+    kvm::KvmVmiResponse {
+        action,
+        regs,
+        view_id: response.view.map(|view| u32::from(view.0)),
     }
-
-    if let Some(view) = response.view {
-        slot.view_id = u32::from(view.0);
-        flags |= kvm::sys::KVM_VMI_RESPONSE_SWITCH_VIEW;
-    }
-
-    match response.action {
-        VmiEventAction::Continue => {}
-        VmiEventAction::Deny => flags |= kvm::sys::KVM_VMI_RESPONSE_DENY,
-        VmiEventAction::Emulate => flags |= kvm::sys::KVM_VMI_RESPONSE_EMULATE,
-        VmiEventAction::ReinjectInterrupt => flags |= kvm::sys::KVM_VMI_RESPONSE_REINJECT,
-        VmiEventAction::Singlestep => flags |= kvm::sys::KVM_VMI_RESPONSE_SINGLESTEP,
-        VmiEventAction::FastSinglestep => flags |= kvm::sys::KVM_VMI_RESPONSE_SINGLESTEP_FAST,
-    }
-
-    slot.response = flags;
 }
 
 impl ArchAdapter for Amd64 {
@@ -320,30 +319,6 @@ fn drain_eventfd(fd: std::os::fd::RawFd) {
     }
 }
 
-/// Returns the current slot pointer and vcpu id for `ring_index`, or `None`
-/// when that ring has no queued event. The `rings` borrow is released on
-/// return. The raw pointer stays valid because it points into the mmap region
-/// owned by the `KvmVmiRing`, and the backing `Vec` is not mutated during
-/// event processing, so the pointer outlives the borrow and the handler may
-/// re-enter the driver.
-fn next_ready_slot(
-    driver: &VmiKvmDriver<Amd64>,
-    ring_index: usize,
-) -> Option<(*mut kvm::sys::kvm_vmi_ring_event, u32)> {
-    let mut rings = driver.rings.borrow_mut();
-    let ring = rings.get_mut(ring_index)?.as_mut()?;
-    let slot_ptr = ring.current_slot()?;
-    Some((slot_ptr, ring.vcpu_id()))
-}
-
-/// Advances the consumer cursor of `ring_index` under a short borrow.
-fn advance_ring(driver: &VmiKvmDriver<Amd64>, ring_index: usize) {
-    let mut rings = driver.rings.borrow_mut();
-    if let Some(Some(ring)) = rings.get_mut(ring_index) {
-        ring.advance();
-    }
-}
-
 /// Drains every ready ring, invoking the handler and acking each event. No
 /// `rings` borrow is held while the handler runs, so the handler may call back
 /// into the driver (for example `events_pending` or `wait_for_event`) without
@@ -355,36 +330,50 @@ fn process_ready_rings(
     let ring_count = driver.rings.borrow().len();
 
     for ring_index in 0..ring_count {
-        // Drain every queued slot for this ring. Each iteration takes a short
-        // borrow to fetch the slot pointer, releases it, then runs the handler
-        // and applies the response with no borrow held.
-        while let Some((slot_ptr, vcpu_id)) = next_ready_slot(driver, ring_index) {
-            // SAFETY: slot_ptr points into the mapped ring page and stays
-            // valid until the slot is acked. The Vec backing the rings is not
-            // mutated while this pointer is live, so the mmap stays mapped.
-            let slot = unsafe { &mut *slot_ptr };
+        loop {
+            // Short borrow: peek+decode the next event, release the borrow
+            // before the handler so it may re-enter the driver.
+            let event = match driver
+                .rings
+                .borrow()
+                .get(ring_index)
+                .and_then(|ring| ring.as_ref())
+            {
+                Some(ring) => match ring.next_event() {
+                    Some(event) => event,
+                    None => break,
+                },
+                None => break,
+            };
 
-            let reason = event::reason_from_slot(slot)?;
-
-            let registers = Registers::from_ext(&slot.regs);
-            let view = match slot.view_id {
+            let vcpu_id = event.vcpu_id;
+            let registers = Registers::from_ext(&event);
+            let view = match event.view_id {
                 0 => None,
                 view_id => Some(View(view_id as u16)),
             };
-            let flags = VmiEventFlags::default();
-
-            let vmi_event = VmiEvent::new(VcpuId(vcpu_id as u16), flags, view, registers, reason);
+            let reason = event::reason_from_event(&event)?;
+            let vmi_event = VmiEvent::new(
+                VcpuId(vcpu_id as u16),
+                VmiEventFlags::default(),
+                view,
+                registers,
+                reason,
+            );
 
             let response = handler(&vmi_event);
+            let resp = build_response(&event, response);
 
-            // SAFETY: same slot pointer, still valid until the ack below.
-            apply_response(unsafe { &mut *slot_ptr }, response);
-
+            if let Some(Some(ring)) = driver.rings.borrow_mut().get_mut(ring_index) {
+                ring.respond(resp);
+            }
             driver
                 .session
                 .ack_event(vcpu_id)
                 .map_err(VmiError::driver)?;
-            advance_ring(driver, ring_index);
+            if let Some(Some(ring)) = driver.rings.borrow_mut().get_mut(ring_index) {
+                ring.advance();
+            }
         }
     }
     Ok(())
