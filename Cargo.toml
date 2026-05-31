@@ -211,6 +211,12 @@ doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
 [[example]]
+name = "kvm-windows-breakpoint-manager"
+path = "examples/kvm-windows-breakpoint-manager.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
+
+[[example]]
 name = "windows-dump"
 path = "examples/windows-dump.rs"
 doc-scrape-examples = true
