@@ -1,11 +1,11 @@
 //! Event-reason construction and response translation for amd64 KVM events.
 
 use vmi_arch_amd64::{
-    ControlRegister, EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection,
+    Amd64, ControlRegister, EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection,
     EventMemoryAccess, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, ExceptionVector,
     Interrupt, InterruptType, MemoryAccessFlags,
 };
-use vmi_core::{Gfn, MemoryAccess, Pa, Va, VmiError};
+use vmi_core::{Architecture, MemoryAccess, Pa, Va, VmiError};
 
 use crate::convert::FromExt;
 
@@ -82,7 +82,7 @@ impl FromExt<&kvm::sys::kvm_vmi_event_io> for EventIo {
 /// breakpoint GPA gives the GFN of the faulting instruction.
 fn breakpoint_reason(gpa: u64, insn_len: u8) -> EventReason {
     EventReason::Interrupt(EventInterrupt {
-        gfn: Gfn::new(gpa >> 12),
+        gfn: Amd64::gfn_from_pa(Pa::new(gpa)),
         interrupt: Interrupt {
             vector: ExceptionVector::Breakpoint,
             typ: InterruptType::SoftwareException,
@@ -97,7 +97,7 @@ fn breakpoint_reason(gpa: u64, insn_len: u8) -> EventReason {
 /// pending_dbg value carries DR6/pending-debug state.
 fn debug_reason(value: &kvm::sys::kvm_vmi_event_debug, insn_len: u8) -> EventReason {
     EventReason::Interrupt(EventInterrupt {
-        gfn: Gfn::new(value.gpa >> 12),
+        gfn: Amd64::gfn_from_pa(Pa::new(value.gpa)),
         interrupt: Interrupt {
             vector: ExceptionVector::DebugException,
             typ: InterruptType::HardwareException,
@@ -161,7 +161,7 @@ pub(super) fn reason_from_slot(
         // SAFETY: type_ selects the singlestep arm of the event union.
         let ss = unsafe { slot.__bindgen_anon_1.singlestep };
         Ok(EventReason::Singlestep(EventSinglestep {
-            gfn: Gfn::new(ss.gpa >> 12),
+            gfn: Amd64::gfn_from_pa(Pa::new(ss.gpa)),
         }))
     }
     else if kind == kvm::sys::KVM_VMI_EVENT_HYPERCALL {
