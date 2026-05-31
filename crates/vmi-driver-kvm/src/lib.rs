@@ -2,7 +2,6 @@
 
 mod arch;
 mod convert;
-mod core;
 
 use std::{
     cell::RefCell,
@@ -13,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use kvm::{KvmGuestMemory, KvmMappedPage, KvmVcpu, KvmVmi, KvmVmiRing, ViewId};
+use kvm::{KvmGuestMemory, KvmMappedPage, KvmVcpu, KvmVmi, KvmVmiRing, MemAccess, ViewId};
 use vmi_core::{
     Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError, VmiEvent,
     VmiEventResponse, VmiInfo, VmiMappedPage,
@@ -145,12 +144,11 @@ where
     Arch: ArchAdapter,
 {
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
-        let bits = self
-            .session
-            .get_mem_access(ViewId(u32::from(view.0)), gfn.into())
-            .map_err(VmiError::driver)?;
-
-        Ok(MemoryAccess::from_ext(bits))
+        Ok(MemoryAccess::from_ext(
+            self.session
+                .get_mem_access(ViewId(u32::from(view.0)), gfn.into())
+                .map_err(VmiError::driver)?,
+        ))
     }
 }
 
@@ -167,7 +165,11 @@ where
         tracing::trace!(%gfn, %view, %access, "set memory access");
 
         self.session
-            .set_mem_access(ViewId(u32::from(view.0)), gfn.into(), u8::from_ext(access))
+            .set_mem_access(
+                ViewId(u32::from(view.0)),
+                gfn.into(),
+                MemAccess::from_ext(access),
+            )
             .map_err(VmiError::driver)
     }
 
@@ -180,9 +182,7 @@ where
     ) -> Result<(), VmiError> {
         tracing::trace!(%gfn, %view, %access, "set memory access");
 
-        let mut bits = u8::from_ext(access);
-
-        if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
+        let bits = if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
             if access != MemoryAccess::R {
                 return Err(VmiError::NotSupported);
             }
@@ -193,8 +193,11 @@ where
             // kernel can classify it as a write violation, looping forever
             // instead of delivering a mem_access event. R|PW matches the KVM
             // selftest and the Xen driver's R_PW.
-            bits = (kvm::sys::KVM_VMI_ACCESS_R | kvm::sys::KVM_VMI_ACCESS_PW) as u8;
+            MemAccess::R | MemAccess::PW
         }
+        else {
+            MemAccess::from_ext(access)
+        };
 
         self.session
             .set_mem_access(ViewId(u32::from(view.0)), gfn.into(), bits)
@@ -231,7 +234,7 @@ where
     fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
         let id = self
             .session
-            .create_view(u8::from_ext(default_access))
+            .create_view(MemAccess::from_ext(default_access))
             .map_err(VmiError::driver)?;
 
         self.views.borrow_mut().insert(id.0);

@@ -1,5 +1,6 @@
 //! Event-reason construction and response translation for amd64 KVM events.
 
+use kvm::MemAccess;
 use vmi_arch_amd64::{
     Amd64, ControlRegister, EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection,
     EventMemoryAccess, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, ExceptionVector,
@@ -121,7 +122,7 @@ pub(super) fn reason_from_slot(
         Ok(EventReason::MemoryAccess(EventMemoryAccess {
             pa: Pa::new(mem.gpa),
             va: Va::default(),
-            access: MemoryAccess::from_ext(mem.access as u8),
+            access: MemoryAccess::from_ext(MemAccess::from_bits_truncate(mem.access as u8)),
             flags: MemoryAccessFlags::default(),
         }))
     }
