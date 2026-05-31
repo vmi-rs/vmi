@@ -187,7 +187,13 @@ where
                 return Err(VmiError::NotSupported);
             }
 
-            bits = kvm::sys::KVM_VMI_ACCESS_PW as u8;
+            // Keep R set alongside PW. The page must stay readable so the EPT
+            // entry is present: with PW alone the entry has no R/W/X bits, which
+            // the CPU treats as not-present, so every access faults before the
+            // kernel can classify it as a write violation, looping forever
+            // instead of delivering a mem_access event. R|PW matches the KVM
+            // selftest and the Xen driver's R_PW.
+            bits = (kvm::sys::KVM_VMI_ACCESS_R | kvm::sys::KVM_VMI_ACCESS_PW) as u8;
         }
 
         self.session

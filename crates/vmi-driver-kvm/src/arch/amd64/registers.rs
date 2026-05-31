@@ -85,6 +85,25 @@ fn unpack_ar_into(s: &mut kvm::sys::kvm_segment, access: SegmentAccess) {
     s.g = ((ar >> 11) & 1) as u8;
 }
 
+/// Translates the packed segment access-rights word carried in `kvm_vmi_regs`
+/// segments into the amd64 `SegmentAccess` layout.
+///
+/// The ring event stores access rights in the VMX AR-bytes layout (SDM
+/// 24.4.1): AVL bit 12, L bit 13, D/B bit 14, G bit 15. `SegmentAccess` uses
+/// the compact layout shared with `kvm_segment_ar`: AVL bit 8, L bit 9, D/B
+/// bit 10, G bit 11. The low byte (type, S, DPL, P) occupies the same
+/// positions in both, so only the upper nibble is shifted down by four.
+fn segment_access_from_vmx_ar(ar: u16) -> SegmentAccess {
+    let ar = u32::from(ar);
+    SegmentAccess((ar & 0x00ff) | ((ar >> 4) & 0x0f00))
+}
+
+/// Packs an amd64 `SegmentAccess` back into the VMX AR-bytes layout used by
+/// `kvm_vmi_regs` segments. The inverse of `segment_access_from_vmx_ar`.
+fn vmx_ar_from_segment_access(access: SegmentAccess) -> u16 {
+    ((access.0 & 0x00ff) | ((access.0 & 0x0f00) << 4)) as u16
+}
+
 /// Converts one `kvm_segment` into an amd64 `SegmentDescriptor`.
 fn seg(s: &kvm::sys::kvm_segment) -> SegmentDescriptor {
     SegmentDescriptor {
@@ -184,7 +203,7 @@ impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
     fn from_ext(value: &kvm::sys::kvm_vmi_regs) -> Self {
         /// Reconstructs a `SegmentDescriptor` from the packed in-event segment.
         fn iseg(s: &kvm::sys::kvm_vmi_regs__bindgen_ty_1) -> SegmentDescriptor {
-            let access = SegmentAccess(u32::from(s.ar));
+            let access = segment_access_from_vmx_ar(s.ar);
             let limit = match access.granularity() {
                 Granularity::Byte => s.limit,
                 Granularity::Page4K => (((u64::from(s.limit) + 1) << 12) - 1) as u32,
@@ -295,7 +314,7 @@ impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
                 base: d.base,
                 limit,
                 selector: d.selector.into(),
-                ar: d.access.0 as u16,
+                ar: vmx_ar_from_segment_access(d.access),
             }
         }
 
@@ -370,5 +389,32 @@ impl FromExt<&Registers> for kvm::sys::kvm_sregs {
             efer: value.msr_efer.into(),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vmi_arch_amd64::{Granularity, SegmentAccess};
+
+    use super::{segment_access_from_vmx_ar, vmx_ar_from_segment_access};
+
+    #[test]
+    fn vmx_ar_decodes_64bit_code_segment() {
+        // A 64-bit kernel code segment in the VMX AR-bytes layout the kernel
+        // writes into kvm_vmi_regs: type=0xb, S(4), P(7), L(13), G(15).
+        let vmx_ar: u16 = 0xb | (1 << 4) | (1 << 7) | (1 << 13) | (1 << 15);
+
+        let access = segment_access_from_vmx_ar(vmx_ar);
+        assert!(access.long_mode());
+        assert!(access.present());
+        assert_eq!(access.typ(), 0xb);
+        assert!(matches!(access.granularity(), Granularity::Page4K));
+
+        // Wrapping the raw VMX word (the previous bug) lands L at bit 13, which
+        // long_mode() reads at bit 9, so it would wrongly report 32-bit code.
+        assert!(!SegmentAccess(u32::from(vmx_ar)).long_mode());
+
+        // Round-trips back to the VMX layout the kernel expects.
+        assert_eq!(vmx_ar_from_segment_access(access), vmx_ar);
     }
 }
