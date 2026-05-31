@@ -60,6 +60,7 @@ isr-dl-windows = "0.6.0"
 isr-macros = "0.6.0"
 
 xen = { package = "libxen", version = "0.5.0" }
+kvm = { package = "libkvm", path = "../kvm" }
 
 #
 # For development.
@@ -76,6 +77,7 @@ vmi = { path = "." }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.6.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.6.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.6.0" }
+vmi-driver-kvm = { path = "./crates/vmi-driver-kvm", version = "0.6.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.6.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.6.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.6.0" }

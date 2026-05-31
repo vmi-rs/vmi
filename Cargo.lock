@@ -940,6 +940,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libkvm"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "libc",
+ "libkvm-sys",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "libkvm-sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+]
+
+[[package]]
 name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2105,6 +2123,18 @@ dependencies = [
  "vmi-arch-amd64",
  "vmi-core",
  "zerocopy",
+]
+
+[[package]]
+name = "vmi-driver-kvm"
+version = "0.6.0"
+dependencies = [
+ "libc",
+ "libkvm",
+ "thiserror",
+ "tracing",
+ "vmi-arch-amd64",
+ "vmi-core",
 ]
 
 [[package]]
