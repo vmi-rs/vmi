@@ -4,63 +4,14 @@ use vmi_arch_amd64::{Gdtr, Granularity, Idtr, Registers, SegmentAccess, SegmentD
 
 use crate::convert::FromExt;
 
-/// A full register snapshot read out-of-event via standard KVM ioctls.
-pub struct KvmFullRegs {
-    /// General-purpose registers from `KVM_GET_REGS`.
-    pub regs: kvm::sys::kvm_regs,
-
-    /// Special registers from `KVM_GET_SREGS`.
-    pub sregs: kvm::sys::kvm_sregs,
-
-    /// Debug registers from `KVM_GET_DEBUGREGS`.
-    pub debugregs: kvm::sys::kvm_debugregs,
-
-    /// MSR values read via `KVM_GET_MSRS`.
-    pub msrs: KvmMsrs,
-}
-
-/// The subset of MSRs the driver reads, named for clarity.
-#[derive(Default)]
-pub struct KvmMsrs {
-    /// `IA32_EFER`.
-    pub efer: u64,
-
-    /// `IA32_STAR`.
-    pub star: u64,
-
-    /// `IA32_LSTAR`.
-    pub lstar: u64,
-
-    /// `IA32_CSTAR`.
-    pub cstar: u64,
-
-    /// `IA32_FMASK` (syscall flag mask).
-    pub sfmask: u64,
-
-    /// `IA32_KERNEL_GS_BASE` (the swapped-out GS base).
-    pub kernel_gs_base: u64,
-
-    /// `IA32_SYSENTER_CS`.
-    pub sysenter_cs: u64,
-
-    /// `IA32_SYSENTER_ESP`.
-    pub sysenter_esp: u64,
-
-    /// `IA32_SYSENTER_EIP`.
-    pub sysenter_eip: u64,
-
-    /// `IA32_TSC_AUX`.
-    pub tsc_aux: u64,
-}
-
-/// Packs the typed bitfields of a `kvm_segment` into the amd64 access-rights
+/// Packs the typed bitfields of a `KvmSegment` into the amd64 access-rights
 /// layout: type bits 0-3, s bit 4, dpl bits 5-6, present bit 7, avl bit 8,
 /// l bit 9, db bit 10, g bit 11.
 ///
 /// `kvm_segment.unusable` is intentionally not modeled in the amd64 AR. KVM
 /// reflects an unusable segment via `present = 0`, which IS carried here, so
 /// the round-trip uses present as the proxy for usability.
-fn kvm_segment_ar(s: &kvm::sys::kvm_segment) -> u32 {
+fn kvm_segment_ar(s: &kvm::arch::x86::KvmSegment) -> u32 {
     (u32::from(s.type_) & 0b1111)
         | ((u32::from(s.s) & 1) << 4)
         | ((u32::from(s.dpl) & 0b11) << 5)
@@ -72,8 +23,8 @@ fn kvm_segment_ar(s: &kvm::sys::kvm_segment) -> u32 {
 }
 
 /// Unpacks an amd64 access-rights value back into the typed bitfields of a
-/// `kvm_segment`. The inverse of `kvm_segment_ar`.
-fn unpack_ar_into(s: &mut kvm::sys::kvm_segment, access: SegmentAccess) {
+/// `KvmSegment`. The inverse of `kvm_segment_ar`.
+fn unpack_ar_into(s: &mut kvm::arch::x86::KvmSegment, access: SegmentAccess) {
     let ar = access.0;
     s.type_ = (ar & 0b1111) as u8;
     s.s = ((ar >> 4) & 1) as u8;
@@ -104,8 +55,8 @@ fn vmx_ar_from_segment_access(access: SegmentAccess) -> u16 {
     ((access.0 & 0x00ff) | ((access.0 & 0x0f00) << 4)) as u16
 }
 
-/// Converts one `kvm_segment` into an amd64 `SegmentDescriptor`.
-fn seg(s: &kvm::sys::kvm_segment) -> SegmentDescriptor {
+/// Converts one `KvmSegment` into an amd64 `SegmentDescriptor`.
+fn seg(s: &kvm::arch::x86::KvmSegment) -> SegmentDescriptor {
     SegmentDescriptor {
         base: s.base,
         limit: s.limit,
@@ -114,9 +65,9 @@ fn seg(s: &kvm::sys::kvm_segment) -> SegmentDescriptor {
     }
 }
 
-/// Converts an amd64 `SegmentDescriptor` into a `kvm_segment`.
-fn unseg(d: &SegmentDescriptor) -> kvm::sys::kvm_segment {
-    let mut s = kvm::sys::kvm_segment {
+/// Converts an amd64 `SegmentDescriptor` into a `KvmSegment`.
+fn unseg(d: &SegmentDescriptor) -> kvm::arch::x86::KvmSegment {
+    let mut s = kvm::arch::x86::KvmSegment {
         base: d.base,
         limit: d.limit,
         selector: d.selector.into(),
@@ -126,75 +77,70 @@ fn unseg(d: &SegmentDescriptor) -> kvm::sys::kvm_segment {
     s
 }
 
-impl FromExt<KvmFullRegs> for Registers {
-    fn from_ext(value: KvmFullRegs) -> Self {
-        let regs = &value.regs;
-        let sregs = &value.sregs;
-        let debugregs = &value.debugregs;
-        let msrs = &value.msrs;
-
+impl FromExt<kvm::arch::x86::Registers> for Registers {
+    fn from_ext(value: kvm::arch::x86::Registers) -> Self {
         Self {
-            rax: regs.rax,
-            rbx: regs.rbx,
-            rcx: regs.rcx,
-            rdx: regs.rdx,
-            rbp: regs.rbp,
-            rsi: regs.rsi,
-            rdi: regs.rdi,
-            rsp: regs.rsp,
-            r8: regs.r8,
-            r9: regs.r9,
-            r10: regs.r10,
-            r11: regs.r11,
-            r12: regs.r12,
-            r13: regs.r13,
-            r14: regs.r14,
-            r15: regs.r15,
-            rip: regs.rip,
-            rflags: regs.rflags.into(),
+            rax: value.rax,
+            rbx: value.rbx,
+            rcx: value.rcx,
+            rdx: value.rdx,
+            rbp: value.rbp,
+            rsi: value.rsi,
+            rdi: value.rdi,
+            rsp: value.rsp,
+            r8: value.r8,
+            r9: value.r9,
+            r10: value.r10,
+            r11: value.r11,
+            r12: value.r12,
+            r13: value.r13,
+            r14: value.r14,
+            r15: value.r15,
+            rip: value.rip,
+            rflags: value.rflags.into(),
 
-            cr0: sregs.cr0.into(),
-            cr2: sregs.cr2.into(),
-            cr3: sregs.cr3.into(),
-            cr4: sregs.cr4.into(),
+            cr0: value.cr0.into(),
+            cr2: value.cr2.into(),
+            cr3: value.cr3.into(),
+            cr4: value.cr4.into(),
 
-            dr0: debugregs.db[0].into(),
-            dr1: debugregs.db[1].into(),
-            dr2: debugregs.db[2].into(),
-            dr3: debugregs.db[3].into(),
-            dr6: debugregs.dr6.into(),
-            dr7: debugregs.dr7.into(),
+            dr0: value.db[0].into(),
+            dr1: value.db[1].into(),
+            dr2: value.db[2].into(),
+            dr3: value.db[3].into(),
+            dr6: value.dr6.into(),
+            dr7: value.dr7.into(),
 
-            cs: seg(&sregs.cs),
-            ds: seg(&sregs.ds),
-            es: seg(&sregs.es),
-            fs: seg(&sregs.fs),
-            gs: seg(&sregs.gs),
-            ss: seg(&sregs.ss),
-            tr: seg(&sregs.tr),
-            ldtr: seg(&sregs.ldt),
+            cs: seg(&value.cs),
+            ds: seg(&value.ds),
+            es: seg(&value.es),
+            fs: seg(&value.fs),
+            gs: seg(&value.gs),
+            ss: seg(&value.ss),
+            tr: seg(&value.tr),
+            ldtr: seg(&value.ldt),
 
             idtr: Idtr {
-                base: sregs.idt.base,
-                limit: u32::from(sregs.idt.limit),
+                base: value.idt.base,
+                limit: u32::from(value.idt.limit),
             },
             gdtr: Gdtr {
-                base: sregs.gdt.base,
-                limit: u32::from(sregs.gdt.limit),
+                base: value.gdt.base,
+                limit: u32::from(value.gdt.limit),
             },
 
-            sysenter_cs: msrs.sysenter_cs,
-            sysenter_esp: msrs.sysenter_esp,
-            sysenter_eip: msrs.sysenter_eip,
-            shadow_gs: msrs.kernel_gs_base,
+            sysenter_cs: value.sysenter_cs,
+            sysenter_esp: value.sysenter_esp,
+            sysenter_eip: value.sysenter_eip,
+            shadow_gs: value.kernel_gs_base,
 
-            msr_flags: msrs.sfmask,
-            msr_lstar: msrs.lstar,
-            msr_star: msrs.star,
-            msr_cstar: msrs.cstar,
-            msr_syscall_mask: msrs.sfmask,
-            msr_efer: msrs.efer.into(),
-            msr_tsc_aux: msrs.tsc_aux,
+            msr_flags: value.sfmask,
+            msr_lstar: value.lstar,
+            msr_star: value.star,
+            msr_cstar: value.cstar,
+            msr_syscall_mask: value.sfmask,
+            msr_efer: value.efer.into(),
+            msr_tsc_aux: value.tsc_aux,
         }
     }
 }
@@ -276,31 +222,6 @@ impl FromExt<&kvm::sys::kvm_vmi_regs> for Registers {
     }
 }
 
-impl FromExt<&Registers> for kvm::sys::kvm_regs {
-    fn from_ext(value: &Registers) -> Self {
-        Self {
-            rax: value.rax,
-            rbx: value.rbx,
-            rcx: value.rcx,
-            rdx: value.rdx,
-            rsi: value.rsi,
-            rdi: value.rdi,
-            rsp: value.rsp,
-            rbp: value.rbp,
-            r8: value.r8,
-            r9: value.r9,
-            r10: value.r10,
-            r11: value.r11,
-            r12: value.r12,
-            r13: value.r13,
-            r14: value.r14,
-            r15: value.r15,
-            rip: value.rip,
-            rflags: value.rflags.into(),
-        }
-    }
-}
-
 impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
     fn from_ext(value: &Registers) -> Self {
         /// Packs a `SegmentDescriptor` into the in-event segment layout, where
@@ -361,9 +282,33 @@ impl FromExt<&Registers> for kvm::sys::kvm_vmi_regs {
     }
 }
 
-impl FromExt<&Registers> for kvm::sys::kvm_sregs {
+impl FromExt<&Registers> for kvm::arch::x86::Registers {
     fn from_ext(value: &Registers) -> Self {
         Self {
+            rax: value.rax,
+            rbx: value.rbx,
+            rcx: value.rcx,
+            rdx: value.rdx,
+            rsi: value.rsi,
+            rdi: value.rdi,
+            rsp: value.rsp,
+            rbp: value.rbp,
+            r8: value.r8,
+            r9: value.r9,
+            r10: value.r10,
+            r11: value.r11,
+            r12: value.r12,
+            r13: value.r13,
+            r14: value.r14,
+            r15: value.r15,
+            rip: value.rip,
+            rflags: value.rflags.into(),
+
+            cr0: value.cr0.into(),
+            cr2: value.cr2.into(),
+            cr3: value.cr3.into(),
+            cr4: value.cr4.into(),
+
             cs: unseg(&value.cs),
             ds: unseg(&value.ds),
             es: unseg(&value.es),
@@ -372,22 +317,35 @@ impl FromExt<&Registers> for kvm::sys::kvm_sregs {
             ss: unseg(&value.ss),
             tr: unseg(&value.tr),
             ldt: unseg(&value.ldtr),
-            gdt: kvm::sys::kvm_dtable {
+
+            gdt: kvm::arch::x86::KvmDtable {
                 base: value.gdtr.base,
                 limit: value.gdtr.limit as u16,
-                ..Default::default()
             },
-            idt: kvm::sys::kvm_dtable {
+            idt: kvm::arch::x86::KvmDtable {
                 base: value.idtr.base,
                 limit: value.idtr.limit as u16,
-                ..Default::default()
             },
-            cr0: value.cr0.into(),
-            cr2: value.cr2.into(),
-            cr3: value.cr3.into(),
-            cr4: value.cr4.into(),
+
+            db: [
+                value.dr0.into(),
+                value.dr1.into(),
+                value.dr2.into(),
+                value.dr3.into(),
+            ],
+            dr6: value.dr6.into(),
+            dr7: value.dr7.into(),
+
             efer: value.msr_efer.into(),
-            ..Default::default()
+            star: value.msr_star,
+            lstar: value.msr_lstar,
+            cstar: value.msr_cstar,
+            sfmask: value.msr_syscall_mask,
+            kernel_gs_base: value.shadow_gs,
+            sysenter_cs: value.sysenter_cs,
+            sysenter_esp: value.sysenter_esp,
+            sysenter_eip: value.sysenter_eip,
+            tsc_aux: value.msr_tsc_aux,
         }
     }
 }

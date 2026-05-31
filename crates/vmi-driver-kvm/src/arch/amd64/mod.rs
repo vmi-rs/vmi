@@ -16,8 +16,7 @@ use vmi_core::{
     VmiEventResponse,
 };
 
-use self::registers::{KvmFullRegs, KvmMsrs};
-use crate::{ArchAdapter, FromExt as _, KvmVcpu, KvmVmiRing, ViewId, VmiKvmDriver};
+use crate::{ArchAdapter, FromExt as _, KvmVmiRing, ViewId, VmiKvmDriver};
 
 /// Creates a non-blocking eventfd for ring signaling.
 fn eventfd() -> Result<OwnedFd, VmiError> {
@@ -49,45 +48,6 @@ fn ensure_rings(driver: &VmiKvmDriver<Amd64>) -> Result<(), VmiError> {
         *slot = Some(ring);
     }
     Ok(())
-}
-
-/// Reads the MSRs the driver tracks into a named bundle.
-fn read_msrs(vcpu: &KvmVcpu) -> Result<KvmMsrs, VmiError> {
-    let indices = [
-        Msr::EFER,
-        Msr::STAR,
-        Msr::LSTAR,
-        Msr::CSTAR,
-        Msr::FMASK,
-        Msr::KERNEL_GS_BASE,
-        Msr::SYSENTER_CS,
-        Msr::SYSENTER_ESP,
-        Msr::SYSENTER_EIP,
-        Msr::TSC_AUX,
-    ];
-
-    let mut entries = indices
-        .iter()
-        .map(|msr| kvm::sys::kvm_msr_entry {
-            index: msr.0,
-            ..Default::default()
-        })
-        .collect::<Vec<_>>();
-
-    vcpu.get_msrs(&mut entries).map_err(VmiError::driver)?;
-
-    Ok(KvmMsrs {
-        efer: entries[0].data,
-        star: entries[1].data,
-        lstar: entries[2].data,
-        cstar: entries[3].data,
-        sfmask: entries[4].data,
-        kernel_gs_base: entries[5].data,
-        sysenter_cs: entries[6].data,
-        sysenter_esp: entries[7].data,
-        sysenter_eip: entries[8].data,
-        tsc_aux: entries[9].data,
-    })
 }
 
 /// Maps a control register to its KVM index.
@@ -198,17 +158,8 @@ impl ArchAdapter for Amd64 {
             None => return Err(VmiError::NotSupported),
         };
 
-        let regs = kvcpu.get_regs().map_err(VmiError::driver)?;
-        let sregs = kvcpu.get_sregs().map_err(VmiError::driver)?;
-        let debugregs = kvcpu.get_debugregs().map_err(VmiError::driver)?;
-        let msrs = read_msrs(kvcpu)?;
-
-        Ok(Registers::from_ext(KvmFullRegs {
-            regs,
-            sregs,
-            debugregs,
-            msrs,
-        }))
+        let regs = kvcpu.get_registers().map_err(VmiError::driver)?;
+        Ok(Registers::from_ext(regs))
     }
 
     fn set_registers(
@@ -221,11 +172,8 @@ impl ArchAdapter for Amd64 {
             None => return Err(VmiError::NotSupported),
         };
 
-        let regs = kvm::sys::kvm_regs::from_ext(&registers);
-        let sregs = kvm::sys::kvm_sregs::from_ext(&registers);
-        kvcpu.set_regs(&regs).map_err(VmiError::driver)?;
-        kvcpu.set_sregs(&sregs).map_err(VmiError::driver)?;
-        Ok(())
+        let regs = kvm::arch::x86::Registers::from_ext(&registers);
+        kvcpu.set_registers(&regs).map_err(VmiError::driver)
     }
 
     fn monitor_enable(
