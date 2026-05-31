@@ -706,6 +706,13 @@ pub mod driver {
         pub use vmi_driver_kdmp::*;
     }
 
+    #[cfg(feature = "driver-kvm")]
+    pub mod kvm {
+        #![doc = include_str!("../docs/vmi-driver-kvm.md")]
+
+        pub use vmi_driver_kvm::*;
+    }
+
     #[cfg(feature = "driver-xen")]
     pub mod xen {
         #![doc = include_str!("../docs/vmi-driver-xen.md")]
