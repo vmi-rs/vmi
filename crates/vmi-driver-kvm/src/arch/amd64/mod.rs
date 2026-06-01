@@ -9,8 +9,8 @@ use std::{
 };
 
 use kvm::{
-    KvmVmiEvent,
-    arch::x86::{KvmControl, KvmCr, KvmInjectEvent, KvmInjectType},
+    KvmResponseAction, KvmVmiEvent, KvmVmiRegs, KvmVmiResponse,
+    arch::x86::{KvmControl, KvmCr, KvmInjectEvent, KvmInjectType, KvmVmiRegsX86},
 };
 use vmi_arch_amd64::{
     Amd64, ControlRegister, EventMonitor, ExceptionVector, InterruptType, Msr, Registers,
@@ -102,24 +102,24 @@ fn control_from_option(option: EventMonitor) -> Result<KvmControl, VmiError> {
 /// Translates a VMI response into a native `KvmVmiResponse`. When the handler
 /// overrides registers, this reconstructs the full register set from the
 /// in-event snapshot, applies the new GP registers, and packs it back.
-fn build_response(event: &KvmVmiEvent, response: VmiEventResponse<Amd64>) -> kvm::KvmVmiResponse {
+fn build_response(event: &KvmVmiEvent, response: VmiEventResponse<Amd64>) -> KvmVmiResponse {
     let action = match response.action {
-        VmiEventAction::Continue => kvm::KvmResponseAction::Continue,
-        VmiEventAction::Deny => kvm::KvmResponseAction::Deny,
-        VmiEventAction::Emulate => kvm::KvmResponseAction::Emulate,
-        VmiEventAction::ReinjectInterrupt => kvm::KvmResponseAction::Reinject,
-        VmiEventAction::Singlestep => kvm::KvmResponseAction::Singlestep,
-        VmiEventAction::FastSinglestep => kvm::KvmResponseAction::FastSinglestep,
+        VmiEventAction::Continue => KvmResponseAction::Continue,
+        VmiEventAction::Deny => KvmResponseAction::Deny,
+        VmiEventAction::Emulate => KvmResponseAction::Emulate,
+        VmiEventAction::ReinjectInterrupt => KvmResponseAction::Reinject,
+        VmiEventAction::Singlestep => KvmResponseAction::Singlestep,
+        VmiEventAction::FastSinglestep => KvmResponseAction::FastSinglestep,
     };
 
     let regs = response.registers.map(|new_registers| {
-        let kvm::KvmVmiRegs::X86(in_event) = event.regs;
+        let KvmVmiRegs::X86(in_event) = event.regs;
         let mut full = Registers::from_ext(&in_event);
         full.set_gp_registers(&new_registers);
-        kvm::KvmVmiRegs::X86(kvm::arch::x86::KvmVmiRegsX86::from_ext(&full))
+        KvmVmiRegs::X86(KvmVmiRegsX86::from_ext(&full))
     });
 
-    kvm::KvmVmiResponse {
+    KvmVmiResponse {
         action,
         regs,
         view_id: response.view.map(|view| u32::from(view.0)),

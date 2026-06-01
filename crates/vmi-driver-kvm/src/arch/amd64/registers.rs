@@ -2,7 +2,7 @@
 
 use kvm::{
     KvmVmiEvent, KvmVmiRegs,
-    arch::x86::{KvmSegmentX86, KvmVmiRegsX86},
+    arch::x86::{KvmDtable, KvmSegment, KvmSegmentX86, KvmVmiRegsX86},
 };
 use vmi_arch_amd64::{Gdtr, Granularity, Idtr, Registers, SegmentAccess, SegmentDescriptor};
 
@@ -15,7 +15,7 @@ use crate::convert::FromExt;
 /// `kvm_segment.unusable` is intentionally not modeled in the amd64 AR. KVM
 /// reflects an unusable segment via `present = 0`, which IS carried here, so
 /// the round-trip uses present as the proxy for usability.
-fn kvm_segment_ar(s: &kvm::arch::x86::KvmSegment) -> u32 {
+fn kvm_segment_ar(s: &KvmSegment) -> u32 {
     (u32::from(s.type_) & 0b1111)
         | ((u32::from(s.s) & 1) << 4)
         | ((u32::from(s.dpl) & 0b11) << 5)
@@ -28,7 +28,7 @@ fn kvm_segment_ar(s: &kvm::arch::x86::KvmSegment) -> u32 {
 
 /// Unpacks an amd64 access-rights value back into the typed bitfields of a
 /// `KvmSegment`. The inverse of `kvm_segment_ar`.
-fn unpack_ar_into(s: &mut kvm::arch::x86::KvmSegment, access: SegmentAccess) {
+fn unpack_ar_into(s: &mut KvmSegment, access: SegmentAccess) {
     let ar = access.0;
     s.type_ = (ar & 0b1111) as u8;
     s.s = ((ar >> 4) & 1) as u8;
@@ -60,7 +60,7 @@ fn vmx_ar_from_segment_access(access: SegmentAccess) -> u16 {
 }
 
 /// Converts one `KvmSegment` into an amd64 `SegmentDescriptor`.
-fn seg(s: &kvm::arch::x86::KvmSegment) -> SegmentDescriptor {
+fn seg(s: &KvmSegment) -> SegmentDescriptor {
     SegmentDescriptor {
         base: s.base,
         limit: s.limit,
@@ -70,8 +70,8 @@ fn seg(s: &kvm::arch::x86::KvmSegment) -> SegmentDescriptor {
 }
 
 /// Converts an amd64 `SegmentDescriptor` into a `KvmSegment`.
-fn unseg(d: &SegmentDescriptor) -> kvm::arch::x86::KvmSegment {
-    let mut s = kvm::arch::x86::KvmSegment {
+fn unseg(d: &SegmentDescriptor) -> KvmSegment {
+    let mut s = KvmSegment {
         base: d.base,
         limit: d.limit,
         selector: d.selector.into(),
@@ -329,11 +329,11 @@ impl FromExt<&Registers> for kvm::arch::x86::Registers {
             tr: unseg(&value.tr),
             ldt: unseg(&value.ldtr),
 
-            gdt: kvm::arch::x86::KvmDtable {
+            gdt: KvmDtable {
                 base: value.gdtr.base,
                 limit: value.gdtr.limit as u16,
             },
-            idt: kvm::arch::x86::KvmDtable {
+            idt: KvmDtable {
                 base: value.idtr.base,
                 limit: value.idtr.limit as u16,
             },
