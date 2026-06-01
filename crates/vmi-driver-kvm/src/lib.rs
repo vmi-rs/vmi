@@ -276,11 +276,9 @@ where
             return Ok(());
         }
 
-        // KVM_VMI_INVALID_GFN (`~(__u64)0`) reverts the GFN to its host mapping.
-        // kvm-sys exposes it as a signed `-1` const, recovered here with `as u64`.
-        let invalid_gfn = kvm::sys::KVM_VMI_INVALID_GFN as u64;
+        // kvm::INVALID_GFN (`~(__u64)0`) reverts the GFN to its host mapping.
         self.session
-            .change_gfn(ViewId(u32::from(view.0)), gfn.into(), invalid_gfn)
+            .change_gfn(ViewId(u32::from(view.0)), gfn.into(), kvm::INVALID_GFN)
             .map_err(VmiError::driver)
     }
 }
