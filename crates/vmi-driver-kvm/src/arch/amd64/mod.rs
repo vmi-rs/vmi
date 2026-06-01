@@ -8,9 +8,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kvm::KvmVmiEvent;
+use kvm::{
+    KvmVmiEvent,
+    arch::x86::{KvmControl, KvmCr, KvmInjectEvent, KvmInjectType},
+};
 use vmi_arch_amd64::{
-    Amd64, ControlRegister, EventMonitor, ExceptionVector, Interrupt, InterruptType, Msr, Registers,
+    Amd64, ControlRegister, EventMonitor, ExceptionVector, InterruptType, Msr, Registers,
 };
 use vmi_core::{
     Registers as _, VcpuId, View, VmiError, VmiEvent, VmiEventAction, VmiEventFlags,
@@ -51,75 +54,48 @@ fn ensure_rings(driver: &VmiKvmDriver<Amd64>) -> Result<(), VmiError> {
     Ok(())
 }
 
-/// Maps a control register to its KVM index.
-fn control_register_index(register: ControlRegister) -> u32 {
+/// Maps a `ControlRegister` to the native `KvmCr` enum.
+fn cr_to_kvm(register: ControlRegister) -> KvmCr {
     match register {
-        ControlRegister::Cr0 => kvm::sys::KVM_VMI_CR0,
-        ControlRegister::Cr3 => kvm::sys::KVM_VMI_CR3,
-        ControlRegister::Cr4 => kvm::sys::KVM_VMI_CR4,
-        ControlRegister::Xcr0 => kvm::sys::KVM_VMI_XCR0,
+        ControlRegister::Cr0 => KvmCr::Cr0,
+        ControlRegister::Cr3 => KvmCr::Cr3,
+        ControlRegister::Cr4 => KvmCr::Cr4,
+        ControlRegister::Xcr0 => KvmCr::Xcr0,
     }
 }
 
-/// Translates a monitor option into a KVM event id and its arch control data.
-fn control_args(
-    option: EventMonitor,
-) -> Result<(u32, kvm::sys::kvm_vmi_arch_control_data), VmiError> {
-    let mut arch = kvm::sys::kvm_vmi_arch_control_data::default();
+/// Maps an `InterruptType` to the native `KvmInjectType` enum.
+fn interrupt_type_to_kvm(typ: InterruptType) -> KvmInjectType {
+    match typ {
+        InterruptType::ExternalInterrupt => KvmInjectType::ExtInt,
+        InterruptType::Nmi => KvmInjectType::Nmi,
+        InterruptType::HardwareException => KvmInjectType::HwExcept,
+        InterruptType::SoftwareInterrupt => KvmInjectType::SwInt,
+        InterruptType::PrivilegedSoftwareException => KvmInjectType::PrivSwInt,
+        InterruptType::SoftwareException => KvmInjectType::SwExcept,
+        // VMCS interruption type 1 (Reserved) cannot be injected; fall back to
+        // a hardware exception.
+        InterruptType::Reserved => KvmInjectType::HwExcept,
+    }
+}
 
+/// Translates a monitor option into a native `KvmControl`.
+fn control_from_option(option: EventMonitor) -> Result<KvmControl, VmiError> {
     match option {
-        EventMonitor::Register(register) => {
-            arch.cr.index = control_register_index(register) as u8;
-            arch.cr.onchangeonly = 1;
-            Ok((kvm::sys::KVM_VMI_EVENT_CR, arch))
-        }
-        EventMonitor::Msr(msr) => {
-            arch.msr.msr = msr.0;
-            Ok((kvm::sys::KVM_VMI_EVENT_MSR, arch))
-        }
-        EventMonitor::CpuId => Ok((kvm::sys::KVM_VMI_EVENT_CPUID, arch)),
-        EventMonitor::Io => Ok((kvm::sys::KVM_VMI_EVENT_IO, arch)),
+        EventMonitor::Register(register) => Ok(KvmControl::Cr {
+            reg: cr_to_kvm(register),
+            on_change_only: true,
+        }),
+        EventMonitor::Msr(msr) => Ok(KvmControl::Msr(msr.0)),
+        EventMonitor::CpuId => Ok(KvmControl::CpuId),
+        EventMonitor::Io => Ok(KvmControl::Io),
         EventMonitor::Interrupt(vector) => match vector {
-            ExceptionVector::Breakpoint => Ok((kvm::sys::KVM_VMI_EVENT_BREAKPOINT, arch)),
-            ExceptionVector::DebugException => Ok((kvm::sys::KVM_VMI_EVENT_DEBUG, arch)),
+            ExceptionVector::Breakpoint => Ok(KvmControl::Breakpoint),
+            ExceptionVector::DebugException => Ok(KvmControl::Debug),
             _ => Err(VmiError::NotSupported),
         },
-        EventMonitor::Singlestep => Ok((kvm::sys::KVM_VMI_EVENT_SINGLESTEP, arch)),
-        EventMonitor::Hypercall { .. } => Ok((kvm::sys::KVM_VMI_EVENT_HYPERCALL, arch)),
-    }
-}
-
-/// Maps an amd64 interrupt type to the KVM injection type encoding.
-fn inject_type(typ: InterruptType) -> u8 {
-    let value = match typ {
-        InterruptType::ExternalInterrupt => kvm::sys::KVM_VMI_EVENT_TYPE_EXT_INT,
-        InterruptType::Nmi => kvm::sys::KVM_VMI_EVENT_TYPE_NMI,
-        InterruptType::HardwareException => kvm::sys::KVM_VMI_EVENT_TYPE_HW_EXCEPT,
-        InterruptType::SoftwareInterrupt => kvm::sys::KVM_VMI_EVENT_TYPE_SW_INT,
-        InterruptType::PrivilegedSoftwareException => kvm::sys::KVM_VMI_EVENT_TYPE_PRIV_SW_INT,
-        InterruptType::SoftwareException => kvm::sys::KVM_VMI_EVENT_TYPE_SW_EXCEPT,
-        InterruptType::Reserved => kvm::sys::KVM_VMI_EVENT_TYPE_HW_EXCEPT,
-    };
-    value as u8
-}
-
-/// Builds a KVM inject-event argument from an amd64 interrupt.
-fn inject_event_arg(vcpu: VcpuId, interrupt: Interrupt) -> kvm::sys::kvm_vmi_inject_event {
-    let has_error = u32::from(interrupt.error_code != 0xffff_ffff);
-    kvm::sys::kvm_vmi_inject_event {
-        vcpu_id: u32::from(vcpu.0),
-        vector: interrupt.vector.0,
-        type_: inject_type(interrupt.typ),
-        insn_len: interrupt.instruction_length,
-        pad: 0,
-        error_code: if has_error == 1 {
-            interrupt.error_code
-        }
-        else {
-            0
-        },
-        has_error,
-        cr2: interrupt.extra,
+        EventMonitor::Singlestep => Ok(KvmControl::Singlestep),
+        EventMonitor::Hypercall { .. } => Ok(KvmControl::Hypercall),
     }
 }
 
@@ -180,10 +156,10 @@ impl ArchAdapter for Amd64 {
         option: Self::EventMonitor,
     ) -> Result<(), VmiError> {
         ensure_rings(driver)?;
-        let (event, arch) = control_args(option)?;
+        let control = control_from_option(option)?;
         driver
             .session
-            .control_event(event, true, arch)
+            .control_event(control, true)
             .map_err(VmiError::driver)
     }
 
@@ -191,10 +167,10 @@ impl ArchAdapter for Amd64 {
         driver: &VmiKvmDriver<Self>,
         option: Self::EventMonitor,
     ) -> Result<(), VmiError> {
-        let (event, arch) = control_args(option)?;
+        let control = control_from_option(option)?;
         driver
             .session
-            .control_event(event, false, arch)
+            .control_event(control, false)
             .map_err(VmiError::driver)
     }
 
@@ -203,8 +179,15 @@ impl ArchAdapter for Amd64 {
         vcpu: VcpuId,
         interrupt: Self::Interrupt,
     ) -> Result<(), VmiError> {
-        let arg = inject_event_arg(vcpu, interrupt);
-        driver.session.inject_event(&arg).map_err(VmiError::driver)
+        let arg = KvmInjectEvent {
+            vcpu_id: u32::from(vcpu.0),
+            vector: interrupt.vector.0,
+            type_: interrupt_type_to_kvm(interrupt.typ),
+            insn_len: interrupt.instruction_length,
+            error_code: (interrupt.error_code != 0xffff_ffff).then_some(interrupt.error_code),
+            cr2: interrupt.extra,
+        };
+        driver.session.inject_event(arg).map_err(VmiError::driver)
     }
 
     fn process_event(
