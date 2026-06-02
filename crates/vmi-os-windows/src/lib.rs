@@ -60,8 +60,10 @@ use std::{cell::RefCell, collections::HashMap};
 
 use isr_core::Profile;
 use once_cell::unsync::OnceCell;
+#[cfg(target_arch = "x86_64")]
+use vmi_core::VcpuId;
 use vmi_core::{
-    AccessContext, Architecture, Gfn, Pa, Registers as _, Va, VcpuId, VmiCore, VmiDriver, VmiError,
+    AccessContext, Architecture, Gfn, Pa, Registers as _, Va, VmiCore, VmiDriver, VmiError,
     VmiState,
     driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
@@ -72,11 +74,14 @@ use zerocopy::{FromBytes, IntoBytes};
 
 mod arch;
 pub use self::arch::{
-    ArchAdapter, CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64,
-    KDESCRIPTOR_X86, KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A,
-    MAXIMUM_SUPPORTED_EXTENSION, SIZE_OF_80387_REGISTERS, StructLayout, StructLayout32,
-    StructLayout64, WindowsContext, WindowsExceptionVector, WindowsInterrupt,
-    WindowsPageTableEntry, WindowsRegistersAdapter, WindowsSpecialRegisters, XSAVE_FORMAT,
+    ArchAdapter, StructLayout, StructLayout32, StructLayout64, WindowsPageTableEntry,
+};
+#[cfg(target_arch = "x86_64")]
+pub use self::arch::{
+    CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64, KDESCRIPTOR_X86,
+    KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A, MAXIMUM_SUPPORTED_EXTENSION,
+    SIZE_OF_80387_REGISTERS, WindowsContext, WindowsExceptionVector, WindowsInterrupt,
+    WindowsRegistersAdapter, WindowsSpecialRegisters, XSAVE_FORMAT,
 };
 
 mod error;
@@ -98,6 +103,8 @@ mod offsets;
 pub use self::offsets::{Offsets, OffsetsExt, Symbols}; // TODO: make private + remove offsets() & symbols() methods
 
 mod comps;
+#[cfg(target_arch = "x86_64")]
+pub use self::comps::WindowsKernelProcessorBlock;
 pub use self::comps::{
     CurDir, CurDirLayout, FromWindowsObject, LdrDataTableEntry, LdrDataTableEntryLayout,
     ParseObjectTypeError, Peb, PebLayout, PebLdrData, PebLdrDataLayout, RtlUserProcessParameters,
@@ -106,8 +113,8 @@ pub use self::comps::{
     WindowsControlArea, WindowsDirectoryObject, WindowsFileObject, WindowsHandleTable,
     WindowsHandleTableEntry, WindowsHive, WindowsHiveBaseBlock, WindowsHiveCellIndex,
     WindowsHiveMapDirectory, WindowsHiveMapEntry, WindowsHiveMapTable, WindowsHiveStorageType,
-    WindowsImage, WindowsImpersonationLevel, WindowsKernelProcessorBlock, WindowsKeyControlBlock,
-    WindowsKeyIndex, WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags,
+    WindowsImage, WindowsImpersonationLevel, WindowsKeyControlBlock, WindowsKeyIndex,
+    WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags,
     WindowsKeyValueType, WindowsLuid, WindowsModule, WindowsObject, WindowsObjectAttributes,
     WindowsObjectHeaderNameInfo, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb,
     WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess,
@@ -253,7 +260,10 @@ where
     object_type_rcache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
-    ke_number_processors: OnceCell<u16>,   // CCHAR
+    ke_number_processors: OnceCell<u16>, // CCHAR
+
+    // Read only by the AMD64 `kprcb` accessor.
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     ki_processor_block: OnceCell<Vec<Va>>, // _KPRCB*[]
     ki_kva_shadow: OnceCell<bool>,
     mm_pfn_database: OnceCell<Va>,     // _MMPFN*
@@ -662,54 +672,11 @@ where
         Driver::Architecture::current_kpcr(vmi)
     }
 
-    /// Returns a Kernel Processor Control Block (KPRCB) for the specified processor.
-    ///
-    /// The KPRCB is an opaque, per-processor structure embedded within the
-    /// KPCR.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `KiProcessorBlock` symbol, offset by the processor ID.
-    pub fn kprcb<'a>(
-        vmi: VmiState<'a, Self>,
-        vcpu_id: VcpuId,
-    ) -> Result<WindowsKernelProcessorBlock<'a, Driver>, VmiError> {
-        let number_of_processors = Self::number_of_processors(vmi)? as u64;
-        let ki_processor_block = this!(vmi).ki_processor_block.get_or_try_init(|| {
-            let KiProcessorBlock = symbol!(vmi, KiProcessorBlock);
-
-            let kernel_image_base = Self::kernel_image_base(vmi)?;
-
-            // Pre-read all KPCR addresses for each processor and cache them.
-            let mut blocks = Vec::new();
-            for cpu in 0..number_of_processors {
-                let offset = cpu * vmi.registers().address_width() as u64;
-                let addr = vmi.read_va_native(kernel_image_base + KiProcessorBlock + offset)?;
-                blocks.push(addr);
-            }
-
-            Ok::<_, VmiError>(blocks)
-        })?;
-
-        if vcpu_id.0 as usize >= ki_processor_block.len() {
-            return Err(WindowsError::InvalidProcessor(vcpu_id).into());
-        }
-
-        let prcb = ki_processor_block[vcpu_id.0 as usize];
-        if prcb.is_null() {
-            return Err(WindowsError::CorruptedStruct("KiProcessorBlock").into());
-        }
-
-        Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
-    }
-
     /// Returns information from an exception record at the specified address.
     ///
-    /// This method reads and parses an `EXCEPTION_RECORD` structure from
-    /// memory, providing detailed information about an exception that has
-    /// occurred in the system. The returned [`WindowsExceptionRecord`]
-    /// contains data such as the exception code, flags, and related memory
-    /// addresses.
+    /// Reads and parses an `EXCEPTION_RECORD` structure from memory.
+    /// The returned [`WindowsExceptionRecord`] contains the exception code,
+    /// flags, and related memory addresses.
     pub fn exception_record(
         vmi: VmiState<Self>,
         address: Va,
@@ -1609,6 +1576,55 @@ where
         Driver: VmiWrite,
     {
         Self::modify_pfn_reference_count(vmi, pfn, -1)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[expect(non_snake_case)]
+impl<Driver> WindowsOs<Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    /// Returns a Kernel Processor Control Block (KPRCB) for the specified processor.
+    ///
+    /// The KPRCB is an opaque, per-processor structure embedded within the
+    /// KPCR.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KiProcessorBlock` symbol, offset by the processor ID.
+    pub fn kprcb<'a>(
+        vmi: VmiState<'a, Self>,
+        vcpu_id: VcpuId,
+    ) -> Result<WindowsKernelProcessorBlock<'a, Driver>, VmiError> {
+        let number_of_processors = Self::number_of_processors(vmi)? as u64;
+        let ki_processor_block = this!(vmi).ki_processor_block.get_or_try_init(|| {
+            let KiProcessorBlock = symbol!(vmi, KiProcessorBlock);
+
+            let kernel_image_base = Self::kernel_image_base(vmi)?;
+
+            // Pre-read all KPCR addresses for each processor and cache them.
+            let mut blocks = Vec::new();
+            for cpu in 0..number_of_processors {
+                let offset = cpu * vmi.registers().address_width() as u64;
+                let addr = vmi.read_va_native(kernel_image_base + KiProcessorBlock + offset)?;
+                blocks.push(addr);
+            }
+
+            Ok::<_, VmiError>(blocks)
+        })?;
+
+        if vcpu_id.0 as usize >= ki_processor_block.len() {
+            return Err(WindowsError::InvalidProcessor(vcpu_id).into());
+        }
+
+        let prcb = ki_processor_block[vcpu_id.0 as usize];
+        if prcb.is_null() {
+            return Err(WindowsError::CorruptedStruct("KiProcessorBlock").into());
+        }
+
+        Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
     }
 }
 

@@ -1,14 +1,13 @@
 use vmi_arch_amd64::{
-    Amd64, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel, Registers,
+    Amd64, Cr3, ExceptionVector, Interrupt, InterruptType, PageTableEntry, PageTableLevel,
+    Registers,
 };
 use vmi_core::{
-    Architecture as _, Va, VmiCore, VmiError, VmiSession, VmiState,
-    driver::VmiRead,
-    os::{NoOS, VmiOsImage},
+    Architecture as _, Pa, Va, VmiCore, VmiError, VmiSession, VmiState, driver::VmiRead, os::NoOS,
 };
 
-use super::ArchAdapter;
-use crate::{PeImage as _, WindowsImage, WindowsKernelInformation, WindowsOs};
+use super::{ArchAdapter, image_codeview};
+use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// An extension trait for [`PageTableEntry`] that provides access to
 /// Windows-specific fields.
@@ -234,6 +233,10 @@ where
             registers.gs.base.into()
         }
     }
+
+    fn directory_table_base_to_root(value: u64) -> Pa {
+        Pa::from(Cr3(value))
+    }
 }
 
 /*
@@ -277,32 +280,6 @@ where
 }
 
 */
-
-fn image_codeview<Driver>(
-    image: &WindowsImage<Driver>,
-) -> Result<Option<WindowsKernelInformation>, VmiError>
-where
-    Driver: VmiRead<Architecture = Amd64>,
-{
-    let debug_directory = match image.debug_directory()? {
-        Some(debug_directory) => debug_directory,
-        None => return Ok(None),
-    };
-
-    let codeview = match debug_directory.codeview()? {
-        Some(codeview) => codeview,
-        None => return Ok(None),
-    };
-
-    let nt_headers = image.nt_headers()?;
-
-    Ok(Some(WindowsKernelInformation {
-        base_address: image.base_address(),
-        version_major: nt_headers.optional_header.major_operating_system_version(),
-        version_minor: nt_headers.optional_header.minor_operating_system_version(),
-        codeview,
-    }))
-}
 
 fn function_argument_x86<Driver>(
     vmi: VmiState<WindowsOs<Driver>>,

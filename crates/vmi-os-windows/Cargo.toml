@@ -29,9 +29,14 @@ isr-core = { workspace = true }
 isr-dl-windows = { workspace = true } # CodeView
 isr-macros = { workspace = true }
 
-vmi-arch-amd64 = { workspace = true }
 vmi-core = { workspace = true }
 vmi-macros = { workspace = true }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+vmi-arch-amd64 = { workspace = true }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+vmi-arch-arm64 = { workspace = true }
 
 [dev-dependencies]
 isr = { workspace = true }
