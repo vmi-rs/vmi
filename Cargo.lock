@@ -2097,6 +2097,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vmi-arch-arm64"
+version = "0.6.0"
+dependencies = [
+ "vmi-core",
+ "zerocopy",
+]
+
+[[package]]
 name = "vmi-core"
 version = "0.6.0"
 dependencies = [
