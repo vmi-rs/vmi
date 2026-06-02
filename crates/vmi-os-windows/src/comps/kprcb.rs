@@ -1,17 +1,16 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::ThreadObject};
 
-use crate::{
-    ArchAdapter, CONTEXT_AMD64, KSPECIAL_REGISTERS_AMD64, WindowsContext, WindowsError, WindowsOs,
-    WindowsSpecialRegisters, WindowsThread, offset,
-};
+use crate::{ArchAdapter, WindowsError, WindowsOs, WindowsThread, offset};
+#[cfg(target_arch = "x86_64")]
+use crate::{CONTEXT_AMD64, KSPECIAL_REGISTERS_AMD64, WindowsContext, WindowsSpecialRegisters};
 
 /// A Windows kernel processor control block (KPRCB).
 ///
 /// The KPRCB is an opaque, per-processor structure embedded within
 /// the KPCR. While the KPCR (`_KPCR`) is the top-level per-processor
-/// region (anchored at `gs:[0]`), the KPRCB is its main body, holding
-/// the current/next/idle thread pointers, saved processor context,
-/// and scheduling state.
+/// region (anchored at `gs:[0]` on **AMD64** and at `TPIDR_EL1` on
+// **ARM64**), the KPRCB is its main body, holding the current/next/idle
+/// thread pointers, saved processor context, and scheduling state.
 ///
 /// # Implementation Details
 ///
@@ -111,6 +110,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KPRCB.ProcessorState.SpecialRegisters`.
+    #[cfg(target_arch = "x86_64")]
     pub fn processor_special_registers(&self) -> Result<impl WindowsSpecialRegisters, VmiError> {
         let KPRCB = offset!(self.vmi, _KPRCB);
         let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);
@@ -131,6 +131,7 @@ where
     ///
     /// Corresponds to `_KPRCB.Context` if non-NULL,
     /// otherwise `_KPRCB.ProcessorState.ContextFrame`.
+    #[cfg(target_arch = "x86_64")]
     pub fn processor_context(&self) -> Result<impl WindowsContext, VmiError> {
         let KPRCB = offset!(self.vmi, _KPRCB);
         let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);
@@ -168,6 +169,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `_KPRCB.ProcessorState.ContextFrame`.
+    #[cfg(target_arch = "x86_64")]
     pub fn processor_context_frame(&self) -> Result<impl WindowsContext, VmiError> {
         let KPRCB = offset!(self.vmi, _KPRCB);
         let KPROCESSOR_STATE = offset!(self.vmi, _KPROCESSOR_STATE);

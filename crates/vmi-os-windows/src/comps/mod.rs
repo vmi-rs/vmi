@@ -3,7 +3,6 @@ pub(crate) mod handle_table;
 mod handle_table_entry;
 pub(crate) mod hive;
 mod image;
-#[cfg(target_arch = "x86_64")]
 mod kprcb;
 mod luid;
 mod module;
@@ -23,8 +22,6 @@ mod unloaded_driver;
 mod user_module;
 mod wow64;
 
-#[cfg(target_arch = "x86_64")]
-pub use self::kprcb::WindowsKernelProcessorBlock;
 pub use self::{
     control_area::WindowsControlArea,
     handle_table::WindowsHandleTable,
@@ -36,6 +33,7 @@ pub use self::{
         WindowsKeyValueFlags, WindowsKeyValueType,
     },
     image::WindowsImage,
+    kprcb::WindowsKernelProcessorBlock,
     luid::WindowsLuid,
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
