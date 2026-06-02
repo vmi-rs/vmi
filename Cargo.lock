@@ -2075,6 +2075,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vmi-arch-amd64",
+ "vmi-arch-arm64",
  "vmi-core",
  "vmi-driver-kdmp",
  "vmi-driver-kvm",

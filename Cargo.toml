@@ -130,6 +130,7 @@ isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-arch-arm64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
 vmi-driver-kvm = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
@@ -145,6 +146,7 @@ arch-amd64 = [
     "vmi-arch-amd64",
     "vmi-utils?/arch-amd64"
 ]
+arch-arm64 = ["vmi-arch-arm64"]
 driver-kdmp = ["vmi-driver-kdmp"]
 driver-kvm = ["vmi-driver-kvm"]
 driver-xen = ["vmi-driver-xen"]
@@ -179,6 +181,7 @@ isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
 # vmi = { workspace = true }
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
+vmi-arch-arm64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
 vmi-driver-xen = { workspace = true }
 vmi-driver-xen-core-dump = { workspace = true }
@@ -204,6 +207,12 @@ name = "kvm-basic-process-list"
 path = "examples/kvm-basic-process-list.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-kvm", "os-windows"]
+
+[[example]]
+name = "kvm-basic-process-list-arm64"
+path = "examples/kvm-basic-process-list-arm64.rs"
+doc-scrape-examples = true
+required-features = ["arch-arm64", "driver-kvm", "os-windows"]
 
 [[example]]
 name = "windows-breakpoint-manager"

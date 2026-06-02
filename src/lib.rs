@@ -692,6 +692,13 @@ pub mod arch {
 
         pub use vmi_arch_amd64::*;
     }
+
+    #[cfg(feature = "arch-arm64")]
+    pub mod arm64 {
+        #![doc = include_str!("../docs/vmi-arch-arm64.md")]
+
+        pub use vmi_arch_arm64::*;
+    }
 }
 
 pub mod driver {
