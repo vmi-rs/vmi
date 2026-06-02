@@ -18,6 +18,9 @@ pub trait ItemFnExt {
     /// Returns the documentation attributes of the function.
     fn doc(&self) -> impl Iterator<Item = &Attribute>;
 
+    /// Returns the `#[cfg(...)]` attributes of the function.
+    fn cfg(&self) -> impl Iterator<Item = &Attribute>;
+
     /// Returns the signature of the function.
     fn sig(&self) -> &Signature;
 }
@@ -38,6 +41,10 @@ impl ItemFnExt for &ImplItemFn {
 
     fn doc(&self) -> impl Iterator<Item = &Attribute> {
         self.attrs.iter().filter(|attr| attr.path().is_ident("doc"))
+    }
+
+    fn cfg(&self) -> impl Iterator<Item = &Attribute> {
+        self.attrs.iter().filter(|attr| attr.path().is_ident("cfg"))
     }
 
     fn sig(&self) -> &Signature {
@@ -61,6 +68,10 @@ impl ItemFnExt for &TraitItemFn {
 
     fn doc(&self) -> impl Iterator<Item = &Attribute> {
         self.attrs.iter().filter(|attr| attr.path().is_ident("doc"))
+    }
+
+    fn cfg(&self) -> impl Iterator<Item = &Attribute> {
+        self.attrs.iter().filter(|attr| attr.path().is_ident("cfg"))
     }
 
     fn sig(&self) -> &Signature {

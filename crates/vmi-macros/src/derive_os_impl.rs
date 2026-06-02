@@ -42,14 +42,18 @@ fn generate_trait_fn(
     transform::extend_precise_captures(&mut impl_return_type, impl_capture_extras);
 
     let doc = item_fn.doc();
+    let cfg = item_fn.cfg();
     let os_context_sig = quote! {
+        #(#cfg)*
         #(#doc)*
         fn #ident #generics(&self, #(#args),*) #trait_return_type
             #where_clause;
     };
 
     let doc = item_fn.doc();
+    let cfg = item_fn.cfg();
     let os_context_fn = quote! {
+        #(#cfg)*
         #(#doc)*
         fn #ident #generics(&self, #(#args),*) #impl_return_type
             #where_clause
