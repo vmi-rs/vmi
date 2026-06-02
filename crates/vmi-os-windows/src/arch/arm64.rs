@@ -9,10 +9,11 @@ use crate::{WindowsImage, WindowsKernelInformation, WindowsOs};
 
 /// Extends [`PageTableEntry`] with Windows-specific field accessors.
 ///
-/// Both accessors return `false`: the Windows-on-ARM64 software-PTE bit
-/// positions for the prototype and transition states are not encoded here,
-/// so [`ArchAdapter::is_page_present_or_transition`] uses only the
-/// hardware-valid check.
+/// These bits are only meaningful when the descriptor's valid bit is clear, in
+/// which case the entry is a Windows software PTE rather than a hardware
+/// descriptor. When the valid bit is set, bit 10 is the hardware access flag
+/// and bit 11 is `NonGlobal`, so callers must check validity before reading
+/// these.
 pub trait WindowsPageTableEntry {
     /// Returns whether the page is a prototype.
     fn windows_prototype(self) -> bool;
@@ -23,11 +24,11 @@ pub trait WindowsPageTableEntry {
 
 impl WindowsPageTableEntry for PageTableEntry {
     fn windows_prototype(self) -> bool {
-        false
+        (self.0 >> 10) & 1 != 0
     }
 
     fn windows_transition(self) -> bool {
-        false
+        (self.0 >> 11) & 1 != 0
     }
 }
 
@@ -136,13 +137,26 @@ where
         let registers = vmi.registers();
         let root = registers.translation_root(address);
 
-        // Returns true only when the stage-1 walk succeeds; the Windows
-        // transition path is not supported on this architecture.
+        // A successful stage-1 walk means the page is hardware-present, either
+        // a valid 4KB page or a large block.
         match Arm64::translate_address(vmi.core(), address, root) {
-            Ok(_) => Ok(true),
-            Err(VmiError::Translation(_)) => Ok(false),
-            Err(err) => Err(err),
+            Ok(_) => return Ok(true),
+            Err(VmiError::Translation(_)) => {}
+            Err(err) => return Err(err),
         }
+
+        // Not hardware-present. Inspect the 4KB leaf slot: with the valid bit
+        // clear the entry is a Windows software PTE. The Transition bit marks a
+        // page still resident in RAM that a soft fault brings back without disk
+        // I/O. The Prototype bit means the authoritative state lives in a
+        // prototype PTE elsewhere, so a transition-and-prototype entry is not
+        // treated as resident here. This mirrors the amd64 backend.
+        let leaf = match Arm64::leaf_descriptor(vmi.core(), address, root)? {
+            Some(leaf) => leaf,
+            None => return Ok(false),
+        };
+
+        Ok(leaf.windows_transition() && !leaf.windows_prototype())
     }
 
     fn current_kpcr(vmi: VmiState<WindowsOs<Driver>>) -> Va {
