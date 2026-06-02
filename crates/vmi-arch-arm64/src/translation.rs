@@ -98,6 +98,52 @@ where
     }
 }
 
+/// Walks the stage-1 tables for `va` and returns the raw 4KB (L3) leaf
+/// descriptor, even when it is not valid.
+///
+/// Follows valid table descriptors from `control.start_level()` down to L3 and
+/// returns whatever raw descriptor occupies the L3 slot, valid or not. Returns
+/// `None` when the L3 table is unreachable: an intermediate descriptor is
+/// invalid or maps a block, so the address has no 4KB leaf entry to inspect.
+/// Callers decoding Windows software-PTE bits rely on retrieving the raw leaf
+/// slot of a paged-out or transition page, whose valid bit is clear.
+pub(crate) fn leaf_descriptor<Driver>(
+    vmi: &VmiCore<Driver>,
+    va: Va,
+    root: Pa,
+    control: TranslationControl,
+) -> Result<Option<PageTableEntry>, VmiError>
+where
+    Driver: VmiRead<Architecture = Arm64>,
+{
+    let granule = control.granule;
+    let mut table = root;
+    let mut level = control.start_level();
+
+    loop {
+        let entry = read_descriptor(vmi, table, va, level, control)?;
+
+        // The L3 slot is the 4KB leaf. Return it verbatim, even when invalid: a
+        // paged-out or transition page leaves a software PTE here.
+        if level == PageTableLevel::L3 {
+            return Ok(Some(entry));
+        }
+
+        // Descending requires a valid table descriptor. An invalid entry means
+        // the subtree is absent; a block (0b01) is a large-page mapping, not a
+        // 4KB leaf. Neither yields an L3 software PTE to inspect.
+        if !entry.valid() || !entry.table_or_page() {
+            return Ok(None);
+        }
+
+        table = Arm64::pa_from_gfn(entry.output_frame(granule));
+        level = match level.next() {
+            Some(level) => level,
+            None => return Ok(None),
+        };
+    }
+}
+
 /// Reads the descriptor at `level` for `va` from the table at `table`.
 fn read_descriptor<Driver>(
     vmi: &VmiCore<Driver>,
@@ -261,5 +307,72 @@ mod tests {
         let vmi = VmiCore::new(driver).unwrap();
         let result = super::translate(&vmi, va, Pa(0x10 << 12), control);
         assert!(result.is_err());
+    }
+
+    /// Returns the raw L3 slot even when its valid bit is clear, as for a
+    /// Windows software / transition PTE.
+    #[test]
+    fn leaf_descriptor_returns_invalid_l3_slot() {
+        let driver = MockDriver::new();
+        let control = control_4k();
+        let va = Va((1 << 39) | (2 << 30) | (3 << 21) | (4 << 12) | 0x123);
+
+        let root_gfn = 0x30;
+        let l1_gfn = 0x31;
+        let l2_gfn = 0x32;
+        let l3_gfn = 0x33;
+
+        // Software PTE: valid bit clear, Transition (bit 11) set, Prototype
+        // (bit 10) clear. Not a hardware-valid descriptor.
+        let software_pte = 1u64 << 11;
+
+        driver.set_descriptor(root_gfn, 1, table_descriptor(l1_gfn));
+        driver.set_descriptor(l1_gfn, 2, table_descriptor(l2_gfn));
+        driver.set_descriptor(l2_gfn, 3, table_descriptor(l3_gfn));
+        driver.set_descriptor(l3_gfn, 4, software_pte);
+
+        let vmi = VmiCore::new(driver).unwrap();
+        let leaf = super::leaf_descriptor(&vmi, va, Pa(root_gfn << 12), control).unwrap();
+        let leaf = leaf.expect("L3 slot reachable");
+        assert_eq!(leaf.0, software_pte);
+        assert!(!leaf.valid());
+    }
+
+    /// Returns `None` when an intermediate descriptor is invalid: the L3 table
+    /// is unreachable, so there is no leaf slot to inspect.
+    #[test]
+    fn leaf_descriptor_none_when_intermediate_invalid() {
+        let driver = MockDriver::new();
+        let control = control_4k();
+        let va = Va((1 << 39) | (2 << 30) | (3 << 21) | (4 << 12) | 0x123);
+
+        // Only the root descriptor is present; the L1 slot is left zero.
+        driver.set_descriptor(0x40, 1, table_descriptor(0x41));
+
+        let vmi = VmiCore::new(driver).unwrap();
+        let leaf = super::leaf_descriptor(&vmi, va, Pa(0x40 << 12), control).unwrap();
+        assert!(leaf.is_none());
+    }
+
+    /// Returns `None` when the walk terminates at a valid block descriptor: a
+    /// large-page mapping has no 4KB leaf slot.
+    #[test]
+    fn leaf_descriptor_none_on_block() {
+        let driver = MockDriver::new();
+        let control = control_4k();
+        let va = Va((1 << 39) | (2 << 30) | (3 << 21) | 0x4_5678);
+
+        let root_gfn = 0x50;
+        let l1_gfn = 0x51;
+        let l2_gfn = 0x52;
+        let out_gfn = 0x600;
+
+        driver.set_descriptor(root_gfn, 1, table_descriptor(l1_gfn));
+        driver.set_descriptor(l1_gfn, 2, table_descriptor(l2_gfn));
+        driver.set_descriptor(l2_gfn, 3, block_descriptor(out_gfn));
+
+        let vmi = VmiCore::new(driver).unwrap();
+        let leaf = super::leaf_descriptor(&vmi, va, Pa(root_gfn << 12), control).unwrap();
+        assert!(leaf.is_none());
     }
 }

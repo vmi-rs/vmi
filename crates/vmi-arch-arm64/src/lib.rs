@@ -131,6 +131,28 @@ impl Arm64 {
 
         translation::translate(vmi, va, root, control)
     }
+
+    /// Walks the stage-1 tables for `va` and returns the raw 4KB (L3) leaf
+    /// descriptor, even when it is not valid.
+    ///
+    /// Assumes the default 4KB granule with a 48-bit region, matching
+    /// [`Architecture::translate_address`]. Returns `None` when no L3 leaf is
+    /// reachable, that is, an intermediate descriptor is invalid or maps a
+    /// block. The returned descriptor may be invalid: a paged-out or transition
+    /// page leaves a Windows software PTE in the leaf slot, which a higher layer
+    /// decodes.
+    pub fn leaf_descriptor<Driver>(
+        vmi: &VmiCore<Driver>,
+        va: Va,
+        root: Pa,
+    ) -> Result<Option<PageTableEntry>, VmiError>
+    where
+        Driver: VmiRead<Architecture = Self>,
+    {
+        let control = TranslationControl::from_tcr(16, false)
+            .expect("4K granule with T0SZ=16 is a valid TCR configuration");
+        translation::leaf_descriptor(vmi, va, root, control)
+    }
 }
 
 /// Uninhabited placeholder for AArch64 special-register monitoring.
