@@ -1,6 +1,10 @@
 //! Architecture adapter for the KVM driver.
 
+#[cfg(target_arch = "x86_64")]
 mod amd64;
+
+#[cfg(target_arch = "aarch64")]
+mod arm64;
 
 use std::time::Duration;
 

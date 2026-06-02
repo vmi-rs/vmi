@@ -23,7 +23,12 @@ libc = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-vmi-arch-amd64 = { workspace = true }
 vmi-core = { workspace = true }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+vmi-arch-amd64 = { workspace = true }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+vmi-arch-arm64 = { workspace = true }
 
 kvm = { workspace = true }

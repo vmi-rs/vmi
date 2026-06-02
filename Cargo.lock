@@ -2144,6 +2144,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "vmi-arch-amd64",
+ "vmi-arch-arm64",
  "vmi-core",
 ]
 
