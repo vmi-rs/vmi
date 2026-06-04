@@ -1,4 +1,4 @@
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
+#[cfg(feature = "os-windows")]
 mod windows;
 
 use std::fmt::Debug;
