@@ -2,9 +2,9 @@
 //! to monitor a kernel syscall handler in a Windows guest running inside a KVM
 //! virtual machine on an ARM64 host.
 //!
-//! It installs a software breakpoint on `nt!NtCreateFile` and logs the first
-//! two AAPCS64 arguments (`x0`, `x1`) on every hit. Windows background activity
-//! opens files constantly, so hits appear without any guest interaction.
+//! It installs a software breakpoint on `nt!NtCreateFile` and logs the name of
+//! the file being opened on every hit. Windows background activity opens files
+//! constantly, so hits appear without any guest interaction.
 //!
 //! # Usage
 //!
@@ -24,10 +24,10 @@ use anyhow::{Context as _, Error};
 use isr::{cache::IsrCache, macros::symbols};
 use tracing_subscriber::EnvFilter;
 use vmi::{
-    Registers as _, VcpuId, VmiContext, VmiCore, VmiError, VmiSession,
+    Registers as _, Va, VcpuId, VmiContext, VmiCore, VmiError, VmiSession,
     arch::arm64::Arm64,
     driver::{VmiFullDriver, kvm::VmiKvmDriver},
-    os::windows::{ArchAdapter, WindowsOs},
+    os::windows::{ArchAdapter, WindowsOs, WindowsOsExt as _},
     utils::reactor_arm64::{Action, BreakpointSpec, ReactorArm64, ReactorHandler},
 };
 
@@ -74,11 +74,34 @@ where
         vmi: &VmiContext<WindowsOs<Driver>>,
         tag: &'static str,
     ) -> Result<Action<()>, VmiError> {
-        // AAPCS64: integer arguments 0..7 live in x0..x7. `function_argument`
-        // is the arm64 ArchAdapter accessor proven in Milestone 1.
-        let arg0 = vmi.os().function_argument(0)?;
-        let arg1 = vmi.os().function_argument(1)?;
-        tracing::info!(tag, %arg0, %arg1, "breakpoint hit");
+        // NtCreateFile's third argument (AAPCS64 `x2`) is a POBJECT_ATTRIBUTES.
+        // Its ObjectName field points at the UNICODE_STRING naming the file.
+        // `function_argument` is the arm64 ArchAdapter accessor proven in
+        // Milestone 1.
+        let object_attributes = vmi.os().function_argument(2)?;
+
+        // Walking OBJECT_ATTRIBUTES.ObjectName chases guest pointers that may
+        // not be resident, so a translation failure is expected and not fatal.
+        // When the name cannot be read, fall back to the raw pointer value.
+        match vmi
+            .os()
+            .object_attributes(Va(object_attributes))
+            .and_then(|object_attributes| object_attributes.object_name())
+        {
+            Ok(Some(filename)) => tracing::info!(tag, %filename, "NtCreateFile"),
+            Ok(None) => tracing::info!(
+                tag,
+                object_attributes = format_args!("{object_attributes:#x}"),
+                "NtCreateFile (no name)"
+            ),
+            Err(err) => tracing::info!(
+                tag,
+                object_attributes = format_args!("{object_attributes:#x}"),
+                %err,
+                "NtCreateFile (name unreadable)"
+            ),
+        }
+
         Ok(Action::Default)
     }
 }
@@ -155,15 +178,13 @@ fn main() -> Result<(), Error> {
     let session = VmiSession::new(&core, &os);
 
     // And we're ready to create the reactor!
-    // Bring-up uses the no-stealth constructor: the breakpoint page stays RWX,
-    // so a hot target like NtCreateFile does not trigger the 16K host-page
-    // mem-access fault storm. PatchGuard can observe the breakpoint, so this is
-    // for confirming delivery, not a sustained target.
+    // The stealth constructor keeps the breakpoint page execute-only so a
+    // PatchGuard read is served the clean bytes, and on this 16K host it marks
+    // the fused neighbor guest pages for in-kernel auto-step, so a hot target
+    // like NtCreateFile does not storm the agent with mem-access events.
     session.handle(|session| {
-        Ok(
-            ReactorArm64::new_without_stealth(session, LogHandler, &breakpoints)?
-                .with_termination_flag(terminate_flag),
-        )
+        Ok(ReactorArm64::new(session, LogHandler, &breakpoints)?
+            .with_termination_flag(terminate_flag))
     })?;
 
     Ok(())
