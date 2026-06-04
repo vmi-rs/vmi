@@ -56,6 +56,7 @@ fn ensure_rings(driver: &VmiKvmDriver<Arm64>) -> Result<(), VmiError> {
 fn control_from_option(option: EventMonitor) -> Result<KvmControl, VmiError> {
     match option {
         EventMonitor::Singlestep => Ok(KvmControl::Singlestep),
+        EventMonitor::Breakpoint => Ok(KvmControl::Breakpoint),
     }
 }
 
@@ -214,6 +215,7 @@ impl ArchAdapter for Arm64 {
 
     fn reset_state(driver: &VmiKvmDriver<Self>) -> Result<(), VmiError> {
         let _ = Self::monitor_disable(driver, EventMonitor::Singlestep);
+        let _ = Self::monitor_disable(driver, EventMonitor::Breakpoint);
 
         let _ = driver.session.switch_view(ViewId(0));
         for view_id in driver.views.borrow().iter().copied().collect::<Vec<_>>() {

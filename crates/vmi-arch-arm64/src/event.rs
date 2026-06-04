@@ -40,4 +40,7 @@ pub enum EventReason {
 pub enum EventMonitor {
     /// Monitor singlestep execution of instructions.
     Singlestep,
+
+    /// Monitor guest software breakpoints (`BRK`).
+    Breakpoint,
 }
