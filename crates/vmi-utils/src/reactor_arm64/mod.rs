@@ -18,6 +18,7 @@ use std::{
 use vmi_arch_arm64::{Arm64, EventMonitor, EventReason};
 use vmi_core::{
     MemoryAccess, Pa, Va, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession,
+    arch::{EventMemoryAccess as _, EventReason as _},
     driver::VmiFullDriver,
 };
 use vmi_os_windows::WindowsOs;
@@ -190,15 +191,52 @@ where
         Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
     }
 
+    /// Handles a memory-access violation on a breakpointed page.
+    ///
+    /// The breakpoint view marks the shadow page execute-only, so any data
+    /// access to it traps here. On a write the OS or PatchGuard is modifying
+    /// the page, so the instruction is stepped on the clean default view where
+    /// it can land. On a read PatchGuard is verifying the page, so the
+    /// instruction is stepped on the clean default view and sees the unpatched
+    /// bytes, preserving stealth.
+    ///
+    /// X-only protection is host-page granular, so on a host whose page size
+    /// exceeds the guest granule a data access to a neighbor guest page fused
+    /// into the same host page also faults here. Such an access is handled the
+    /// same way: stepped over on the default view.
+    fn memory_access(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Arm64>, VmiError> {
+        let ma = vmi
+            .event()
+            .reason()
+            .as_memory_access()
+            .expect("memory access");
+
+        // Write accesses may also have R set, so check W first.
+        if ma.access().contains(MemoryAccess::W) {
+            Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
+        }
+        else if ma.access().contains(MemoryAccess::R) {
+            Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
+        }
+        else {
+            panic!("unhandled memory access: {ma:?}");
+        }
+    }
+
     /// Dispatches a VMI event to its handler.
     fn dispatch(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Arm64>, VmiError> {
         match vmi.event().reason() {
-            EventReason::MemoryAccess(_) => Ok(VmiEventResponse::default()),
+            EventReason::MemoryAccess(_) => self.memory_access(vmi),
             EventReason::Interrupt(_) => self.interrupt(vmi),
-            EventReason::Singlestep(_) => Ok(VmiEventResponse::default()),
+            // After a write step-over on the default view, return execution to
+            // the breakpoint view so later instructions still trap the BRK.
+            EventReason::Singlestep(_) => Ok(VmiEventResponse::default().with_view(self.view)),
         }
     }
 }

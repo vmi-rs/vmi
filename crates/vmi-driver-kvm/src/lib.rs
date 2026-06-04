@@ -81,6 +81,32 @@ where
     }
 }
 
+impl<Arch> VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    /// Converts a gfn expressed in the generic (guest-page) units the upper
+    /// layers use into the host-page KVM gfn the kernel VMI ABI works in.
+    ///
+    /// The kernel keys views, memory-access permissions, and gfn remaps by
+    /// host-page frame. On a host whose page size exceeds the guest granule
+    /// (a 16K arm64 host introspecting a 4K guest) a guest-page gfn must be
+    /// shifted down by `host_shift - guest_shift` to name its enclosing host
+    /// frame. A shadow gfn is already a host-page kernel allocation, so it
+    /// passes through unchanged. On a host whose page size equals the guest
+    /// granule the shift delta is zero and this is the identity.
+    fn to_host_gfn(gfn: u64) -> u64 {
+        if gfn >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
+            gfn
+        }
+        else {
+            let host_shift = kvm::host_page_size().trailing_zeros();
+            let guest_shift = Arch::PAGE_SHIFT as u32;
+            gfn >> (host_shift - guest_shift)
+        }
+    }
+}
+
 impl<Arch> Drop for VmiKvmDriver<Arch>
 where
     Arch: ArchAdapter,
@@ -117,6 +143,12 @@ where
 
         Ok(VmiMappedPage::new(KvmPageBacking(page)))
     }
+
+    fn view_page_shift(&self) -> u32 {
+        // The kernel keys views and shadow pages by host frame, so on a 16K
+        // arm64 host over a 4K guest a view page is the 16K host page.
+        kvm::host_page_size().trailing_zeros()
+    }
 }
 
 impl<Arch> VmiWrite for VmiKvmDriver<Arch>
@@ -125,7 +157,18 @@ where
 {
     fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
         let offset = offset as usize;
-        if offset + content.len() > Arch::PAGE_SIZE as usize {
+
+        // A shadow gfn maps a full host page, so a shadow write may span the
+        // whole host frame (a 16K shadow on a 16K host). An ordinary guest gfn
+        // stays bounded by the guest page. On a host whose page size equals the
+        // guest granule both limits coincide.
+        let page_limit = if u64::from(gfn) >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
+            kvm::host_page_size()
+        }
+        else {
+            Arch::PAGE_SIZE as usize
+        };
+        if offset + content.len() > page_limit {
             return Err(VmiError::OutOfBounds);
         }
 
@@ -146,7 +189,7 @@ where
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
         Ok(MemoryAccess::from_ext(
             self.session
-                .get_mem_access(ViewId(u32::from(view.0)), gfn.into())
+                .get_mem_access(ViewId(u32::from(view.0)), Self::to_host_gfn(gfn.into()))
                 .map_err(VmiError::driver)?,
         ))
     }
@@ -167,7 +210,7 @@ where
         self.session
             .set_mem_access(
                 ViewId(u32::from(view.0)),
-                gfn.into(),
+                Self::to_host_gfn(gfn.into()),
                 MemAccess::from_ext(access),
             )
             .map_err(VmiError::driver)
@@ -200,7 +243,11 @@ where
         };
 
         self.session
-            .set_mem_access(ViewId(u32::from(view.0)), gfn.into(), bits)
+            .set_mem_access(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                bits,
+            )
             .map_err(VmiError::driver)
     }
 }
@@ -267,7 +314,11 @@ where
         }
 
         self.session
-            .change_gfn(ViewId(u32::from(view.0)), old_gfn.into(), new_gfn.into())
+            .change_gfn(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(old_gfn.into()),
+                Self::to_host_gfn(new_gfn.into()),
+            )
             .map_err(VmiError::driver)
     }
 
@@ -278,7 +329,11 @@ where
 
         // kvm::INVALID_GFN (`~(__u64)0`) reverts the GFN to its host mapping.
         self.session
-            .change_gfn(ViewId(u32::from(view.0)), gfn.into(), kvm::INVALID_GFN)
+            .change_gfn(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                kvm::INVALID_GFN,
+            )
             .map_err(VmiError::driver)
     }
 }

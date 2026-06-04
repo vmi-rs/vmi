@@ -69,6 +69,20 @@ pub trait VmiDriver: 'static {
 pub trait VmiRead: VmiDriver {
     /// Reads a page of memory from the virtual machine.
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError>;
+
+    /// Returns the log2 of the granule a single view entry, and the shadow
+    /// page that backs it, covers.
+    ///
+    /// A view page can exceed the guest page. The kernel manages views and
+    /// shadow pages in host-page frames, so on a host whose page size exceeds
+    /// the guest granule (a 16K arm64 host over a 4K guest) one view entry
+    /// covers several consecutive guest pages. Callers that lay down a shadow
+    /// copy or compute a within-shadow offset must use this granule, not the
+    /// guest page. The default returns the guest shift, so a driver on a host
+    /// whose page size equals the guest granule needs no override.
+    fn view_page_shift(&self) -> u32 {
+        Self::Architecture::PAGE_SHIFT as u32
+    }
 }
 
 /// Capability to write guest physical memory pages.

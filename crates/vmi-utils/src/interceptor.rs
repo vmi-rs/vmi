@@ -119,12 +119,22 @@ where
                 };
 
                 // Copy the content of the original page to the shadow page.
-                let mut content = vec![0u8; Driver::Architecture::PAGE_SIZE as usize];
-                vmi.read(
-                    Driver::Architecture::pa_from_gfn(original_gfn),
-                    &mut content,
-                )?;
-                vmi.write(Driver::Architecture::pa_from_gfn(page.shadow_gfn), &content)?;
+                //
+                // The shadow gfn backs a full view page, which on a host whose
+                // page size exceeds the guest granule spans several consecutive
+                // guest pages. Copy the whole host-page-aligned original into
+                // the shadow so the code outside the breakpoint byte is
+                // faithful. The guest read chunks correctly across the
+                // consecutive guest gfns, but a chunked write to the shadow
+                // would step to shadow_gfn+1 (an unallocated key), so the
+                // shadow is written as a single gfn through the driver.
+                let view_shift = vmi.driver().view_page_shift();
+                let view_page = 1usize << view_shift;
+                let guest_base =
+                    Driver::Architecture::pa_from_gfn(original_gfn).0 & !((view_page as u64) - 1);
+                let mut content = vec![0u8; view_page];
+                vmi.read(Pa::new(guest_base), &mut content)?;
+                vmi.driver().write_page(page.shadow_gfn, 0, &content)?;
 
                 // Change the view of the original page to the shadow page.
                 vmi.change_view_gfn(view, original_gfn, page.shadow_gfn)?;
@@ -141,12 +151,26 @@ where
             }
         };
 
-        let shadow_address = Driver::Architecture::pa_from_gfn(page.shadow_gfn) + offset as u64;
+        // The breakpoint byte lives at its offset within the view page, which
+        // may be larger than the guest page. Compute the offset inside the
+        // shadow from the original guest PA masked to the view page.
+        let view_shift = vmi.driver().view_page_shift();
+        let view_page = 1usize << view_shift;
+        let host_offset = ((Driver::Architecture::pa_from_gfn(original_gfn).0 + offset as u64)
+            & ((view_page as u64) - 1)) as usize;
+        let brk_len = Driver::Architecture::BREAKPOINT.len();
 
-        // Replace the original content with a breakpoint instruction.
-        let mut original_content = vec![0u8; Driver::Architecture::BREAKPOINT.len()];
-        vmi.read(shadow_address, &mut original_content)?;
-        vmi.write(shadow_address, Driver::Architecture::BREAKPOINT)?;
+        // Replace the original content with a breakpoint instruction, reading
+        // and writing the full view-page shadow gfn directly at host_offset.
+        let mut original_content = vec![0u8; brk_len];
+        let shadow_page = vmi.driver().read_page(page.shadow_gfn)?;
+        original_content.copy_from_slice(&shadow_page[host_offset..host_offset + brk_len]);
+        drop(shadow_page);
+        vmi.driver().write_page(
+            page.shadow_gfn,
+            host_offset as u64,
+            Driver::Architecture::BREAKPOINT,
+        )?;
 
         // Save the original content of the breakpoint.
         let offset = offset as u16;
@@ -217,8 +241,14 @@ where
         }
 
         // Restore the original content of the shadow page at the given offset.
-        let shadow_address = Driver::Architecture::pa_from_gfn(page.shadow_gfn) + offset as u64;
-        vmi.write(shadow_address, &breakpoint.original_content)?;
+        // The offset is taken inside the view page, which may exceed the guest
+        // page, and the full view-page shadow gfn is written directly.
+        let view_shift = vmi.driver().view_page_shift();
+        let view_page = 1usize << view_shift;
+        let host_offset =
+            (Driver::Architecture::pa_from_gfn(gfn).0 + offset as u64) & ((view_page as u64) - 1);
+        vmi.driver()
+            .write_page(page.shadow_gfn, host_offset, &breakpoint.original_content)?;
 
         // Remove the breakpoint from the page.
         page.breakpoints.remove(&offset);
