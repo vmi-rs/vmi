@@ -17,8 +17,8 @@ use std::{
 
 use vmi_arch_arm64::{Arm64, EventMonitor, EventReason};
 use vmi_core::{
-    Architecture as _, MemoryAccess, Pa, Va, View, VmiContext, VmiError, VmiEventResponse,
-    VmiHandler, VmiSession,
+    Architecture as _, MemoryAccess, MemoryAccessOptions, Pa, Va, View, VmiContext, VmiError,
+    VmiEventResponse, VmiHandler, VmiSession,
     arch::{EventMemoryAccess as _, EventReason as _},
     driver::VmiFullDriver,
 };
@@ -104,12 +104,20 @@ where
     Driver::Architecture: vmi_os_windows::ArchAdapter<Driver>,
     Handler: ReactorHandler<Driver>,
 {
-    /// Creates a reactor and installs one breakpoint per spec.
+    /// Creates a reactor and installs one stealth breakpoint per spec.
     ///
     /// Pauses the guest, enables the breakpoint and singlestep monitors, creates
     /// a fresh RWX view, switches every vCPU onto it, and inserts one breakpoint
     /// per spec. Each spec carries a precomputed `(va, root)` so the caller
     /// selects the regime (`TTBR1` for kernel VAs).
+    ///
+    /// Each breakpoint page is left execute-only so a PatchGuard read traps and
+    /// is served the clean bytes, preserving stealth. On a 16K host the same
+    /// stage-2 leaf also covers the neighbor guest pages fused into the host
+    /// page, so each breakpoint requests in-kernel auto-step of those neighbors
+    /// (`MemoryAccessOptions::AUTO_STEP_NEIGHBORS`): a neighbor data access is
+    /// retired in the kernel rather than storming the agent, while reads of the
+    /// breakpoint page itself still deliver to [`Self::memory_access`].
     pub fn new(
         session: &VmiSession<WindowsOs<Driver>>,
         handler: Handler,
@@ -122,12 +130,12 @@ where
     /// RWX).
     ///
     /// The breakpoint manager arms its page as execute-only to trap reads and
-    /// hide the planted bytes from PatchGuard. On a 16K host that protection is
-    /// host-page granular and covers the neighbor guest pages fused into the
-    /// same host page, so a hot target produces a mem-access fault storm. This
-    /// constructor widens each breakpoint page back to RWX after insertion,
-    /// trading stealth for a storm-free run. Use it for bring-up, not for a
-    /// sustained Windows target, since PatchGuard can then read the breakpoint.
+    /// hide the planted bytes from PatchGuard. This constructor widens each
+    /// breakpoint page back to RWX after insertion, so no read or neighbor
+    /// access faults at all. Use it for bring-up where PatchGuard is not a
+    /// concern: it cannot storm, but PatchGuard can read the planted bytes.
+    /// For a sustained Windows target use [`Self::new`], which keeps the page
+    /// execute-only and auto-steps the fused neighbors in the kernel.
     pub fn new_without_stealth(
         session: &VmiSession<WindowsOs<Driver>>,
         handler: Handler,
@@ -138,8 +146,10 @@ where
 
     /// Builds the reactor, installing one breakpoint per spec.
     ///
-    /// When `stealth` is false, the execute-only narrowing the breakpoint
-    /// manager applies is undone per page so data accesses do not fault.
+    /// When `stealth` is true, each breakpoint page stays execute-only and its
+    /// fused neighbor pages are marked for in-kernel auto-step. When false, the
+    /// execute-only narrowing is undone per page (widened to RWX) so no data
+    /// access faults.
     fn new_impl(
         session: &VmiSession<WindowsOs<Driver>>,
         handler: Handler,
@@ -161,9 +171,24 @@ where
             let bp = Breakpoint::new(cx, view).global().with_tag(spec.tag);
             bpm.insert(&vmi, bp)?;
 
-            if !stealth {
-                let pa = vmi.core().translate_address((spec.va, spec.root))?;
-                let gfn = Arm64::gfn_from_pa(pa);
+            // The breakpoint manager armed the page execute-only. Re-set its
+            // access to pick how the 16K-fusion neighbor pages are handled.
+            // With stealth on, request in-kernel auto-step of the neighbors so
+            // PatchGuard reads of the breakpoint page still trap to userspace
+            // while the fused neighbors are retired in the kernel (no event
+            // storm). With stealth off, widen back to RWX (no protection, no
+            // events) for storm-free bring-up.
+            let pa = vmi.core().translate_address((spec.va, spec.root))?;
+            let gfn = Arm64::gfn_from_pa(pa);
+            if stealth {
+                vmi.core().set_memory_access_with_options(
+                    gfn,
+                    view,
+                    MemoryAccess::X,
+                    MemoryAccessOptions::AUTO_STEP_NEIGHBORS,
+                )?;
+            }
+            else {
                 vmi.core().set_memory_access(gfn, view, MemoryAccess::RWX)?;
             }
         }

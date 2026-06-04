@@ -105,6 +105,26 @@ where
             gfn >> (host_shift - guest_shift)
         }
     }
+
+    /// Computes the in-kernel auto-step mask for the host page enclosing `gfn`:
+    /// a bit set for every 4K sub-page fused into that host page except the one
+    /// holding `gfn` itself.
+    ///
+    /// On a host whose page size matches the guest granule there is no fusion,
+    /// so the result is 0 and the kernel sees a plain access. A shadow gfn is
+    /// already a whole host-page allocation, so it has no neighbors and also
+    /// yields 0.
+    fn neighbor_autostep_mask(gfn: u64) -> u16 {
+        if gfn >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
+            return 0;
+        }
+        let host_shift = kvm::host_page_size().trailing_zeros();
+        let guest_shift = Arch::PAGE_SHIFT as u32;
+        let nsub = 1u32 << (host_shift - guest_shift);
+        let index = (gfn as u32) & (nsub - 1);
+        let full = (1u32 << nsub) - 1;
+        (full & !(1u32 << index)) as u16
+    }
 }
 
 impl<Arch> Drop for VmiKvmDriver<Arch>
@@ -224,6 +244,18 @@ where
         options: MemoryAccessOptions,
     ) -> Result<(), VmiError> {
         tracing::trace!(%gfn, %view, %access, "set memory access");
+
+        if options.contains(MemoryAccessOptions::AUTO_STEP_NEIGHBORS) {
+            return self
+                .session
+                .set_mem_access_autostep(
+                    ViewId(u32::from(view.0)),
+                    Self::to_host_gfn(gfn.into()),
+                    MemAccess::from_ext(access),
+                    Self::neighbor_autostep_mask(gfn.into()),
+                )
+                .map_err(VmiError::driver);
+        }
 
         let bits = if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
             if access != MemoryAccess::R {

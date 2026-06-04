@@ -48,6 +48,19 @@ bitflags::bitflags! {
         ///
         /// [`EventMemoryAccess`]: ../vmi_arch_amd64/struct.EventMemoryAccess.html
         const IGNORE_PAGE_WALK_UPDATES = 0b00000001;
+
+        /// Single-step neighbor guest pages in the kernel instead of delivering
+        /// a mem-access event.
+        ///
+        /// On a host whose page size exceeds the guest granule, one stage-2
+        /// leaf protects several fused guest pages at once. With this flag the
+        /// driver marks every guest page fused into the target's host page,
+        /// except the target itself, for in-kernel single-stepping, so a data
+        /// access to a neighbor is retired in the kernel rather than storming
+        /// the agent with an event per access. Accesses to the target page
+        /// still deliver normally. This has no effect when the host and guest
+        /// page sizes match.
+        const AUTO_STEP_NEIGHBORS = 0b00000010;
     }
 }
 
