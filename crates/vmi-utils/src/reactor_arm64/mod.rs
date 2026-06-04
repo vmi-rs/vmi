@@ -17,7 +17,8 @@ use std::{
 
 use vmi_arch_arm64::{Arm64, EventMonitor, EventReason};
 use vmi_core::{
-    MemoryAccess, Pa, Va, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession,
+    Architecture as _, MemoryAccess, Pa, Va, View, VmiContext, VmiError, VmiEventResponse,
+    VmiHandler, VmiSession,
     arch::{EventMemoryAccess as _, EventReason as _},
     driver::VmiFullDriver,
 };
@@ -114,6 +115,37 @@ where
         handler: Handler,
         breakpoints: &[BreakpointSpec],
     ) -> Result<Self, VmiError> {
+        Self::new_impl(session, handler, breakpoints, true)
+    }
+
+    /// Creates a reactor with X-only stealth disabled (breakpoint pages stay
+    /// RWX).
+    ///
+    /// The breakpoint manager arms its page as execute-only to trap reads and
+    /// hide the planted bytes from PatchGuard. On a 16K host that protection is
+    /// host-page granular and covers the neighbor guest pages fused into the
+    /// same host page, so a hot target produces a mem-access fault storm. This
+    /// constructor widens each breakpoint page back to RWX after insertion,
+    /// trading stealth for a storm-free run. Use it for bring-up, not for a
+    /// sustained Windows target, since PatchGuard can then read the breakpoint.
+    pub fn new_without_stealth(
+        session: &VmiSession<WindowsOs<Driver>>,
+        handler: Handler,
+        breakpoints: &[BreakpointSpec],
+    ) -> Result<Self, VmiError> {
+        Self::new_impl(session, handler, breakpoints, false)
+    }
+
+    /// Builds the reactor, installing one breakpoint per spec.
+    ///
+    /// When `stealth` is false, the execute-only narrowing the breakpoint
+    /// manager applies is undone per page so data accesses do not fault.
+    fn new_impl(
+        session: &VmiSession<WindowsOs<Driver>>,
+        handler: Handler,
+        breakpoints: &[BreakpointSpec],
+        stealth: bool,
+    ) -> Result<Self, VmiError> {
         let paused = session.pause_guard()?;
         let vmi = paused.state();
 
@@ -128,6 +160,12 @@ where
             let cx = (spec.va, spec.root);
             let bp = Breakpoint::new(cx, view).global().with_tag(spec.tag);
             bpm.insert(&vmi, bp)?;
+
+            if !stealth {
+                let pa = vmi.core().translate_address((spec.va, spec.root))?;
+                let gfn = Arm64::gfn_from_pa(pa);
+                vmi.core().set_memory_access(gfn, view, MemoryAccess::RWX)?;
+            }
         }
 
         Ok(Self {

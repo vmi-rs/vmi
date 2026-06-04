@@ -155,9 +155,15 @@ fn main() -> Result<(), Error> {
     let session = VmiSession::new(&core, &os);
 
     // And we're ready to create the reactor!
+    // Bring-up uses the no-stealth constructor: the breakpoint page stays RWX,
+    // so a hot target like NtCreateFile does not trigger the 16K host-page
+    // mem-access fault storm. PatchGuard can observe the breakpoint, so this is
+    // for confirming delivery, not a sustained target.
     session.handle(|session| {
-        Ok(ReactorArm64::new(session, LogHandler, &breakpoints)?
-            .with_termination_flag(terminate_flag))
+        Ok(
+            ReactorArm64::new_without_stealth(session, LogHandler, &breakpoints)?
+                .with_termination_flag(terminate_flag),
+        )
     })?;
 
     Ok(())
