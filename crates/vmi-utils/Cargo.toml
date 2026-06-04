@@ -49,5 +49,5 @@ interceptor = []
 ptm = []
 # TODO: remove dependency on `arch-amd64` and `os-windows`
 reactor = ["arch-amd64", "bpm", "os-windows", "resolver"]
-reactor-arm64 = ["arch-arm64", "bpm", "os-windows"]
+reactor-arm64 = ["arch-arm64", "bpm", "os-windows", "resolver"]
 resolver = []
