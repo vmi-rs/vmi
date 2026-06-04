@@ -5,7 +5,8 @@ use kvm::{
     arch::arm64::{KvmBreakpointEvent, KvmEventReasonArm64},
 };
 use vmi_arch_arm64::{
-    Arm64, EventInterrupt, EventMemoryAccess, EventReason, Interrupt, InterruptType,
+    Arm64, EventInterrupt, EventMemoryAccess, EventReason, EventSinglestep, Interrupt,
+    InterruptType,
 };
 use vmi_core::{Architecture, MemoryAccess, Pa, VmiError};
 
@@ -34,10 +35,9 @@ pub(super) fn reason_from_event(ev: &KvmVmiEvent) -> Result<EventReason, VmiErro
             va: Default::default(),
             access: MemoryAccess::from_ext(m.access),
         })),
-        KvmEventReason::Singlestep(_) => {
-            // The arm64 EventReason has no Singlestep variant yet, so this arm is unreachable today.
-            Err(VmiError::NotSupported)
-        }
+        // The kernel payload (gpa) is intentionally dropped. Handlers
+        // read the stepped instruction's address from the registers.
+        KvmEventReason::Singlestep(_) => Ok(EventReason::Singlestep(EventSinglestep)),
         KvmEventReason::Hypercall => {
             // HVC is always 4 bytes on AArch64.
             Err(VmiError::NotSupported)

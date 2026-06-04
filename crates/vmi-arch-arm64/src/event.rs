@@ -25,6 +25,13 @@ pub struct EventInterrupt {
     pub interrupt: Interrupt,
 }
 
+/// Event generated after a single instruction step completes.
+///
+/// Carries no payload. The stepped instruction's address is read from the
+/// vCPU registers, not from the event.
+#[derive(Debug, Clone, Copy)]
+pub struct EventSinglestep;
+
 /// Classifies why a KVM VMI event fired.
 #[derive(Debug, Clone, Copy)]
 pub enum EventReason {
@@ -33,6 +40,9 @@ pub enum EventReason {
 
     /// Interrupt or exception event.
     Interrupt(EventInterrupt),
+
+    /// Single-step event.
+    Singlestep(EventSinglestep),
 }
 
 /// Specifies which hardware events should be monitored.
