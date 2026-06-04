@@ -146,7 +146,10 @@ arch-amd64 = [
     "vmi-arch-amd64",
     "vmi-utils?/arch-amd64"
 ]
-arch-arm64 = ["vmi-arch-arm64"]
+arch-arm64 = [
+    "vmi-arch-arm64",
+    "vmi-utils?/arch-arm64"
+]
 driver-kdmp = ["vmi-driver-kdmp"]
 driver-kvm = ["vmi-driver-kvm"]
 driver-xen = ["vmi-driver-xen"]
@@ -165,6 +168,12 @@ utils = [
     "vmi-utils/ptm",
     "vmi-utils/reactor",
     "vmi-utils/resolver",
+]
+utils-arm64 = [
+    "vmi-utils",
+    "vmi-utils/reactor-arm64",
+    "arch-arm64",
+    "os-windows"
 ]
 
 [dev-dependencies]
@@ -261,3 +270,8 @@ name = "kvm-windows-reactor"
 path = "examples/kvm-windows-reactor/main.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
+
+[[example]]
+name = "kvm-windows-reactor-arm64"
+path = "examples/kvm-windows-reactor-arm64/main.rs"
+required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]

@@ -755,7 +755,7 @@ pub mod os {
     }
 }
 
-#[cfg(feature = "utils")]
+#[cfg(any(feature = "utils", feature = "utils-arm64"))]
 pub mod utils {
     #![doc = include_str!("../docs/vmi-utils.md")]
 
