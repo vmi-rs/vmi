@@ -229,12 +229,25 @@ where
                 breakpoints.next().expect("breakpoint").tag()
             }
             None => {
-                if BreakpointController::is_breakpoint(vmi, vmi.event())? {
-                    tracing::debug!("unknown breakpoint, reinjecting");
+                // The breakpoint manager has no record of this BRK, so it is
+                // either the guest's own (any BRK immediate, e.g. a Windows
+                // __fastfail BRK #0xF00x) or a stale event for a BRK already
+                // removed. VMI's debug-exception trap (MDCR_EL2.TDE) intercepts
+                // every guest BRK, so a live guest BRK must be REINJECTED: a BRK
+                // re-traps in place, so single-stepping one loops forever (the
+                // instruction never advances). Read the faulting instruction and
+                // mask off the imm16 to recognize any BRK, not just our BRK #0.
+                let pc = Va(vmi_core::Registers::instruction_pointer(
+                    vmi.event().registers(),
+                ));
+                let is_brk =
+                    matches!(vmi.read_u32(pc), Ok(word) if (word & 0xffe0_001f) == 0xd420_0000);
+                if is_brk {
+                    tracing::debug!("foreign guest breakpoint, reinjecting");
                     return Ok(VmiEventResponse::reinject_interrupt());
                 }
 
-                tracing::debug!("ignoring old breakpoint event");
+                tracing::debug!("ignoring stale breakpoint event");
                 return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
             }
         };
