@@ -29,6 +29,7 @@ isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-arch-arm64 = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -38,6 +39,7 @@ vmi = { workspace = true, features = ["arch-amd64", "os-windows", "utils"] }
 default = []
 
 arch-amd64 = ["vmi-arch-amd64"]
+arch-arm64 = ["vmi-arch-arm64"]
 os-windows = ["vmi-os-windows", "isr-cache/windows", "isr-dl-windows"]
 
 bpm = ["interceptor", "ptm"]
@@ -47,4 +49,5 @@ interceptor = []
 ptm = []
 # TODO: remove dependency on `arch-amd64` and `os-windows`
 reactor = ["arch-amd64", "bpm", "os-windows", "resolver"]
+reactor-arm64 = ["arch-arm64", "bpm", "os-windows"]
 resolver = []

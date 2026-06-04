@@ -18,6 +18,9 @@ pub mod ptm;
 #[cfg(feature = "reactor")]
 pub mod reactor;
 
+#[cfg(feature = "reactor-arm64")]
+pub mod reactor_arm64;
+
 #[cfg(feature = "resolver")]
 pub mod resolver;
 
