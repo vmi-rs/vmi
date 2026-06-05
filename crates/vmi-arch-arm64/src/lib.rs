@@ -40,6 +40,12 @@ impl Architecture for Arm64 {
     type EventMonitor = EventMonitor;
     type EventReason = EventReason;
 
+    fn is_breakpoint(insn: &[u8]) -> bool {
+        insn.len() >= 4
+            && (u32::from_le_bytes([insn[0], insn[1], insn[2], insn[3]]) & 0xffe0_001f)
+                == 0xd420_0000
+    }
+
     fn gfn_from_pa(pa: Pa) -> Gfn {
         Gfn(pa.0 >> Self::PAGE_SHIFT)
     }
@@ -353,6 +359,22 @@ impl vmi_core::arch::EventReason for EventReason {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod is_breakpoint_tests {
+    use vmi_core::Architecture as _;
+
+    use crate::Arm64;
+
+    #[test]
+    fn recognizes_any_brk_immediate() {
+        // BRK #0 (the planted bytes) and a BRK with a non-zero immediate.
+        assert!(Arm64::is_breakpoint(&0xd420_0000u32.to_le_bytes()));
+        assert!(Arm64::is_breakpoint(&0xd43e_0020u32.to_le_bytes()));
+        // A NOP is not a breakpoint.
+        assert!(!Arm64::is_breakpoint(&0xd503_201fu32.to_le_bytes()));
     }
 }
 

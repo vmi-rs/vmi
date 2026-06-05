@@ -48,6 +48,14 @@ pub trait Architecture {
     /// - **ARM64**: `&[0x00, 0x00, 0x20, 0xd4]` (`BRK #0` instruction)
     const BREAKPOINT: &'static [u8];
 
+    /// Reports whether `insn` begins with this architecture's breakpoint trap.
+    ///
+    /// Recognition can differ from the planted [`BREAKPOINT`](Self::BREAKPOINT)
+    /// bytes: arm64 `BRK` carries an immediate, so any `BRK #imm` matches.
+    fn is_breakpoint(insn: &[u8]) -> bool {
+        insn.starts_with(Self::BREAKPOINT)
+    }
+
     /// The complete set of CPU registers for the architecture.
     ///
     /// This type should include general-purpose registers, and all control and
