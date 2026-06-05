@@ -39,7 +39,7 @@ pub use self::{
 };
 
 struct Cache {
-    gfn: RefCell<LruCache<Gfn, VmiMappedPage>>,
+    gfn: RefCell<LruCache<Hfn, VmiMappedPage>>,
     v2p: RefCell<LruCache<AccessContext, Pa>>,
 }
 
@@ -62,7 +62,7 @@ where
     driver: Driver,
     cache: Cache,
 
-    read_page_fn: fn(&Self, Gfn) -> Result<VmiMappedPage, VmiError>,
+    read_page_fn: fn(&Self, Hfn) -> Result<VmiMappedPage, VmiError>,
     translate_access_context_fn: fn(&Self, AccessContext) -> Result<Pa, VmiError>,
 
     read_string_length_limit: RefCell<Option<usize>>,
@@ -174,9 +174,10 @@ where
     ///
     /// Returns the removed entry if it was present.
     /// This is useful for invalidating cached data that might have
-    /// become stale.
-    pub fn flush_gfn_cache_entry(&self, gfn: Gfn) -> Option<VmiMappedPage> {
-        self.cache.gfn.borrow_mut().pop(&gfn)
+    /// become stale. The cache keys by host frame, so pass the [`Hfn`] backing
+    /// the guest page.
+    pub fn flush_gfn_cache_entry(&self, frame: Hfn) -> Option<VmiMappedPage> {
+        self.cache.gfn.borrow_mut().pop(&frame)
     }
 
     /// Clears the entire GFN cache.
@@ -642,21 +643,36 @@ where
         (self.translate_access_context_fn)(self, ctx)
     }
 
-    /// Reads a page of memory from the virtual machine.
+    /// Reads a guest page, presented as a guest-page-sized window over the
+    /// host page that backs it.
+    ///
+    /// This is the sole `Gfn -> Hfn` conversion seam. The driver maps the whole
+    /// host frame and this slices the guest page out of it. On a host whose
+    /// page equals the guest coordinate page the window covers the entire
+    /// mapping.
     pub fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        (self.read_page_fn)(self, gfn)
+        let info = self.driver.info()?;
+        let host_shift = info.host_page_shift as u32;
+        let guest_shift = <Driver::Architecture as Architecture>::PAGE_SHIFT as u32;
+        let hfn = <Driver::Architecture as Architecture>::hfn_from_gfn(gfn, host_shift);
+
+        let host_page = (self.read_page_fn)(self, hfn)?;
+
+        // Window the host page down to this guest page. sub is the guest page's
+        // offset inside the host page; identity when host == guest.
+        let sub = ((gfn.0 << guest_shift) & (info.host_page_size - 1)) as usize;
+        Ok(host_page.window(sub, info.page_size as usize))
     }
 
-    /// Reads a page of memory from the virtual machine without using the cache.
-    fn read_page_nocache(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        self.driver.read_page(gfn)
+    /// Reads a host page from the virtual machine without using the cache.
+    fn read_page_nocache(&self, hfn: Hfn) -> Result<VmiMappedPage, VmiError> {
+        self.driver.read_page(hfn)
     }
 
-    /// Reads a page of memory from the virtual machine, using the cache if
-    /// enabled.
-    fn read_page_cache(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+    /// Reads a host page from the virtual machine, using the cache if enabled.
+    fn read_page_cache(&self, hfn: Hfn) -> Result<VmiMappedPage, VmiError> {
         let mut cache = self.cache.gfn.borrow_mut();
-        let value = cache.try_get_or_insert(gfn, || self.read_page_nocache(gfn))?;
+        let value = cache.try_get_or_insert(hfn, || self.read_page_nocache(hfn))?;
 
         // Mapped pages are reference counted, so cloning it is cheap.
         Ok(value.clone())
@@ -710,15 +726,22 @@ where
         while remaining > 0 {
             let address = self.translate_access_context(ctx + position as u64)?;
             let gfn = Driver::Architecture::gfn_from_pa(address);
-            let offset = Driver::Architecture::pa_offset(address);
+            let guest_offset = Driver::Architecture::pa_offset(address);
 
+            let info = self.driver.info()?;
+            let host_shift = info.host_page_shift as u32;
+            let hfn = Driver::Architecture::hfn_from_gfn(gfn, host_shift);
+            let host_offset = u64::from(address) & (info.host_page_size - 1);
+
+            // Cap each chunk at the guest-4K boundary, not the host page, so a
+            // virtual write does not cross a translation boundary.
             let size = std::cmp::min(
                 remaining,
-                (Driver::Architecture::PAGE_SIZE - offset) as usize,
+                (Driver::Architecture::PAGE_SIZE - guest_offset) as usize,
             );
             let content = &buffer[position..position + size];
 
-            self.driver.write_page(gfn, offset, content)?;
+            self.driver.write_page(hfn, host_offset, content)?;
 
             position += size;
             remaining -= size;
@@ -936,17 +959,17 @@ where
     ///
     /// This technique allows for transparent breakpoints that are difficult to
     /// detect by the guest OS or applications.
-    pub fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.change_view_gfn(view, old_gfn, new_gfn)
+    pub fn change_view_gfn(&self, view: View, original: Hfn, shadow: Hfn) -> Result<(), VmiError> {
+        self.driver.change_view_gfn(view, original, shadow)
     }
 
-    /// Resets the mapping of a guest frame number (GFN) in a specific view to
-    /// its original state.
+    /// Resets the mapping of a host frame in a specific view to its original
+    /// state.
     ///
-    /// This method reverts any custom mapping for the specified GFN in the
-    /// given view, restoring it to the default mapping.
-    pub fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
-        self.driver.reset_view_gfn(view, gfn)
+    /// This method reverts any custom mapping for the specified host frame in
+    /// the given view, restoring it to the default mapping.
+    pub fn reset_view_gfn(&self, view: View, original: Hfn) -> Result<(), VmiError> {
+        self.driver.reset_view_gfn(view, original)
     }
 }
 
@@ -1048,13 +1071,13 @@ where
         VmiPauseGuard::new(&self.driver)
     }
 
-    /// Allocates a guest frame number (GFN).
+    /// Allocates a host frame for a shadow page.
     ///
-    /// This method allocates a new GFN, with the driver responsible for
+    /// This method allocates a new host frame, with the driver responsible for
     /// choosing the specific frame to allocate. It's useful when you need
     /// to allocate new memory pages for the VM without caring about the
     /// specific location.
-    pub fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+    pub fn allocate_gfn(&self) -> Result<Hfn, VmiError> {
         self.driver.allocate_gfn()
     }
 

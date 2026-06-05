@@ -166,7 +166,8 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap};
 
     use vmi_core::{
-        Gfn, Pa, Va, VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage, driver::VmiRead,
+        Architecture as _, Gfn, Hfn, Pa, Va, VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
+        driver::VmiRead,
     };
 
     use super::index_for;
@@ -199,16 +200,25 @@ mod tests {
         type Architecture = Arm64;
 
         fn info(&self) -> Result<VmiInfo, VmiError> {
-            unimplemented!()
+            // Host page == guest page, so the Gfn -> Hfn conversion at the
+            // VmiCore::read_page seam is the identity.
+            Ok(VmiInfo {
+                page_size: Arm64::PAGE_SIZE,
+                page_shift: Arm64::PAGE_SHIFT,
+                host_page_size: Arm64::PAGE_SIZE,
+                host_page_shift: Arm64::PAGE_SHIFT,
+                max_gfn: Gfn::new(0),
+                vcpus: 1,
+            })
         }
     }
 
     impl VmiRead for MockDriver {
-        fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+        fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
             let page = self
                 .pages
                 .borrow()
-                .get(&gfn.0)
+                .get(&frame.0)
                 .copied()
                 .unwrap_or([0u8; 0x1000]);
             Ok(VmiMappedPage::new(page.to_vec().into_boxed_slice()))

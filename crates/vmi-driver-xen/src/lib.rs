@@ -12,7 +12,7 @@ use std::{
 };
 
 use vmi_core::{
-    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError,
+    Architecture, Gfn, Hfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError,
     VmiEvent, VmiEventResponse, VmiInfo, VmiMappedPage,
     driver::{
         VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead, VmiSetProtection,
@@ -116,13 +116,13 @@ impl<Arch> VmiRead for VmiXenDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
         let page = self
             .foreign_memory
             .map(
                 self.domain.id(),
                 XenForeignMemoryProtection::READ,
-                &[u64::from(gfn)],
+                &[u64::from(frame)],
                 None,
             )
             .map_err(VmiError::driver)?;
@@ -135,13 +135,18 @@ impl<Arch> VmiWrite for VmiXenDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
+    fn write_page(
+        &self,
+        frame: Hfn,
+        offset: u64,
+        content: &[u8],
+    ) -> Result<VmiMappedPage, VmiError> {
         let mut page = self
             .foreign_memory
             .map(
                 self.domain.id(),
                 XenForeignMemoryProtection::WRITE,
-                &[u64::from(gfn)],
+                &[u64::from(frame)],
                 None,
             )
             .map_err(VmiError::driver)?;
@@ -303,7 +308,7 @@ where
         }
     }
 
-    fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
+    fn change_view_gfn(&self, view: View, original: Hfn, shadow: Hfn) -> Result<(), VmiError> {
         if view.0 == 0 {
             return Ok(());
         }
@@ -311,13 +316,13 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => view
-                .change_gfn(old_gfn.into(), new_gfn.into())
+                .change_gfn(original.into(), shadow.into())
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
         }
     }
 
-    fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
+    fn reset_view_gfn(&self, view: View, original: Hfn) -> Result<(), VmiError> {
         if view.0 == 0 {
             return Ok(());
         }
@@ -325,7 +330,7 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => view
-                .change_gfn(gfn.into(), u64::MAX)
+                .change_gfn(original.into(), u64::MAX)
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
         }
@@ -443,10 +448,12 @@ where
         self.domain.unpause().map_err(VmiError::driver)
     }
 
-    fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+    fn allocate_gfn(&self) -> Result<Hfn, VmiError> {
+        // Xen host page == guest page, so the allocated host frame equals the
+        // guest frame.
         let gfn = Gfn::new(self.domain.maximum_gpfn().map_err(VmiError::driver)?) + 1;
         self.allocate_gfn_at(gfn)?;
-        Ok(gfn)
+        Ok(Hfn::new(gfn.into()))
     }
 
     fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError> {

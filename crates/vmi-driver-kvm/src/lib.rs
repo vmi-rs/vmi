@@ -14,7 +14,7 @@ use std::{
 
 use kvm::{KvmGuestMemory, KvmMappedPage, KvmVcpu, KvmVmi, KvmVmiRing, MemAccess, ViewId};
 use vmi_core::{
-    Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError, VmiEvent,
+    Gfn, Hfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError, VmiEvent,
     VmiEventResponse, VmiInfo, VmiMappedPage,
     driver::{
         VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead, VmiSetProtection,
@@ -89,16 +89,20 @@ impl<Arch> VmiKvmDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    /// Converts a gfn expressed in the generic (guest-page) units the upper
-    /// layers use into the host-page KVM gfn the kernel VMI ABI works in.
+    /// Converts a guest-page gfn into the host-page KVM gfn the kernel
+    /// memory-access protection ABI works in.
     ///
-    /// The kernel keys views, memory-access permissions, and gfn remaps by
-    /// host-page frame. On a host whose page size exceeds the guest granule
-    /// (a 16K arm64 host introspecting a 4K guest) a guest-page gfn must be
-    /// shifted down by `host_shift - guest_shift` to name its enclosing host
-    /// frame. A shadow gfn is already a host-page kernel allocation, so it
-    /// passes through unchanged. On a host whose page size equals the guest
-    /// granule the shift delta is zero and this is the identity.
+    /// This serves only the protection path (`memory_access`,
+    /// `set_memory_access`, `set_memory_access_with_options`), which keeps
+    /// taking guest [`Gfn`] because the auto-step mask needs the guest sub-page
+    /// index. The view and IO surface speaks [`Hfn`] directly and does not use
+    /// this. The kernel keys memory-access permissions by host-page frame, so
+    /// on a host whose page size exceeds the guest granule (a 16K arm64 host
+    /// introspecting a 4K guest) a guest-page gfn must be shifted down by
+    /// `host_shift - guest_shift` to name its enclosing host frame. A shadow
+    /// gfn is already a host-page kernel allocation, so it passes through
+    /// unchanged. On a host whose page size equals the guest granule the shift
+    /// delta is zero and this is the identity.
     fn to_host_gfn(gfn: u64) -> u64 {
         if gfn >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
             gfn
@@ -162,18 +166,11 @@ impl<Arch> VmiRead for VmiKvmDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        let page =
-            KvmGuestMemory::map_page(self.session.fd(), gfn.into(), Arch::PAGE_SHIFT as u8, false)
-                .map_err(VmiError::driver)?;
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
+        let page = KvmGuestMemory::map_page(self.session.fd(), frame.into(), false)
+            .map_err(VmiError::driver)?;
 
         Ok(VmiMappedPage::new(KvmPageBacking(page)))
-    }
-
-    fn view_page_shift(&self) -> u32 {
-        // The kernel keys views and shadow pages by host frame, so on a 16K
-        // arm64 host over a 4K guest a view page is the 16K host page.
-        kvm::host_page_size().trailing_zeros()
     }
 }
 
@@ -181,26 +178,22 @@ impl<Arch> VmiWrite for VmiKvmDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
+    fn write_page(
+        &self,
+        frame: Hfn,
+        offset: u64,
+        content: &[u8],
+    ) -> Result<VmiMappedPage, VmiError> {
         let offset = offset as usize;
 
-        // A shadow gfn maps a full host page, so a shadow write may span the
-        // whole host frame (a 16K shadow on a 16K host). An ordinary guest gfn
-        // stays bounded by the guest page. On a host whose page size equals the
-        // guest granule both limits coincide.
-        let page_limit = if u64::from(gfn) >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
-            kvm::host_page_size()
-        }
-        else {
-            Arch::PAGE_SIZE as usize
-        };
-        if offset + content.len() > page_limit {
+        // The mapping covers a whole host page, so a write may span the whole
+        // host frame and is bounded by the host page size.
+        if offset + content.len() > kvm::host_page_size() {
             return Err(VmiError::OutOfBounds);
         }
 
-        let mut page =
-            KvmGuestMemory::map_page(self.session.fd(), gfn.into(), Arch::PAGE_SHIFT as u8, true)
-                .map_err(VmiError::driver)?;
+        let mut page = KvmGuestMemory::map_page(self.session.fd(), frame.into(), true)
+            .map_err(VmiError::driver)?;
 
         page.as_mut_slice()[offset..offset + content.len()].copy_from_slice(content);
 
@@ -346,32 +339,26 @@ where
             .map_err(VmiError::driver)
     }
 
-    fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
+    fn change_view_gfn(&self, view: View, original: Hfn, shadow: Hfn) -> Result<(), VmiError> {
         if view.0 == 0 {
             return Ok(());
         }
 
+        // Both frames are already host-page keys, so they pass straight through.
         self.session
-            .change_gfn(
-                ViewId(u32::from(view.0)),
-                Self::to_host_gfn(old_gfn.into()),
-                Self::to_host_gfn(new_gfn.into()),
-            )
+            .change_gfn(ViewId(u32::from(view.0)), original.into(), shadow.into())
             .map_err(VmiError::driver)
     }
 
-    fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
+    fn reset_view_gfn(&self, view: View, original: Hfn) -> Result<(), VmiError> {
         if view.0 == 0 {
             return Ok(());
         }
 
-        // kvm::INVALID_GFN (`~(__u64)0`) reverts the GFN to its host mapping.
+        // kvm::INVALID_GFN (`~(__u64)0`) reverts the host frame to its host
+        // mapping.
         self.session
-            .change_gfn(
-                ViewId(u32::from(view.0)),
-                Self::to_host_gfn(gfn.into()),
-                kvm::INVALID_GFN,
-            )
+            .change_gfn(ViewId(u32::from(view.0)), original.into(), kvm::INVALID_GFN)
             .map_err(VmiError::driver)
     }
 }
@@ -388,9 +375,9 @@ where
         self.session.unpause_vm().map_err(VmiError::driver)
     }
 
-    fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+    fn allocate_gfn(&self) -> Result<Hfn, VmiError> {
         let gfn = self.session.alloc_gfn().map_err(VmiError::driver)?;
-        Ok(Gfn::new(gfn))
+        Ok(Hfn::new(gfn))
     }
 
     fn allocate_gfn_at(&self, _gfn: Gfn) -> Result<(), VmiError> {
