@@ -20,7 +20,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 pub use self::{
     arch::{Architecture, Registers},
     core::{
-        AccessContext, AddressContext, Gfn, MemoryAccess, MemoryAccessOptions, Pa,
+        AccessContext, AddressContext, Gfn, Hfn, MemoryAccess, MemoryAccessOptions, Pa,
         TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
     },
     ctx::{

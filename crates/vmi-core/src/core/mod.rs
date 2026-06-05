@@ -8,7 +8,7 @@ mod view;
 
 use self::macros::impl_ops;
 pub use self::{
-    access_context::{AccessContext, Gfn, Pa, TranslationMechanism, Va, VmiVa},
+    access_context::{AccessContext, Gfn, Hfn, Pa, TranslationMechanism, Va, VmiVa},
     address_context::AddressContext,
     info::VmiInfo,
     memory_access::{MemoryAccess, MemoryAccessOptions},
