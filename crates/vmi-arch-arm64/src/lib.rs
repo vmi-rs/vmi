@@ -339,3 +339,31 @@ impl vmi_core::arch::EventReason for EventReason {
         }
     }
 }
+
+#[cfg(test)]
+mod hfn_tests {
+    use vmi_core::{Architecture as _, Gfn, Hfn};
+
+    use crate::Arm64;
+
+    #[test]
+    fn hfn_identity_when_host_equals_guest() {
+        assert_eq!(
+            Arm64::hfn_from_gfn(Gfn::new(0x102a60), 12),
+            Hfn::new(0x102a60)
+        );
+    }
+
+    #[test]
+    fn hfn_collapses_4k_guest_into_16k_host() {
+        // 0x102a60 and 0x102a61 share host frame 0x40a98 on a 16K host.
+        assert_eq!(
+            Arm64::hfn_from_gfn(Gfn::new(0x102a60), 14),
+            Hfn::new(0x40a98)
+        );
+        assert_eq!(
+            Arm64::hfn_from_gfn(Gfn::new(0x102a61), 14),
+            Hfn::new(0x40a98)
+        );
+    }
+}

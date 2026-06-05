@@ -2,7 +2,9 @@
 
 use std::fmt::Debug;
 
-use crate::{AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead};
+use crate::{
+    AccessContext, AddressContext, Gfn, Hfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead,
+};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///
@@ -94,6 +96,15 @@ pub trait Architecture {
     /// - **AMD64**: `pa = gfn << 12`
     /// - **ARM64**: `pa = gfn << 12`
     fn pa_from_gfn(gfn: Gfn) -> Pa;
+
+    /// Returns the host frame backing guest frame `gfn` for a host whose page
+    /// shift is `host_shift` (from [`VmiInfo::host_page_shift`]). Identity when
+    /// the host page equals the guest coordinate page.
+    ///
+    /// [`VmiInfo::host_page_shift`]: crate::VmiInfo::host_page_shift
+    fn hfn_from_gfn(gfn: Gfn, host_shift: u32) -> Hfn {
+        Hfn(gfn.0 >> (host_shift - Self::PAGE_SHIFT as u32))
+    }
 
     /// Extracts the offset within a page from a physical address.
     ///
