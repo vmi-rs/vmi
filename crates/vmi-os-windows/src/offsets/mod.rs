@@ -23,8 +23,14 @@ symbols! {
         KeNumberProcessors: u64,
         KiProcessorBlock: u64,
 
+        // KiKvaShadow stays common: it is Option (absent on ARM64 -> None) and
+        // the arch-generic kpti_enabled() reads it. The SYSCALL/SYSENTER entry
+        // points are amd64-specific, required, and only consumed by amd64-gated
+        // code, so gate them to x86_64 to avoid a SymbolNotFound on ARM64.
         KiKvaShadow: Option<u64>,
+        #[cfg(target_arch = "x86_64")]
         KiSystemCall32: u64,
+        #[cfg(target_arch = "x86_64")]
         KiSystemCall64: u64,
         //KiSystemCall32Shadow: u64,
         //KiSystemCall64Shadow: u64,
@@ -394,6 +400,11 @@ offsets! {
             File: Bitfield,
         }
 
+        // The trap frame holds the saved user-mode register file, whose member
+        // names are architecture-specific. Each architecture models its own
+        // layout, gated to the matching target. amd64 saves the volatile GP
+        // registers plus Rip/Rsp.
+        #[cfg(target_arch = "x86_64")]
         struct _KTRAP_FRAME {
             Rax: Field,
             Rcx: Field,
@@ -405,6 +416,39 @@ offsets! {
 
             Rip: Field,
             Rsp: Field,
+        }
+
+        // arm64 saves X0-X18 (the volatile/argument GP registers), the frame
+        // pointer (Fp, X29), the link register (Lr, X30), the stack pointer
+        // (Sp), the program counter (Pc), and the saved processor state (Spsr).
+        // The callee-saved X19-X28 are not part of _KTRAP_FRAME on arm64.
+        #[cfg(target_arch = "aarch64")]
+        struct _KTRAP_FRAME {
+            X0: Field,
+            X1: Field,
+            X2: Field,
+            X3: Field,
+            X4: Field,
+            X5: Field,
+            X6: Field,
+            X7: Field,
+            X8: Field,
+            X9: Field,
+            X10: Field,
+            X11: Field,
+            X12: Field,
+            X13: Field,
+            X14: Field,
+            X15: Field,
+            X16: Field,
+            X17: Field,
+            X18: Field,
+
+            Fp: Field,
+            Lr: Field,
+            Sp: Field,
+            Pc: Field,
+            Spsr: Field,
         }
 
         struct _KAPC_STATE {

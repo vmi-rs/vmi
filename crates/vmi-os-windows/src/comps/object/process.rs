@@ -1,4 +1,3 @@
-use vmi_arch_amd64::Cr3;
 use vmi_core::{
     Architecture, Pa, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
@@ -464,12 +463,11 @@ where
         //     return Ok(self.vmi.translation_root(self.va));
         // }
 
-        let root = Cr3(self
+        let dtb = self
             .vmi
-            .read_va_native(self.va + KPROCESS.DirectoryTableBase.offset())?
-            .0);
+            .read_va_native(self.va + KPROCESS.DirectoryTableBase.offset())?;
 
-        Ok(root.into())
+        Ok(Driver::Architecture::directory_table_base_to_root(dtb.0))
     }
 
     /// Returns the user-mode page table translation root.
@@ -487,16 +485,15 @@ where
             None => return self.translation_root(),
         };
 
-        let root = Cr3(self
+        let dtb = self
             .vmi
-            .read_va_native(self.va + UserDirectoryTableBase.offset())?
-            .0);
+            .read_va_native(self.va + UserDirectoryTableBase.offset())?;
 
-        if root.0 < Driver::Architecture::PAGE_SIZE {
+        if dtb.0 < Driver::Architecture::PAGE_SIZE {
             return self.translation_root();
         }
 
-        Ok(root.into())
+        Ok(Driver::Architecture::directory_table_base_to_root(dtb.0))
     }
 
     /// Returns the base address of the process image.

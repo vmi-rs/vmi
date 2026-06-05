@@ -60,6 +60,7 @@ isr-dl-windows = "0.6.0"
 isr-macros = "0.6.0"
 
 xen = { package = "libxen", version = "0.5.0" }
+kvm = { package = "libkvm", path = "../kvm" }
 
 #
 # For development.
@@ -74,8 +75,10 @@ xen = { package = "libxen", version = "0.5.0" }
 
 vmi = { path = "." }
 vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.6.0" }
+vmi-arch-arm64 = { path = "./crates/vmi-arch-arm64", version = "0.6.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.6.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.6.0" }
+vmi-driver-kvm = { path = "./crates/vmi-driver-kvm", version = "0.6.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.6.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.6.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.6.0" }
@@ -127,7 +130,9 @@ isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-arch-arm64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
+vmi-driver-kvm = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
 vmi-driver-xen-core-dump = { workspace = true, optional = true }
 vmi-os-linux = { workspace = true, optional = true }
@@ -141,7 +146,12 @@ arch-amd64 = [
     "vmi-arch-amd64",
     "vmi-utils?/arch-amd64"
 ]
+arch-arm64 = [
+    "vmi-arch-arm64",
+    "vmi-utils?/arch-arm64"
+]
 driver-kdmp = ["vmi-driver-kdmp"]
+driver-kvm = ["vmi-driver-kvm"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
 os-linux = ["vmi-os-linux"]
@@ -159,6 +169,12 @@ utils = [
     "vmi-utils/reactor",
     "vmi-utils/resolver",
 ]
+utils-arm64 = [
+    "vmi-utils",
+    "vmi-utils/reactor-arm64",
+    "arch-arm64",
+    "os-windows"
+]
 
 [dev-dependencies]
 anyhow = { workspace = true }
@@ -174,12 +190,14 @@ isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
 # vmi = { workspace = true }
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
+vmi-arch-arm64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
 vmi-driver-xen = { workspace = true }
 vmi-driver-xen-core-dump = { workspace = true }
 vmi-os-linux = { workspace = true }
 vmi-os-windows = { workspace = true }
 
+kvm = { workspace = true }
 xen = { workspace = true }
 
 [[example]]
@@ -194,10 +212,28 @@ doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows"]
 
 [[example]]
+name = "kvm-basic-process-list"
+path = "examples/kvm-basic-process-list.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kvm", "os-windows"]
+
+[[example]]
+name = "kvm-basic-process-list-arm64"
+path = "examples/kvm-basic-process-list-arm64.rs"
+doc-scrape-examples = true
+required-features = ["arch-arm64", "driver-kvm", "os-windows"]
+
+[[example]]
 name = "windows-breakpoint-manager"
 path = "examples/windows-breakpoint-manager.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
+name = "kvm-windows-breakpoint-manager"
+path = "examples/kvm-windows-breakpoint-manager.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
 
 [[example]]
 name = "windows-dump"
@@ -228,3 +264,14 @@ name = "windows-reactor"
 path = "examples/windows-reactor/main.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
+name = "kvm-windows-reactor"
+path = "examples/kvm-windows-reactor/main.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
+
+[[example]]
+name = "kvm-windows-reactor-arm64"
+path = "examples/kvm-windows-reactor-arm64/main.rs"
+required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]

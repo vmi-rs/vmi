@@ -58,21 +58,33 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KTRAP_FRAME.Rip`.
+    /// - **AMD64**: Corresponds to `_KTRAP_FRAME.Rip`.
+    /// - **ARM64**: Corresponds to `_KTRAP_FRAME.Pc`.
     pub fn instruction_pointer(&self) -> Result<Va, VmiError> {
         let KTRAP_FRAME = offset!(self.vmi, _KTRAP_FRAME);
 
-        self.vmi.read_va_native(self.va + KTRAP_FRAME.Rip.offset())
+        #[cfg(target_arch = "x86_64")]
+        let offset = KTRAP_FRAME.Rip.offset();
+        #[cfg(target_arch = "aarch64")]
+        let offset = KTRAP_FRAME.Pc.offset();
+
+        self.vmi.read_va_native(self.va + offset)
     }
 
     /// Returns the stack pointer.
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_KTRAP_FRAME.Rsp`.
+    /// - **AMD64**: Corresponds to `_KTRAP_FRAME.Rsp`.
+    /// - **ARM64**: Corresponds to `_KTRAP_FRAME.Sp`.
     pub fn stack_pointer(&self) -> Result<Va, VmiError> {
         let KTRAP_FRAME = offset!(self.vmi, _KTRAP_FRAME);
 
-        self.vmi.read_va_native(self.va + KTRAP_FRAME.Rsp.offset())
+        #[cfg(target_arch = "x86_64")]
+        let offset = KTRAP_FRAME.Rsp.offset();
+        #[cfg(target_arch = "aarch64")]
+        let offset = KTRAP_FRAME.Sp.offset();
+
+        self.vmi.read_va_native(self.va + offset)
     }
 }

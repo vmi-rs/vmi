@@ -692,6 +692,13 @@ pub mod arch {
 
         pub use vmi_arch_amd64::*;
     }
+
+    #[cfg(feature = "arch-arm64")]
+    pub mod arm64 {
+        #![doc = include_str!("../docs/vmi-arch-arm64.md")]
+
+        pub use vmi_arch_arm64::*;
+    }
 }
 
 pub mod driver {
@@ -704,6 +711,13 @@ pub mod driver {
         #![doc = include_str!("../docs/vmi-driver-kdmp.md")]
 
         pub use vmi_driver_kdmp::*;
+    }
+
+    #[cfg(feature = "driver-kvm")]
+    pub mod kvm {
+        #![doc = include_str!("../docs/vmi-driver-kvm.md")]
+
+        pub use vmi_driver_kvm::*;
     }
 
     #[cfg(feature = "driver-xen")]
@@ -741,7 +755,7 @@ pub mod os {
     }
 }
 
-#[cfg(feature = "utils")]
+#[cfg(any(feature = "utils", feature = "utils-arm64"))]
 pub mod utils {
     #![doc = include_str!("../docs/vmi-utils.md")]
 

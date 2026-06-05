@@ -90,6 +90,8 @@ pub trait VmiOs: Sized {
     ///
     /// - **AMD64**: The kernel image base address is usually found using the
     ///   `MSR_LSTAR` register.
+    /// - **ARM64**: The kernel image base address is usually found using the
+    ///   `VBAR_EL1` register (the exception vector table base).
     ///
     /// # Notes
     ///

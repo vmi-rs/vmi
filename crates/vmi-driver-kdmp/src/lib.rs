@@ -6,7 +6,7 @@ use std::path::Path;
 
 use kdmp_parser::{gxa::Gpa, map::MappedFileReader, parse::KernelDumpParser, phys::Reader};
 use vmi_core::{
-    Gfn, Pa, Va, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
+    Gfn, Hfn, Pa, Va, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
     driver::{VmiQueryRegisters, VmiRead},
 };
 
@@ -55,6 +55,8 @@ where
         Ok(VmiInfo {
             page_size: 4096,
             page_shift: 12,
+            host_page_size: 4096,
+            host_page_shift: 12,
             max_gfn: Gfn(0),
             vcpus: 0,
         })
@@ -65,12 +67,12 @@ impl<Arch> VmiRead for VmiKdmpDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
         let reader = Reader::new(&self.dump);
 
         let mut content = [0u8; 4096];
         reader
-            .read_exact(Gpa::new(gfn.0 << 12), &mut content)
+            .read_exact(Gpa::new(frame.0 << 12), &mut content)
             .map_err(map_kdmp_error)?;
 
         Ok(VmiMappedPage::new(Vec::from(content)))

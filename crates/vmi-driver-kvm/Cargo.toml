@@ -1,0 +1,34 @@
+[package]
+name = "vmi-driver-kvm"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "VMI driver for KVM"
+keywords = [
+    "vmi",
+    "kvm",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+vmi-core = { workspace = true }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+vmi-arch-amd64 = { workspace = true }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+vmi-arch-arm64 = { workspace = true }
+
+kvm = { workspace = true }

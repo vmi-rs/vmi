@@ -9,6 +9,15 @@ impl_ops! {
 }
 
 impl_ops! {
+    /// A Host Frame Number.
+    ///
+    /// The unit the hypervisor can map and the unit its view and shadow-page
+    /// ABI keys on. Pairs with [`Gfn`]. On a host whose page equals the guest
+    /// coordinate page an `Hfn` equals the `Gfn` it backs.
+    Hfn, u64
+}
+
+impl_ops! {
     /// A Guest Physical Address.
     Pa, u64
 }
@@ -294,5 +303,17 @@ impl ::std::ops::BitOr<u64> for AccessContext {
 impl ::std::ops::BitOrAssign<u64> for AccessContext {
     fn bitor_assign(&mut self, rhs: u64) {
         self.address |= rhs;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Hfn;
+
+    #[test]
+    fn hfn_roundtrips_u64() {
+        let hfn = Hfn::from(0x40a98);
+        assert_eq!(u64::from(hfn), 0x40a98);
+        assert_eq!(hfn.0, 0x40a98);
     }
 }

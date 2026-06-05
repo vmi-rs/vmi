@@ -1,5 +1,5 @@
 use once_cell::unsync::OnceCell;
-use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Architecture, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::WindowsHandleTableEntry;
 use crate::{ArchAdapter, HandleTableEntryIterator, OffsetsExt, WindowsOs, offset};
@@ -159,7 +159,7 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    const PAGE_SIZE: u64 = 4096;
+    let page_size = <Driver::Architecture as Architecture>::PAGE_SIZE;
     const LEVEL_CODE_MASK: u64 = 3;
     const HANDLE_VALUE_INC: u64 = 4;
 
@@ -170,8 +170,8 @@ where
     };
 
     let address_width = vmi.registers().address_width() as u64;
-    let lowlevel_count = PAGE_SIZE / sizeof_handle_table_entry; // TABLE_PAGE_SIZE / sizeof(HANDLE_TABLE_ENTRY)
-    let midlevel_count = PAGE_SIZE / address_width; // PAGE_SIZE / sizeof(PHANDLE_TABLE_ENTRY)
+    let lowlevel_count = page_size / sizeof_handle_table_entry; // TABLE_PAGE_SIZE / sizeof(HANDLE_TABLE_ENTRY)
+    let midlevel_count = page_size / address_width; // PAGE_SIZE / sizeof(PHANDLE_TABLE_ENTRY)
 
     // The 2 least significant bits of a handle are available to the
     // application and are ignored by the system.

@@ -1,6 +1,9 @@
 #[cfg(feature = "arch-amd64")]
 mod amd64;
 
+#[cfg(feature = "arch-arm64")]
+pub mod arm64;
+
 use vmi_core::{Architecture, Pa, VmiDriver, VmiOs, VmiSession, VmiState};
 
 /// Architecture-specific functionality used by the resolver.

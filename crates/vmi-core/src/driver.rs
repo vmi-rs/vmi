@@ -46,7 +46,7 @@
 use std::time::Duration;
 
 use crate::{
-    Architecture, Gfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiError, VmiEvent,
+    Architecture, Gfn, Hfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiError, VmiEvent,
     VmiEventResponse, VmiInfo, VmiMappedPage,
 };
 
@@ -65,16 +65,27 @@ pub trait VmiDriver: 'static {
     fn info(&self) -> Result<VmiInfo, VmiError>;
 }
 
-/// Capability to read guest physical memory pages.
+/// Capability to read host physical memory pages.
 pub trait VmiRead: VmiDriver {
-    /// Reads a page of memory from the virtual machine.
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError>;
+    /// Reads a host page of memory from the virtual machine.
+    ///
+    /// The driver maps and returns the whole host frame. The guest-page window
+    /// is sliced at the [`VmiCore::read_page`] seam, which is the sole place a
+    /// guest [`Gfn`] is converted to its backing [`Hfn`].
+    ///
+    /// [`VmiCore::read_page`]: crate::VmiCore::read_page
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError>;
 }
 
-/// Capability to write guest physical memory pages.
+/// Capability to write host physical memory pages.
 pub trait VmiWrite: VmiDriver {
-    /// Writes data to a page of memory in the virtual machine.
-    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError>;
+    /// Writes data into the host page `frame` at `offset`.
+    fn write_page(
+        &self,
+        frame: Hfn,
+        offset: u64,
+        content: &[u8],
+    ) -> Result<VmiMappedPage, VmiError>;
 }
 
 /// Capability to query memory access permissions.
@@ -98,6 +109,30 @@ pub trait VmiSetProtection: VmiDriver {
         access: MemoryAccess,
         options: MemoryAccessOptions,
     ) -> Result<(), VmiError>;
+
+    /// Sets the memory access permissions for a specific GFN with an explicit
+    /// neighbor auto-step mask.
+    ///
+    /// On a host whose page size exceeds the guest granule, one stage-2 leaf
+    /// fuses several guest pages. `neighbor_mask` selects, per fused sub-page,
+    /// whether a denied data access is single-stepped in the kernel (bit set)
+    /// or delivered as a mem-access event (bit clear). Computing one mask per
+    /// host page lets a caller protect several co-resident breakpoints without
+    /// the per-breakpoint masks clobbering each other on the shared leaf.
+    ///
+    /// The default ignores the mask and sets plain access, which is correct on
+    /// a host whose page size matches the guest granule, where there is no
+    /// fusion and the mask is always 0.
+    fn set_memory_access_autostep(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        neighbor_mask: u16,
+    ) -> Result<(), VmiError> {
+        let _ = neighbor_mask;
+        self.set_memory_access(gfn, view, access)
+    }
 }
 
 /// Capability to read vCPU registers.
@@ -161,11 +196,12 @@ pub trait VmiViewControl: VmiDriver {
     /// Switches to a different view.
     fn switch_to_view(&self, view: View) -> Result<(), VmiError>;
 
-    /// Changes the mapping of a GFN in a specific view.
-    fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError>;
+    /// Changes the mapping of a host frame in a specific view.
+    fn change_view_gfn(&self, view: View, original: Hfn, shadow: Hfn) -> Result<(), VmiError>;
 
-    /// Resets the mapping of a GFN in a specific view to its original state.
-    fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError>;
+    /// Resets the mapping of a host frame in a specific view to its original
+    /// state.
+    fn reset_view_gfn(&self, view: View, original: Hfn) -> Result<(), VmiError>;
 }
 
 /// Capability to control VM lifecycle and GFN allocation.
@@ -176,8 +212,8 @@ pub trait VmiVmControl: VmiDriver {
     /// Resumes the virtual machine.
     fn resume(&self) -> Result<(), VmiError>;
 
-    /// Allocates a GFN.
-    fn allocate_gfn(&self) -> Result<Gfn, VmiError>;
+    /// Allocates a host frame for a shadow page.
+    fn allocate_gfn(&self) -> Result<Hfn, VmiError>;
 
     /// Allocates a GFN at a specific location.
     fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError>;

@@ -3,6 +3,7 @@
 //! This module provides types and traits for walking the call stack
 //! of a Windows process using PE exception directory information.
 
+#[cfg(target_arch = "x86_64")]
 pub mod amd64;
 
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};

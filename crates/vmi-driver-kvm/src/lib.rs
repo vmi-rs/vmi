@@ -1,0 +1,418 @@
+//! VMI driver for KVM.
+
+mod arch;
+mod convert;
+
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    marker::PhantomData,
+    ops::Deref,
+    os::fd::{BorrowedFd, OwnedFd},
+    time::Duration,
+};
+
+use kvm::{KvmGuestMemory, KvmMappedPage, KvmVcpu, KvmVmi, KvmVmiRing, MemAccess, ViewId};
+use vmi_core::{
+    Gfn, Hfn, MemoryAccess, MemoryAccessOptions, VcpuId, View, VmiDriver, VmiError, VmiEvent,
+    VmiEventResponse, VmiInfo, VmiMappedPage,
+    driver::{
+        VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead, VmiSetProtection,
+        VmiSetRegisters, VmiViewControl, VmiVmControl, VmiWrite,
+    },
+};
+
+pub use self::arch::ArchAdapter;
+pub(crate) use self::convert::FromExt;
+
+/// Wraps a mapped guest page so it can back a [`VmiMappedPage`].
+struct KvmPageBacking(KvmMappedPage);
+
+impl Deref for KvmPageBacking {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_slice()
+    }
+}
+
+/// VMI driver for KVM.
+pub struct VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    /// The VMI session owning the `vmi_fd`.
+    pub(crate) session: KvmVmi,
+
+    /// Duplicated vCPU fds indexed by vCPU id.
+    pub(crate) vcpus: Vec<KvmVcpu>,
+
+    /// Per-vCPU event rings, set up lazily on first monitor enable.
+    pub(crate) rings: RefCell<Vec<Option<KvmVmiRing>>>,
+
+    /// Tracked alternate view ids (view 0 is implicit and not tracked).
+    pub(crate) views: RefCell<HashSet<u32>>,
+
+    /// Cumulative time spent processing events.
+    pub(crate) event_processing_overhead: RefCell<Duration>,
+
+    /// Marker for the architecture type parameter.
+    pub(crate) _arch: PhantomData<Arch>,
+
+    /// Host page size in bytes, cached from the kernel at construction.
+    pub(crate) host_page_size: u64,
+}
+
+impl<Arch> VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    /// Creates a driver from an already-opened VM fd and per-vCPU fds.
+    /// `vcpu_fds` is indexed by vCPU id.
+    pub fn new(vm_fd: BorrowedFd, vcpu_fds: Vec<OwnedFd>) -> Result<Self, VmiError> {
+        let session = KvmVmi::create(vm_fd).map_err(VmiError::driver)?;
+        let vcpus = vcpu_fds.into_iter().map(KvmVcpu::new).collect::<Vec<_>>();
+        let n = vcpus.len();
+        Ok(Self {
+            session,
+            vcpus,
+            rings: RefCell::new((0..n).map(|_| None).collect()),
+            views: RefCell::new(HashSet::new()),
+            event_processing_overhead: RefCell::new(Duration::from_millis(0)),
+            _arch: PhantomData,
+            host_page_size: kvm::host_page_size() as u64,
+        })
+    }
+}
+
+impl<Arch> VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    /// Converts a guest-page gfn into the host-page KVM gfn the kernel
+    /// memory-access protection ABI works in.
+    ///
+    /// This serves only the protection path (`memory_access`,
+    /// `set_memory_access`, `set_memory_access_with_options`), which keeps
+    /// taking guest [`Gfn`] because the auto-step mask needs the guest sub-page
+    /// index. The view and IO surface speaks [`Hfn`] directly and does not use
+    /// this. The kernel keys memory-access permissions by host-page frame, so
+    /// on a host whose page size exceeds the guest granule (a 16K arm64 host
+    /// introspecting a 4K guest) a guest-page gfn must be shifted down by
+    /// `host_shift - guest_shift` to name its enclosing host frame. A shadow
+    /// gfn is already a host-page kernel allocation, so it passes through
+    /// unchanged. On a host whose page size equals the guest granule the shift
+    /// delta is zero and this is the identity.
+    fn to_host_gfn(gfn: u64) -> u64 {
+        if gfn >= kvm::sys::KVM_VMI_SHADOW_GFN_BASE {
+            gfn
+        }
+        else {
+            let host_shift = kvm::host_page_size().trailing_zeros();
+            let guest_shift = Arch::PAGE_SHIFT as u32;
+            gfn >> (host_shift - guest_shift)
+        }
+    }
+}
+
+impl<Arch> Drop for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn drop(&mut self) {
+        let _ = Arch::reset_state(self);
+    }
+}
+
+impl<Arch> VmiDriver for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    type Architecture = Arch;
+
+    fn info(&self) -> Result<VmiInfo, VmiError> {
+        Ok(VmiInfo {
+            page_size: Arch::PAGE_SIZE,
+            page_shift: Arch::PAGE_SHIFT,
+            host_page_size: self.host_page_size,
+            host_page_shift: self.host_page_size.trailing_zeros() as u64,
+            max_gfn: Gfn::new(0),
+            vcpus: self.vcpus.len() as u16,
+        })
+    }
+}
+
+impl<Arch> VmiRead for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
+        let page = KvmGuestMemory::map_page(self.session.fd(), frame.into(), false)
+            .map_err(VmiError::driver)?;
+
+        Ok(VmiMappedPage::new(KvmPageBacking(page)))
+    }
+}
+
+impl<Arch> VmiWrite for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn write_page(
+        &self,
+        frame: Hfn,
+        offset: u64,
+        content: &[u8],
+    ) -> Result<VmiMappedPage, VmiError> {
+        let offset = offset as usize;
+
+        // The mapping covers a whole host page, so a write may span the whole
+        // host frame and is bounded by the host page size.
+        if offset + content.len() > kvm::host_page_size() {
+            return Err(VmiError::OutOfBounds);
+        }
+
+        let mut page = KvmGuestMemory::map_page(self.session.fd(), frame.into(), true)
+            .map_err(VmiError::driver)?;
+
+        page.as_mut_slice()[offset..offset + content.len()].copy_from_slice(content);
+
+        Ok(VmiMappedPage::new(KvmPageBacking(page)))
+    }
+}
+
+impl<Arch> VmiQueryProtection for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
+        Ok(MemoryAccess::from_ext(
+            self.session
+                .get_mem_access(ViewId(u32::from(view.0)), Self::to_host_gfn(gfn.into()))
+                .map_err(VmiError::driver)?,
+        ))
+    }
+}
+
+impl<Arch> VmiSetProtection for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn set_memory_access(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+    ) -> Result<(), VmiError> {
+        tracing::trace!(%gfn, %view, %access, "set memory access");
+
+        self.session
+            .set_mem_access(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                MemAccess::from_ext(access),
+            )
+            .map_err(VmiError::driver)
+    }
+
+    fn set_memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        options: MemoryAccessOptions,
+    ) -> Result<(), VmiError> {
+        tracing::trace!(%gfn, %view, %access, "set memory access");
+
+        let bits = if options.contains(MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES) {
+            if access != MemoryAccess::R {
+                return Err(VmiError::NotSupported);
+            }
+
+            // Keep R set alongside PW. The page must stay readable so the EPT
+            // entry is present: with PW alone the entry has no R/W/X bits, which
+            // the CPU treats as not-present, so every access faults before the
+            // kernel can classify it as a write violation, looping forever
+            // instead of delivering a mem_access event. R|PW matches the KVM
+            // selftest and the Xen driver's R_PW.
+            MemAccess::R | MemAccess::PW
+        }
+        else {
+            MemAccess::from_ext(access)
+        };
+
+        self.session
+            .set_mem_access(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                bits,
+            )
+            .map_err(VmiError::driver)
+    }
+
+    fn set_memory_access_autostep(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        neighbor_mask: u16,
+    ) -> Result<(), VmiError> {
+        tracing::trace!(%gfn, %view, %access, neighbor_mask, "set memory access autostep");
+
+        self.session
+            .set_mem_access_autostep(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                MemAccess::from_ext(access),
+                neighbor_mask,
+            )
+            .map_err(VmiError::driver)
+    }
+}
+
+impl<Arch> VmiQueryRegisters for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn registers(&self, vcpu: VcpuId) -> Result<Arch::Registers, VmiError> {
+        Arch::registers(self, vcpu)
+    }
+}
+
+impl<Arch> VmiSetRegisters for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn set_registers(&self, vcpu: VcpuId, registers: Arch::Registers) -> Result<(), VmiError> {
+        Arch::set_registers(self, vcpu, registers)
+    }
+}
+
+impl<Arch> VmiViewControl for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn default_view(&self) -> View {
+        View(0)
+    }
+
+    fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
+        let id = self
+            .session
+            .create_view(MemAccess::from_ext(default_access))
+            .map_err(VmiError::driver)?;
+
+        self.views.borrow_mut().insert(id.0);
+
+        Ok(View(id.0 as u16))
+    }
+
+    fn destroy_view(&self, view: View) -> Result<(), VmiError> {
+        if view.0 == 0 {
+            return Ok(());
+        }
+
+        self.session
+            .destroy_view(ViewId(u32::from(view.0)))
+            .map_err(VmiError::driver)?;
+        self.views.borrow_mut().remove(&u32::from(view.0));
+
+        Ok(())
+    }
+
+    fn switch_to_view(&self, view: View) -> Result<(), VmiError> {
+        self.session
+            .switch_view(ViewId(u32::from(view.0)))
+            .map_err(VmiError::driver)
+    }
+
+    fn change_view_gfn(&self, view: View, original: Hfn, shadow: Hfn) -> Result<(), VmiError> {
+        if view.0 == 0 {
+            return Ok(());
+        }
+
+        // Both frames are already host-page keys, so they pass straight through.
+        self.session
+            .change_gfn(ViewId(u32::from(view.0)), original.into(), shadow.into())
+            .map_err(VmiError::driver)
+    }
+
+    fn reset_view_gfn(&self, view: View, original: Hfn) -> Result<(), VmiError> {
+        if view.0 == 0 {
+            return Ok(());
+        }
+
+        // kvm::INVALID_GFN (`~(__u64)0`) reverts the host frame to its host
+        // mapping.
+        self.session
+            .change_gfn(ViewId(u32::from(view.0)), original.into(), kvm::INVALID_GFN)
+            .map_err(VmiError::driver)
+    }
+}
+
+impl<Arch> VmiVmControl for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn pause(&self) -> Result<(), VmiError> {
+        self.session.pause_vm().map_err(VmiError::driver)
+    }
+
+    fn resume(&self) -> Result<(), VmiError> {
+        self.session.unpause_vm().map_err(VmiError::driver)
+    }
+
+    fn allocate_gfn(&self) -> Result<Hfn, VmiError> {
+        let gfn = self.session.alloc_gfn().map_err(VmiError::driver)?;
+        Ok(Hfn::new(gfn))
+    }
+
+    fn allocate_gfn_at(&self, _gfn: Gfn) -> Result<(), VmiError> {
+        Err(VmiError::NotSupported)
+    }
+
+    fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        self.session.free_gfn(gfn.into()).map_err(VmiError::driver)
+    }
+
+    fn inject_interrupt(&self, vcpu: VcpuId, interrupt: Arch::Interrupt) -> Result<(), VmiError> {
+        Arch::inject_interrupt(self, vcpu, interrupt)
+    }
+
+    fn reset_state(&self) -> Result<(), VmiError> {
+        Arch::reset_state(self)
+    }
+}
+
+impl<Arch> VmiEventControl for VmiKvmDriver<Arch>
+where
+    Arch: ArchAdapter,
+{
+    fn monitor_enable(&self, option: Arch::EventMonitor) -> Result<(), VmiError> {
+        Arch::monitor_enable(self, option)
+    }
+
+    fn monitor_disable(&self, option: Arch::EventMonitor) -> Result<(), VmiError> {
+        Arch::monitor_disable(self, option)
+    }
+
+    fn events_pending(&self) -> usize {
+        self.rings
+            .borrow()
+            .iter()
+            .filter(|ring| ring.as_ref().is_some_and(KvmVmiRing::has_pending))
+            .count()
+    }
+
+    fn event_processing_overhead(&self) -> Duration {
+        *self.event_processing_overhead.borrow()
+    }
+
+    fn wait_for_event(
+        &self,
+        timeout: Duration,
+        handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
+    ) -> Result<(), VmiError> {
+        Arch::process_event(self, timeout, handler)
+    }
+}

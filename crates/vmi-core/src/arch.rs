@@ -2,7 +2,9 @@
 
 use std::fmt::Debug;
 
-use crate::{AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead};
+use crate::{
+    AccessContext, AddressContext, Gfn, Hfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead,
+};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///
@@ -18,6 +20,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `0x1000` (4096 bytes)
+    /// - **ARM64**: `0x1000` (4096 bytes, 4KB translation granule)
     const PAGE_SIZE: u64;
 
     /// The number of bits to shift when converting between page numbers and
@@ -26,6 +29,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `12` (2^12 = 4096)
+    /// - **ARM64**: `12` (2^12 = 4096)
     const PAGE_SHIFT: u64;
 
     /// A bitmask used to isolate the page number from a full address.
@@ -33,6 +37,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `0xFFFFFFFFFFFFF000`
+    /// - **ARM64**: `0xFFFFFFFFFFFFF000`
     const PAGE_MASK: u64;
 
     /// The machine code for a breakpoint instruction in the given architecture.
@@ -40,7 +45,16 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `&[0xcc]` (`INT3` instruction)
+    /// - **ARM64**: `&[0x00, 0x00, 0x20, 0xd4]` (`BRK #0` instruction)
     const BREAKPOINT: &'static [u8];
+
+    /// Reports whether `insn` begins with this architecture's breakpoint trap.
+    ///
+    /// Recognition can differ from the planted [`BREAKPOINT`](Self::BREAKPOINT)
+    /// bytes: arm64 `BRK` carries an immediate, so any `BRK #imm` matches.
+    fn is_breakpoint(insn: &[u8]) -> bool {
+        insn.starts_with(Self::BREAKPOINT)
+    }
 
     /// The complete set of CPU registers for the architecture.
     ///
@@ -54,6 +68,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: PML5, PML4, PDPT, PD, PT
+    /// - **ARM64**: L0, L1, L2, L3 (4KB granule, 48-bit VA)
     type PageTableLevel: Debug + Clone + Copy;
 
     /// Various types of interrupts that can occur in the architecture.
@@ -65,6 +80,7 @@ pub trait Architecture {
     ///
     /// - **AMD64**: May represent control registers like `CR0`, `CR2`, `CR3`,
     ///   `CR4`
+    /// - **ARM64**: Currently has no variants.
     type SpecialRegister: Debug + Clone + Copy;
 
     /// Options for monitoring.
@@ -78,6 +94,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `gfn = pa >> 12`
+    /// - **ARM64**: `gfn = pa >> 12`
     fn gfn_from_pa(pa: Pa) -> Gfn;
 
     /// Converts a guest frame number (GFN) to a guest physical address (GPA).
@@ -85,13 +102,46 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `pa = gfn << 12`
+    /// - **ARM64**: `pa = gfn << 12`
     fn pa_from_gfn(gfn: Gfn) -> Pa;
+
+    /// Returns the host frame backing guest frame `gfn` for a host whose page
+    /// shift is `host_shift` (from [`VmiInfo::host_page_shift`]). Identity when
+    /// the host page equals the guest coordinate page.
+    ///
+    /// [`VmiInfo::host_page_shift`]: crate::VmiInfo::host_page_shift
+    fn hfn_from_gfn(gfn: Gfn, host_shift: u32) -> Hfn {
+        Hfn(gfn.0 >> (host_shift - Self::PAGE_SHIFT as u32))
+    }
+
+    /// Computes the in-kernel neighbor auto-step mask for the host page that
+    /// the breakpoints at `deliver_gfns` share, given the host page shift
+    /// `host_shift` from [`VmiInfo::host_page_shift`].
+    ///
+    /// On a host whose page size exceeds the guest granule, one host page
+    /// fuses several guest pages. Bit `i` of the result marks the `i`-th fused
+    /// sub-page for in-kernel single-stepping on a denied data access. It is
+    /// set when that sub-page holds no breakpoint, and clear when it holds one
+    /// and must instead deliver so its stealth redirect runs. Returns 0 when
+    /// the host page equals the guest coordinate page, where there is no fusion
+    /// and so no neighbors to step.
+    ///
+    /// [`VmiInfo::host_page_shift`]: crate::VmiInfo::host_page_shift
+    fn neighbor_subpage_mask(deliver_gfns: &[Gfn], host_shift: u32) -> u16 {
+        let nsub = 1u32 << (host_shift - Self::PAGE_SHIFT as u32);
+        let mut deliver_set = 0u32;
+        for gfn in deliver_gfns {
+            deliver_set |= 1u32 << (gfn.0 as u32 & (nsub - 1));
+        }
+        (((1u32 << nsub) - 1) & !deliver_set) as u16
+    }
 
     /// Extracts the offset within a page from a physical address.
     ///
     /// # Architecture-specific
     ///
     /// - **AMD64**: `offset = pa & 0xfff`
+    /// - **ARM64**: `offset = pa & 0xfff`
     fn pa_offset(pa: Pa) -> u64;
 
     /// Aligns a virtual address down to the nearest page boundary.
@@ -99,6 +149,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `va & ~0xfff`
+    /// - **ARM64**: `va & ~0xfff`
     fn va_align_down(va: Va) -> Va;
 
     /// Aligns a virtual address down to the nearest page boundary for a given
@@ -110,6 +161,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `(va + 0xfff) & ~0xfff`
+    /// - **ARM64**: `(va + 0xfff) & ~0xfff`
     fn va_align_up(va: Va) -> Va;
 
     /// Aligns a virtual address up to the nearest page boundary for a given
@@ -121,6 +173,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `offset = va & 0xfff`
+    /// - **ARM64**: `offset = va & 0xfff`
     fn va_offset(va: Va) -> u64;
 
     /// Calculates the offset within a page for a given virtual address and
@@ -133,6 +186,7 @@ pub trait Architecture {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `index = va & 0x1ff`
+    /// - **ARM64**: `index = (va >> 12) & 0x1ff` (level 3, 9 bits per level)
     fn va_index(va: Va) -> u64;
 
     /// Calculates the index into the specified level of the page table
@@ -155,6 +209,7 @@ pub trait Architecture {
 ///
 /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
 ///   `R8`-`R15`, `RIP` and `RFLAGS`.
+/// - **ARM64**: `x0`-`x30`, `SP` (`SP_EL0`), `PC` and `PSTATE`.
 pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// The specific CPU architecture implementation.
     type Architecture: Architecture;
@@ -164,6 +219,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RIP`
+    /// - **ARM64**: `PC`
     fn instruction_pointer(&self) -> u64;
 
     /// Sets the value of the instruction pointer.
@@ -171,6 +227,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RIP`
+    /// - **ARM64**: `PC`
     fn set_instruction_pointer(&mut self, ip: u64);
 
     /// Returns the current value of the stack pointer.
@@ -178,6 +235,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RSP`
+    /// - **ARM64**: `SP` (`SP_EL0`)
     fn stack_pointer(&self) -> u64;
 
     /// Sets the value of the stack pointer.
@@ -185,6 +243,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RSP`
+    /// - **ARM64**: `SP` (`SP_EL0`)
     fn set_stack_pointer(&mut self, sp: u64);
 
     /// Returns the current value of the result register.
@@ -192,6 +251,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RAX`
+    /// - **ARM64**: `x0`
     fn result(&self) -> u64;
 
     /// Sets the value of the result register.
@@ -199,6 +259,7 @@ pub trait GpRegisters: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RAX`
+    /// - **ARM64**: `x0`
     fn set_result(&mut self, result: u64);
 }
 
@@ -215,6 +276,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     ///
     /// - **AMD64**: `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RSP`, `RBP`,
     ///   `R8`-`R15`, `RIP` and `RFLAGS`.
+    /// - **ARM64**: `x0`-`x30`, `SP` (`SP_EL0`), `PC` and `PSTATE`.
     type GpRegisters: GpRegisters<Architecture = Self::Architecture>;
 
     /// Returns the current value of the instruction pointer.
@@ -222,6 +284,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RIP`
+    /// - **ARM64**: `PC`
     fn instruction_pointer(&self) -> u64;
 
     /// Sets the value of the instruction pointer.
@@ -229,6 +292,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RIP`
+    /// - **ARM64**: `PC`
     fn set_instruction_pointer(&mut self, ip: u64);
 
     /// Returns the current value of the stack pointer.
@@ -236,6 +300,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RSP`
+    /// - **ARM64**: `SP` (`SP_EL0`)
     fn stack_pointer(&self) -> u64;
 
     /// Sets the value of the stack pointer.
@@ -243,6 +308,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RSP`
+    /// - **ARM64**: `SP` (`SP_EL0`)
     fn set_stack_pointer(&mut self, sp: u64);
 
     /// Returns the current value of the result register.
@@ -250,6 +316,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RAX`
+    /// - **ARM64**: `x0`
     fn result(&self) -> u64;
 
     /// Sets the value of the result register.
@@ -257,6 +324,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RAX`
+    /// - **ARM64**: `x0`
     fn set_result(&mut self, result: u64);
 
     /// Returns a copy of all general-purpose registers.
@@ -271,6 +339,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: 8 bytes if the `CR4.PAE` bit is set, otherwise 4 bytes
+    /// - **ARM64**: 8 bytes (AArch64 is a 64-bit architecture)
     fn address_width(&self) -> usize;
 
     /// Returns the effective address width, which may differ from the native
@@ -279,6 +348,7 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: 8 bytes if the `CS.L` bit is set, otherwise 4 bytes
+    /// - **ARM64**: 8 bytes (AArch32 execution states are out of scope)
     fn effective_address_width(&self) -> usize;
 
     /// Creates an access context for a given virtual address.
@@ -293,6 +363,8 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `CR3 & 0x0000FFFFFFFFF000`
+    /// - **ARM64**: `TTBR0_EL1` or `TTBR1_EL1` (selected by VA bit 55), with
+    ///   the `BADDR` field masked to `& 0x0000FFFFFFFFFFFE`
     fn translation_root(&self, va: Va) -> Pa;
 
     /// Attempts to determine the return address of the current function call.
@@ -300,7 +372,28 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// # Architecture-specific
     ///
     /// - **AMD64**: Value at the top of the stack (i.e. `RSP`)
+    /// - **ARM64**: The link register (`LR` / `x30`)
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
+    where
+        Driver: VmiRead<Architecture = Self::Architecture>;
+
+    /// Builds the general-purpose registers that make the current function
+    /// return `value` to its caller without executing its body: sets the result
+    /// register, redirects the instruction pointer to the return address, and
+    /// applies the ABI's stack adjustment.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Sets `RAX` to `value`, sets `RIP` to the value read from
+    ///   the stack at `RSP`, and advances `RSP` by the effective address width
+    ///   to consume the return address.
+    /// - **ARM64**: Sets `x0` to `value` and sets `PC` to `x30` (LR). No stack
+    ///   adjustment is needed because AAPCS64 stores the return address in LR.
+    fn return_from_function<Driver>(
+        &self,
+        vmi: &VmiCore<Driver>,
+        value: u64,
+    ) -> Result<Self::GpRegisters, VmiError>
     where
         Driver: VmiRead<Architecture = Self::Architecture>;
 }

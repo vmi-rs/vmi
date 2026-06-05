@@ -72,11 +72,14 @@ use zerocopy::{FromBytes, IntoBytes};
 
 mod arch;
 pub use self::arch::{
-    ArchAdapter, CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64,
-    KDESCRIPTOR_X86, KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A,
-    MAXIMUM_SUPPORTED_EXTENSION, SIZE_OF_80387_REGISTERS, StructLayout, StructLayout32,
-    StructLayout64, WindowsContext, WindowsExceptionVector, WindowsInterrupt,
-    WindowsPageTableEntry, WindowsRegistersAdapter, WindowsSpecialRegisters, XSAVE_FORMAT,
+    ArchAdapter, StructLayout, StructLayout32, StructLayout64, WindowsPageTableEntry,
+};
+#[cfg(target_arch = "x86_64")]
+pub use self::arch::{
+    CONTEXT_AMD64, CONTEXT_X86, FLOATING_SAVE_AREA, KDESCRIPTOR_AMD64, KDESCRIPTOR_X86,
+    KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A, MAXIMUM_SUPPORTED_EXTENSION,
+    SIZE_OF_80387_REGISTERS, WindowsContext, WindowsExceptionVector, WindowsInterrupt,
+    WindowsRegistersAdapter, WindowsSpecialRegisters, XSAVE_FORMAT,
 };
 
 mod error;
@@ -253,7 +256,8 @@ where
     object_type_rcache: RefCell<HashMap<Va, WindowsObjectTypeKind>>,
     object_type_name_cache: RefCell<HashMap<Va, String>>,
 
-    ke_number_processors: OnceCell<u16>,   // CCHAR
+    ke_number_processors: OnceCell<u16>, // CCHAR
+
     ki_processor_block: OnceCell<Vec<Va>>, // _KPRCB*[]
     ki_kva_shadow: OnceCell<bool>,
     mm_pfn_database: OnceCell<Va>,     // _MMPFN*
@@ -703,13 +707,37 @@ where
         Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
     }
 
+    /// Returns the Kernel Processor Control Block (KPRCB) for the processor
+    /// whose register state is currently loaded.
+    ///
+    /// Unlike [`kprcb`](Self::kprcb), which indexes the `KiProcessorBlock`
+    /// array by processor ID, this resolves the PRCB from the current KPCR
+    /// (`gs`-relative on x86_64, `TPIDR_EL1` on arm64) through `KPCR.Prcb`. It
+    /// is therefore available on every architecture, but only yields the
+    /// current processor's block.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KPCR.Prcb`.
+    pub fn current_kprcb<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<WindowsKernelProcessorBlock<'a, Driver>, VmiError> {
+        let KPCR = offset!(vmi, _KPCR);
+
+        let kpcr = Self::current_kpcr(vmi);
+        if kpcr.is_null() {
+            return Err(WindowsError::CorruptedStruct("KPCR").into());
+        }
+
+        let prcb = kpcr + KPCR.Prcb.offset();
+        Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
+    }
+
     /// Returns information from an exception record at the specified address.
     ///
-    /// This method reads and parses an `EXCEPTION_RECORD` structure from
-    /// memory, providing detailed information about an exception that has
-    /// occurred in the system. The returned [`WindowsExceptionRecord`]
-    /// contains data such as the exception code, flags, and related memory
-    /// addresses.
+    /// Reads and parses an `EXCEPTION_RECORD` structure from memory.
+    /// The returned [`WindowsExceptionRecord`] contains the exception code,
+    /// flags, and related memory addresses.
     pub fn exception_record(
         vmi: VmiState<Self>,
         address: Va,

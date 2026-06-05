@@ -6,7 +6,7 @@ mod dump;
 use std::{collections::HashMap, path::Path};
 
 use vmi_core::{
-    Gfn, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
+    Gfn, Hfn, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
     driver::{VmiQueryRegisters, VmiRead},
 };
 
@@ -66,6 +66,8 @@ where
         Ok(VmiInfo {
             page_size: self.dump.page_size(),
             page_shift: 12,
+            host_page_size: self.dump.page_size(),
+            host_page_shift: 12,
             max_gfn: self.max_gfn,
             vcpus: 0,
         })
@@ -76,7 +78,9 @@ impl<Arch> VmiRead for VmiXenCoreDumpDriver<Arch>
 where
     Arch: ArchAdapter,
 {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
+        // Xen host page == guest page, so the host frame is the guest frame.
+        let gfn = Gfn::new(frame.into());
         let index = self
             .pfn_cache
             .get(&gfn)
