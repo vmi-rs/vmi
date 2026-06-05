@@ -114,6 +114,28 @@ pub trait Architecture {
         Hfn(gfn.0 >> (host_shift - Self::PAGE_SHIFT as u32))
     }
 
+    /// Computes the in-kernel neighbor auto-step mask for the host page that
+    /// the breakpoints at `deliver_gfns` share, given the host page shift
+    /// `host_shift` from [`VmiInfo::host_page_shift`].
+    ///
+    /// On a host whose page size exceeds the guest granule, one host page
+    /// fuses several guest pages. Bit `i` of the result marks the `i`-th fused
+    /// sub-page for in-kernel single-stepping on a denied data access. It is
+    /// set when that sub-page holds no breakpoint, and clear when it holds one
+    /// and must instead deliver so its stealth redirect runs. Returns 0 when
+    /// the host page equals the guest coordinate page, where there is no fusion
+    /// and so no neighbors to step.
+    ///
+    /// [`VmiInfo::host_page_shift`]: crate::VmiInfo::host_page_shift
+    fn neighbor_subpage_mask(deliver_gfns: &[Gfn], host_shift: u32) -> u16 {
+        let nsub = 1u32 << (host_shift - Self::PAGE_SHIFT as u32);
+        let mut deliver_set = 0u32;
+        for gfn in deliver_gfns {
+            deliver_set |= 1u32 << (gfn.0 as u32 & (nsub - 1));
+        }
+        (((1u32 << nsub) - 1) & !deliver_set) as u16
+    }
+
     /// Extracts the offset within a page from a physical address.
     ///
     /// # Architecture-specific

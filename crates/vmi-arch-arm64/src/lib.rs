@@ -405,3 +405,45 @@ mod hfn_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod neighbor_subpage_mask_tests {
+    use vmi_core::{Architecture as _, Gfn};
+
+    use crate::Arm64;
+
+    #[test]
+    fn single_breakpoint_steps_the_other_three_subpages() {
+        // One breakpoint at sub-page 0 (0x102a60 & 3 == 0) on a 16K host:
+        // deliver only sub-page 0, auto-step 1, 2, 3.
+        assert_eq!(
+            Arm64::neighbor_subpage_mask(&[Gfn::new(0x102a60)], 14),
+            0b1110
+        );
+
+        // One breakpoint at sub-page 1 (0x102a61 & 3 == 1): deliver only 1.
+        assert_eq!(
+            Arm64::neighbor_subpage_mask(&[Gfn::new(0x102a61)], 14),
+            0b1101
+        );
+    }
+
+    #[test]
+    fn co_resident_breakpoints_each_keep_delivery() {
+        // The collision case: two breakpoints fused into host frame 0x40a98,
+        // at sub-pages 0 and 1. Deliver both, auto-step only 2 and 3. A per-
+        // breakpoint mask cannot express this: 0b1110 and 0b1101 each clear
+        // only one bit, so applying them one after the other on the shared
+        // leaf would auto-step one of the planted pages.
+        assert_eq!(
+            Arm64::neighbor_subpage_mask(&[Gfn::new(0x102a60), Gfn::new(0x102a61)], 14),
+            0b1100
+        );
+    }
+
+    #[test]
+    fn identity_when_host_equals_guest() {
+        // host_shift == guest granule: nsub == 1, no fusion, mask 0.
+        assert_eq!(Arm64::neighbor_subpage_mask(&[Gfn::new(0x102a60)], 12), 0);
+    }
+}
