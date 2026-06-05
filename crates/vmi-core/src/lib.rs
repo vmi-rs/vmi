@@ -834,6 +834,24 @@ where
         self.driver
             .set_memory_access_with_options(gfn, view, access, options)
     }
+
+    /// Sets the memory access permissions for a specific guest frame number
+    /// (GFN) with an explicit neighbor auto-step mask.
+    ///
+    /// On a host whose page size exceeds the guest granule, `neighbor_mask`
+    /// selects which fused sub-pages are single-stepped in the kernel on a
+    /// denied data access. See
+    /// [`VmiSetProtection::set_memory_access_autostep`].
+    pub fn set_memory_access_autostep(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        neighbor_mask: u16,
+    ) -> Result<(), VmiError> {
+        self.driver
+            .set_memory_access_autostep(gfn, view, access, neighbor_mask)
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

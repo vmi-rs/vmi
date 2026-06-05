@@ -281,6 +281,25 @@ where
             )
             .map_err(VmiError::driver)
     }
+
+    fn set_memory_access_autostep(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        neighbor_mask: u16,
+    ) -> Result<(), VmiError> {
+        tracing::trace!(%gfn, %view, %access, neighbor_mask, "set memory access autostep");
+
+        self.session
+            .set_mem_access_autostep(
+                ViewId(u32::from(view.0)),
+                Self::to_host_gfn(gfn.into()),
+                MemAccess::from_ext(access),
+                neighbor_mask,
+            )
+            .map_err(VmiError::driver)
+    }
 }
 
 impl<Arch> VmiQueryRegisters for VmiKvmDriver<Arch>

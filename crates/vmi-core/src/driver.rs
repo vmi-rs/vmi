@@ -109,6 +109,30 @@ pub trait VmiSetProtection: VmiDriver {
         access: MemoryAccess,
         options: MemoryAccessOptions,
     ) -> Result<(), VmiError>;
+
+    /// Sets the memory access permissions for a specific GFN with an explicit
+    /// neighbor auto-step mask.
+    ///
+    /// On a host whose page size exceeds the guest granule, one stage-2 leaf
+    /// fuses several guest pages. `neighbor_mask` selects, per fused sub-page,
+    /// whether a denied data access is single-stepped in the kernel (bit set)
+    /// or delivered as a mem-access event (bit clear). Computing one mask per
+    /// host page lets a caller protect several co-resident breakpoints without
+    /// the per-breakpoint masks clobbering each other on the shared leaf.
+    ///
+    /// The default ignores the mask and sets plain access, which is correct on
+    /// a host whose page size matches the guest granule, where there is no
+    /// fusion and the mask is always 0.
+    fn set_memory_access_autostep(
+        &self,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
+        neighbor_mask: u16,
+    ) -> Result<(), VmiError> {
+        let _ = neighbor_mask;
+        self.set_memory_access(gfn, view, access)
+    }
 }
 
 /// Capability to read vCPU registers.
