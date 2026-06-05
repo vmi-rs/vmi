@@ -14,14 +14,6 @@
 //! return-value override writes x0 = FALSE and PC = LR without any
 //! stack-pointer adjustment.
 //!
-//! Known limitation (16K host): `KfdIsLayerEmpty` and `KfdClassify` fall in the
-//! same 16K host page, and the arm64 reactor cannot yet host two breakpoints in
-//! one host page (see the comment on the breakpoint list below). Only the
-//! last-inserted breakpoint in a shared host page fires today, so the breakpoint
-//! list orders `KfdIsLayerEmpty` last to keep the return-value modification
-//! working; `KfdClassify` stays in place and will start firing once the
-//! limitation is fixed.
-//!
 //! # Usage
 //!
 //! Pass the QEMU pid as `argv[1]`, or let the example scan `/proc` for a
@@ -321,17 +313,8 @@ fn main() -> Result<(), Error> {
     let kfd_is_layer_empty_va = netio_base + netio_symbols.KfdIsLayerEmpty;
     let kfd_classify_va = netio_base + netio_symbols.KfdClassify;
 
-    // Breakpoint order matters here because of a current arm64 reactor
-    // limitation. KfdIsLayerEmpty and KfdClassify both live in netio.sys and, on
-    // this 16K host, fall in the SAME 16K host page. The reactor tracks a
-    // breakpoint by its 4K guest gfn but allocates and maps the shadow page at
-    // 16K host-page granularity, so inserting a second breakpoint into a host
-    // page already shadowed remaps that page to a fresh shadow and drops the
-    // earlier breakpoint's BRK. The last breakpoint inserted into a shared host
-    // page therefore wins. KfdIsLayerEmpty is placed LAST so the return-value
-    // modification (the point of this example) is the breakpoint that fires;
-    // KfdClassify is kept to document the intended full design and will start
-    // firing once two breakpoints can coexist in one host page.
+    // All three breakpoints are installed. KfdIsLayerEmpty forces the ALE
+    // auth/flow layers active so that KfdClassify is reached and logged.
     let breakpoints = [
         BreakpointSpec {
             va: nt_create_file_va,
