@@ -41,7 +41,7 @@ use isr::{cache::IsrCache, macros::symbols};
 use tracing_subscriber::EnvFilter;
 use vmi::{
     Registers as _, Va, VcpuId, VmiContext, VmiCore, VmiError, VmiEventResponse, VmiSession,
-    arch::{GpRegisters as _, arm64::Arm64},
+    arch::arm64::Arm64,
     driver::{VmiFullDriver, kvm::VmiKvmDriver},
     os::windows::{ArchAdapter, WindowsOs, WindowsOsExt as _},
     utils::reactor_arm64::{Action, BreakpointSpec, ReactorArm64, ReactorHandler},
@@ -184,15 +184,9 @@ impl NetIo {
         self.forced += 1;
         tracing::info!(?layer, "forcing KfdIsLayerEmpty -> FALSE");
 
-        // AAPCS64: the return address is in x30 (LR), not on the stack, so
-        // only x0 and PC change (no stack-pointer fixup). x0 = FALSE makes the
-        // caller treat the layer as non-empty and run KfdClassify. PC = LR
-        // returns to the caller without running the function body, and moving
-        // PC off the BRK avoids a re-trap.
-        let return_address = vmi.return_address()?;
-        let mut gp = vmi.registers().gp_registers();
-        gp.set_result(0);
-        gp.set_instruction_pointer(return_address.into());
+        // Make KfdIsLayerEmpty return FALSE. return_from_function encapsulates
+        // the AAPCS64 detail (x0 = value, PC = x30/LR, no stack-pointer fixup).
+        let gp = vmi.registers().return_from_function(vmi.core(), 0)?;
 
         Ok(Action::Response(
             VmiEventResponse::default().with_registers(gp),
