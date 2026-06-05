@@ -240,8 +240,8 @@ where
                 let pc = Va(vmi_core::Registers::instruction_pointer(
                     vmi.event().registers(),
                 ));
-                let is_brk =
-                    matches!(vmi.read_u32(pc), Ok(word) if (word & 0xffe0_001f) == 0xd420_0000);
+                let is_brk = matches!(vmi.read_u32(pc), Ok(word)
+                    if Arm64::is_breakpoint(&word.to_le_bytes()));
                 if is_brk {
                     tracing::debug!("foreign guest breakpoint, reinjecting");
                     return Ok(VmiEventResponse::reinject_interrupt());
