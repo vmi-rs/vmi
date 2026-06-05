@@ -9,6 +9,7 @@
 
 use std::{
     cell::RefCell,
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -17,7 +18,7 @@ use std::{
 
 use vmi_arch_arm64::{Arm64, EventMonitor, EventReason};
 use vmi_core::{
-    Architecture as _, MemoryAccess, MemoryAccessOptions, Pa, Va, View, VmiContext, VmiError,
+    Architecture as _, Gfn, Hfn, MemoryAccess, Pa, Va, View, VmiContext, VmiError,
     VmiEventResponse, VmiHandler, VmiSession,
     arch::{EventMemoryAccess as _, EventReason as _},
     driver::VmiFullDriver,
@@ -113,11 +114,12 @@ where
     ///
     /// Each breakpoint page is left execute-only so a PatchGuard read traps and
     /// is served the clean bytes, preserving stealth. On a 16K host the same
-    /// stage-2 leaf also covers the neighbor guest pages fused into the host
-    /// page, so each breakpoint requests in-kernel auto-step of those neighbors
-    /// (`MemoryAccessOptions::AUTO_STEP_NEIGHBORS`): a neighbor data access is
-    /// retired in the kernel rather than storming the agent, while reads of the
-    /// breakpoint page itself still deliver to [`Self::memory_access`].
+    /// stage-2 leaf also covers the guest pages fused into the host page, so the
+    /// reactor computes one in-kernel auto-step mask per host frame. The mask
+    /// delivers every breakpoint sub-page, whose read must reach
+    /// [`Self::memory_access`], and auto-steps only the true non-breakpoint
+    /// neighbors, so a neighbor data access is retired in the kernel rather than
+    /// storming the agent.
     pub fn new(
         session: &VmiSession<WindowsOs<Driver>>,
         handler: Handler,
@@ -165,31 +167,47 @@ where
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
 
+        // Pass 1: insert every breakpoint. The breakpoint manager arms each
+        // page execute-only as it goes.
         let mut bpm = BreakpointManager::new();
         for spec in breakpoints {
             let cx = (spec.va, spec.root);
             let bp = Breakpoint::new(cx, view).global().with_tag(spec.tag);
             bpm.insert(&vmi, bp)?;
+        }
 
-            // The breakpoint manager armed the page execute-only. Re-set its
-            // access to pick how the 16K-fusion neighbor pages are handled.
-            // With stealth on, request in-kernel auto-step of the neighbors so
-            // PatchGuard reads of the breakpoint page still trap to userspace
-            // while the fused neighbors are retired in the kernel (no event
-            // storm). With stealth off, widen back to RWX (no protection, no
-            // events) for storm-free bring-up.
+        // Pass 2: re-set access once per host frame. Two breakpoints fused into
+        // one 16K host page share a single stage-2 leaf, so the auto-step mask
+        // must be combined over all co-resident breakpoints. A per-breakpoint
+        // mask would clobber its neighbor's delivery bit and silently auto-step
+        // a planted page, dropping its stealth. Group the breakpoint guest gfns
+        // by host frame, then apply one access update per frame: with stealth
+        // on, deliver every breakpoint sub-page (so a PatchGuard read still
+        // traps to userspace) and auto-step only the true neighbors. With
+        // stealth off, widen back to RWX (no protection, no events) for
+        // storm-free bring-up.
+        let host_shift = vmi.core().info()?.host_page_shift as u32;
+        let mut gfns_by_frame = HashMap::<Hfn, Vec<Gfn>>::new();
+        for spec in breakpoints {
             let pa = vmi.core().translate_address((spec.va, spec.root))?;
             let gfn = Arm64::gfn_from_pa(pa);
+            let frame = Arm64::hfn_from_gfn(gfn, host_shift);
+            gfns_by_frame.entry(frame).or_default().push(gfn);
+        }
+        for gfns in gfns_by_frame.values() {
+            let representative = gfns[0];
             if stealth {
-                vmi.core().set_memory_access_with_options(
-                    gfn,
+                let mask = Arm64::neighbor_subpage_mask(gfns, host_shift);
+                vmi.core().set_memory_access_autostep(
+                    representative,
                     view,
                     MemoryAccess::X,
-                    MemoryAccessOptions::AUTO_STEP_NEIGHBORS,
+                    mask,
                 )?;
             }
             else {
-                vmi.core().set_memory_access(gfn, view, MemoryAccess::RWX)?;
+                vmi.core()
+                    .set_memory_access(representative, view, MemoryAccess::RWX)?;
             }
         }
 
