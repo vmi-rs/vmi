@@ -15,7 +15,7 @@ mod translation;
 
 use vmi_core::{
     AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError,
-    driver::VmiRead,
+    arch::GpRegisters as _, driver::VmiRead,
 };
 use zerocopy::FromBytes;
 
@@ -563,6 +563,22 @@ impl vmi_core::arch::Registers for Registers {
             (self.rsp.into(), self.cr3.into()),
             self.effective_address_width(),
         )
+    }
+
+    fn return_from_function<Driver>(
+        &self,
+        vmi: &VmiCore<Driver>,
+        value: u64,
+    ) -> Result<Self::GpRegisters, VmiError>
+    where
+        Driver: VmiRead<Architecture = Amd64>,
+    {
+        let return_address = self.return_address(vmi)?;
+        let mut gp = self.gp_registers();
+        gp.set_result(value);
+        gp.set_instruction_pointer(return_address.into());
+        gp.set_stack_pointer(self.rsp + self.effective_address_width() as u64);
+        Ok(gp)
     }
 }
 

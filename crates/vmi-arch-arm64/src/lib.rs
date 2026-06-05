@@ -9,7 +9,7 @@ mod translation;
 
 use vmi_core::{
     AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError,
-    driver::VmiRead,
+    arch::GpRegisters as _, driver::VmiRead,
 };
 
 pub use self::{
@@ -280,6 +280,22 @@ impl vmi_core::arch::Registers for Registers {
         // On AArch64 the return address lives in the link register (x30 / LR),
         // not on the stack, so no memory read is required.
         Ok(Va(self.regs[30]))
+    }
+
+    fn return_from_function<Driver>(
+        &self,
+        _vmi: &VmiCore<Driver>,
+        value: u64,
+    ) -> Result<Self::GpRegisters, VmiError>
+    where
+        Driver: VmiRead<Architecture = Arm64>,
+    {
+        // AAPCS64: the return address is in x30 (LR), not on the stack, so only
+        // x0 and PC change. No stack-pointer adjustment.
+        let mut gp = self.gp_registers();
+        gp.set_result(value);
+        gp.set_instruction_pointer(self.regs[30]);
+        Ok(gp)
     }
 }
 
