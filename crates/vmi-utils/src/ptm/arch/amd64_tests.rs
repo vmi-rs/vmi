@@ -60,6 +60,8 @@ impl VmiDriver for MockPtmDriver {
         Ok(VmiInfo {
             page_size: 4096,
             page_shift: 12,
+            host_page_size: 4096,
+            host_page_shift: 12,
             max_gfn: Gfn(0xFFFF),
             vcpus: 1,
         })

@@ -58,6 +58,9 @@ where
 
     /// Marker for the architecture type parameter.
     pub(crate) _arch: PhantomData<Arch>,
+
+    /// Host page size in bytes, cached from the kernel at construction.
+    pub(crate) host_page_size: u64,
 }
 
 impl<Arch> VmiKvmDriver<Arch>
@@ -77,6 +80,7 @@ where
             views: RefCell::new(HashSet::new()),
             event_processing_overhead: RefCell::new(Duration::from_millis(0)),
             _arch: PhantomData,
+            host_page_size: kvm::host_page_size() as u64,
         })
     }
 }
@@ -146,6 +150,8 @@ where
         Ok(VmiInfo {
             page_size: Arch::PAGE_SIZE,
             page_shift: Arch::PAGE_SHIFT,
+            host_page_size: self.host_page_size,
+            host_page_shift: self.host_page_size.trailing_zeros() as u64,
             max_gfn: Gfn::new(0),
             vcpus: self.vcpus.len() as u16,
         })

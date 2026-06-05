@@ -66,6 +66,8 @@ where
         Ok(VmiInfo {
             page_size: self.dump.page_size(),
             page_shift: 12,
+            host_page_size: self.dump.page_size(),
+            host_page_shift: 12,
             max_gfn: self.max_gfn,
             vcpus: 0,
         })

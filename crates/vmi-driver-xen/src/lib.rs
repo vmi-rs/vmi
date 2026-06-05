@@ -104,6 +104,8 @@ where
         Ok(VmiInfo {
             page_size: Arch::PAGE_SIZE,
             page_shift: Arch::PAGE_SHIFT,
+            host_page_size: Arch::PAGE_SIZE,
+            host_page_shift: Arch::PAGE_SHIFT,
             max_gfn: Gfn::new(self.domain.maximum_gpfn().map_err(VmiError::driver)?),
             vcpus: self.info.max_vcpu_id + 1,
         })
