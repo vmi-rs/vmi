@@ -6,6 +6,12 @@ pub mod amd64;
 #[cfg(all(test, feature = "arch-amd64"))]
 mod amd64_tests;
 
+#[cfg(feature = "arch-arm64")]
+pub mod arm64;
+
+#[cfg(all(test, feature = "arch-arm64"))]
+mod arm64_tests;
+
 use vmi_core::{Architecture, VmiDriver};
 
 use super::{PageTableMonitorAdapter, TagType};
