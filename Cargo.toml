@@ -86,6 +86,21 @@ vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.6.0" }
 vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.6.0" }
 vmi-utils = { path = "./crates/vmi-utils", version = "0.6.0" }
 
+# Build against the in-tree isr submodule so local isr changes are picked up.
+# Patching every isr crate keeps a single consistent isr-core in the graph
+# (a mix of path and registry copies would duplicate isr-core and make the
+# offsets! macro's Profile type mismatch the one IsrCache returns).
+[patch.crates-io]
+isr = { path = "../isr" }
+isr-cache = { path = "../isr/crates/isr-cache" }
+isr-core = { path = "../isr/crates/isr-core" }
+isr-dl = { path = "../isr/crates/isr-dl" }
+isr-dl-linux = { path = "../isr/crates/isr-dl-linux" }
+isr-dl-windows = { path = "../isr/crates/isr-dl-windows" }
+isr-dwarf = { path = "../isr/crates/isr-dwarf" }
+isr-macros = { path = "../isr/crates/isr-macros" }
+isr-pdb = { path = "../isr/crates/isr-pdb" }
+
 [profile.release]
 debug = 1
 

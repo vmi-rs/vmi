@@ -745,8 +745,6 @@ dependencies = [
 [[package]]
 name = "isr"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f457d952dc5710e472822020b4bf926fe087aeaf0d780edd90da38f3d57c17d"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -759,8 +757,6 @@ dependencies = [
 [[package]]
 name = "isr-cache"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11bbd26e93f8913d7b0a5281df9d33a8582939f1fec9a783f14584c4c4ae34e3"
 dependencies = [
  "isr-core",
  "isr-dl",
@@ -777,8 +773,6 @@ dependencies = [
 [[package]]
 name = "isr-core"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68e5b1b06bfae6f6d3e7f6b3b0a9defa1d8c6bb5e53f8fcd45b72a75df2c86d"
 dependencies = [
  "indexmap",
  "rkyv",
@@ -788,8 +782,6 @@ dependencies = [
 [[package]]
 name = "isr-dl"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2da4883de25393e2ee9a3bad9801b6311dc1f34c1f6292400da9f15b3298e6b0"
 dependencies = [
  "thiserror",
  "url",
@@ -798,8 +790,6 @@ dependencies = [
 [[package]]
 name = "isr-dl-windows"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2fbcb5bdc8537776220ab5113cf329e2a7cb27aa8a6dc1f5cb30be7c9e8a318"
 dependencies = [
  "bon",
  "isr-dl",
@@ -813,8 +803,6 @@ dependencies = [
 [[package]]
 name = "isr-macros"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30e1cf3a8d87f8aa9c59adeda37faeff7c7dbca16324eeabe932b2d48150ca17"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -825,8 +813,6 @@ dependencies = [
 [[package]]
 name = "isr-pdb"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91daf1d3b38328920117c57010ca2f575f7badf6f26756948cab5f73fe70c9a3"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -2231,6 +2217,7 @@ dependencies = [
  "tracing",
  "vmi",
  "vmi-arch-amd64",
+ "vmi-arch-arm64",
  "vmi-core",
  "vmi-os-windows",
  "zerocopy",
@@ -2674,3 +2661,11 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "isr-dl-linux"
+version = "0.6.0"
+
+[[patch.unused]]
+name = "isr-dwarf"
+version = "0.6.0"
