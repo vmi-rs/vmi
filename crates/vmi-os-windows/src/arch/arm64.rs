@@ -67,7 +67,7 @@ where
 
         let mut data = [0u8; Arm64::PAGE_SIZE as usize];
 
-        for base_address in (vbar - MAX_BACKWARD_SEARCH..=vbar)
+        for base_address in (vbar.saturating_sub(MAX_BACKWARD_SEARCH)..=vbar)
             .rev()
             .step_by(Arm64::PAGE_SIZE as usize)
         {
