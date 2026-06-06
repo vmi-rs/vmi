@@ -81,18 +81,21 @@ where
 /// # use isr_cache::IsrCache;
 /// # use vmi::{
 /// #     VmiState,
-/// #     arch::amd64::Amd64,
 /// #     driver::VmiRead,
 /// #     os::windows::WindowsOs,
 /// #     utils::resolver::resolve_kernel_module,
 /// # };
+/// # #[cfg(feature = "arch-amd64")]
+/// # use vmi::arch::amd64::Amd64 as Arch;
+/// # #[cfg(feature = "arch-arm64")]
+/// # use vmi::arch::arm64::Arm64 as Arch;
 /// #
 /// # fn example<Driver>(
 /// #     vmi: &VmiState<WindowsOs<Driver>>,
 /// #     isr: &IsrCache,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
-/// #     Driver: VmiRead<Architecture = Amd64>,
+/// #     Driver: VmiRead<Architecture = Arch>,
 /// # {
 /// resolve_kernel_module(vmi, isr, "ntoskrnl.exe")?;
 /// resolve_kernel_module(vmi, isr, "netio.sys")?;
@@ -144,7 +147,6 @@ where
 /// # use isr_cache::IsrCache;
 /// # use vmi::{
 /// #     VmiState,
-/// #     arch::amd64::Amd64,
 /// #     driver::VmiRead,
 /// #     os::{
 /// #         AnyProcess, ProcessId, VmiOsProcess as _,
@@ -152,13 +154,17 @@ where
 /// #     },
 /// #     utils::resolver::resolve_user_module,
 /// # };
+/// # #[cfg(feature = "arch-amd64")]
+/// # use vmi::arch::amd64::Amd64 as Arch;
+/// # #[cfg(feature = "arch-arm64")]
+/// # use vmi::arch::arm64::Arm64 as Arch;
 /// #
 /// # fn example<Driver>(
 /// #     vmi: &VmiState<WindowsOs<Driver>>,
 /// #     isr: &IsrCache,
 /// # ) -> Result<(), Box<dyn std::error::Error>>
 /// # where
-/// #     Driver: VmiRead<Architecture = Amd64>,
+/// #     Driver: VmiRead<Architecture = Arch>,
 /// # {
 /// resolve_user_module(vmi, isr, "ncrypt.dll", "lsass.exe")?;
 /// resolve_user_module(vmi, isr, "ncrypt.dll", ProcessId(1234))?;

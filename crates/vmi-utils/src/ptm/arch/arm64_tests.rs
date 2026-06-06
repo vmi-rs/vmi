@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use vmi_arch_arm64::{Arm64, Granule, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
+    AddressContext, Architecture as _, Gfn, Hfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
     View, VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage, VmiQueryProtection, VmiRead,
     VmiSetProtection,
 };
@@ -69,6 +69,8 @@ impl VmiDriver for MockPtmDriver {
         Ok(VmiInfo {
             page_size: 4096,
             page_shift: 12,
+            host_page_size: 4096,
+            host_page_shift: 12,
             max_gfn: Gfn(0xFFFF),
             vcpus: 1,
         })
@@ -76,7 +78,10 @@ impl VmiDriver for MockPtmDriver {
 }
 
 impl VmiRead for MockPtmDriver {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+    fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
+        // The mock reports a 4K host page (host_page_size == page_size), so the
+        // host frame is the guest frame the page store is keyed by.
+        let gfn = Gfn::new(frame.into());
         let pages = self.pages.borrow();
         let page = pages.get(&gfn).ok_or(VmiError::Other("page not found"))?;
         Ok(VmiMappedPage::new(page.clone()))
