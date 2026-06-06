@@ -683,7 +683,9 @@ offsets! {
             StartingVpnHigh: Option<Field>, // UCHAR
             EndingVpnHigh: Option<Field>,   // UCHAR
             VadFlags: Field,                // _MMVAD_FLAGS
-            VadFlags1: Option<Field>,       // _MMVAD_FLAGS1 (Windows 8+)
+            VadFlags1: Option<Field>,       // _MMVAD_FLAGS1 (Windows 8 / early Windows 10)
+            CommitCharge: Option<Field>,    // ULONG (recent Windows 10/11, replaces _MMVAD_FLAGS1.CommitCharge)
+            u5: Option<Field>,              // _MM_PRIVATE_VAD_FLAGS union (recent Windows 10/11, holds MemCommit)
         }
 
         struct _MMVAD {

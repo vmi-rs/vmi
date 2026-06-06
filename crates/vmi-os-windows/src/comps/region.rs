@@ -173,33 +173,36 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_MMVAD_SHORT.VadFlags.CommitCharge` (Windows 7) or
-    /// `_MMVAD_SHORT.VadFlags1.CommitCharge` (Windows 8+).
+    /// Corresponds to `_MMVAD_SHORT.VadFlags.CommitCharge` (Windows 7),
+    /// `_MMVAD_SHORT.VadFlags1.CommitCharge` (Windows 8 / early Windows 10), or
+    /// the direct `_MMVAD_SHORT.CommitCharge` field (recent Windows 10/11).
     pub fn commit_charge(&self) -> Result<u64, VmiError> {
         let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
         let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
-        // If `CommitCharge` is present in `MMVAD_FLAGS`, then we fetch the
-        // value from it. Otherwise, we load the `VadFlags1` field from the VAD
-        // and fetch it from there.
-        let commit_charge = match MMVAD_FLAGS.CommitCharge {
-            Some(CommitCharge) => {
+        // CommitCharge has lived in three places across Windows versions:
+        //   Windows 7:              the _MMVAD_FLAGS bitfield (in VadFlags),
+        //   Windows 8 / early 10:   the _MMVAD_FLAGS1 bitfield (in VadFlags1),
+        //   recent Windows 10/11:   the direct _MMVAD_SHORT.CommitCharge field.
+        let commit_charge = match (MMVAD_FLAGS.CommitCharge, MMVAD_SHORT.CommitCharge) {
+            (Some(CommitCharge), _) => {
                 let vad_flags = self.vad_flags()?;
 
                 CommitCharge.extract(vad_flags)
             }
-            None => match (
-                &self.vmi.underlying_os().offsets.ext(),
+            (None, Some(CommitCharge)) => self.vmi.read_field(self.va, &CommitCharge)?,
+            (None, None) => match (
+                self.vmi.underlying_os().offsets.ext(),
                 MMVAD_SHORT.VadFlags1,
             ) {
-                (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
-                    let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
-                    let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
-                    MMVAD_FLAGS1.CommitCharge.extract(vad_flags1)
-                }
-                _ => {
-                    panic!("Failed to read CommitCharge from VAD");
-                }
+                (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => match &offsets._MMVAD_FLAGS1 {
+                    Some(MMVAD_FLAGS1) => {
+                        let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
+                        MMVAD_FLAGS1.CommitCharge.extract(vad_flags1)
+                    }
+                    None => panic!("Failed to read CommitCharge from VAD"),
+                },
+                _ => panic!("Failed to read CommitCharge from VAD"),
             },
         };
 
@@ -210,39 +213,44 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `_MMVAD_SHORT.VadFlags.MemCommit` (Windows 7) or
-    /// `_MMVAD_SHORT.VadFlags1.MemCommit` (Windows 8+).
+    /// Corresponds to `_MMVAD_SHORT.VadFlags.MemCommit` (Windows 7),
+    /// `_MMVAD_SHORT.VadFlags1.MemCommit` (Windows 8 / early Windows 10), or
+    /// `_MM_PRIVATE_VAD_FLAGS.MemCommit` via the `_MMVAD_SHORT.u5` union (recent
+    /// Windows 10/11).
     pub fn mem_commit(&self) -> Result<bool, VmiError> {
         let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
         let MMVAD_SHORT = offset!(self.vmi, _MMVAD_SHORT);
 
-        // If `MMVAD_FLAGS.MemCommit` is present (Windows 7), then we fetch the
-        // value from it. Otherwise, we load the `VadFlags1` field from the VAD
-        // and fetch it from there.
-        let mem_commit = match MMVAD_FLAGS.MemCommit {
-            // `MemCommit` is present in `MMVAD_FLAGS`
+        // Windows 7 keeps MemCommit in the _MMVAD_FLAGS bitfield. Windows 8+
+        // keeps it in the extended offsets: recent Windows 10/11 in
+        // _MM_PRIVATE_VAD_FLAGS (overlaying the u5 union), Windows 8 / early 10
+        // in the _MMVAD_FLAGS1 bitfield (via VadFlags1).
+        match MMVAD_FLAGS.MemCommit {
             Some(MemCommit) => {
                 let vad_flags = self.vad_flags()?;
-
-                MemCommit.extract(vad_flags) != 0
+                Ok(MemCommit.extract(vad_flags) != 0)
             }
-            None => match (
-                &self.vmi.underlying_os().offsets.ext(),
-                MMVAD_SHORT.VadFlags1,
-            ) {
-                // `MemCommit` is present in `MMVAD_FLAGS1`
-                (Some(OffsetsExt::V2(offsets)), Some(VadFlags1)) => {
-                    let MMVAD_FLAGS1 = &offsets._MMVAD_FLAGS1;
-                    let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
-                    MMVAD_FLAGS1.MemCommit.extract(vad_flags1) != 0
-                }
-                _ => {
-                    panic!("Failed to read MemCommit from VAD");
-                }
-            },
-        };
+            None => {
+                let offsets = match self.vmi.underlying_os().offsets.ext() {
+                    Some(OffsetsExt::V2(offsets)) => offsets,
+                    _ => panic!("Failed to read MemCommit from VAD"),
+                };
 
-        Ok(mem_commit)
+                match (&offsets._MM_PRIVATE_VAD_FLAGS, MMVAD_SHORT.u5) {
+                    (Some(MM_PRIVATE_VAD_FLAGS), Some(u5)) => {
+                        let flags = self.vmi.read_field(self.va, &u5)?;
+                        Ok(MM_PRIVATE_VAD_FLAGS.MemCommit.extract(flags) != 0)
+                    }
+                    _ => match (&offsets._MMVAD_FLAGS1, MMVAD_SHORT.VadFlags1) {
+                        (Some(MMVAD_FLAGS1), Some(VadFlags1)) => {
+                            let vad_flags1 = self.vmi.read_field(self.va, &VadFlags1)?;
+                            Ok(MMVAD_FLAGS1.MemCommit.extract(vad_flags1) != 0)
+                        }
+                        _ => panic!("Failed to read MemCommit from VAD"),
+                    },
+                }
+            }
+        }
     }
 
     /// Returns the left child of the VAD.
