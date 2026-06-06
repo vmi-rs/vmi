@@ -4,12 +4,13 @@
 //! fresh RWX view, delivers each `BRK` hit to a [`ReactorHandler`], and steps
 //! over the original instruction in the default view. This is the arm64
 //! counterpart of [`crate::reactor`], kept separate so the amd64 reactor stays
-//! untouched. It has no page-table monitor, so it targets resident memory
-//! (kernel symbols). Growing it to cover pageable targets is future work.
+//! untouched. It couples the breakpoint manager with a page-table monitor, so a
+//! breakpoint at a pageable (user-mode) target is (de)activated as its page
+//! pages in and out; a resident kernel target simply never pages.
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::HashSet,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -18,14 +19,17 @@ use std::{
 
 use vmi_arch_arm64::{Arm64, EventMonitor, EventReason};
 use vmi_core::{
-    Architecture as _, Gfn, Hfn, MemoryAccess, Pa, Va, View, VmiContext, VmiError,
+    Architecture as _, Hfn, MemoryAccess, Pa, Va, View, VmiContext, VmiCore, VmiError,
     VmiEventResponse, VmiHandler, VmiSession,
     arch::{EventMemoryAccess as _, EventReason as _},
     driver::VmiFullDriver,
 };
 use vmi_os_windows::WindowsOs;
 
-use crate::bpm::{Breakpoint, BreakpointController, BreakpointManager};
+use crate::{
+    bpm::{Breakpoint, BreakpointController, BreakpointManager},
+    ptm::{PageTableMonitor, PageTableMonitorEvent},
+};
 
 /// One breakpoint to install.
 #[derive(Debug, Clone, Copy)]
@@ -80,14 +84,27 @@ where
 pub struct ReactorArm64<Driver, Handler>
 where
     Driver: VmiFullDriver<Architecture = Arm64>,
-    Driver::Architecture: vmi_os_windows::ArchAdapter<Driver>,
+    Driver::Architecture:
+        vmi_os_windows::ArchAdapter<Driver> + crate::ptm::ArchAdapter<Driver, &'static str>,
     Handler: ReactorHandler<Driver>,
 {
     /// Breakpoint manager owning the installed breakpoints.
     bpm: BreakpointManager<BreakpointController<Driver>, (), &'static str>,
 
+    /// Page table monitor following each target's page-table path so a pageable
+    /// target's breakpoint can be (de)activated on page-in / page-out.
+    ptm: PageTableMonitor<Driver, &'static str>,
+
     /// View where the breakpoints live.
     view: View,
+
+    /// Breakpoint specs, retained so the per-host-frame access mask can be
+    /// recomputed when a pageable target pages in.
+    breakpoints: Vec<BreakpointSpec>,
+
+    /// Whether breakpoint pages are kept execute-only (stealth) or widened to
+    /// RWX.
+    stealth: bool,
 
     /// Handler that processes hits.
     handler: Handler,
@@ -102,7 +119,8 @@ where
 impl<Driver, Handler> ReactorArm64<Driver, Handler>
 where
     Driver: VmiFullDriver<Architecture = Arm64>,
-    Driver::Architecture: vmi_os_windows::ArchAdapter<Driver>,
+    Driver::Architecture:
+        vmi_os_windows::ArchAdapter<Driver> + crate::ptm::ArchAdapter<Driver, &'static str>,
     Handler: ReactorHandler<Driver>,
 {
     /// Creates a reactor and installs one stealth breakpoint per spec.
@@ -167,53 +185,44 @@ where
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
 
-        // Pass 1: insert every breakpoint. The breakpoint manager arms each
-        // page execute-only as it goes.
+        // Pass 1: insert every breakpoint and monitor its page-table path. The
+        // breakpoint manager arms each page execute-only as it goes; the page
+        // table monitor write-protects the path so a page-in / page-out of a
+        // pageable target is detected (a kernel target is resident, so its
+        // monitor never fires).
         let mut bpm = BreakpointManager::new();
+        let mut ptm = PageTableMonitor::new();
         for spec in breakpoints {
             let cx = (spec.va, spec.root);
             let bp = Breakpoint::new(cx, view).global().with_tag(spec.tag);
             bpm.insert(&vmi, bp)?;
+            ptm.monitor(vmi.core(), cx, view, spec.tag)?;
         }
 
-        // Pass 2: re-set access once per host frame. Two breakpoints fused into
-        // one 16K host page share a single stage-2 leaf, so the auto-step mask
-        // must be combined over all co-resident breakpoints. A per-breakpoint
-        // mask would clobber its neighbor's delivery bit and silently auto-step
-        // a planted page, dropping its stealth. Group the breakpoint guest gfns
-        // by host frame, then apply one access update per frame: with stealth
-        // on, deliver every breakpoint sub-page (so a PatchGuard read still
-        // traps to userspace) and auto-step only the true neighbors. With
-        // stealth off, widen back to RWX (no protection, no events) for
-        // storm-free bring-up.
+        // Pass 2: set access once per host frame. Skip targets that are not
+        // resident at install: a pageable target pages in later, and the
+        // singlestep handler masks its frame then. Two breakpoints fused into
+        // one 16K host page share a single stage-2 leaf, so apply_frame_access
+        // combines the auto-step mask over all co-resident breakpoints rather
+        // than clobbering a neighbor's delivery bit.
         let host_shift = vmi.core().info()?.host_page_shift as u32;
-        let mut gfns_by_frame = HashMap::<Hfn, Vec<Gfn>>::new();
+        let mut frames = HashSet::<Hfn>::new();
         for spec in breakpoints {
-            let pa = vmi.core().translate_address((spec.va, spec.root))?;
-            let gfn = Arm64::gfn_from_pa(pa);
-            let frame = Arm64::hfn_from_gfn(gfn, host_shift);
-            gfns_by_frame.entry(frame).or_default().push(gfn);
+            if let Ok(pa) = vmi.core().translate_address((spec.va, spec.root)) {
+                let gfn = Arm64::gfn_from_pa(pa);
+                frames.insert(Arm64::hfn_from_gfn(gfn, host_shift));
+            }
         }
-        for gfns in gfns_by_frame.values() {
-            let representative = gfns[0];
-            if stealth {
-                let mask = Arm64::neighbor_subpage_mask(gfns, host_shift);
-                vmi.core().set_memory_access_autostep(
-                    representative,
-                    view,
-                    MemoryAccess::X,
-                    mask,
-                )?;
-            }
-            else {
-                vmi.core()
-                    .set_memory_access(representative, view, MemoryAccess::RWX)?;
-            }
+        for frame in frames {
+            Self::apply_frame_access(vmi.core(), breakpoints, frame, view, stealth)?;
         }
 
         Ok(Self {
             bpm,
+            ptm,
             view,
+            breakpoints: breakpoints.to_vec(),
+            stealth,
             handler,
             output: RefCell::new(None),
             termination_flag: None,
@@ -226,6 +235,42 @@ where
             termination_flag: Some(termination_flag),
             ..self
         }
+    }
+
+    /// (Re)applies the stage-2 access for one host `frame` in `view`.
+    ///
+    /// Scans the retained specs for breakpoints whose target currently
+    /// translates into `frame`. With stealth on, sets the frame execute-only
+    /// with an auto-step mask that delivers every breakpoint sub-page (so a
+    /// PatchGuard read still traps) and auto-steps the fused non-breakpoint
+    /// neighbors in the kernel. With stealth off, widens the frame to RWX. A
+    /// frame with no currently-resident breakpoint is left untouched.
+    fn apply_frame_access(
+        vmi: &VmiCore<Driver>,
+        breakpoints: &[BreakpointSpec],
+        frame: Hfn,
+        view: View,
+        stealth: bool,
+    ) -> Result<(), VmiError> {
+        let host_shift = vmi.info()?.host_page_shift as u32;
+        let gfns = breakpoints
+            .iter()
+            .filter_map(|spec| vmi.translate_address((spec.va, spec.root)).ok())
+            .map(Arm64::gfn_from_pa)
+            .filter(|&gfn| Arm64::hfn_from_gfn(gfn, host_shift) == frame)
+            .collect::<Vec<_>>();
+        if gfns.is_empty() {
+            return Ok(());
+        }
+        let representative = gfns[0];
+        if stealth {
+            let mask = Arm64::neighbor_subpage_mask(&gfns, host_shift);
+            vmi.set_memory_access_autostep(representative, view, MemoryAccess::X, mask)?;
+        }
+        else {
+            vmi.set_memory_access(representative, view, MemoryAccess::RWX)?;
+        }
+        Ok(())
     }
 
     /// Handles a software breakpoint hit.
@@ -310,6 +355,13 @@ where
 
         // Write accesses may also have R set, so check W first.
         if ma.access().contains(MemoryAccess::W) {
+            // A write to a monitored page-table entry: record it so the
+            // singlestep handler can detect page-in / page-out. The write must
+            // run on the default view (no write-protection there) so it lands.
+            // mark_dirty_entry returns false for a non-monitored PA (a stealth
+            // neighbor write), which is harmless - no PTM event is produced.
+            self.ptm
+                .mark_dirty_entry(ma.pa(), self.view, vmi.event().vcpu_id());
             Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
         }
         else if ma.access().contains(MemoryAccess::R) {
@@ -320,6 +372,53 @@ where
         }
     }
 
+    /// Handles the singlestep that follows a write to a monitored PTE.
+    ///
+    /// Drains the dirty entries into page-in / page-out events, lets the
+    /// breakpoint manager (de)activate the affected breakpoints, then re-applies
+    /// the per-host-frame access for every frame that gained a breakpoint so a
+    /// freshly paged-in stealth breakpoint does not storm the agent through its
+    /// fused neighbors. A non-PTM singlestep (a stealth write step-over)
+    /// produces no events and falls through to the view switch unchanged.
+    fn singlestep(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Arm64>, VmiError> {
+        let events = self
+            .ptm
+            .process_dirty_entries(vmi.core(), vmi.event().vcpu_id())?;
+
+        let host_shift = vmi.core().info()?.host_page_shift as u32;
+        let mut pagein_frames = HashSet::<Hfn>::new();
+        for event in &events {
+            if let PageTableMonitorEvent::PageIn(update) = event {
+                let gfn = Arm64::gfn_from_pa(update.pa);
+                pagein_frames.insert(Arm64::hfn_from_gfn(gfn, host_shift));
+            }
+        }
+
+        self.bpm.handle_ptm_events(vmi.core(), events)?;
+
+        // Re-mask only the frames that gained a breakpoint. A page-out leaves
+        // its frame with no active breakpoint, so the breakpoint manager's
+        // removal already widened it back to RWX. The one uncovered case is two
+        // pageable breakpoints fused into a single host frame where only one
+        // pages out: the survivor's frame stays RWX until something re-masks it.
+        // That cannot happen with a single target and is deferred per the
+        // design's "simplest correct form".
+        for frame in pagein_frames {
+            Self::apply_frame_access(
+                vmi.core(),
+                &self.breakpoints,
+                frame,
+                self.view,
+                self.stealth,
+            )?;
+        }
+
+        Ok(VmiEventResponse::default().with_view(self.view))
+    }
+
     /// Dispatches a VMI event to its handler.
     fn dispatch(
         &mut self,
@@ -328,9 +427,7 @@ where
         match vmi.event().reason() {
             EventReason::MemoryAccess(_) => self.memory_access(vmi),
             EventReason::Interrupt(_) => self.interrupt(vmi),
-            // After a write step-over on the default view, return execution to
-            // the breakpoint view so later instructions still trap the BRK.
-            EventReason::Singlestep(_) => Ok(VmiEventResponse::default().with_view(self.view)),
+            EventReason::Singlestep(_) => self.singlestep(vmi),
         }
     }
 }
@@ -338,7 +435,8 @@ where
 impl<Driver, Handler> VmiHandler<WindowsOs<Driver>> for ReactorArm64<Driver, Handler>
 where
     Driver: VmiFullDriver<Architecture = Arm64>,
-    Driver::Architecture: vmi_os_windows::ArchAdapter<Driver>,
+    Driver::Architecture:
+        vmi_os_windows::ArchAdapter<Driver> + crate::ptm::ArchAdapter<Driver, &'static str>,
     Handler: ReactorHandler<Driver>,
 {
     type Output = Option<Handler::Output>;
@@ -367,6 +465,13 @@ where
             Ok(false) => tracing::warn!("no breakpoints to remove"),
             Err(err) => tracing::error!(%err, "failed to remove breakpoints"),
         }
+
+        // Drop the page-table write-protections before tearing the view down,
+        // mirroring the amd64 reactor. destroy_view would release them anyway,
+        // but restoring the page-table pages to RW first keeps teardown
+        // self-contained and avoids leaving stale protections if the view ever
+        // outlives cleanup.
+        self.ptm.unmonitor_all(vmi.core());
 
         if let Err(err) = vmi.destroy_view(self.view) {
             tracing::error!(%err, "failed to destroy view");
