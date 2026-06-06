@@ -290,3 +290,8 @@ required-features = ["arch-amd64", "driver-kvm", "os-windows", "utils"]
 name = "kvm-windows-reactor-arm64"
 path = "examples/kvm-windows-reactor-arm64/main.rs"
 required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]
+
+[[example]]
+name = "kvm-windows-ntwritefile-arm64"
+path = "examples/kvm-windows-ntwritefile-arm64/main.rs"
+required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]
