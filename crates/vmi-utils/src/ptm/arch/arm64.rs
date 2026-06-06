@@ -37,8 +37,7 @@ use std::collections::{HashMap, HashSet};
 
 use vmi_arch_arm64::{Arm64, Granule, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
-    View, VmiCore, VmiError,
+    AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, Va, VcpuId, View, VmiCore, VmiError,
     driver::{VmiDriver, VmiRead, VmiSetProtection},
 };
 
@@ -177,12 +176,16 @@ where
         let table_key = (view, gfn);
         let refcount = self.tables.entry(table_key).or_insert(0);
         if *refcount == 0 {
-            vmi.set_memory_access_with_options(
-                gfn,
-                view,
-                MemoryAccess::R,
-                MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
-            )?;
+            // Write-protect the page-table page so a guest PTE write traps and
+            // the reactor can detect page-in / page-out. Unlike x86 EPT, arm64
+            // KVM VMI has no paging-write mode (KVM_VMI_ACCESS_PW returns
+            // -EOPNOTSUPP): there is no way to allow only the hardware page-table
+            // walker's A/D-bit writes while trapping guest writes. So protect the
+            // page read-only and let every write (a guest PTE write, or a walker
+            // A/D update) trap and be stepped over on the default view. PW is
+            // only an x86 optimization to skip the walker writes; plain R is the
+            // correct arm64 behavior.
+            vmi.set_memory_access(gfn, view, MemoryAccess::R)?;
         }
         *refcount += 1;
         Ok(())
