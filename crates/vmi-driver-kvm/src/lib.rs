@@ -61,6 +61,12 @@ where
 
     /// Host page size in bytes, cached from the kernel at construction.
     pub(crate) host_page_size: u64,
+
+    /// Exclusive upper-bound guest RAM frame, in KVM (host-page) gfn units,
+    /// cached from `KVM_VMI_GET_MEM_INFO` at construction. A non-shadow frame at
+    /// or above this bound is not backed by guest RAM, so reading it is rejected
+    /// rather than faulting the vmi_fd mmap.
+    pub(crate) max_gfn: u64,
 }
 
 impl<Arch> VmiKvmDriver<Arch>
@@ -73,6 +79,11 @@ where
         let session = KvmVmi::create(vm_fd).map_err(VmiError::driver)?;
         let vcpus = vcpu_fds.into_iter().map(KvmVcpu::new).collect::<Vec<_>>();
         let n = vcpus.len();
+
+        // Query the guest RAM extent once; the layout is fixed after boot. Used
+        // to reject reads of frames the VMM did not back with RAM.
+        let max_gfn = session.mem_info().map_err(VmiError::driver)?;
+
         Ok(Self {
             session,
             vcpus,
@@ -81,6 +92,7 @@ where
             event_processing_overhead: RefCell::new(Duration::from_millis(0)),
             _arch: PhantomData,
             host_page_size: kvm::host_page_size() as u64,
+            max_gfn,
         })
     }
 }
@@ -147,6 +159,16 @@ where
     Arch: ArchAdapter,
 {
     fn read_page(&self, frame: Hfn) -> Result<VmiMappedPage, VmiError> {
+        // Reject frames the VMM did not back with guest RAM. The vmi_fd mmap
+        // faults (SIGBUS) on an unbacked frame, which aborts the agent; a stale
+        // or garbage guest pointer can resolve a page-table walk to such a
+        // frame. Shadow frames (>= KVM_VMI_SHADOW_GFN_BASE) are kernel-backed
+        // and sit above max_gfn, so they are exempt.
+        let f = u64::from(frame);
+        if f < kvm::sys::KVM_VMI_SHADOW_GFN_BASE && f >= self.max_gfn {
+            return Err(VmiError::OutOfBounds);
+        }
+
         let page = KvmGuestMemory::map_page(self.session.fd(), frame.into(), false)
             .map_err(VmiError::driver)?;
 
