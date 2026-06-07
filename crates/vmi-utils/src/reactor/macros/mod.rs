@@ -8,6 +8,7 @@ pub mod __private {
         pub use isr_cache::*;
     }
 
+    #[cfg(feature = "arch-amd64")]
     pub mod vmi_arch_amd64 {
         pub use vmi_arch_amd64::*;
     }

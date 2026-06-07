@@ -180,12 +180,19 @@ where
             // the reactor can detect page-in / page-out. Unlike x86 EPT, arm64
             // KVM VMI has no paging-write mode (KVM_VMI_ACCESS_PW returns
             // -EOPNOTSUPP): there is no way to allow only the hardware page-table
-            // walker's A/D-bit writes while trapping guest writes. So protect the
-            // page read-only and let every write (a guest PTE write, or a walker
-            // A/D update) trap and be stepped over on the default view. PW is
-            // only an x86 optimization to skip the walker writes; plain R is the
-            // correct arm64 behavior.
-            vmi.set_memory_access(gfn, view, MemoryAccess::R)?;
+            // walker's A/D-bit writes while trapping guest writes, so every write
+            // (a guest PTE write, or a walker A/D update) traps and is stepped
+            // over on the default view. PW is only an x86 optimization to skip
+            // the walker writes.
+            //
+            // Protect with RX, not plain R: clear only W, keep R and X. On a 16K
+            // host a guest page-table page shares its host frame with up to three
+            // other guest pages, one of which can be executable code. Plain R
+            // would clear X for the whole host frame, so an instruction fetch
+            // from the fused code would fault (access X) even though it is not a
+            // page-table access. RX traps the writes the monitor needs while
+            // leaving the fused neighbors readable and executable.
+            vmi.set_memory_access(gfn, view, MemoryAccess::RX)?;
         }
         *refcount += 1;
         Ok(())
@@ -205,7 +212,10 @@ where
             *refcount -= 1;
             if *refcount == 0 {
                 self.tables.remove(&table_key);
-                match vmi.set_memory_access(gfn, view, MemoryAccess::RW) {
+                // Restore the host frame to the view default (RWX), not RW:
+                // a fused neighbor may be executable, and RW would leave X
+                // cleared so a later fetch from the frame would fault.
+                match vmi.set_memory_access(gfn, view, MemoryAccess::RWX) {
                     Ok(()) | Err(VmiError::ViewNotFound) => {}
                     Err(err) => {
                         tracing::warn!(%gfn, %view, %err, "failed to restore memory access");
@@ -490,7 +500,9 @@ where
 
     fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
         for &(view, gfn) in self.tables.keys() {
-            let _ = vmi.set_memory_access(gfn, view, MemoryAccess::RW);
+            // Restore to the view default (RWX); see remove_table_ref for why
+            // RW would leave a fused executable neighbor non-executable.
+            let _ = vmi.set_memory_access(gfn, view, MemoryAccess::RWX);
         }
         self.tables.clear();
         self.entries.clear();

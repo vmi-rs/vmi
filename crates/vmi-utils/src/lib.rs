@@ -15,7 +15,7 @@ pub mod interceptor;
 #[cfg(feature = "ptm")]
 pub mod ptm;
 
-#[cfg(feature = "reactor")]
+#[cfg(any(feature = "reactor", feature = "reactor-arm64"))]
 pub mod reactor;
 
 #[cfg(feature = "reactor-arm64")]

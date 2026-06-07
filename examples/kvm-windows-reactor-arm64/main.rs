@@ -1,27 +1,37 @@
-//! Demonstrates software breakpoints, NtCreateFile logging, and return-value
-//! modification on an ARM64 Windows guest via the `vmi_utils::reactor_arm64`
-//! module.
+//! Demonstrates the arm64 VMI reactor on a Windows-on-ARM guest running in
+//! KVM, monitoring the same surface as the amd64 `kvm-windows-reactor`
+//! example via the `define_modules!` / `define_events!` macros:
 //!
-//! Three breakpoints are installed:
+//! - `nt!NtWriteFile`: logs the full path of files being written.
+//! - `netio.sys!KfdClassify`: logs network connections and their pid.
+//! - `netio.sys!KfdIsLayerEmpty`: forced to return FALSE for the ALE
+//!   auth/flow layers so `KfdClassify` is reached even with no active WFP
+//!   filter.
+//! - `ncrypt.dll!SslGenerateSessionKeys` in `lsass.exe`: logs SSL/TLS
+//!   session keys. This user-mode target exercises the page-table monitor:
+//!   its breakpoint is (de)activated as its page pages in and out.
 //!
-//! - `nt!NtCreateFile`: logs the name of the file being opened on every hit.
-//! - `netio.sys!KfdIsLayerEmpty`: forces the return value to FALSE for the four
-//!   ALE layers (auth-connect V4/V6, flow-established V4/V6) so that
-//!   `KfdClassify` is called even when no active WFP filter is registered.
-//! - `netio.sys!KfdClassify`: logs the layer id and a running hit count.
-//!
-//! On AAPCS64 the return address lives in x30 (LR), not on the stack, so the
-//! return-value override writes x0 = FALSE and PC = LR without any
-//! stack-pointer adjustment.
+//! The kernel is located via `VBAR_EL1` (set at boot, stable afterwards).
+//! The reactor keeps each breakpoint page execute-only for stealth and, on
+//! this 16K host, marks the fused neighbor guest pages for in-kernel
+//! auto-step so a hot target does not storm the agent. Set
+//! `VMI_NO_STEALTH=1` for an RWX-safe bring-up run (no stealth, so no
+//! mem-access storm).
 //!
 //! # Usage
 //!
 //! Pass the QEMU pid as `argv[1]`, or let the example scan `/proc` for a
-//! `qemu-system` process. The example runs until interrupted with Ctrl-C.
+//! `qemu-system` process.
 //!
 //! ```text
 //! cargo run --features="arch-arm64 driver-kvm os-windows utils-arm64" --example kvm-windows-reactor-arm64 -- <qemu pid>
 //! ```
+
+#![expect(non_snake_case)]
+
+mod ncrypt;
+mod netio;
+mod ntoskrnl;
 
 use std::{
     os::fd::AsFd,
@@ -29,31 +39,21 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use isr::{cache::IsrCache, macros::symbols};
+use isr::cache::IsrCache;
 use tracing_subscriber::EnvFilter;
 use vmi::{
-    Registers as _, Va, VcpuId, VmiContext, VmiCore, VmiError, VmiEventResponse, VmiSession,
+    VcpuId, VmiContext, VmiCore, VmiError, VmiOs, VmiRead, VmiSession,
     arch::arm64::Arm64,
-    driver::{VmiFullDriver, kvm::VmiKvmDriver},
-    os::windows::{ArchAdapter, WindowsOs, WindowsOsExt as _},
-    utils::reactor_arm64::{Action, BreakpointSpec, ReactorArm64, ReactorHandler},
+    driver::kvm::VmiKvmDriver,
+    os::{
+        VmiOsProcess as _,
+        windows::{ArchAdapter, WindowsOs, WindowsProcess},
+    },
+    utils::{
+        reactor::{Action, ReactorHandler, define_events, define_modules},
+        reactor_arm64::ReactorArm64,
+    },
 };
-
-symbols! {
-    #[derive(Debug)]
-    pub struct Symbols {
-        NtCreateFile: u64,
-    }
-}
-
-symbols! {
-    #[derive(Debug)]
-    pub struct NetioSymbols {
-        KfdIsLayerEmpty: u64,
-
-        KfdClassify: u64,
-    }
-}
 
 /// Scans `/proc` for the first running `qemu-system` process and returns its
 /// pid.
@@ -76,162 +76,178 @@ fn find_qemu_pid() -> Option<i32> {
     None
 }
 
-/// WFP filtering-layer id passed to `KfdIsLayerEmpty` / `KfdClassify` as
-/// `layerId` (AAPCS64 `x0`, a `UINT16`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FwpsLayer(u16);
+fn match_lsass<Driver>(process: &WindowsProcess<Driver>) -> Result<bool, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    // Match "lsass.exe" in SessionId 0.
+    Ok(
+        matches!(process.session()?, Some(session) if session.id()? == 0)
+            && process.name()?.eq_ignore_ascii_case("lsass.exe"),
+    )
+}
 
-impl FwpsLayer {
-    /// `FWPS_LAYER_ALE_AUTH_CONNECT_V4`.
-    const ALE_AUTH_CONNECT_V4: Self = Self(48);
+define_modules! {
+    /// Modules used by the reactor.
+    #[os(
+        <Driver: VmiRead> WindowsOs<Driver>
+        where Driver::Architecture: ArchAdapter<Driver>
+    )]
+    enum Module {
+        /// `netio.sys`
+        #[module(name = "netio.sys")]
+        NetioSys,
 
-    /// `FWPS_LAYER_ALE_AUTH_CONNECT_V6`.
-    const ALE_AUTH_CONNECT_V6: Self = Self(50);
+        /// `ncrypt.dll` in `lsass.exe`.
+        // Note that `.., process = "lsass.exe"` would also work, but this
+        // demonstrates how to use a custom predicate.
+        #[module(name = "ncrypt.dll", mode(user, process = match_lsass))]
+        NcryptDll,
+    }
 
-    /// `FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4`.
-    const ALE_FLOW_ESTABLISHED_V4: Self = Self(52);
+    #[resolver]
+    struct ModuleResolver;
 
-    /// `FWPS_LAYER_ALE_FLOW_ESTABLISHED_V6`.
-    const ALE_FLOW_ESTABLISHED_V6: Self = Self(54);
+    #[cache]
+    struct SymbolCache;
+}
 
-    /// Returns true for the ALE auth/flow layers the reactor forces active.
-    fn is_forced(self) -> bool {
-        matches!(
-            self,
-            Self::ALE_AUTH_CONNECT_V4
-                | Self::ALE_AUTH_CONNECT_V6
-                | Self::ALE_FLOW_ESTABLISHED_V4
-                | Self::ALE_FLOW_ESTABLISHED_V6
-        )
+define_events! {
+    /// Events monitored by the reactor.
+    enum Event in Module {
+        /// `nt!NtWriteFile`
+        NtWriteFile,
+
+        /// `nt!KeBugCheckEx` (diagnostic: catches a guest bugcheck).
+        KeBugCheckEx,
+
+        // `netio.sys`
+        NetioSys {
+            /// `netio.sys!KfdClassify`
+            KfdClassify,
+
+            /// `netio.sys!KfdIsLayerEmpty`
+            KfdIsLayerEmpty,
+        },
+
+        // `ncrypt.dll`
+        NcryptDll {
+            /// `ncrypt.dll!SslGenerateSessionKeys`
+            SslGenerateSessionKeys,
+        },
     }
 }
 
-/// Logs file opens, forces the WFP ALE layers active, and counts classify hits.
 #[derive(Default)]
 struct NetIo {
-    /// Number of `KfdIsLayerEmpty` calls forced to return FALSE.
-    forced: u64,
-
-    /// Number of `KfdClassify` hits observed.
-    classified: u64,
+    NtWriteFile_counter: u64,
+    KeBugCheckEx_counter: u64,
+    KfdClassify_counter: u64,
+    KfdIsLayerEmpty_counter: u64,
+    SslGenerateSessionKeys_counter: u64,
 }
 
 impl NetIo {
-    /// Logs the filename from a `NtCreateFile` breakpoint hit.
-    fn nt_create_file<Driver>(
+    #[tracing::instrument(skip_all)]
+    fn NtWriteFile<Driver>(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<Action<()>, VmiError>
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
     where
-        Driver: VmiFullDriver<Architecture = Arm64>,
+        Driver: VmiRead,
         Driver::Architecture: ArchAdapter<Driver>,
     {
-        // NtCreateFile's third argument (AAPCS64 `x2`) is a POBJECT_ATTRIBUTES.
-        // Its ObjectName field points at the UNICODE_STRING naming the file.
-        // `function_argument` is the arm64 ArchAdapter accessor proven in
-        // Milestone 1.
-        let object_attributes = vmi.os().function_argument(2)?;
-
-        // Walking OBJECT_ATTRIBUTES.ObjectName chases guest pointers that may
-        // not be resident, so a translation failure is expected and not fatal.
-        // When the name cannot be read, fall back to the raw pointer value.
-        match vmi
-            .os()
-            .object_attributes(Va(object_attributes))
-            .and_then(|object_attributes| object_attributes.object_name())
-        {
-            Ok(Some(filename)) => tracing::info!(%filename, "NtCreateFile"),
-            Ok(None) => tracing::info!(
-                object_attributes = format_args!("{object_attributes:#x}"),
-                "NtCreateFile (no name)"
-            ),
-            Err(err) => tracing::info!(
-                object_attributes = format_args!("{object_attributes:#x}"),
-                %err,
-                "NtCreateFile (name unreadable)"
-            ),
-        }
-
-        Ok(Action::Default)
+        self.NtWriteFile_counter += 1;
+        ntoskrnl::NtWriteFile(vmi)
     }
 
-    /// Forces `KfdIsLayerEmpty` to return FALSE for the ALE auth/flow layers.
-    ///
-    /// On AAPCS64 the return address lives in x30 (LR), not on the stack, so
-    /// only x0 and PC change. No stack-pointer adjustment is needed.
-    fn kfd_is_layer_empty<Driver>(
+    #[tracing::instrument(skip_all)]
+    fn KeBugCheckEx<Driver>(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<Action<()>, VmiError>
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
     where
-        Driver: VmiFullDriver<Architecture = Arm64>,
+        Driver: VmiRead,
         Driver::Architecture: ArchAdapter<Driver>,
     {
-        let layer = FwpsLayer(vmi.os().function_argument(0)? as u16);
-        if !layer.is_forced() {
-            tracing::trace!(?layer, "passing through");
-            return Ok(Action::Default);
-        }
-
-        self.forced += 1;
-        tracing::info!(?layer, "forcing KfdIsLayerEmpty -> FALSE");
-
-        // Make KfdIsLayerEmpty return FALSE. return_from_function encapsulates
-        // the AAPCS64 detail (x0 = value, PC = x30/LR, no stack-pointer fixup).
-        let gp = vmi.registers().return_from_function(vmi.core(), 0)?;
-
-        Ok(Action::Response(
-            VmiEventResponse::default().with_registers(gp),
-        ))
+        self.KeBugCheckEx_counter += 1;
+        ntoskrnl::KeBugCheckEx(vmi)
     }
 
-    /// Logs a `KfdClassify` hit with the layer id and running count.
-    fn kfd_classify<Driver>(
+    #[tracing::instrument(skip_all)]
+    fn KfdClassify<Driver>(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<Action<()>, VmiError>
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
     where
-        Driver: VmiFullDriver<Architecture = Arm64>,
+        Driver: VmiRead,
         Driver::Architecture: ArchAdapter<Driver>,
     {
-        self.classified += 1;
-        let layer = FwpsLayer(vmi.os().function_argument(0)? as u16);
-        tracing::info!(?layer, count = self.classified, "KfdClassify");
-        Ok(Action::Default)
+        self.KfdClassify_counter += 1;
+        netio::KfdClassify(vmi)
     }
-}
 
-impl<Driver> ReactorHandler<Driver> for NetIo
-where
-    Driver: VmiFullDriver<Architecture = Arm64>,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    type Output = ();
-
-    fn handle_breakpoint(
+    #[tracing::instrument(skip_all)]
+    fn KfdIsLayerEmpty<Driver>(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
-        tag: &'static str,
-    ) -> Result<Action<()>, VmiError> {
-        match tag {
-            "NtCreateFile" => self.nt_create_file(vmi),
-            "KfdIsLayerEmpty" => self.kfd_is_layer_empty(vmi),
-            "KfdClassify" => self.kfd_classify(vmi),
-            tag => {
-                tracing::warn!(tag, "unexpected breakpoint tag");
-                Ok(Action::Default)
-            }
-        }
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+    where
+        Driver: VmiRead,
+        Driver::Architecture: ArchAdapter<Driver>,
+    {
+        self.KfdIsLayerEmpty_counter += 1;
+        netio::KfdIsLayerEmpty(vmi)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn SslGenerateSessionKeys<Driver>(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+    where
+        Driver: VmiRead,
+        Driver::Architecture: ArchAdapter<Driver>,
+    {
+        self.SslGenerateSessionKeys_counter += 1;
+        ncrypt::SslGenerateSessionKeys(vmi)
     }
 }
 
 impl Drop for NetIo {
     fn drop(&mut self) {
         tracing::info!(
-            forced = self.forced,
-            classified = self.classified,
-            "netio reactor summary"
+            NtWriteFile = self.NtWriteFile_counter,
+            KeBugCheckEx = self.KeBugCheckEx_counter,
+            KfdClassify = self.KfdClassify_counter,
+            KfdIsLayerEmpty = self.KfdIsLayerEmpty_counter,
+            SslGenerateSessionKeys = self.SslGenerateSessionKeys_counter,
+            "hit counts"
         );
+    }
+}
+
+impl<Driver> ReactorHandler<WindowsOs<Driver>> for NetIo
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    type Output = ();
+    type Event = Event;
+
+    fn handle_event(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        event: Self::Event,
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture, Self::Output>, VmiError> {
+        match event {
+            Self::Event::NtWriteFile => self.NtWriteFile(vmi),
+            Self::Event::KeBugCheckEx => self.KeBugCheckEx(vmi),
+            Self::Event::KfdClassify => self.KfdClassify(vmi),
+            Self::Event::KfdIsLayerEmpty => self.KfdIsLayerEmpty(vmi),
+            Self::Event::SslGenerateSessionKeys => self.SslGenerateSessionKeys(vmi),
+        }
     }
 }
 
@@ -256,20 +272,13 @@ fn main() -> Result<(), Error> {
     let driver = VmiKvmDriver::<Arm64>::new(fds.vm.as_fd(), fds.vcpus)?;
     let core = VmiCore::new(driver)?;
 
-    // Try to find the kernel information and capture the boot vCPU registers.
-    // The registers are needed to pick the breakpoint's translation root.
-    //
-    // On ARM64 the kernel is located via `VBAR_EL1`, the base address of the
-    // exception vector table. That register is set during boot and left
-    // unchanged, so any register snapshot taken after the OS has booted works.
-    let (kernel_info, registers) = {
+    // Try to find the kernel information.
+    // This is necessary in order to load the profile.
+    let kernel_info = {
         let _pause_guard = core.pause_guard()?;
         let registers = core.registers(VcpuId(0))?;
 
-        let kernel_info =
-            WindowsOs::find_kernel(&core, &registers)?.context("cannot find kernel information")?;
-
-        (kernel_info, registers)
+        WindowsOs::find_kernel(&core, &registers)?.context("cannot find kernel information")?
     };
 
     // Load the kernel profile.
@@ -279,9 +288,7 @@ fn main() -> Result<(), Error> {
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let profile = entry.profile()?;
 
-    let symbols = Symbols::new(&profile)?;
-
-    // Create the VMI session and arrange for a clean shutdown on signals.
+    // Create the VMI session.
     tracing::info!("creating VMI session");
     let terminate_flag = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGHUP, terminate_flag.clone())?;
@@ -292,55 +299,98 @@ fn main() -> Result<(), Error> {
     let os = WindowsOs::<VmiKvmDriver<Arm64>>::new(&profile)?;
     let session = VmiSession::new(&core, &os);
 
-    // Resolve netio.sys to find KfdIsLayerEmpty and KfdClassify.
-    let netio_resolved = {
+    let handler = NetIo::default();
+
+    //
+    // The following `let ncrypt_* = ...` lines demonstrate how to manually
+    // resolve a module, load its profile (symbols) and add it to the resolver
+    // via `with_module(_in_process)`.
+    //
+    // Note that this is not strictly necessary, as `ModuleResolver::resolve()`
+    // will automatically resolve modules if they are not explicitly added.
+    //
+    // Manually resolving modules can be useful in cases where you want to deal
+    // with the resolved information (base address, profile) in other places.
+    //
+
+    let ncrypt_resolved = {
         let paused = session.pause_guard()?;
         let vmi = paused.state();
-        vmi::utils::resolver::resolve_kernel_module(&vmi, &isr, "netio.sys")?
-            .context("netio.sys not found")?
+
+        // Calling `resolve_user_module(&vmi, &isr, "ncrypt.dll", "lsass.exe")`
+        // would also work, but this demonstrates how to use a custom predicate.
+        //
+        // Also, `match_lsass` is more strict, because it specifically looks
+        // for "lsass.exe" in SessionId 0 (therefore, avoiding potential false
+        // positives or potential malicious processes).
+        vmi::utils::resolver::resolve_user_module(&vmi, &isr, "ncrypt.dll", match_lsass)?
+            .context("ncrypt.dll not found in lsass.exe")?
     };
-    let netio_entry = isr
-        .entry_from_codeview(netio_resolved.debug_signature)
-        .context("cannot find symbols for netio.sys")?;
-    let netio_profile = netio_entry
+
+    let ncrypt_process = ncrypt_resolved
+        .process
+        .context("resolved ncrypt.dll is not associated with a process")?;
+
+    let ncrypt_entry = isr
+        .entry_from_codeview(ncrypt_resolved.debug_signature)
+        .context("cannot find symbols for ncrypt.dll")?;
+
+    let ncrypt_profile = ncrypt_entry
         .profile()
-        .context("cannot load profile for netio.sys")?;
-    let netio_symbols = NetioSymbols::new(&netio_profile)?;
-    let netio_base = netio_resolved.image_base;
+        .context("cannot load profile for ncrypt.dll")?;
 
-    // Compute virtual addresses and translation roots for all three breakpoints.
-    let nt_create_file_va = kernel_info.base_address + symbols.NtCreateFile;
-    let kfd_is_layer_empty_va = netio_base + netio_symbols.KfdIsLayerEmpty;
-    let kfd_classify_va = netio_base + netio_symbols.KfdClassify;
+    // The `SymbolCache` holds the resolved `isr::Entry` items.
+    let mut cache = SymbolCache::default();
+    let modules = ModuleResolver::default()
+        // `with_kernel` MUST be called if `Event` variants reference kernel
+        // symbols - like `NtWriteFile` in this example.
+        //
+        // This is because the "kernel" module is always optional.
+        .with_kernel(kernel_info.base_address, profile)
+        .with_module_in_process(
+            Module::NcryptDll,
+            ncrypt_process,
+            ncrypt_resolved.image_base,
+            ncrypt_profile,
+        )
+        // This will automatically resolve the `netio.sys` module and load
+        // its profile.
+        //
+        // Note that if we hadn't called `with_module_in_process` for
+        // `ncrypt.dll`, it would also be automatically resolved here.
+        .resolve(&session, &isr, &mut cache)?;
 
-    // All three breakpoints are installed. KfdIsLayerEmpty forces the ALE
-    // auth/flow layers active so that KfdClassify is reached and logged.
-    let breakpoints = [
-        BreakpointSpec {
-            va: nt_create_file_va,
-            root: registers.translation_root(nt_create_file_va),
-            tag: "NtCreateFile",
-        },
-        BreakpointSpec {
-            va: kfd_classify_va,
-            root: registers.translation_root(kfd_classify_va),
-            tag: "KfdClassify",
-        },
-        BreakpointSpec {
-            va: kfd_is_layer_empty_va,
-            root: registers.translation_root(kfd_is_layer_empty_va),
-            tag: "KfdIsLayerEmpty",
-        },
-    ];
+    // Finally, we collect the events according to the resolved information
+    // and the metadata.
+    //
+    // For example, if some module/event is marked as `optional` and the
+    // resolver fails to resolve it, then it will simply not be included
+    // in the `events`.
+    let mut events = modules.into_events()?;
 
-    // And we're ready to create the reactor!
-    // The stealth constructor keeps the breakpoint page execute-only so a
-    // PatchGuard read is served the clean bytes, and on this 16K host it marks
-    // the fused neighbor guest pages for in-kernel auto-step, so a hot target
-    // like NtCreateFile does not storm the agent with mem-access events.
+    // Diagnostic: VMI_BUGCHECK_ONLY drops every hook except nt!KeBugCheckEx, so
+    // the reactor can re-attach during the post-detach window with near-zero
+    // perturbation and catch the stop code of a guest reset.
+    if std::env::var_os("VMI_BUGCHECK_ONLY").is_some() {
+        events.retain(|event| matches!(&event.event, Event::KeBugCheckEx));
+        tracing::warn!("VMI_BUGCHECK_ONLY: monitoring only nt!KeBugCheckEx");
+    }
+
+    // Stealth (execute-only) by default; VMI_NO_STEALTH=1 selects the
+    // RWX-safe bring-up path, which cannot storm but lets a PatchGuard-style
+    // read see the planted bytes. On this 16K host the stealth path marks
+    // the fused neighbor guest pages for in-kernel auto-step so a hot target
+    // does not storm the agent.
+    let stealth = std::env::var_os("VMI_NO_STEALTH").is_none();
+
     session.handle(|session| {
-        Ok(ReactorArm64::new(session, NetIo::default(), &breakpoints)?
-            .with_termination_flag(terminate_flag))
+        let reactor = if stealth {
+            ReactorArm64::new(session, handler, &events)?
+        }
+        else {
+            ReactorArm64::new_without_stealth(session, handler, &events)?
+        };
+        Ok(reactor.with_termination_flag(terminate_flag))
     })?;
 
     Ok(())

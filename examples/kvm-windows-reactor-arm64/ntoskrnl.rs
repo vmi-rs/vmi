@@ -1,0 +1,95 @@
+use vmi::{
+    VmiContext, VmiError, VmiOs,
+    driver::VmiRead,
+    os::windows::{ArchAdapter, WindowsFileObject, WindowsOs, WindowsOsExt as _},
+    trace::Hex,
+    utils::reactor::Action,
+};
+
+/// Demonstrates how to monitor `NtWriteFile` calls in the kernel and log the
+/// full path of the file being written to.
+pub fn NtWriteFile<Driver>(
+    vmi: &VmiContext<WindowsOs<Driver>>,
+) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    //
+    // NTSTATUS
+    // NTAPI
+    // NtWriteFile(
+    //     _In_ HANDLE FileHandle,
+    //     _In_opt_ HANDLE Event,
+    //     _In_opt_ PIO_APC_ROUTINE ApcRoutine,
+    //     _In_opt_ PVOID ApcContext,
+    //     _Out_ PIO_STATUS_BLOCK IoStatusBlock,
+    //     _In_reads_bytes_(Length) PVOID Buffer,
+    //     _In_ ULONG Length,
+    //     _In_opt_ PLARGE_INTEGER ByteOffset,
+    //     _In_opt_ PULONG Key
+    //     );
+    //
+
+    let FileHandle = vmi.os().function_argument(0)?;
+
+    // Check if we have to look for the object in the kernel handle table
+    // or the current process handle table.
+    let owning_process = match vmi.os().is_kernel_handle(FileHandle)? {
+        true => vmi.os().system_process()?,
+        false => vmi.os().current_process()?,
+    };
+
+    let file_object = match owning_process.lookup_object::<WindowsFileObject<_>>(FileHandle)? {
+        Some(file_object) => file_object,
+        None => {
+            tracing::error!(handle = %Hex(FileHandle), "cannot find file object");
+            return Ok(Action::default());
+        }
+    };
+
+    let path = file_object.full_path()?;
+    tracing::info!(handle = %Hex(FileHandle), path);
+
+    Ok(Action::default())
+}
+
+/// Catches a guest bugcheck by hooking `nt!KeBugCheckEx` and logging the stop
+/// code with its four parameters. Diagnostic hook used to attribute guest
+/// resets.
+pub fn KeBugCheckEx<Driver>(
+    vmi: &VmiContext<WindowsOs<Driver>>,
+) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    //
+    // VOID
+    // NTAPI
+    // KeBugCheckEx(
+    //     _In_ ULONG BugCheckCode,
+    //     _In_ ULONG_PTR BugCheckParameter1,
+    //     _In_ ULONG_PTR BugCheckParameter2,
+    //     _In_ ULONG_PTR BugCheckParameter3,
+    //     _In_ ULONG_PTR BugCheckParameter4
+    //     );
+    //
+
+    let code = vmi.os().function_argument(0)?;
+    let parameter1 = vmi.os().function_argument(1)?;
+    let parameter2 = vmi.os().function_argument(2)?;
+    let parameter3 = vmi.os().function_argument(3)?;
+    let parameter4 = vmi.os().function_argument(4)?;
+
+    tracing::error!(
+        code = %Hex(code),
+        parameter1 = %Hex(parameter1),
+        parameter2 = %Hex(parameter2),
+        parameter3 = %Hex(parameter3),
+        parameter4 = %Hex(parameter4),
+        "guest bugcheck"
+    );
+
+    Ok(Action::default())
+}

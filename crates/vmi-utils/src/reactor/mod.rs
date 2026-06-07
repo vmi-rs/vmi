@@ -31,6 +31,7 @@ pub mod macros;
 mod module;
 mod profile;
 
+#[cfg(feature = "arch-amd64")]
 use std::{
     cell::RefCell,
     sync::{
@@ -39,11 +40,14 @@ use std::{
     },
 };
 
+#[cfg(feature = "arch-amd64")]
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
+use vmi_core::{Architecture, VmiContext, VmiError, VmiEventResponse, VmiOs};
+#[cfg(feature = "arch-amd64")]
 use vmi_core::{
-    Architecture, MemoryAccess, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiOs,
-    VmiSession, driver::VmiFullDriver, os::VmiOsProcess as _,
+    MemoryAccess, View, VmiHandler, VmiSession, driver::VmiFullDriver, os::VmiOsProcess as _,
 };
+#[cfg(feature = "arch-amd64")]
 use vmi_os_windows::WindowsOs;
 
 pub use self::{
@@ -51,6 +55,7 @@ pub use self::{
     module::{ModuleMetadata, ModuleMode, ModuleProcessFilter, ReactorModule, ResolvedModule},
     profile::ProfileRef,
 };
+#[cfg(feature = "arch-amd64")]
 use super::{
     bpm::{Breakpoint, BreakpointController, BreakpointManager},
     ptm::{self, PageTableMonitor},
@@ -108,6 +113,7 @@ where
 
 /// VMI event loop that delivers breakpoint hits at handler-declared symbols
 /// to a [`ReactorHandler`].
+#[cfg(feature = "arch-amd64")]
 pub struct Reactor<Os, Handler>
 where
     Os: VmiOs + 'static,
@@ -135,6 +141,7 @@ where
     termination_flag: Option<Arc<AtomicBool>>,
 }
 
+#[cfg(feature = "arch-amd64")]
 impl<Driver, Handler> Reactor<WindowsOs<Driver>, Handler>
 where
     Driver: VmiFullDriver<Architecture = Amd64>, // TODO: relax this to any architecture
@@ -376,6 +383,7 @@ where
     }
 }
 
+#[cfg(feature = "arch-amd64")]
 impl<Driver, Handler> VmiHandler<WindowsOs<Driver>> for Reactor<WindowsOs<Driver>, Handler>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
