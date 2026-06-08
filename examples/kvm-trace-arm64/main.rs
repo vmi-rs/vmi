@@ -1,15 +1,17 @@
-//! arm64 module/export dumper for a single process in a Windows-on-ARM guest.
+//! arm64 library-call tracer for a single process in a Windows-on-ARM guest.
 //!
 //! Detects when the target process (`procexp64a.exe`) is scheduled by
 //! monitoring `TTBR0_EL1` writes (the arm64 CR3 analog) via
-//! `KVM_VMI_EVENT_SYSREG`, and uses two RW-only alternate views that ping-pong
-//! on execute faults to catch the kernel<->user boundary. On the first
-//! transition into user mode, where the target's user address space is live,
-//! it enumerates every module (DLL) loaded in the process and prints each
-//! module's exported symbols, then exits. Export pages that are paged out are
-//! faulted in on demand by injecting a synchronous data abort (the AArch64
-//! page-fault analog) at the missing address and re-reading on a later
-//! transition.
+//! `KVM_VMI_EVENT_SYSREG`, then partitions execution with two RW-only views:
+//! the target image's own code is executable only in the `target` view, and
+//! all other code (DLLs, kernel) only in the `system` view. Each call out of
+//! the target image faults into the `system` view; the faulting address is
+//! resolved against the process's exports and printed as `module!function`.
+//!
+//! Exports are gathered on the fly from every loaded module's PE export
+//! directory. Export pages that are paged out are faulted in on demand by
+//! injecting a synchronous data abort (the AArch64 page-fault analog) at the
+//! missing address and re-reading on a later fault.
 //!
 //! # Usage
 //! ```text
@@ -17,6 +19,7 @@
 //! ```
 
 use std::{
+    collections::HashMap,
     os::fd::AsFd,
     sync::{
         Arc,
@@ -80,9 +83,18 @@ fn is_kernel(va: u64) -> bool {
     (va >> 55) & 1 != 0
 }
 
-/// Per-module dump state accumulated across transitions.
+/// A resolved export: the module that provides it and the function name.
+struct Export {
+    /// Base DLL name of the providing module.
+    module: String,
+
+    /// Exported function name.
+    function: String,
+}
+
+/// Per-module export-gather state accumulated across faults.
 struct ModuleDump {
-    /// Base DLL name.
+    /// Base DLL name, used to qualify resolved export names.
     name: String,
 
     /// Image base address.
@@ -91,9 +103,8 @@ struct ModuleDump {
     /// Image size in bytes.
     size: u64,
 
-    /// Resolved exports as (address, name), once readable. `None` while still
-    /// pending a page-in.
-    exports: Option<Vec<(Va, String)>>,
+    /// Set once the module's exports have been read into the export map.
+    done: bool,
 
     /// Terminal note when the exports could not be read.
     note: Option<&'static str>,
@@ -104,20 +115,17 @@ struct ModuleDump {
 
     /// Passes spent waiting on `injected_va` to become resident.
     stalls: u32,
-
-    /// Whether any page-fault injection was used to read this module.
-    used_injection: bool,
 }
 
-/// User/kernel transition tracer for one process.
+/// Library-call tracer for one process.
 struct Tracer {
     /// Unmodified RWX host mapping; selected when the target is not scheduled.
     default: View,
 
-    /// RW-only view representing kernel-side execution of the target.
+    /// View in which non-target (library and kernel) code is executable.
     system: View,
 
-    /// RW-only view representing user-side execution of the target.
+    /// View in which the target image's own code is executable.
     target: View,
 
     /// Target process translation root, masked with `TTBR_BADDR_MASK`.
@@ -126,15 +134,29 @@ struct Tracer {
     /// Target process ID, used to locate the process for module enumeration.
     target_pid: u32,
 
-    /// Number of observed user<->kernel transitions.
-    transitions: u64,
+    /// Low (inclusive) VA of the target's main image.
+    image_lo: u64,
 
-    /// Per-module dump state. `None` until the first user-mode entry captures
+    /// High (exclusive) VA of the target's main image.
+    image_hi: u64,
+
+    /// Resolved exports across all modules, keyed by absolute VA, for fast
+    /// call-target lookup.
+    exports: HashMap<u64, Export>,
+
+    /// Per-module export-gather state. `None` until the first fault captures
     /// the loaded-module list.
-    dump: Option<Vec<ModuleDump>>,
+    modules: Option<Vec<ModuleDump>>,
 
-    /// Total dump passes executed, bounding total retries.
+    /// Total gather passes executed, bounding total retries.
     dump_passes: u32,
+
+    /// Set once the export map is fully gathered, after which call tracing
+    /// begins.
+    dump_complete: bool,
+
+    /// Number of observed target->system transitions (calls out of the image).
+    transitions: u64,
 
     /// Set when a termination signal is received.
     terminate: Arc<AtomicBool>,
@@ -154,39 +176,41 @@ impl VmiHandler<WindowsOs<Driver>> for Tracer {
             // Execute fault: only fires in the RW system/target views.
             EventReason::MemoryAccess(m) => {
                 let pc = vmi.event().registers().pc;
-                let pc_kernel = is_kernel(pc);
                 let cur = vmi.event().view();
                 let gfn = Arm64::gfn_from_pa(m.pa);
 
-                if cur == Some(self.system) {
-                    if pc_kernel {
-                        let _ = vmi.set_memory_access(gfn, self.system, MemoryAccess::RWX);
-                        VmiEventResponse::default()
-                    }
-                    else {
-                        // Reached user mode with the target scheduled: its user
-                        // address space is live, so drive the module/export dump
-                        // (enumerate, then fault in and re-read paged-out export
-                        // pages over later transitions). Terminates when done.
-                        self.advance_dump(&vmi);
-                        self.transitions += 1;
-                        tracing::trace!("KERNEL->USER pc={pc:#x}");
-                        VmiEventResponse::default().with_view(self.target)
-                    }
+                // Advance the background export gather only at a user-mode PC.
+                // There the guest is in the target's user context (EL0), the
+                // safe point for the page-fault injection: injecting a
+                // synchronous abort at a kernel PC (EL1) clobbers the in-flight
+                // EL1 exception-return state and wedges the guest.
+                if !self.dump_complete && !is_kernel(pc) {
+                    self.advance_dump(&vmi);
                 }
-                else if cur == Some(self.target) {
-                    if pc_kernel {
-                        self.transitions += 1;
-                        tracing::trace!("USER->KERNEL pc={pc:#x}");
-                        VmiEventResponse::default().with_view(self.system)
-                    }
-                    else {
-                        let _ = vmi.set_memory_access(gfn, self.target, MemoryAccess::RWX);
-                        VmiEventResponse::default()
-                    }
+
+                if self.in_target_image(pc) {
+                    // The target's own code: executable in the target view,
+                    // trapping (RW) in the system view. Run it in the target.
+                    let _ = vmi.set_memory_access(gfn, self.target, MemoryAccess::RWX);
+                    let _ = vmi.set_memory_access(gfn, self.system, MemoryAccess::RW);
+                    VmiEventResponse::default().with_view(self.target)
                 }
                 else {
-                    VmiEventResponse::default()
+                    // Library or kernel code: executable in the system view,
+                    // trapping in the target view. A fault here while in the
+                    // target view is the target calling out; resolve the call
+                    // target against the gathered exports.
+                    let _ = vmi.set_memory_access(gfn, self.system, MemoryAccess::RWX);
+                    let _ = vmi.set_memory_access(gfn, self.target, MemoryAccess::RW);
+                    if cur == Some(self.target) {
+                        self.transitions += 1;
+                        if self.dump_complete {
+                            if let Some(export) = self.exports.get(&pc) {
+                                println!("{}!{}", export.module, export.function);
+                            }
+                        }
+                    }
+                    VmiEventResponse::default().with_view(self.system)
                 }
             }
             _ => VmiEventResponse::default(),
@@ -204,70 +228,100 @@ impl VmiHandler<WindowsOs<Driver>> for Tracer {
 
 impl Drop for Tracer {
     fn drop(&mut self) {
-        tracing::info!(transitions = self.transitions, "trace summary");
+        tracing::info!(
+            transitions = self.transitions,
+            functions = self.exports.len(),
+            "trace summary"
+        );
     }
 }
 
 impl Tracer {
-    /// Advances the module/export dump by one step on a user-mode entry.
+    /// Returns true if `pc` falls inside the target process's main image.
+    fn in_target_image(&self, pc: u64) -> bool {
+        pc >= self.image_lo && pc < self.image_hi
+    }
+
+    /// Advances the background export gather by one step on a fault.
     ///
-    /// The first call captures the loaded-module list. Each call then tries to
-    /// read the exports of the first still-pending module. A translation fault
-    /// triggers a page-fault injection at the missing VA so the guest pages it
-    /// in, to be re-read on a later call. When every module is resolved (or has
-    /// given up) it prints the dump and requests teardown.
+    /// The first call captures the loaded-module list and the target image
+    /// range. Each call then reads the exports of the first still-pending
+    /// module into the export map. A translation fault triggers a page-fault
+    /// injection at the missing VA so the guest pages it in, to be re-read on
+    /// a later call. When every module is resolved (or has given up), the map
+    /// is marked complete and call tracing begins.
+    ///
+    /// Must be called only at a user-mode PC, so the injected abort is
+    /// delivered in the target's EL0 context. Injecting at a kernel PC (EL1)
+    /// corrupts the in-flight EL1 exception state and wedges the guest.
     fn advance_dump(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) {
-        if self.dump.is_none() {
+        if self.modules.is_none() {
             match self.capture_modules(vmi) {
-                Ok(modules) => self.dump = Some(modules),
+                Ok(modules) => {
+                    if let Some(image) = modules
+                        .iter()
+                        .find(|module| module.name.eq_ignore_ascii_case(TARGET_NAME))
+                    {
+                        self.image_lo = image.base.0;
+                        self.image_hi = image.base.0 + image.size;
+                    }
+                    self.modules = Some(modules);
+                }
                 Err(err) => {
-                    tracing::error!(%err, "failed to enumerate modules");
-                    self.terminate.store(true, Ordering::Relaxed);
+                    tracing::error!(%err, "failed to enumerate modules; tracing disabled");
+                    self.dump_complete = true;
                     return;
                 }
             }
         }
 
         self.dump_passes += 1;
-        let give_up = self.dump_passes >= MAX_DUMP_PASSES;
+        if self.dump_passes >= MAX_DUMP_PASSES {
+            self.dump_complete = true;
+            tracing::warn!(
+                functions = self.exports.len(),
+                "gather pass budget exhausted; tracing with a partial export map"
+            );
+            return;
+        }
         let vcpu = vmi.event().vcpu_id();
-        let target_pid = self.target_pid;
-        let modules = self.dump.as_mut().expect("module list captured above");
 
-        let index = match modules
+        let index = match self
+            .modules
+            .as_ref()
+            .expect("module list captured above")
             .iter()
-            .position(|module| module.exports.is_none() && module.note.is_none())
+            .position(|module| !module.done && module.note.is_none())
         {
             Some(index) => index,
             None => {
-                print_dump(target_pid, modules);
-                self.terminate.store(true, Ordering::Relaxed);
+                self.dump_complete = true;
+                tracing::info!(
+                    functions = self.exports.len(),
+                    "export map ready; tracing calls"
+                );
                 return;
             }
         };
+        let base = self.modules.as_ref().unwrap()[index].base;
 
-        let module = &mut modules[index];
-
-        if give_up {
-            module.note = Some("paged out (dump pass budget exhausted)");
-            return;
-        }
-
-        match vmi
-            .os()
-            .image(module.base)
-            .and_then(|image| image.exports())
-        {
-            Ok(exports) => {
-                module.exports = Some(
-                    exports
-                        .into_iter()
-                        .map(|symbol| (symbol.address, symbol.name))
-                        .collect(),
-                );
+        match vmi.os().image(base).and_then(|image| image.exports()) {
+            Ok(symbols) => {
+                let module = self.modules.as_ref().unwrap()[index].name.clone();
+                for symbol in symbols {
+                    self.exports.insert(
+                        symbol.address.0,
+                        Export {
+                            module: module.clone(),
+                            function: symbol.name,
+                        },
+                    );
+                }
+                self.modules.as_mut().unwrap()[index].done = true;
             }
             Err(VmiError::Translation(pfs)) => {
                 let va = pfs[0].va;
+                let module = &mut self.modules.as_mut().unwrap()[index];
                 if module.injected_va == Some(va) {
                     // Page-in already requested for this VA; wait for it.
                     module.stalls += 1;
@@ -278,7 +332,6 @@ impl Tracer {
                 else {
                     module.injected_va = Some(va);
                     module.stalls = 0;
-                    module.used_injection = true;
                     if let Err(err) = vmi
                         .core()
                         .inject_interrupt(vcpu, Interrupt::page_fault(va.0))
@@ -289,7 +342,7 @@ impl Tracer {
                 }
             }
             Err(_) => {
-                module.note = Some("exports unreadable");
+                self.modules.as_mut().unwrap()[index].note = Some("exports unreadable");
             }
         }
     }
@@ -320,11 +373,10 @@ impl Tracer {
                     name: module.name()?,
                     base: module.base_address()?,
                     size: module.size()?,
-                    exports: None,
+                    done: false,
                     note: None,
                     injected_va: None,
                     stalls: 0,
-                    used_injection: false,
                 });
             }
             return Ok(modules);
@@ -333,57 +385,6 @@ impl Tracer {
         tracing::warn!(pid = self.target_pid, "target process not found");
         Ok(Vec::new())
     }
-}
-
-/// Prints the captured module list, each module followed by its exports.
-fn print_dump(target_pid: u32, modules: &[ModuleDump]) {
-    let total_modules = modules.len();
-    let mut export_total = 0usize;
-    let mut injected = 0usize;
-    let mut unavailable = 0usize;
-
-    println!();
-    println!(
-        "==== {} (pid {}) modules and exports ====",
-        TARGET_NAME, target_pid
-    );
-
-    for module in modules {
-        let tag = if module.used_injection {
-            " [paged in via fault injection]"
-        }
-        else {
-            ""
-        };
-
-        println!();
-        println!(
-            "{} @ {} (size {:#x}){}",
-            module.name, module.base, module.size, tag
-        );
-
-        if let Some(exports) = &module.exports {
-            for (address, name) in exports {
-                println!("    {address} {name}");
-            }
-            export_total += exports.len();
-        }
-
-        if let Some(note) = module.note {
-            println!("    <{note}>");
-            unavailable += 1;
-        }
-
-        if module.used_injection {
-            injected += 1;
-        }
-    }
-
-    println!();
-    println!(
-        "==== {total_modules} modules, {export_total} exports total; \
-         {injected} needed page-in, {unavailable} unavailable ===="
-    );
 }
 
 fn main() -> Result<(), Error> {
@@ -452,9 +453,13 @@ fn main() -> Result<(), Error> {
             target,
             target_root,
             target_pid: target_pid.0,
-            transitions: 0,
-            dump: None,
+            image_lo: 0,
+            image_hi: 0,
+            exports: HashMap::new(),
+            modules: None,
             dump_passes: 0,
+            dump_complete: false,
+            transitions: 0,
             terminate: terminate.clone(),
         })
     })?;
