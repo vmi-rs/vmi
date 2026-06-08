@@ -5,17 +5,17 @@ use crate::AddressContext;
 
 impl_ops! {
     /// A Guest Frame Number.
-    Gfn, u64
+    pub struct Gfn(pub u64);
 }
 
 impl_ops! {
     /// A Guest Physical Address.
-    Pa, u64
+    pub struct Pa(pub u64);
 }
 
 impl_ops! {
     /// A Guest Virtual Address.
-    Va, u64
+    pub struct Va(pub u64);
 }
 
 impl Va {

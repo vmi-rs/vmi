@@ -1,7 +1,7 @@
 macro_rules! impl_ops {
     (
         $(#[$meta:meta])*
-        $name:ident, $type:ty
+        $vis:vis struct $name:ident($inner_vis:vis $inner:ty);
     ) => {
         $(#[$meta])*
         #[derive(
@@ -16,31 +16,31 @@ macro_rules! impl_ops {
             ::serde::Serialize,
             ::serde::Deserialize,
         )]
-        pub struct $name(pub $type);
+        $vis struct $name($inner_vis $inner);
 
         impl $name {
             #[doc = concat!("Creates a new instance of the `", stringify!($name), "` type.")]
-            pub const fn new(value: $type) -> Self {
+            pub const fn new(value: $inner) -> Self {
                 Self(value)
             }
         }
 
-        impl From<$type> for $name {
-            fn from(value: $type) -> Self {
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
                 Self(value)
             }
         }
 
-        impl From<$name> for $type {
-            fn from(value: $name) -> $type {
+        impl From<$name> for $inner {
+            fn from(value: $name) -> $inner {
                 value.0
             }
         }
 
-        impl ::std::ops::Add<$type> for $name {
+        impl ::std::ops::Add<$inner> for $name {
             type Output = $name;
 
-            fn add(self, rhs: $type) -> Self::Output {
+            fn add(self, rhs: $inner) -> Self::Output {
                 Self(self.0 + rhs)
             }
         }
@@ -53,8 +53,8 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::AddAssign<$type> for $name {
-            fn add_assign(&mut self, rhs: $type) {
+        impl ::std::ops::AddAssign<$inner> for $name {
+            fn add_assign(&mut self, rhs: $inner) {
                 self.0 += rhs;
             }
         }
@@ -65,10 +65,10 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::Sub<$type> for $name {
+        impl ::std::ops::Sub<$inner> for $name {
             type Output = $name;
 
-            fn sub(self, rhs: $type) -> Self::Output {
+            fn sub(self, rhs: $inner) -> Self::Output {
                 Self(self.0 - rhs)
             }
         }
@@ -81,8 +81,8 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::SubAssign<$type> for $name {
-            fn sub_assign(&mut self, rhs: $type) {
+        impl ::std::ops::SubAssign<$inner> for $name {
+            fn sub_assign(&mut self, rhs: $inner) {
                 self.0 -= rhs;
             }
         }
@@ -93,10 +93,10 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::Mul<$type> for $name {
+        impl ::std::ops::Mul<$inner> for $name {
             type Output = $name;
 
-            fn mul(self, rhs: $type) -> Self::Output {
+            fn mul(self, rhs: $inner) -> Self::Output {
                 Self(self.0 * rhs)
             }
         }
@@ -109,8 +109,8 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::MulAssign<$type> for $name {
-            fn mul_assign(&mut self, rhs: $type) {
+        impl ::std::ops::MulAssign<$inner> for $name {
+            fn mul_assign(&mut self, rhs: $inner) {
                 self.0 *= rhs;
             }
         }
@@ -121,10 +121,10 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::Div<$type> for $name {
+        impl ::std::ops::Div<$inner> for $name {
             type Output = $name;
 
-            fn div(self, rhs: $type) -> Self::Output {
+            fn div(self, rhs: $inner) -> Self::Output {
                 Self(self.0 / rhs)
             }
         }
@@ -137,8 +137,8 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::DivAssign<$type> for $name {
-            fn div_assign(&mut self, rhs: $type) {
+        impl ::std::ops::DivAssign<$inner> for $name {
+            fn div_assign(&mut self, rhs: $inner) {
                 self.0 /= rhs;
             }
         }
@@ -149,37 +149,37 @@ macro_rules! impl_ops {
             }
         }
 
-        impl ::std::ops::BitAnd<$type> for $name {
+        impl ::std::ops::BitAnd<$inner> for $name {
             type Output = $name;
 
-            fn bitand(self, rhs: $type) -> Self::Output {
+            fn bitand(self, rhs: $inner) -> Self::Output {
                 Self(self.0 & rhs)
             }
         }
 
-        impl ::std::ops::BitAndAssign<$type> for $name {
-            fn bitand_assign(&mut self, rhs: $type) {
+        impl ::std::ops::BitAndAssign<$inner> for $name {
+            fn bitand_assign(&mut self, rhs: $inner) {
                 self.0 &= rhs;
             }
         }
 
-        impl ::std::ops::BitOr<$type> for $name {
+        impl ::std::ops::BitOr<$inner> for $name {
             type Output = $name;
 
-            fn bitor(self, rhs: $type) -> Self::Output {
+            fn bitor(self, rhs: $inner) -> Self::Output {
                 Self(self.0 | rhs)
             }
         }
 
-        impl ::std::ops::BitOrAssign<$type> for $name {
-            fn bitor_assign(&mut self, rhs: $type) {
+        impl ::std::ops::BitOrAssign<$inner> for $name {
+            fn bitor_assign(&mut self, rhs: $inner) {
                 self.0 |= rhs;
             }
         }
 
         impl ::std::fmt::Debug for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                match ::std::mem::size_of::<$type>() {
+                match ::std::mem::size_of::<$inner>() {
                     1 => write!(f, "0x{:02x}", self.0),
                     2 => write!(f, "0x{:04x}", self.0),
                     4 => write!(f, "0x{:08x}", self.0),
@@ -191,7 +191,7 @@ macro_rules! impl_ops {
 
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                match ::std::mem::size_of::<$type>() {
+                match ::std::mem::size_of::<$inner>() {
                     1 => write!(f, "0x{:02x}", self.0),
                     2 => write!(f, "0x{:04x}", self.0),
                     4 => write!(f, "0x{:08x}", self.0),
