@@ -195,7 +195,9 @@ utils-arm64 = [
 anyhow = { workspace = true }
 bitflags = { workspace = true }
 hex = { workspace = true }
+memmap2 = { workspace = true }
 signal-hook = { workspace = true }
+sigmd = { version = "0.1.0", default-features = false }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zerocopy = { workspace = true }

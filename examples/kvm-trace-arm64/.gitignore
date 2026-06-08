@@ -1,0 +1,3 @@
+# The sigmd signature database (assets/metadata.bin) is a large, machine-local
+# asset, not source. Symlink or copy it here, or point SIGMD_METADATA at it.
+/assets/
