@@ -295,3 +295,8 @@ required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]
 name = "kvm-monitor-arm64"
 path = "examples/kvm-monitor-arm64/main.rs"
 required-features = ["arch-arm64", "driver-kvm", "os-windows", "utils-arm64"]
+
+[[example]]
+name = "kvm-trace-arm64"
+path = "examples/kvm-trace-arm64/main.rs"
+required-features = ["arch-arm64", "driver-kvm", "os-windows"]
