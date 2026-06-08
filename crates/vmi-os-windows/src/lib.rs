@@ -703,6 +703,30 @@ where
         Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
     }
 
+    /// Returns the Kernel Processor Control Block (KPRCB) for the processor
+    /// whose register state is currently loaded.
+    ///
+    /// Unlike [`kprcb`](Self::kprcb), which indexes the `KiProcessorBlock`
+    /// array by processor ID, this resolves the PRCB from the current KPCR
+    /// (`gs`-relative on AMD64) through `KPCR.Prcb`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KPCR.Prcb`.
+    pub fn current_kprcb<'a>(
+        vmi: VmiState<'a, Self>,
+    ) -> Result<WindowsKernelProcessorBlock<'a, Driver>, VmiError> {
+        let KPCR = offset!(vmi, _KPCR);
+
+        let kpcr = Self::current_kpcr(vmi);
+        if kpcr.is_null() {
+            return Err(WindowsError::CorruptedStruct("KPCR").into());
+        }
+
+        let prcb = kpcr + KPCR.Prcb.offset();
+        Ok(WindowsKernelProcessorBlock::new(vmi, prcb))
+    }
+
     /// Returns information from an exception record at the specified address.
     ///
     /// This method reads and parses an `EXCEPTION_RECORD` structure from
@@ -810,23 +834,7 @@ where
     ///
     /// Corresponds to `KPCR.Prcb.IdleThread`.
     pub fn idle_thread<'a>(vmi: VmiState<'a, Self>) -> Result<WindowsThread<'a, Driver>, VmiError> {
-        let KPCR = offset!(vmi, _KPCR);
-        let KPRCB = offset!(vmi, _KPRCB);
-
-        let kpcr = Self::current_kpcr(vmi);
-
-        if kpcr.is_null() {
-            return Err(WindowsError::CorruptedStruct("KPCR").into());
-        }
-
-        let addr = kpcr + KPCR.Prcb.offset() + KPRCB.IdleThread.offset();
-        let result = vmi.read_va_native(addr)?;
-
-        if result.is_null() {
-            return Err(WindowsError::CorruptedStruct("KPCR.Prcb.IdleThread").into());
-        }
-
-        Ok(WindowsThread::new(vmi, ThreadObject(result)))
+        Self::current_kprcb(vmi)?.idle_thread()
     }
 
     /// Returns the virtual address of the Page Frame Number (PFN) database.
@@ -1747,23 +1755,7 @@ where
 
     /// Returns the current thread.
     fn current_thread(vmi: VmiState<'_, Self>) -> Result<Self::Thread<'_>, VmiError> {
-        let KPCR = offset!(vmi, _KPCR);
-        let KPRCB = offset!(vmi, _KPRCB);
-
-        let kpcr = Self::current_kpcr(vmi);
-
-        if kpcr.is_null() {
-            return Err(WindowsError::CorruptedStruct("KPCR").into());
-        }
-
-        let addr = kpcr + KPCR.Prcb.offset() + KPRCB.CurrentThread.offset();
-        let result = vmi.read_va_native(addr)?;
-
-        if result.is_null() {
-            return Err(WindowsError::CorruptedStruct("KPCR.Prcb.CurrentThread").into());
-        }
-
-        Ok(WindowsThread::new(vmi, ThreadObject(result)))
+        Self::current_kprcb(vmi)?.current_thread()
     }
 
     fn image(vmi: VmiState<'_, Self>, image_base: Va) -> Result<Self::Image<'_>, VmiError> {

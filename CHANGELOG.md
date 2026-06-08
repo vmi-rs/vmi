@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsProcess::exit_time` exposing `_EPROCESS.ExitTime`.
 - `WindowsDirectoryObject::child` for a direct single-component lookup
   within a directory.
+- `WindowsOs::current_kprcb` resolving the KPRCB from the current KPCR
+  (`KPCR.Prcb`), rather than indexing `KiProcessorBlock` by processor ID
+  as `WindowsOs::kprcb` does.
 - `WindowsOs::lookup_object` for resolving an absolute object-namespace
   path from the root directory.
 - `WindowsKernelProcessorBlock::processor_context_frame` exposing
