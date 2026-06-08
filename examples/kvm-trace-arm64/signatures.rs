@@ -15,7 +15,7 @@ use memmap2::Mmap;
 use sigmd::{Architecture, Database, Type, TypeKind};
 use vmi::{Va, VmiContext, os::windows::WindowsOs};
 
-use crate::Driver;
+use crate::{Driver, style::Palette};
 
 /// Maximum characters read when dereferencing a string argument, bounding the
 /// per-call guest read.
@@ -59,6 +59,7 @@ impl Signatures {
         &self,
         vmi: &VmiContext<WindowsOs<Driver>>,
         function: &str,
+        palette: &Palette,
     ) -> Option<String> {
         let func = self.db.bucket(Architecture::X64).function(function)?;
 
@@ -71,57 +72,60 @@ impl Signatures {
             // `function_argument` maps the declaration index to x0-x7 or the
             // stack above SP_EL0. A stack read can fault, which renders "?".
             let value = match vmi.os().function_argument(param.index() as u64) {
-                Ok(raw) => render_argument(vmi, param.ty(), raw),
+                Ok(raw) => render_argument(vmi, param.ty(), raw, palette),
                 Err(_) => String::from("?"),
             };
 
-            match param.name() {
-                Some(name) => {
-                    let _ = write!(out, "{name}={value}");
-                }
-                None => {
-                    let _ = write!(out, "arg{}={value}", param.index());
-                }
-            }
+            let name = match param.name() {
+                Some(name) => palette.arg_name(name),
+                None => palette.arg_name(&format!("arg{}", param.index())),
+            };
+            let _ = write!(out, "{name}{}{value}", palette.equals());
         }
         out.push(')');
         Some(out)
     }
 }
 
-/// Renders a single argument from its declared type and raw register value.
+/// Renders a single argument from its declared type and raw register value,
+/// colored by `palette` according to its category.
 ///
 /// Pointers print as `NULL` or `0x...`, except `char *` / `wchar_t *`, which
 /// are dereferenced into a quoted string. Scalars print by kind: signed as
 /// decimal, unsigned as hex, `bool` as `TRUE`/`FALSE`. A failed string
 /// dereference, or a value whose real home is a SIMD register (`f32`/`f64`,
-/// which AAPCS64 passes outside x0-x7), renders "?".
-fn render_argument(vmi: &VmiContext<WindowsOs<Driver>>, ty: Type<'_>, raw: u64) -> String {
+/// which AAPCS64 passes outside x0-x7), renders an uncolored "?".
+fn render_argument(
+    vmi: &VmiContext<WindowsOs<Driver>>,
+    ty: Type<'_>,
+    raw: u64,
+    palette: &Palette,
+) -> String {
     if ty.indirections() >= 1 {
         if raw == 0 {
-            return String::from("NULL");
+            return palette.null();
         }
         if ty.indirections() == 1 {
             match ty.kind() {
                 TypeKind::Char8 => {
                     return match vmi.read_string_limited(Va(raw), STRING_LIMIT) {
-                        Ok(string) => format!("{string:?}"),
+                        Ok(string) => palette.string(&format!("{string:?}")),
                         Err(_) => String::from("?"),
                     };
                 }
                 TypeKind::Char16 => {
                     return match vmi.read_string_utf16_limited(Va(raw), STRING_LIMIT) {
-                        Ok(string) => format!("{string:?}"),
+                        Ok(string) => palette.string(&format!("{string:?}")),
                         Err(_) => String::from("?"),
                     };
                 }
                 _ => {}
             }
         }
-        return format!("0x{raw:x}");
+        return palette.number(&format!("0x{raw:x}"));
     }
 
-    match ty.kind() {
+    let value = match ty.kind() {
         TypeKind::Bool => String::from(if raw & 0xff != 0 { "TRUE" } else { "FALSE" }),
         TypeKind::Char8 => format!("0x{:x}", raw as u8),
         TypeKind::Char16 => format!("0x{:x}", raw as u16),
@@ -133,9 +137,10 @@ fn render_argument(vmi: &VmiContext<WindowsOs<Driver>>, ty: Type<'_>, raw: u64) 
         TypeKind::U16 => format!("0x{:x}", raw as u16),
         TypeKind::U32 => format!("0x{:x}", raw as u32),
         TypeKind::U64 => format!("0x{raw:x}"),
-        TypeKind::F32 | TypeKind::F64 => String::from("?"),
+        TypeKind::F32 | TypeKind::F64 => return String::from("?"),
         TypeKind::Void | TypeKind::Unknown | TypeKind::Custom(_) => format!("0x{raw:x}"),
-    }
+    };
+    palette.number(&value)
 }
 
 /// Resolves the metadata database path: the `SIGMD_METADATA` override if set,

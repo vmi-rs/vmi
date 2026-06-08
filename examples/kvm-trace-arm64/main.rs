@@ -29,6 +29,7 @@
 //! variable.
 
 mod signatures;
+mod style;
 mod tracer;
 
 use std::{

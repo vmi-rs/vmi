@@ -7,6 +7,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
 use vmi::{
@@ -16,7 +17,11 @@ use vmi::{
     os::{VmiOsImage as _, VmiOsProcess as _, VmiOsUserModule as _, windows::WindowsOs},
 };
 
-use crate::{Driver, TARGET_NAME, TTBR_BADDR_MASK, signatures::Signatures};
+use crate::{
+    Driver, TARGET_NAME, TTBR_BADDR_MASK,
+    signatures::Signatures,
+    style::{Palette, stdout_supports_color},
+};
 
 /// Passes to wait for one injected page-in before giving up on a module's
 /// exports. At the observed transition rate this is a fraction of a second,
@@ -26,6 +31,9 @@ const PAGEIN_STALL_LIMIT: u32 = 4096;
 /// Hard cap on total dump passes, guaranteeing the dump terminates even if a
 /// page never faults in.
 const MAX_DUMP_PASSES: u32 = 200_000;
+
+/// Left-aligned column width for the module name, so function names line up.
+const MODULE_WIDTH: usize = 20;
 
 /// Returns true if `va` is a kernel (TTBR1) address.
 fn is_kernel(va: u64) -> bool {
@@ -110,6 +118,12 @@ pub struct Tracer {
     /// Windows API signatures used to render each call's arguments.
     signatures: Signatures,
 
+    /// Reference instant for the per-line timestamp.
+    start: Instant,
+
+    /// Output color scheme, disabled when stdout is not a terminal.
+    palette: Palette,
+
     /// Set when a termination signal is received.
     terminate: Arc<AtomicBool>,
 }
@@ -159,11 +173,20 @@ impl VmiHandler<WindowsOs<Driver>> for Tracer {
                         if self.dump_complete
                             && let Some(export) = self.exports.get(&pc)
                         {
-                            match self.signatures.format_call(&vmi, &export.function) {
+                            let secs = self.start.elapsed().as_secs_f64();
+                            let timestamp = self.palette.timestamp(&format!("[{secs:7.3}]"));
+                            let name = export.module.to_lowercase();
+                            let pad = " ".repeat(MODULE_WIDTH.saturating_sub(name.chars().count()));
+                            let module = self.palette.module(&name);
+                            let function = self.palette.function(&export.function);
+                            match self
+                                .signatures
+                                .format_call(&vmi, &export.function, &self.palette)
+                            {
                                 Some(args) => {
-                                    println!("{}!{} {}", export.module, export.function, args)
+                                    println!("{timestamp} {module}{pad} {function} {args}")
                                 }
-                                None => println!("{}!{}", export.module, export.function),
+                                None => println!("{timestamp} {module}{pad} {function}"),
                             }
                         }
                     }
@@ -218,6 +241,8 @@ impl Tracer {
             dump_complete: false,
             transitions: 0,
             signatures,
+            start: Instant::now(),
+            palette: Palette::new(stdout_supports_color()),
             terminate,
         }
     }
