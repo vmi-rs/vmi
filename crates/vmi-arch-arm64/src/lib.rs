@@ -14,7 +14,10 @@ use vmi_core::{
 
 pub use self::{
     address::{ttbr_base, ttbr_base_frame},
-    event::{EventInterrupt, EventMemoryAccess, EventMonitor, EventReason, EventSinglestep},
+    event::{
+        EventInterrupt, EventMemoryAccess, EventMonitor, EventReason, EventSinglestep,
+        EventWriteSystemRegister, SystemRegister,
+    },
     interrupt::{Interrupt, InterruptType},
     paging::{Granule, PageTableEntry, PageTableLevel, TranslationControl},
     registers::{GpRegisters, Registers},
