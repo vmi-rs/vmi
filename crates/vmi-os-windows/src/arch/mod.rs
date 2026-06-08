@@ -19,6 +19,20 @@ pub trait ArchAdapter<Driver>: Architecture
 where
     Driver: VmiRead<Architecture = Self>,
 {
+    /// Locates the Windows kernel image by scanning backward from the
+    /// syscall entry point.
+    ///
+    /// Returns the kernel's base address, OS version, and CodeView debug
+    /// information if found.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Scans backward from `MSR_LSTAR` (up to 32 MB)
+    fn find_kernel(
+        vmi: &VmiCore<Driver>,
+        registers: &<Driver::Architecture as Architecture>::Registers,
+    ) -> Result<Option<WindowsKernelInformation>, VmiError>;
+
     /// Reads a syscall argument by index from the current register state.
     ///
     /// Index 0 is the first argument.
@@ -46,20 +60,6 @@ where
     ///
     /// - **AMD64**: `RAX`
     fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError>;
-
-    /// Locates the Windows kernel image by scanning backward from the
-    /// syscall entry point.
-    ///
-    /// Returns the kernel's base address, OS version, and CodeView debug
-    /// information if found.
-    ///
-    /// # Architecture-specific
-    ///
-    /// - **AMD64**: Scans backward from `MSR_LSTAR` (up to 32 MB)
-    fn find_kernel(
-        vmi: &VmiCore<Driver>,
-        registers: &<Driver::Architecture as Architecture>::Registers,
-    ) -> Result<Option<WindowsKernelInformation>, VmiError>;
 
     /// Returns the kernel image base address, caching the result for
     /// subsequent calls.

@@ -81,39 +81,6 @@ impl<Driver> ArchAdapter<Driver> for Amd64
 where
     Driver: VmiRead<Architecture = Self>,
 {
-    fn syscall_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
-        let registers = vmi.registers();
-
-        match index {
-            0 => Ok(registers.r10),
-            1 => Ok(registers.rdx),
-            2 => Ok(registers.r8),
-            3 => Ok(registers.r9),
-            _ => {
-                let index = index + 1;
-                let stack = registers.rsp + index * size_of::<u64>() as u64;
-                vmi.read_u64(stack.into())
-            }
-        }
-    }
-
-    fn function_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
-        let registers = vmi.registers();
-
-        if registers.cs.access.long_mode() {
-            function_argument_x64(vmi, index)
-        }
-        else {
-            function_argument_x86(vmi, index)
-        }
-    }
-
-    fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError> {
-        let registers = vmi.registers();
-
-        Ok(registers.rax)
-    }
-
     fn find_kernel(
         vmi: &VmiCore<Driver>,
         registers: &Registers,
@@ -175,6 +142,39 @@ where
         );
 
         Ok(None)
+    }
+
+    fn syscall_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
+        match index {
+            0 => Ok(registers.r10),
+            1 => Ok(registers.rdx),
+            2 => Ok(registers.r8),
+            3 => Ok(registers.r9),
+            _ => {
+                let index = index + 1;
+                let stack = registers.rsp + index * size_of::<u64>() as u64;
+                vmi.read_u64(stack.into())
+            }
+        }
+    }
+
+    fn function_argument(vmi: VmiState<WindowsOs<Driver>>, index: u64) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
+        if registers.cs.access.long_mode() {
+            function_argument_x64(vmi, index)
+        }
+        else {
+            function_argument_x86(vmi, index)
+        }
+    }
+
+    fn function_return_value(vmi: VmiState<WindowsOs<Driver>>) -> Result<u64, VmiError> {
+        let registers = vmi.registers();
+
+        Ok(registers.rax)
     }
 
     fn kernel_image_base(vmi: VmiState<WindowsOs<Driver>>) -> Result<Va, VmiError> {
