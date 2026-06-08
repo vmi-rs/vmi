@@ -160,8 +160,8 @@ impl ArchAdapter for Arm64 {
             esr: interrupt.esr,
             iabt: false,
             has_esr: interrupt.esr != 0,
-            fsc: 0,
-            write: false,
+            fsc: interrupt.fsc,
+            write: interrupt.write,
         };
         driver.session.inject_event(arg).map_err(VmiError::driver)
     }

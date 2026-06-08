@@ -23,6 +23,8 @@ fn breakpoint_reason(bp: KvmBreakpointEvent) -> EventReason {
             typ: InterruptType::Synchronous,
             esr: 0,
             far: 0,
+            fsc: 0,
+            write: false,
         },
     })
 }
