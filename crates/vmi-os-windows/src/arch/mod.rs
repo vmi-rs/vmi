@@ -1,7 +1,10 @@
 mod amd64;
 mod context;
 
-use vmi_core::{AccessContext, Architecture, Va, VmiCore, VmiError, VmiState, driver::VmiRead};
+use vmi_core::{
+    AccessContext, Architecture, Pa, Va, VmiCore, VmiError, VmiState, driver::VmiRead,
+    os::VmiOsImage as _,
+};
 
 pub use self::{
     amd64::{WindowsExceptionVector, WindowsInterrupt, WindowsPageTableEntry},
@@ -12,7 +15,7 @@ pub use self::{
         XSAVE_FORMAT,
     },
 };
-use crate::{WindowsKernelInformation, WindowsOs, WindowsOsExt};
+use crate::{PeImage as _, WindowsImage, WindowsKernelInformation, WindowsOs, WindowsOsExt};
 
 /// Architecture-specific Windows functionality.
 pub trait ArchAdapter<Driver>: Architecture
@@ -80,6 +83,14 @@ where
     /// Returns the virtual address of the Kernel Processor Control Region
     /// (KPCR) for the current CPU.
     fn current_kpcr(vmi: VmiState<WindowsOs<Driver>>) -> Va;
+
+    /// Converts a Windows `DirectoryTableBase` value to the page-table root
+    /// physical address.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: masks and shifts the page-frame-number bits of `CR3`.
+    fn dtb_to_root(value: u64) -> Pa;
 }
 
 /// Pointer-width-dependent operations for reading Windows structures.
@@ -167,4 +178,33 @@ impl StructLayout for StructLayout64 {
     {
         vmi.os().read_unicode_string64_in(ctx)
     }
+}
+
+/// Extracts the kernel image base, version, and CodeView debug information
+/// from a mapped PE image.
+pub(crate) fn image_codeview<Driver>(
+    image: &WindowsImage<Driver>,
+) -> Result<Option<WindowsKernelInformation>, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    let debug_directory = match image.debug_directory()? {
+        Some(debug_directory) => debug_directory,
+        None => return Ok(None),
+    };
+
+    let codeview = match debug_directory.codeview()? {
+        Some(codeview) => codeview,
+        None => return Ok(None),
+    };
+
+    let nt_headers = image.nt_headers()?;
+
+    Ok(Some(WindowsKernelInformation {
+        base_address: image.base_address(),
+        version_major: nt_headers.optional_header.major_operating_system_version(),
+        version_minor: nt_headers.optional_header.minor_operating_system_version(),
+        codeview,
+    }))
 }
