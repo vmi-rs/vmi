@@ -55,6 +55,11 @@ fn ensure_rings(driver: &VmiKvmDriver<Arm64>) -> Result<(), VmiError> {
 /// Translates a monitor option into a native `KvmControl`.
 fn control_from_option(option: EventMonitor) -> Result<KvmControl, VmiError> {
     match option {
+        EventMonitor::Register(reg) => Ok(KvmControl::Sysreg {
+            reg: reg.to_kvm_index(),
+            onchangeonly: true,
+            bitmask: 0,
+        }),
         EventMonitor::Singlestep => Ok(KvmControl::Singlestep),
         EventMonitor::Breakpoint => Ok(KvmControl::Breakpoint),
     }

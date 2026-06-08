@@ -5,8 +5,8 @@ use kvm::{
     arch::arm64::{KvmBreakpointEvent, KvmEventReasonArm64},
 };
 use vmi_arch_arm64::{
-    Arm64, EventInterrupt, EventMemoryAccess, EventReason, EventSinglestep, Interrupt,
-    InterruptType,
+    Arm64, EventInterrupt, EventMemoryAccess, EventReason, EventSinglestep,
+    EventWriteSystemRegister, Interrupt, InterruptType, SystemRegister,
 };
 use vmi_core::{Architecture, MemoryAccess, Pa, VmiError};
 
@@ -43,9 +43,14 @@ pub(super) fn reason_from_event(ev: &KvmVmiEvent) -> Result<EventReason, VmiErro
             Err(VmiError::NotSupported)
         }
         KvmEventReason::Arch(KvmEventReasonArm64::Breakpoint(bp)) => Ok(breakpoint_reason(bp)),
-        KvmEventReason::Arch(KvmEventReasonArm64::Sysreg(_)) => {
-            // arm64 sysreg intercept has no EventReason variant yet.
-            Err(VmiError::NotSupported)
+        KvmEventReason::Arch(KvmEventReasonArm64::Sysreg(sr)) => {
+            let register =
+                SystemRegister::from_kvm_index(sr.reg as u32).ok_or(VmiError::NotSupported)?;
+            Ok(EventReason::WriteSystemRegister(EventWriteSystemRegister {
+                register,
+                old_value: sr.old_value,
+                new_value: sr.new_value,
+            }))
         }
     }
 }
