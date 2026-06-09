@@ -21,8 +21,13 @@
 //!
 //! # Usage
 //! ```text
-//! cargo run --features="arch-arm64 driver-kvm os-windows" --example kvm-trace-arm64 -- <qemu pid>
+//! cargo run --features="arch-arm64 driver-kvm os-windows" --example kvm-trace-arm64 -- [target-process] [qemu-pid]
 //! ```
+//!
+//! `target-process` is the image name to trace, defaulting to
+//! `procexp64a.exe`. `qemu-pid` defaults to the first running `qemu-system`
+//! process. The `trace` script next to the crate wraps this with the right
+//! build flags.
 //!
 //! The signature database is read from `assets/metadata.bin` next to this
 //! example, or from the path named by the `SIGMD_METADATA` environment
@@ -89,7 +94,11 @@ fn main() -> Result<(), Error> {
 
     let signatures = Signatures::load().context("loading sigmd signature database")?;
 
-    let pid = match std::env::args().nth(1) {
+    let target_name = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| TARGET_NAME.to_string());
+
+    let pid = match std::env::args().nth(2) {
         Some(arg) => arg.parse::<i32>().context("invalid QEMU pid argument")?,
         None => find_qemu_pid().context("no qemu-system process found")?,
     };
@@ -125,14 +134,14 @@ fn main() -> Result<(), Error> {
         let mut found = None;
         for process in vmi.os().processes()? {
             let process = process?;
-            if process.name()?.eq_ignore_ascii_case(TARGET_NAME) {
+            if process.name()?.eq_ignore_ascii_case(&target_name) {
                 found = Some((process.id()?, process.translation_root()?));
                 break;
             }
         }
-        found.with_context(|| format!("{TARGET_NAME} is not running"))?
+        found.with_context(|| format!("{target_name} is not running"))?
     };
-    tracing::info!(%target_pid, root = %target_root, "tracing {TARGET_NAME}");
+    tracing::info!(%target_pid, root = %target_root, "tracing {target_name}");
 
     let target_root = target_root.0 & TTBR_BADDR_MASK;
 
@@ -148,6 +157,7 @@ fn main() -> Result<(), Error> {
             target,
             target_root,
             target_pid.0,
+            target_name,
             signatures,
             terminate.clone(),
         ))

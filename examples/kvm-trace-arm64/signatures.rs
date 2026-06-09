@@ -13,13 +13,25 @@ use std::{fmt::Write as _, fs::File, path::PathBuf};
 use anyhow::{Context as _, Error};
 use memmap2::Mmap;
 use sigmd::{Architecture, Database, Type, TypeKind};
-use vmi::{Va, VmiContext, os::windows::WindowsOs};
+use vmi::{
+    Va, VmiContext,
+    os::windows::{WindowsOs, WindowsOsExt as _},
+};
 
 use crate::{Driver, style::Palette};
 
 /// Maximum characters read when dereferencing a string argument, bounding the
 /// per-call guest read.
 const STRING_LIMIT: usize = 256;
+
+/// sigmd custom-type id for the ANSI_STRING family (`_ANSI_STRING`, `_STRING`,
+/// `_LSA_STRING`), from sigmd's `custom_types` config. The id is part of the
+/// on-disk wire format.
+const ANSI_STRING_KIND: u8 = 1;
+
+/// sigmd custom-type id for the UNICODE_STRING family (`_UNICODE_STRING`,
+/// `_LSA_UNICODE_STRING`).
+const UNICODE_STRING_KIND: u8 = 2;
 
 /// Read-only handle to the bundled Windows API signature database.
 pub struct Signatures {
@@ -115,6 +127,20 @@ fn render_argument(
                 }
                 TypeKind::Char16 => {
                     return match vmi.read_string_utf16_limited(Va(raw), STRING_LIMIT) {
+                        Ok(string) => palette.string(&format!("{string:?}")),
+                        Err(_) => String::from("?"),
+                    };
+                }
+                // Pointer to an ANSI_STRING/UNICODE_STRING: read the struct and
+                // its embedded buffer rather than printing the bare pointer.
+                TypeKind::Custom(ANSI_STRING_KIND) => {
+                    return match vmi.os().read_ansi_string(Va(raw)) {
+                        Ok(string) => palette.string(&format!("{string:?}")),
+                        Err(_) => String::from("?"),
+                    };
+                }
+                TypeKind::Custom(UNICODE_STRING_KIND) => {
+                    return match vmi.os().read_unicode_string(Va(raw)) {
                         Ok(string) => palette.string(&format!("{string:?}")),
                         Err(_) => String::from("?"),
                     };

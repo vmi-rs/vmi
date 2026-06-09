@@ -2,7 +2,7 @@
 //! resolves them against the process's exports.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -18,7 +18,7 @@ use vmi::{
 };
 
 use crate::{
-    Driver, TARGET_NAME, TTBR_BADDR_MASK,
+    Driver, TTBR_BADDR_MASK,
     signatures::Signatures,
     style::{Palette, stdout_supports_color},
 };
@@ -32,8 +32,17 @@ const PAGEIN_STALL_LIMIT: u32 = 4096;
 /// page never faults in.
 const MAX_DUMP_PASSES: u32 = 200_000;
 
+/// Passes to wait for an injected page-in of a module-list page before giving
+/// up on enumerating modules.
+const CAPTURE_STALL_LIMIT: u32 = 4096;
+
 /// Left-aligned column width for the module name, so function names line up.
 const MODULE_WIDTH: usize = 20;
+
+/// Modules whose code is traced as if it were the target image, in addition to
+/// the target process's main image. Calls these make into other modules are
+/// reported the same way the target's own calls are.
+const EXTRA_TRACED_MODULES: &[&str] = &["lsasrv.dll"];
 
 /// Returns true if `va` is a kernel (TTBR1) address.
 fn is_kernel(va: u64) -> bool {
@@ -91,11 +100,13 @@ pub struct Tracer {
     /// Target process ID, used to locate the process for module enumeration.
     target_pid: u32,
 
-    /// Low (inclusive) VA of the target's main image.
-    image_lo: u64,
+    /// Target image name, used to find the main image's VA range.
+    target_name: String,
 
-    /// High (exclusive) VA of the target's main image.
-    image_hi: u64,
+    /// VA ranges `[lo, hi)` of the traced images (the target's main image plus
+    /// any [`EXTRA_TRACED_MODULES`]). Code in these ranges runs in the target
+    /// view, so its calls into other modules are reported.
+    traced_ranges: Vec<(u64, u64)>,
 
     /// Resolved exports across all modules, keyed by absolute VA, for fast
     /// call-target lookup.
@@ -104,6 +115,13 @@ pub struct Tracer {
     /// Per-module export-gather state. `None` until the first fault captures
     /// the loaded-module list.
     modules: Option<Vec<ModuleDump>>,
+
+    /// Last VA a page-fault was injected for while enumerating modules, so a
+    /// retry injects once per page instead of hammering a page-in in flight.
+    capture_injected_va: Option<Va>,
+
+    /// Passes spent waiting on `capture_injected_va` to become resident.
+    capture_stalls: u32,
 
     /// Total gather passes executed, bounding total retries.
     dump_passes: u32,
@@ -154,18 +172,19 @@ impl VmiHandler<WindowsOs<Driver>> for Tracer {
                     self.advance_dump(&vmi);
                 }
 
-                if self.in_target_image(pc) {
-                    // The target's own code: executable in the target view,
-                    // trapping (RW) in the system view. Run it in the target.
+                if self.is_traced_code(pc) {
+                    // Traced code (the target image or an extra traced module):
+                    // executable in the target view, trapping (RW) in the system
+                    // view. Run it in the target.
                     let _ = vmi.set_memory_access(gfn, self.target, MemoryAccess::RWX);
                     let _ = vmi.set_memory_access(gfn, self.system, MemoryAccess::RW);
                     VmiEventResponse::default().with_view(self.target)
                 }
                 else {
-                    // Library or kernel code: executable in the system view,
-                    // trapping in the target view. A fault here while in the
-                    // target view is the target calling out; resolve the call
-                    // target against the gathered exports.
+                    // Other library or kernel code: executable in the system
+                    // view, trapping in the target view. A fault here while in
+                    // the target view is traced code calling out; resolve the
+                    // call target against the gathered exports.
                     let _ = vmi.set_memory_access(gfn, self.system, MemoryAccess::RWX);
                     let _ = vmi.set_memory_access(gfn, self.target, MemoryAccess::RW);
                     if cur == Some(self.target) {
@@ -178,15 +197,23 @@ impl VmiHandler<WindowsOs<Driver>> for Tracer {
                             let name = export.module.to_lowercase();
                             let pad = " ".repeat(MODULE_WIDTH.saturating_sub(name.chars().count()));
                             let module = self.palette.module(&name);
-                            let function = self.palette.function(&export.function);
+
+                            // Zw* and Nt* are the same syscall entry point; sigmd
+                            // carries only the Nt name, so normalize Zw -> Nt for
+                            // both the displayed name and the signature lookup.
+                            let function_name = match export.function.strip_prefix("Zw") {
+                                Some(rest) => format!("Nt{rest}"),
+                                None => export.function.clone(),
+                            };
+                            let function = self.palette.function(&function_name);
                             match self
                                 .signatures
-                                .format_call(&vmi, &export.function, &self.palette)
+                                .format_call(&vmi, &function_name, &self.palette)
                             {
                                 Some(args) => {
                                     println!("{timestamp} {module}{pad} {function} {args}")
                                 }
-                                None => println!("{timestamp} {module}{pad} {function}"),
+                                None => println!("{timestamp} {module}{pad} {function} ()"),
                             }
                         }
                     }
@@ -218,12 +245,17 @@ impl Drop for Tracer {
 
 impl Tracer {
     /// Creates a tracer bound to a target process and its translation root.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor wires up the tracer's owned state"
+    )]
     pub fn new(
         default: View,
         system: View,
         target: View,
         target_root: u64,
         target_pid: u32,
+        target_name: String,
         signatures: Signatures,
         terminate: Arc<AtomicBool>,
     ) -> Self {
@@ -233,10 +265,12 @@ impl Tracer {
             target,
             target_root,
             target_pid,
-            image_lo: 0,
-            image_hi: 0,
+            target_name,
+            traced_ranges: Vec::new(),
             exports: HashMap::new(),
             modules: None,
+            capture_injected_va: None,
+            capture_stalls: 0,
             dump_passes: 0,
             dump_complete: false,
             transitions: 0,
@@ -247,19 +281,32 @@ impl Tracer {
         }
     }
 
-    /// Returns true if `pc` falls inside the target process's main image.
-    fn in_target_image(&self, pc: u64) -> bool {
-        pc >= self.image_lo && pc < self.image_hi
+    /// Returns true if `pc` falls inside a traced image (the main image or an
+    /// extra traced module).
+    fn is_traced_code(&self, pc: u64) -> bool {
+        self.traced_ranges
+            .iter()
+            .any(|&(lo, hi)| pc >= lo && pc < hi)
+    }
+
+    /// Returns true if `name` is the target image or an extra traced module.
+    fn is_traced_module(&self, name: &str) -> bool {
+        name.eq_ignore_ascii_case(&self.target_name)
+            || EXTRA_TRACED_MODULES
+                .iter()
+                .any(|extra| name.eq_ignore_ascii_case(extra))
     }
 
     /// Advances the background export gather by one step on a fault.
     ///
-    /// The first call captures the loaded-module list and the target image
-    /// range. Each call then reads the exports of the first still-pending
-    /// module into the export map. A translation fault triggers a page-fault
-    /// injection at the missing VA so the guest pages it in, to be re-read on
-    /// a later call. When every module is resolved (or has given up), the map
-    /// is marked complete and call tracing begins.
+    /// The first call captures the loaded-module list and the traced image
+    /// ranges. The loaded-module list lives in the target's user heap, so a
+    /// page of it may be non-resident at that instant. A translation fault,
+    /// whether enumerating modules or reading a module's exports, triggers a
+    /// page-fault injection at the missing VA so the guest pages it in, to be
+    /// retried on a later call. Each call then reads the exports of the first
+    /// still-pending module into the export map. When every module is resolved
+    /// (or has given up), the map is marked complete and call tracing begins.
     ///
     /// Must be called only at a user-mode PC, so the injected abort is
     /// delivered in the target's EL0 context. Injecting at a kernel PC (EL1)
@@ -268,14 +315,38 @@ impl Tracer {
         if self.modules.is_none() {
             match self.capture_modules(vmi) {
                 Ok(modules) => {
-                    if let Some(image) = modules
+                    self.traced_ranges = modules
                         .iter()
-                        .find(|module| module.name.eq_ignore_ascii_case(TARGET_NAME))
-                    {
-                        self.image_lo = image.base.0;
-                        self.image_hi = image.base.0 + image.size;
-                    }
+                        .filter(|module| self.is_traced_module(&module.name))
+                        .map(|module| (module.base.0, module.base.0 + module.size))
+                        .collect();
                     self.modules = Some(modules);
+                }
+                Err(VmiError::Translation(pfs)) => {
+                    // A module-list page is not resident in the target's
+                    // address space. Page it in and retry on a later fault
+                    // rather than disabling tracing outright.
+                    let va = pfs[0].va;
+                    if self.capture_injected_va == Some(va) {
+                        self.capture_stalls += 1;
+                        if self.capture_stalls >= CAPTURE_STALL_LIMIT {
+                            tracing::error!(%va, "module enumeration page never resident; tracing disabled");
+                            self.dump_complete = true;
+                        }
+                    }
+                    else {
+                        self.capture_injected_va = Some(va);
+                        self.capture_stalls = 0;
+                        let vcpu = vmi.event().vcpu_id();
+                        if let Err(err) = vmi
+                            .core()
+                            .inject_interrupt(vcpu, Interrupt::page_fault(va.0))
+                        {
+                            tracing::error!(%err, %va, "page-fault injection failed; tracing disabled");
+                            self.dump_complete = true;
+                        }
+                    }
+                    return;
                 }
                 Err(err) => {
                     tracing::error!(%err, "failed to enumerate modules; tracing disabled");
@@ -357,7 +428,13 @@ impl Tracer {
         }
     }
 
-    /// Captures the target process's loaded-module list (name, base, size).
+    /// Captures the target process's loaded modules (name, base, size) from
+    /// both its PEB and native PEB, deduplicated by base address.
+    ///
+    /// For a 64-bit process the two PEBs coincide, so the dedup collapses them.
+    /// For a WoW64 process the PEB holds the emulated (32-bit) module set and
+    /// the native PEB holds the native one (native ntdll and the emulation
+    /// host), so the native modules' exports also land in the resolution map.
     fn capture_modules(
         &self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -368,26 +445,31 @@ impl Tracer {
                 continue;
             }
 
-            let peb = match process.peb()? {
-                Some(peb) => peb,
-                None => {
-                    tracing::warn!("target process has no PEB");
-                    return Ok(Vec::new());
-                }
-            };
+            let pebs = [process.peb()?, process.native_peb()?];
+            if pebs.iter().all(Option::is_none) {
+                tracing::warn!("target process has no PEB");
+                return Ok(Vec::new());
+            }
 
             let mut modules = Vec::new();
-            for module in peb.ldr()?.in_load_order_modules()? {
-                let module = module?;
-                modules.push(ModuleDump {
-                    name: module.name()?,
-                    base: module.base_address()?,
-                    size: module.size()?,
-                    done: false,
-                    note: None,
-                    injected_va: None,
-                    stalls: 0,
-                });
+            let mut seen = HashSet::new();
+            for peb in pebs.into_iter().flatten() {
+                for module in peb.ldr()?.in_load_order_modules()? {
+                    let module = module?;
+                    let base = module.base_address()?;
+                    if !seen.insert(base.0) {
+                        continue;
+                    }
+                    modules.push(ModuleDump {
+                        name: module.name()?,
+                        base,
+                        size: module.size()?,
+                        done: false,
+                        note: None,
+                        injected_va: None,
+                        stalls: 0,
+                    });
+                }
             }
             return Ok(modules);
         }

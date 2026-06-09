@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Build and run the kvm-trace-arm64 library-call tracer.
+#
+# Usage:
+#   ./trace [target-process] [qemu-pid]
+#
+#   target-process  image name to trace (default: procexp64a.exe)
+#   qemu-pid        QEMU pid (default: auto-detect the running qemu-system)
+#
+# All arguments are forwarded to the example. Run from anywhere; the script
+# switches to the crate directory so the relative "cache" and
+# "assets/metadata.bin" paths resolve.
+set -eu
+
+cd "$(dirname "$0")"
+
+exec cargo run --release --example kvm-trace-arm64 \
+    --features "arch-arm64 driver-kvm os-windows" -- "$@"
