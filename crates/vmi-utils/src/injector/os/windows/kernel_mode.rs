@@ -435,9 +435,7 @@ where
 
         match self.dispatch(&vmi) {
             Ok(response) => response,
-            Err(VmiError::Translation(pfs)) => {
-                let pf = pfs[0];
-
+            Err(VmiError::Translation(pf)) => {
                 tracing::debug!(va = %pf.va, "injecting page fault");
                 let _ =
                     vmi.inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.va, 0));

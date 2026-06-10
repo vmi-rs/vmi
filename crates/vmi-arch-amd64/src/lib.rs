@@ -145,7 +145,7 @@ impl Architecture for Amd64 {
         let pml4e = page_table[pml4i];
 
         if !pml4e.present() {
-            return Err(VmiError::page_fault((va, root)));
+            return Err(VmiError::translation((va, root)));
         }
 
         if pml4e.large() {
@@ -162,7 +162,7 @@ impl Architecture for Amd64 {
         let pdpte = page_table[pdpti];
 
         if !pdpte.present() {
-            return Err(VmiError::page_fault((va, root)));
+            return Err(VmiError::translation((va, root)));
         }
 
         if pdpte.large() {
@@ -179,7 +179,7 @@ impl Architecture for Amd64 {
         let pde = page_table[pdi];
 
         if !pde.present() {
-            return Err(VmiError::page_fault((va, root)));
+            return Err(VmiError::translation((va, root)));
         }
 
         if pde.large() {
@@ -194,7 +194,7 @@ impl Architecture for Amd64 {
         let pte = page_table[pti];
 
         if !pte.present() {
-            return Err(VmiError::page_fault((va, root)));
+            return Err(VmiError::translation((va, root)));
         }
 
         Ok(Self::pa_from_gfn(pte.pfn()) + Self::va_offset_for(va, PageTableLevel::Pt))

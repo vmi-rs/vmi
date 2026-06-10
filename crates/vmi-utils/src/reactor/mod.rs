@@ -366,9 +366,9 @@ where
         //
         // Once the guest handles the page fault, it will try to retry the
         // instruction that caused the page fault.
-        if let Err(VmiError::Translation(pfs)) = result {
-            tracing::debug!(va = %pfs[0].va, "page fault");
-            vmi.inject_interrupt(event.vcpu_id(), Interrupt::page_fault(pfs[0].va, 0))?;
+        if let Err(VmiError::Translation(pf)) = result {
+            tracing::debug!(va = %pf.va, "page fault");
+            vmi.inject_interrupt(event.vcpu_id(), Interrupt::page_fault(pf.va, 0))?;
             return Ok(VmiEventResponse::default());
         }
 

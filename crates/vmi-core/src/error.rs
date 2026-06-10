@@ -24,8 +24,8 @@ pub enum VmiError {
     IsrCache(#[from] isr_cache::Error),
 
     /// A translation error occurred.
-    #[error("translation error ({:?}, len: {})", .0[0], .0.len())]
-    Translation(PageFaults),
+    #[error("translation error ({:?})", .0)]
+    Translation(AddressContext),
 
     /// The given address has invalid width.
     #[error("invalid address width")]
@@ -60,9 +60,6 @@ pub enum VmiError {
     Other(&'static str),
 }
 
-/// A collection of page faults.
-pub type PageFaults = smallvec::SmallVec<[AddressContext; 1]>;
-
 impl VmiError {
     /// Boxes a driver-specific error into [`VmiError::Driver`].
     pub fn driver<E>(err: E) -> Self
@@ -80,13 +77,8 @@ impl VmiError {
         Self::Os(Box::new(err))
     }
 
-    /// Creates a new page fault error.
-    pub fn page_fault(pf: impl Into<AddressContext>) -> Self {
-        Self::Translation(smallvec::smallvec![pf.into()])
-    }
-
-    /// Creates a new page fault error with multiple page faults.
-    pub fn page_faults(pfs: impl IntoIterator<Item = AddressContext>) -> Self {
-        Self::Translation(pfs.into_iter().collect())
+    /// Creates a new translation error.
+    pub fn translation(pf: impl Into<AddressContext>) -> Self {
+        Self::Translation(pf.into())
     }
 }

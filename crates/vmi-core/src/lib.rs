@@ -31,7 +31,7 @@ pub use self::{
         VmiQueryRegisters, VmiRead, VmiReadAccess, VmiRegisters, VmiSetProtection, VmiSetRegisters,
         VmiViewControl, VmiVmControl, VmiWrite, VmiWriteAccess,
     },
-    error::{PageFaults, VmiError},
+    error::VmiError,
     event::{VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse},
     handler::VmiHandler,
     os::{VmiOs, VmiOsExt},

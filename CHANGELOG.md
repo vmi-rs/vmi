@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `GpRegisters` now carries an `Architecture` associated
   type and requires member accessors for the common registers.
 - **Breaking:** `vmi_core::Hex` moved to `vmi_core::trace::Hex`.
+- **Breaking:** `VmiError::Translation` now carries a single `AddressContext`
+  instead of a `PageFaults` collection. The `PageFaults` type alias and the
+  `VmiError::page_fault` / `page_faults` constructors are removed, replaced by
+  `VmiError::translation`.
 
 ### Added
 

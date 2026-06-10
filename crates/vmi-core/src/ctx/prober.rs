@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use indexmap::IndexSet;
 
-use crate::{AddressContext, PageFaults, VmiError};
+use crate::{AddressContext, VmiError};
 
 /// Batches the page faults raised by a sequence of memory reads so they can be
 /// injected together, while skipping pages already known to be unserviceable.
@@ -106,8 +106,8 @@ impl VmiProber {
     pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
         match result {
             Ok(value) => Ok(Some(value)),
-            Err(VmiError::Translation(pfs)) => {
-                self.record(pfs);
+            Err(VmiError::Translation(pf)) => {
+                self.record(pf);
                 Ok(None)
             }
             Err(err) => Err(err),
@@ -115,16 +115,14 @@ impl VmiProber {
     }
 
     /// Records the page faults that are not in the `suppressed` set.
-    fn record(&self, pfs: PageFaults) {
+    fn record(&self, pf: AddressContext) {
         let mut page_faults = self.page_faults.borrow_mut();
-        for pf in pfs {
-            if !self.suppressed.contains(&pf) {
-                tracing::trace!(va = %pf.va, "page fault");
-                page_faults.insert(pf);
-            }
-            else {
-                tracing::trace!(va = %pf.va, "page fault (suppressed)");
-            }
+        if !self.suppressed.contains(&pf) {
+            tracing::trace!(va = %pf.va, "page fault");
+            page_faults.insert(pf);
+        }
+        else {
+            tracing::trace!(va = %pf.va, "page fault (suppressed)");
         }
     }
 
@@ -143,7 +141,7 @@ impl VmiProber {
         let pfs = self.page_faults();
         if !pfs.is_empty() {
             tracing::trace!(?pfs);
-            return Err(VmiError::page_faults(pfs));
+            return Err(VmiError::Translation(pfs[0]));
         }
 
         Ok(())

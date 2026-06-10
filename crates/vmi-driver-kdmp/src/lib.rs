@@ -94,11 +94,11 @@ pub(crate) fn map_kdmp_error(err: kdmp_parser::error::Error) -> VmiError {
         kdmp_parser::error::Error::PageRead(kdmp_parser::error::PageReadError::NotPresent {
             gva,
             ..
-        }) => VmiError::page_fault((Va(u64::from(gva)), Pa(0))),
+        }) => VmiError::translation((Va(u64::from(gva)), Pa(0))),
         kdmp_parser::error::Error::PageRead(kdmp_parser::error::PageReadError::NotInDump {
             gva: Some((gva, _)),
             ..
-        }) => VmiError::page_fault((Va(u64::from(gva)), Pa(0))),
+        }) => VmiError::translation((Va(u64::from(gva)), Pa(0))),
         other => VmiError::driver(other),
     }
 }

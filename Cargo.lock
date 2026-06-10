@@ -2087,7 +2087,6 @@ dependencies = [
  "isr-macros",
  "lru",
  "serde",
- "smallvec",
  "thiserror",
  "tracing",
  "vmi-macros",
