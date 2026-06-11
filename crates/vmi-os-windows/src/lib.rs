@@ -116,7 +116,7 @@ pub use self::comps::{
     WindowsSidAttributes, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
     WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
     WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUnloadedDriver,
-    WindowsUserModule, WindowsWow64Kind,
+    WindowsUserModule, WindowsUserModuleBase, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

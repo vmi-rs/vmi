@@ -61,7 +61,7 @@ pub use self::{
     teb::{Teb, TebLayout, WindowsTeb, WindowsTebBase},
     trap_frame::WindowsTrapFrame,
     unloaded_driver::WindowsUnloadedDriver,
-    user_module::WindowsUserModule,
+    user_module::{WindowsUserModule, WindowsUserModuleBase},
     wow64::{
         WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED, WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST,
         WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO, WindowsWow64Kind,

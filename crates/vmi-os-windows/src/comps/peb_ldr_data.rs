@@ -1,6 +1,6 @@
 use vmi_core::{Pa, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{WindowsUserModule, WindowsWow64Kind};
+use super::{WindowsUserModule, WindowsUserModuleBase, WindowsWow64Kind};
 use crate::{
     ArchAdapter, ListEntry, ListEntryIterator, ListEntryIteratorBase, WindowsOs,
     arch::{StructLayout, StructLayout32, StructLayout64},
@@ -50,6 +50,24 @@ where
 
     /// Offset of the `InInitializationOrderLinks` field.
     const OFFSET_IN_INITIALIZATION_ORDER_LINKS: u64;
+
+    /// Offset of the `DllBase` field.
+    const OFFSET_DLL_BASE: u64;
+
+    /// Offset of the `EntryPoint` field.
+    const OFFSET_ENTRY_POINT: u64;
+
+    /// Offset of the `SizeOfImage` field.
+    const OFFSET_SIZE_OF_IMAGE: u64;
+
+    /// Offset of the `FullDllName` field.
+    const OFFSET_FULL_DLL_NAME: u64;
+
+    /// Offset of the `BaseDllName` field.
+    const OFFSET_BASE_DLL_NAME: u64;
+
+    /// Offset of the `TimeDateStamp` field.
+    const OFFSET_TIME_DATE_STAMP: u64;
 }
 
 /// `_LDR_DATA_TABLE_ENTRY` structure layout.
@@ -59,12 +77,24 @@ impl LdrDataTableEntry<StructLayout32> for LdrDataTableEntryLayout {
     const OFFSET_IN_LOAD_ORDER_LINKS: u64 = 0x00;
     const OFFSET_IN_MEMORY_ORDER_LINKS: u64 = 0x08;
     const OFFSET_IN_INITIALIZATION_ORDER_LINKS: u64 = 0x10;
+    const OFFSET_DLL_BASE: u64 = 0x18;
+    const OFFSET_ENTRY_POINT: u64 = 0x1c;
+    const OFFSET_SIZE_OF_IMAGE: u64 = 0x20;
+    const OFFSET_FULL_DLL_NAME: u64 = 0x24;
+    const OFFSET_BASE_DLL_NAME: u64 = 0x2c;
+    const OFFSET_TIME_DATE_STAMP: u64 = 0x44;
 }
 
 impl LdrDataTableEntry<StructLayout64> for LdrDataTableEntryLayout {
     const OFFSET_IN_LOAD_ORDER_LINKS: u64 = 0x00;
     const OFFSET_IN_MEMORY_ORDER_LINKS: u64 = 0x10;
     const OFFSET_IN_INITIALIZATION_ORDER_LINKS: u64 = 0x20;
+    const OFFSET_DLL_BASE: u64 = 0x30;
+    const OFFSET_ENTRY_POINT: u64 = 0x38;
+    const OFFSET_SIZE_OF_IMAGE: u64 = 0x40;
+    const OFFSET_FULL_DLL_NAME: u64 = 0x48;
+    const OFFSET_BASE_DLL_NAME: u64 = 0x58;
+    const OFFSET_TIME_DATE_STAMP: u64 = 0x80;
 }
 
 /// PEB loader data accessor with a compile-time pointer width.
@@ -118,14 +148,15 @@ where
     pub fn in_load_order_modules(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        impl Iterator<Item = Result<WindowsUserModuleBase<'a, Driver, Layout>, VmiError>>
+        + use<'a, Driver, Layout>,
         VmiError,
     > {
         let vmi = self.vmi;
         let root = self.root;
         Ok(self
             .in_load_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+            .map(move |result| result.map(|va| WindowsUserModuleBase::new(vmi, va, root))))
     }
 
     /// Returns an iterator over modules in memory order.
@@ -136,14 +167,15 @@ where
     pub fn in_memory_order_modules(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        impl Iterator<Item = Result<WindowsUserModuleBase<'a, Driver, Layout>, VmiError>>
+        + use<'a, Driver, Layout>,
         VmiError,
     > {
         let vmi = self.vmi;
         let root = self.root;
         Ok(self
             .in_memory_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+            .map(move |result| result.map(|va| WindowsUserModuleBase::new(vmi, va, root))))
     }
 
     /// Returns an iterator over modules in initialization order.
@@ -154,14 +186,15 @@ where
     pub fn in_initialization_order_modules(
         &self,
     ) -> Result<
-        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver, Layout>,
+        impl Iterator<Item = Result<WindowsUserModuleBase<'a, Driver, Layout>, VmiError>>
+        + use<'a, Driver, Layout>,
         VmiError,
     > {
         let vmi = self.vmi;
         let root = self.root;
         Ok(self
             .in_initialization_order_modules_inner()
-            .map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+            .map(move |result| result.map(|va| WindowsUserModuleBase::new(vmi, va, root))))
     }
 
     fn in_load_order_modules_inner(&self) -> ListEntryIteratorBase<'a, Driver, Layout> {
@@ -230,20 +263,23 @@ where
         impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        let (iter, vmi, root) = match self {
+        let (iter, vmi, root, kind) = match self {
             Self::W32(inner) => (
                 ListEntryIterator::from(inner.in_load_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::X86,
             ),
             Self::W64(inner) => (
                 ListEntryIterator::from(inner.in_load_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::Native,
             ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+        Ok(iter
+            .map(move |result| result.map(|va| WindowsUserModule::with_kind(vmi, va, root, kind))))
     }
 
     fn in_memory_order_modules(
@@ -252,20 +288,23 @@ where
         impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        let (iter, vmi, root) = match self {
+        let (iter, vmi, root, kind) = match self {
             Self::W32(inner) => (
                 ListEntryIterator::from(inner.in_memory_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::X86,
             ),
             Self::W64(inner) => (
                 ListEntryIterator::from(inner.in_memory_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::Native,
             ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+        Ok(iter
+            .map(move |result| result.map(|va| WindowsUserModule::with_kind(vmi, va, root, kind))))
     }
 
     fn in_initialization_order_modules(
@@ -274,20 +313,23 @@ where
         impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        let (iter, vmi, root) = match self {
+        let (iter, vmi, root, kind) = match self {
             Self::W32(inner) => (
                 ListEntryIterator::from(inner.in_initialization_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::X86,
             ),
             Self::W64(inner) => (
                 ListEntryIterator::from(inner.in_initialization_order_modules_inner()),
                 inner.vmi,
                 inner.root,
+                WindowsWow64Kind::Native,
             ),
         };
 
-        Ok(iter.map(move |result| result.map(|va| WindowsUserModule::new(vmi, va, root))))
+        Ok(iter
+            .map(move |result| result.map(|va| WindowsUserModule::with_kind(vmi, va, root, kind))))
     }
 }
 
