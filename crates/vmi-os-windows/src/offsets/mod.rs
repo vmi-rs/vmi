@@ -73,6 +73,7 @@ symbols! {
         NtWriteFile: Option<u64>,
         NtDeviceIoControlFile: Option<u64>,
 
+        NtContinue: Option<u64>,
         NtClose: Option<u64>,
 
         ExNotifyCallback: Option<u64>,
