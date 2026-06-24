@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Added
+
+### Removed
+
+### Fixed
+
+## [0.7.0] - 2026-06-24
+
+### Changed
+
 - **Breaking:** `VmiOsProcess::find_region` renamed to
   `VmiOsProcess::lookup_region`.
 - **Breaking:** `InjectorResultCode` renamed to `InjectorStatusCode`.
