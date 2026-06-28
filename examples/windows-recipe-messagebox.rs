@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let vmi = paused.state();
 
-        let explorer = match common::find_process(&vmi, "explorer.exe")? {
+        let explorer = match vmi.os().find_process("explorer.exe")? {
             Some(explorer) => explorer,
             None => {
                 tracing::error!("explorer.exe not found");

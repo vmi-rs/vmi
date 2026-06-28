@@ -1,9 +1,7 @@
 use isr::{Profile, cache::IsrCache};
 use vmi::{
-    VcpuId, VmiCore, VmiError, VmiOs, VmiSession, VmiState,
-    arch::amd64::Amd64,
-    driver::{VmiRead, xen::VmiXenDriver},
-    os::{VmiOsProcess as _, windows::WindowsOs},
+    VcpuId, VmiCore, VmiSession, arch::amd64::Amd64, driver::xen::VmiXenDriver,
+    os::windows::WindowsOs,
 };
 use xen::XenStore;
 
@@ -71,23 +69,4 @@ pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
     let os = Box::leak(Box::new(os));
 
     Ok((VmiSession::new(core, os), profile))
-}
-
-pub fn find_process<'a, Os>(
-    vmi: &VmiState<'a, Os>,
-    name: &str,
-) -> Result<Option<Os::Process<'a>>, VmiError>
-where
-    Os: VmiOs,
-    Os::Driver: VmiRead,
-{
-    for process in vmi.os().processes()? {
-        let process = process?;
-
-        if process.name()?.to_lowercase() == name {
-            return Ok(Some(process));
-        }
-    }
-
-    Ok(None)
 }
