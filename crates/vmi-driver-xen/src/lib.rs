@@ -89,7 +89,7 @@ where
             info,
             ring: RefCell::new(ring),
             views: RefCell::new(HashMap::new()),
-            event_processing_overhead: RefCell::new(Duration::from_millis(0)),
+            event_processing_overhead: RefCell::new(Duration::ZERO),
         })
     }
 }
