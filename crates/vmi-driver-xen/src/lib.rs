@@ -21,7 +21,7 @@ use vmi_core::{
 };
 use xen::{
     XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain, XenDomainId, XenDomainInfo,
-    XenEventChannelPort, XenForeignMemory, XenForeignMemoryProtection, XenMonitor,
+    XenEventChannelPort, XenForeignMemory, XenForeignMemoryProtection, XenMonitor, XenStore,
     ctrl::VmEventRing,
 };
 
@@ -91,6 +91,50 @@ where
             views: RefCell::new(HashMap::new()),
             event_processing_overhead: RefCell::new(Duration::ZERO),
         })
+    }
+
+    /// Creates a new VMI driver from environment variables.
+    ///
+    /// The first of the following variables that is **set** selects the target
+    /// domain.
+    ///
+    /// - `VMI_XEN_DOMAIN`: interpreted as a numeric domain ID, falling back to
+    ///   a domain name if the value is not numeric.
+    /// - `VMI_XEN_DOMAIN_ID`: interpreted as a numeric domain ID.
+    /// - `VMI_XEN_DOMAIN_NAME`: interpreted as a domain name.
+    ///
+    /// Returns `Ok(None)` if none of the variables are set, or if the selected
+    /// variable does not resolve to a domain.
+    pub fn try_from_env() -> Result<Option<Self>, VmiError> {
+        fn resolve_domain(domain_name: &str) -> Result<Option<XenDomainId>, VmiError> {
+            XenStore::new()
+                .map_err(VmiError::driver)?
+                .domain_id_from_name(domain_name)
+                .map_err(VmiError::driver)
+        }
+
+        if let Ok(var) = std::env::var("VMI_XEN_DOMAIN") {
+            if let Ok(domain_id) = var.parse() {
+                return Ok(Some(Self::new(XenDomainId(domain_id))?));
+            }
+
+            if let Some(domain_id) = resolve_domain(&var)? {
+                return Ok(Some(Self::new(domain_id)?));
+            }
+        }
+        else if let Ok(var) = std::env::var("VMI_XEN_DOMAIN_ID") {
+            match var.parse() {
+                Ok(domain_id) => return Ok(Some(Self::new(XenDomainId(domain_id))?)),
+                Err(err) => tracing::error!(%err, var, "invalid value for VMI_XEN_DOMAIN_ID"),
+            }
+        }
+        else if let Ok(var) = std::env::var("VMI_XEN_DOMAIN_NAME")
+            && let Some(domain_id) = resolve_domain(&var)?
+        {
+            return Ok(Some(Self::new(domain_id)?));
+        }
+
+        Ok(None)
     }
 }
 

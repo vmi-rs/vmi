@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `VmiXenDriver::try_from_env()` - constructs a driver by resolving the target
+  Xen domain from the `VMI_XEN_DOMAIN`, `VMI_XEN_DOMAIN_ID`, or
+  `VMI_XEN_DOMAIN_NAME` environment variables.
+
 ### Removed
 
 ### Fixed
