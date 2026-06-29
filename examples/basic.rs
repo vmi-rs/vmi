@@ -1,24 +1,15 @@
 //! This example demonstrates how to connect to a running Xen domain and
 //! print the interrupt descriptor table (IDT) for each vCPU.
 
+use anyhow::{Context as _, Error};
 use vmi_arch_amd64::Amd64;
 use vmi_core::{VcpuId, VmiCore};
 use vmi_driver_xen::VmiXenDriver;
-use xen::XenStore;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 'x: {
-        for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
-                break 'x domain_id;
-            }
-        }
-
-        panic!("Domain not found");
-    };
-
+fn main() -> Result<(), Error> {
     // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
+    let driver = VmiXenDriver::<Amd64>::try_from_env()?
+        .context("invalid VMI_XEN_DOMAIN environment variable")?;
     let vmi = VmiCore::new(driver)?;
 
     // Get the interrupt descriptor table for each vCPU and print it.

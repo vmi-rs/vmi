@@ -1,6 +1,7 @@
 //! This example demonstrates how to enumerate the running processes of a
 //! Windows guest running inside a Xen domain.
 
+use anyhow::{Context as _, Error};
 use isr::cache::IsrCache;
 use vmi::{
     VcpuId, VmiCore, VmiSession,
@@ -8,21 +9,11 @@ use vmi::{
     driver::xen::VmiXenDriver,
     os::{VmiOsProcess as _, windows::WindowsOs},
 };
-use xen::XenStore;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 'x: {
-        for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
-                break 'x domain_id;
-            }
-        }
-
-        panic!("Domain not found");
-    };
-
+fn main() -> Result<(), Error> {
     // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
+    let driver = VmiXenDriver::<Amd64>::try_from_env()?
+        .context("invalid VMI_XEN_DOMAIN environment variable")?;
     let core = VmiCore::new(driver)?;
 
     // Try to find the kernel information.

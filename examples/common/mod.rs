@@ -1,35 +1,25 @@
-use isr::{Profile, cache::IsrCache};
+use anyhow::{Context as _, Error};
+use isr::cache::IsrCache;
+use tracing_subscriber::EnvFilter;
 use vmi::{
     VcpuId, VmiCore, VmiSession, arch::amd64::Amd64, driver::xen::VmiXenDriver,
     os::windows::WindowsOs,
 };
-use xen::XenStore;
 
-pub type Session = (
-    VmiSession<'static, WindowsOs<VmiXenDriver<Amd64>>>,
-    Profile<'static>,
-);
+pub fn create_vmi_session() -> Result<VmiSession<'static, WindowsOs<VmiXenDriver<Amd64>>>, Error> {
+    let filter = EnvFilter::default()
+        .add_directive(tracing::Level::DEBUG.into())
+        .add_directive("reqwest=warn".parse()?)
+        .add_directive("rustls=warn".parse()?);
 
-pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_env_filter(filter)
         .with_target(false)
         .init();
 
-    let domain_id = 'x: {
-        for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
-                break 'x domain_id;
-            }
-        }
-
-        panic!("Domain not found");
-    };
-
-    tracing::debug!(?domain_id);
-
     // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
+    let driver = VmiXenDriver::<Amd64>::try_from_env()?
+        .context("invalid VMI_XEN_DOMAIN environment variable")?;
     let core = VmiCore::new(driver)?;
 
     // Try to find the kernel information.
@@ -49,18 +39,19 @@ pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
         // Therefore, we can take an arbitrary registers at any point in time
         // (as long as the OS has booted and the page tables are set up) and
         // use them to find the kernel.
-        WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
+        WindowsOs::find_kernel(&core, &registers)?.context("cannot find kernel information")?
     };
 
     // Load the profile.
     // The profile contains offsets to kernel functions and data structures.
+    tracing::info!(codeview = ?kernel_info.codeview, "loading kernel profile");
     let isr = IsrCache::new("cache")?;
     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
     let entry = Box::leak(Box::new(entry));
     let profile = entry.profile()?;
 
     // Create the VMI session.
-    tracing::info!("Creating VMI session");
+    tracing::info!("creating VMI session");
     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
 
     // Please don't do this in production code.
@@ -68,5 +59,5 @@ pub fn create_vmi_session() -> Result<Session, Box<dyn std::error::Error>> {
     let core = Box::leak(Box::new(core));
     let os = Box::leak(Box::new(os));
 
-    Ok((VmiSession::new(core, os), profile))
+    Ok(VmiSession::new(core, os))
 }

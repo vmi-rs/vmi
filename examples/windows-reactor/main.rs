@@ -84,7 +84,6 @@ use vmi::{
     },
     utils::reactor::{Action, Reactor, ReactorHandler, define_events, define_modules},
 };
-use xen::{XenDomainId, XenStore};
 
 fn match_lsass<Driver>(process: &WindowsProcess<Driver>) -> Result<bool, VmiError>
 where
@@ -253,28 +252,9 @@ fn main() -> Result<(), Error> {
         .with_target(false)
         .init();
 
-    let domain_id = match std::env::var("VMI_XEN_DOMAIN_ID") {
-        Ok(domain_id) => XenDomainId(
-            domain_id
-                .parse()
-                .context("invalid VMI_XEN_DOMAIN_ID environment variable")?,
-        ),
-        Err(_) => {
-            let domain_name = std::env::var("VMI_XEN_DOMAIN_NAME")
-                .context("invalid VMI_XEN_DOMAIN_NAME environment variable")?;
-
-            tracing::info!(%domain_name, "resolving domain ID");
-
-            match XenStore::new()?.domain_id_from_name(&domain_name)? {
-                Some(domain_id) => domain_id,
-                None => return Err(anyhow::anyhow!("domain not found: {domain_name}")),
-            }
-        }
-    };
-
     // Setup VMI.
-    tracing::info!(%domain_id, "setting up VMI");
-    let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
+    let driver = VmiXenDriver::<Amd64>::try_from_env()?
+        .context("invalid VMI_XEN_DOMAIN environment variable")?;
     let core = VmiCore::new(driver)?;
 
     // Try to find the kernel information.

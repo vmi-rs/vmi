@@ -7,6 +7,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use anyhow::{Context as _, Error};
 use isr::{Profile, cache::IsrCache, macros::symbols};
 use vmi::{
     MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse, VmiHandler,
@@ -23,7 +24,6 @@ use vmi::{
         ptm::PageTableMonitor,
     },
 };
-use xen::XenStore;
 
 symbols! {
     #[derive(Debug)]
@@ -522,25 +522,14 @@ where
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Error> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let domain_id = 'x: {
-        for name in &["win7", "win10", "win11", "ubuntu22"] {
-            if let Some(domain_id) = XenStore::new()?.domain_id_from_name(name)? {
-                break 'x domain_id;
-            }
-        }
-
-        panic!("Domain not found");
-    };
-
-    tracing::debug!(?domain_id);
-
     // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::new(domain_id)?;
+    let driver = VmiXenDriver::<Amd64>::try_from_env()?
+        .context("invalid VMI_XEN_DOMAIN environment variable")?;
     let core = VmiCore::new(driver)?;
 
     // Try to find the kernel information.

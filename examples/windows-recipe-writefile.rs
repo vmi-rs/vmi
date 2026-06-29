@@ -25,6 +25,7 @@
 
 mod common;
 
+use anyhow::Error;
 use vmi::{
     Va,
     arch::amd64::Amd64,
@@ -201,8 +202,8 @@ where
     ]
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (session, _profile) = common::create_vmi_session()?;
+fn main() -> Result<(), Error> {
+    let session = common::create_vmi_session()?;
 
     let explorer_pid = {
         // This block is used to drop the pause guard after the PID is found.
