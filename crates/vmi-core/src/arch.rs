@@ -295,6 +295,14 @@ pub trait Registers: Debug + Default + Clone + Copy {
     /// - **AMD64**: `CR3 & 0x0000FFFFFFFFF000`
     fn translation_root(&self, va: Va) -> Pa;
 
+    /// Sets the physical address of the root of the current page table hierarchy
+    /// for a given virtual address.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `CR3`
+    fn set_translation_root(&mut self, root: u64, va: Va);
+
     /// Attempts to determine the return address of the current function call.
     ///
     /// # Architecture-specific

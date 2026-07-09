@@ -555,6 +555,10 @@ impl vmi_core::arch::Registers for Registers {
         self.cr3.into()
     }
 
+    fn set_translation_root(&mut self, root: u64, _va: Va) {
+        self.cr3 = Cr3(root);
+    }
+
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
     where
         Driver: VmiRead,
