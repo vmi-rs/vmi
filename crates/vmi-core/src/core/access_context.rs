@@ -19,7 +19,12 @@ impl_ops! {
 }
 
 impl Va {
-    /// Checks if the virtual address is NULL.
+    /// Creates a new virtual address with a `NULL` value.
+    pub fn null() -> Self {
+        Self(0)
+    }
+
+    /// Checks if the virtual address is `NULL`.
     pub fn is_null(self) -> bool {
         self.0 == 0
     }
