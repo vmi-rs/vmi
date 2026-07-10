@@ -169,17 +169,17 @@ where
         vmi.switch_to_view(view)?;
 
         // Install breakpoints and page table monitors for the resolved symbols.
-        let system_process = vmi.os().system_process()?;
-        let system_root = system_process.translation_root()?;
-
         let mut bpm = BreakpointManager::new();
         let mut ptm = PageTableMonitor::new();
+
+        let system_root = vmi.os().system_process()?.translation_root()?;
 
         for event in events.as_ref() {
             let root = match event.process {
                 Some(process) => vmi.os().process(process)?.translation_root()?,
                 None => system_root,
             };
+
             let cx = (event.address, root);
             let bp = Breakpoint::new(cx, view).global().with_tag(event.event);
 

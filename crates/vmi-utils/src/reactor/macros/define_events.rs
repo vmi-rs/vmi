@@ -31,7 +31,7 @@ macro_rules! _private_events_unit {
 /// #         #[module(name = "netio.sys")]
 /// #         NetioSys,
 /// #
-/// #         #[module(name = "ncrypt.dll", mode(user, process = "lsass.exe"))]
+/// #         #[module(name = "ncrypt.dll", mode = user, process = "lsass.exe")]
 /// #         Ncrypt,
 /// #     }
 /// # }
@@ -80,7 +80,7 @@ macro_rules! _private_events_unit {
 ///   `stringify!($variant)`.
 /// - `alias = "..."` or `alias = ["...", "..."]`: alternate symbol
 ///   names tried in order when `name` is not present in the profile.
-/// - `optional`: the event is allowed to be absent from the profile..
+/// - `optional`: the event is allowed to be absent from the profile.
 ///
 /// # Generated code
 ///

@@ -29,20 +29,13 @@ where
     fn slot(self) -> usize;
 }
 
-/// Privilege level a module is loaded in.
-pub enum ModuleMode<Os>
-where
-    Os: VmiOs + 'static,
-{
+/// Privilege level at which a module is loaded.
+pub enum ModuleMode {
     /// Loaded in the kernel address space.
     Kernel,
 
     /// Loaded in a user-mode process address space.
-    User {
-        /// Process filter selecting which process maps this module,
-        /// or `None` for any process.
-        process: Option<ModuleProcessFilter<Os>>,
-    },
+    User,
 }
 
 /// Process filter for user-mode modules.
@@ -69,11 +62,15 @@ where
     /// Image filename (e.g. `"ntdll.dll"`), or `"kernel"` for the kernel slot.
     pub name: &'static str,
 
+    /// Process filter selecting which process maps this module,
+    /// or `None` for any process.
+    pub process: Option<ModuleProcessFilter<Os>>,
+
     /// Variant tag, or `None` for the kernel slot.
     pub module: Option<Module>,
 
-    /// Privilege level the module is loaded in.
-    pub mode: ModuleMode<Os>,
+    /// Privilege level at which the module is loaded.
+    pub mode: ModuleMode,
 
     /// Whether the module is allowed to be absent from the guest.
     pub optional: bool,

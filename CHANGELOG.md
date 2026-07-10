@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table
   hierarchy for a given virtual address. On AMD64 this writes `CR3`.
+- **Breaking:** `vmi_utils::resolver` now resolves modules within a specific
+  process. `resolve_kernel_module` gains a `process` predicate parameter (pass
+  `AnyProcess` for the previous behavior), and `Resolved::process` is now a
+  `ProcessObject` instead of `Option<ProcessObject>`. The
+  `OsAdapter::resolve_kernel_module` and `resolve_user_module` methods now
+  take a concrete `&Self::Process<'_>`.
+- **Breaking:** `define_modules!` replaces the `mode(...)` syntax with an
+  order-independent `mode = kernel|user` and `process = ...` pair. A process
+  filter may now pin a kernel module (e.g. `win32k.sys` in `csrss.exe`), and
+  `ModuleMode` no longer carries the `Os` generic or the process filter, which
+  now lives on `ModuleMetadata`.
 
 ### Added
 
@@ -19,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Xen domain from the `VMI_XEN_DOMAIN`, `VMI_XEN_DOMAIN_ID`, or
   `VMI_XEN_DOMAIN_NAME` environment variables.
 - `Va::null()` constructor returning a virtual address of `0`.
+- `resolve_kernel_module_in` and `resolve_user_module_in` in
+  `vmi_utils::resolver`, the single-process form of `resolve_kernel_module`
+  and `resolve_user_module`.
 
 ### Removed
 

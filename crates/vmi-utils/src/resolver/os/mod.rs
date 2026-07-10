@@ -4,7 +4,7 @@ mod windows;
 use std::fmt::Debug;
 
 use isr_cache::IsrCache;
-use vmi_core::{VmiError, VmiOs, VmiState, os::ProcessPredicate};
+use vmi_core::{VmiError, VmiOs, VmiState};
 
 use super::Resolved;
 
@@ -20,22 +20,23 @@ pub trait OsAdapter: VmiOs {
     /// [`CodeView`]: isr_cache::CodeView
     type DebugSignature: Debug + Clone;
 
-    /// See [`resolve_kernel_module`].
+    /// See [`resolve_kernel_module_in`].
     ///
-    /// [`resolve_kernel_module`]: super::resolve_kernel_module
+    /// [`resolve_kernel_module_in`]: super::resolve_kernel_module_in
     fn resolve_kernel_module(
         vmi: &VmiState<Self>,
         isr: &IsrCache,
         name: &str,
+        process: &Self::Process<'_>,
     ) -> Result<Option<Resolved<Self>>, VmiError>;
 
-    /// See [`resolve_user_module`].
+    /// See [`resolve_user_module_in`].
     ///
-    /// [`resolve_user_module`]: super::resolve_user_module
+    /// [`resolve_user_module_in`]: super::resolve_user_module_in
     fn resolve_user_module(
         vmi: &VmiState<Self>,
         isr: &IsrCache,
         name: &str,
-        process: impl ProcessPredicate<Self>,
+        process: &Self::Process<'_>,
     ) -> Result<Option<Resolved<Self>>, VmiError>;
 }

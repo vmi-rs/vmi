@@ -43,28 +43,34 @@ macro_rules! _private_modules_unit {
 ///     /// Modules monitored by the reactor.
 ///     #[os(<Driver: VmiRead> WindowsOs<Driver> where Driver::Architecture: ArchAdapter<Driver>)]
 ///     pub enum Module {
-///         // Kernel-mode driver. `mode(kernel)` is the default.
+///         // Kernel-mode driver. `mode = kernel` is the default.
 ///         #[module(name = "netio.sys")]
 ///         NetioSys,
 ///
+///         // Kernel-mode module mapped only in certain processes.
+///         // `win32k.sys` is not present in every address space, so pin
+///         // it to a process that maps it.
+///         #[module(name = "win32k.sys", mode = kernel, process = "csrss.exe")]
+///         Win32kInCsrss,
+///
 ///         // User-mode DLL with no process filter. The resolver picks
 ///         // the first process that maps the image.
-///         #[module(name = "ntdll.dll", mode(user))]
+///         #[module(name = "ntdll.dll", mode = user)]
 ///         NtDll,
 ///
 ///         // User-mode DLL pinned to a process by exact image name
-///         // (case-insensitive).
-///         #[module(name = "ncrypt.dll", mode(user, process = "lsass.exe"))]
+///         // (case-insensitive). `mode` and `process` are order-independent.
+///         #[module(name = "ncrypt.dll", process = "lsass.exe", mode = user)]
 ///         NcryptInLsass,
 ///
 ///         // User-mode DLL pinned by a caller-supplied predicate.
-///         #[module(name = "user32.dll", mode(user, process = in_lsass))]
+///         #[module(name = "user32.dll", mode = user, process = in_lsass)]
 ///         User32InLsass,
 ///
 ///         // `optional` lets the module be absent from the guest.
 ///         // The corresponding events resolve to `Ok(None)` and are
 ///         // dropped from the event vector.
-///         #[module(name = "msmpeng.exe", mode(user), optional)]
+///         #[module(name = "msmpeng.exe", mode = user, optional)]
 ///         Defender,
 ///     }
 ///
@@ -93,20 +99,22 @@ macro_rules! _private_modules_unit {
 ///
 ///   Omitting `#[os(...)]` emits a blanket
 ///   `impl<Os: VmiOs + 'static> ReactorModule<Os>` covering every OS
-///   family. Predicates passed to `mode(user, process = ...)` must
-///   then be `Os`-generic.
+///   family. Predicates passed to `process = ...` must then be
+///   `Os`-generic.
 ///
 /// - `#[module(...)]` on each variant: required. Arguments are
 ///   position-independent.
 ///
 ///   - `name = "..."` (required): image filename, e.g. `"ntdll.dll"`.
-///   - `mode(kernel)` (default): kernel address space.
-///   - `mode(user)`: user-mode, no process filter.
-///   - `mode(user, process = "literal")`: user-mode pinned by exact,
-///     case-insensitive image name.
-///   - `mode(user, process = path)`: user-mode pinned by a predicate.
-///     `path` can be a bare ident or a fully qualified path. Signature:
-///     `fn(&Os::Process<'_>) -> Result<bool, VmiError>`.
+///   - `mode = kernel` (default): kernel address space.
+///   - `mode = user`: user-mode process address space.
+///   - `process = ...` (optional): pin the module to a process, in either
+///     mode. Accepts either a `"literal"` matched case-insensitively
+///     against the image name, or a predicate `path` (a bare ident or a
+///     fully qualified path) with signature
+///     `fn(&Os::Process<'_>) -> Result<bool, VmiError>`. A kernel image
+///     mapped only in some processes (e.g. `win32k.sys`) uses this to
+///     select where to resolve.
 ///   - `optional`: the module is allowed to be absent from the guest.
 ///
 /// - `#[resolver] $vis struct $Name;` (optional): emit the resolver
@@ -321,7 +329,9 @@ macro_rules! _private_define_modules {
         // - an empty `name {}` after parsing means the caller forgot
         // `name = "..."`.
         //
-        // `mode { kernel }` is the default when no `mode(...)` is given.
+        // `mode { kernel }` is the default when no `mode = ...` is given.
+        // `process { }` stays empty until a `process = ...` fills it, the
+        // same empty-means-absent convention `name { }` uses above.
         $crate::_private_define_modules! {
             @parse_module_args
             ctx $ctx
@@ -331,6 +341,7 @@ macro_rules! _private_define_modules {
             pass $pass
             name { }
             mode { kernel }
+            process { }
             optional { false }
             args { $($margs)* }
         }
@@ -349,6 +360,7 @@ macro_rules! _private_define_modules {
         pass $pass:tt
         name $_old_name:tt
         mode $mode:tt
+        process $process:tt
         optional $opt:tt
         args { name = $name:literal $(, $($rest:tt)*)? }
     ) => {
@@ -361,13 +373,14 @@ macro_rules! _private_define_modules {
             pass $pass
             name { $name }
             mode $mode
+            process $process
             optional $opt
             args { $($($rest)*)? }
         }
     };
 
     //
-    // @parse_module_args - consume `mode(...)`.
+    // @parse_module_args - consume `mode = kernel` or `mode = user`.
     //
 
     (
@@ -379,8 +392,9 @@ macro_rules! _private_define_modules {
         pass $pass:tt
         name $name:tt
         mode $_old_mode:tt
+        process $process:tt
         optional $opt:tt
-        args { mode($($mode_args:tt)*) $(, $($rest:tt)*)? }
+        args { mode = $mode:ident $(, $($rest:tt)*)? }
     ) => {
         $crate::_private_define_modules! {
             @parse_module_args
@@ -390,9 +404,180 @@ macro_rules! _private_define_modules {
             variant $variant
             pass $pass
             name $name
-            mode { $($mode_args)* }
+            mode { $mode }
+            process $process
             optional $opt
             args { $($($rest)*)? }
+        }
+    };
+
+    //
+    // @parse_module_args - consume `process = "..."` (literal image name).
+    // A literal is a single fragment, so it composes with the optional
+    // trailing comma directly. This arm must precede the predicate arm
+    // below, whose token scanner would otherwise swallow the literal.
+    //
+
+    (
+        @parse_module_args
+        ctx $ctx:tt
+        input $input:tt
+        output $output:tt
+        variant $variant:tt
+        pass $pass:tt
+        name $name:tt
+        mode $mode:tt
+        process $_old_process:tt
+        optional $opt:tt
+        args { process = $proc:literal $(, $($rest:tt)*)? }
+    ) => {
+        $crate::_private_define_modules! {
+            @parse_module_args
+            ctx $ctx
+            input $input
+            output $output
+            variant $variant
+            pass $pass
+            name $name
+            mode $mode
+            process { name $proc }
+            optional $opt
+            args { $($($rest)*)? }
+        }
+    };
+
+    //
+    // @parse_module_args - consume `process = <path>` (predicate). The value
+    // can be several tokens (`self::match`), and a greedy `$($path:tt)+`
+    // before an optional trailing comma is a local ambiguity, so hand the
+    // remaining args to `@scan_predicate`, which peels path tokens up to the
+    // next top-level comma.
+    //
+
+    (
+        @parse_module_args
+        ctx $ctx:tt
+        input $input:tt
+        output $output:tt
+        variant $variant:tt
+        pass $pass:tt
+        name $name:tt
+        mode $mode:tt
+        process $_old_process:tt
+        optional $opt:tt
+        args { process = $($rest:tt)+ }
+    ) => {
+        $crate::_private_define_modules! {
+            @scan_predicate
+            ctx $ctx
+            input $input
+            output $output
+            variant $variant
+            pass $pass
+            name $name
+            mode $mode
+            optional $opt
+            path { }
+            args { $($rest)+ }
+        }
+    };
+
+    //
+    // @scan_predicate - collect the tokens of a `process = <path>` predicate
+    // into `path { ... }`. A top-level comma ends the predicate and resumes
+    // `@parse_module_args`. This comma arm must precede the token arm below,
+    // since a comma also matches `$next:tt`.
+    //
+
+    (
+        @scan_predicate
+        ctx $ctx:tt
+        input $input:tt
+        output $output:tt
+        variant $variant:tt
+        pass $pass:tt
+        name $name:tt
+        mode $mode:tt
+        optional $opt:tt
+        path { $($path:tt)* }
+        args { , $($rest:tt)* }
+    ) => {
+        $crate::_private_define_modules! {
+            @parse_module_args
+            ctx $ctx
+            input $input
+            output $output
+            variant $variant
+            pass $pass
+            name $name
+            mode $mode
+            process { predicate $($path)* }
+            optional $opt
+            args { $($rest)* }
+        }
+    };
+
+    //
+    // @scan_predicate - end of args: the predicate runs to the end.
+    //
+
+    (
+        @scan_predicate
+        ctx $ctx:tt
+        input $input:tt
+        output $output:tt
+        variant $variant:tt
+        pass $pass:tt
+        name $name:tt
+        mode $mode:tt
+        optional $opt:tt
+        path { $($path:tt)* }
+        args { }
+    ) => {
+        $crate::_private_define_modules! {
+            @parse_module_args
+            ctx $ctx
+            input $input
+            output $output
+            variant $variant
+            pass $pass
+            name $name
+            mode $mode
+            process { predicate $($path)* }
+            optional $opt
+            args { }
+        }
+    };
+
+    //
+    // @scan_predicate - fold one non-comma token into the path accumulator.
+    //
+
+    (
+        @scan_predicate
+        ctx $ctx:tt
+        input $input:tt
+        output $output:tt
+        variant $variant:tt
+        pass $pass:tt
+        name $name:tt
+        mode $mode:tt
+        optional $opt:tt
+        path { $($path:tt)* }
+        args { $next:tt $($rest:tt)* }
+    ) => {
+        $crate::_private_define_modules! {
+            @scan_predicate
+            ctx $ctx
+            input $input
+            output $output
+            variant $variant
+            pass $pass
+            name $name
+            mode $mode
+            optional $opt
+            path { $($path)* $next }
+            args { $($rest)* }
         }
     };
 
@@ -409,6 +594,7 @@ macro_rules! _private_define_modules {
         pass $pass:tt
         name $name:tt
         mode $mode:tt
+        process $process:tt
         optional $_old_opt:tt
         args { optional $(, $($rest:tt)*)? }
     ) => {
@@ -421,6 +607,7 @@ macro_rules! _private_define_modules {
             pass $pass
             name $name
             mode $mode
+            process $process
             optional { true }
             args { $($($rest)*)? }
         }
@@ -441,6 +628,7 @@ macro_rules! _private_define_modules {
         pass $pass:tt
         name { }
         mode $mode:tt
+        process $process:tt
         optional $opt:tt
         args { }
     ) => {
@@ -461,7 +649,8 @@ macro_rules! _private_define_modules {
         variant { $variant:ident }
         pass { $($pass:tt)* }
         name { $mod_name:literal }
-        mode { $($mode_args:tt)* }
+        mode { $($mode:tt)* }
+        process { $($process:tt)* }
         optional { $opt:tt }
         args { }
     ) => {
@@ -475,7 +664,8 @@ macro_rules! _private_define_modules {
                     variant: $variant,
                     pass: [$($pass)*],
                     name: $mod_name,
-                    mode: { $($mode_args)* },
+                    mode: { $($mode)* },
+                    process: { $($process)* },
                     optional: $opt,
                 }
             }
@@ -612,7 +802,8 @@ macro_rules! _private_define_modules {
                     variant: $variant:ident,
                     pass: [$($pass:tt)*],
                     name: $mod_name:literal,
-                    mode: { $($mode_args:tt)* },
+                    mode: { $($mode:tt)* },
+                    process: { $($process:tt)* },
                     optional: $opt:tt,
                 }
             )*
@@ -638,7 +829,8 @@ macro_rules! _private_define_modules {
                     {
                         variant: $variant,
                         name: $mod_name,
-                        mode: { $($mode_args)* },
+                        mode: { $($mode)* },
+                        process: { $($process)* },
                         optional: $opt,
                     }
                 )*
@@ -657,7 +849,7 @@ macro_rules! _private_define_modules {
     //
     // @emit_impl - blanket case: `#[os(...)]` was omitted. Emits one impl over
     // `__Os: VmiOs + 'static`, so the enum serves every OS. Predicates passed
-    // to `mode(user, process = ...)` must therefore be Os-generic.
+    // to `process = ...` must therefore be Os-generic.
     //
     // Predicates are turbofished with `__Os` because Rust cannot normalize the
     // abstract `__Os::Process<'_>` projection during dyn-Fn coercion, so it
@@ -673,7 +865,8 @@ macro_rules! _private_define_modules {
                 {
                     variant: $variant:ident,
                     name: $mod_name:literal,
-                    mode: { $($mode_args:tt)* },
+                    mode: { $($mode:tt)* },
+                    process: { $($process:tt)* },
                     optional: $opt:tt,
                 }
             )*
@@ -686,6 +879,7 @@ macro_rules! _private_define_modules {
             const METADATA: &'static [$crate::reactor::ModuleMetadata<Self, __Os>] = &[
                 $crate::reactor::ModuleMetadata {
                     name: "kernel",
+                    process: ::std::option::Option::None,
                     module: ::std::option::Option::None,
                     mode: $crate::reactor::ModuleMode::Kernel,
                     optional: true,
@@ -693,9 +887,12 @@ macro_rules! _private_define_modules {
                 $(
                     $crate::reactor::ModuleMetadata {
                         name: $mod_name,
+                        process: $crate::_private_define_modules!(
+                            @process_expr { $($process)* } turbofish: { ::<__Os> }
+                        ),
                         module: ::std::option::Option::Some(Self::$variant),
                         mode: $crate::_private_define_modules!(
-                            @mode_expr { $($mode_args)* } turbofish: { ::<__Os> }
+                            @mode_expr { $($mode)* }
                         ),
                         optional: $opt,
                     },
@@ -786,7 +983,8 @@ macro_rules! _private_define_modules {
                 {
                     variant: $variant:ident,
                     name: $mod_name:literal,
-                    mode: { $($mode_args:tt)* },
+                    mode: { $($mode:tt)* },
+                    process: { $($process:tt)* },
                     optional: $opt:tt,
                 }
             )*
@@ -799,6 +997,7 @@ macro_rules! _private_define_modules {
             const METADATA: &'static [$crate::reactor::ModuleMetadata<Self, $os_ty>] = &[
                 $crate::reactor::ModuleMetadata {
                     name: "kernel",
+                    process: ::std::option::Option::None,
                     module: ::std::option::Option::None,
                     mode: $crate::reactor::ModuleMode::Kernel,
                     optional: true,
@@ -806,9 +1005,12 @@ macro_rules! _private_define_modules {
                 $(
                     $crate::reactor::ModuleMetadata {
                         name: $mod_name,
+                        process: $crate::_private_define_modules!(
+                            @process_expr { $($process)* } turbofish: { }
+                        ),
                         module: ::std::option::Option::Some(Self::$variant),
                         mode: $crate::_private_define_modules!(
-                            @mode_expr { $($mode_args)* } turbofish: { }
+                            @mode_expr { $($mode)* }
                         ),
                         optional: $opt,
                     },
@@ -824,9 +1026,24 @@ macro_rules! _private_define_modules {
     };
 
     //
-    // @mode_expr - render a `ModuleMode<Os>` expression from captured
-    // `mode(...)` args. Invoked from `@emit_impl` / `@emit_impl_anchored`,
-    // where the impl's Os type is in scope.
+    // @mode_expr - render a `ModuleMode` value from the parsed `mode { ... }`
+    // accumulator, a single `kernel` or `user` keyword.
+    //
+
+    (@mode_expr { kernel }) => {
+        $crate::reactor::ModuleMode::Kernel
+    };
+
+    (@mode_expr { user }) => {
+        $crate::reactor::ModuleMode::User
+    };
+
+    //
+    // @process_expr - render the `Option<ModuleProcessFilter<Os>>` from the
+    // parsed `process { ... }` accumulator. An empty accumulator means no
+    // filter. `name <literal>` and `predicate <path>` carry the two filter
+    // kinds. Both kernel and user modules may pin a process. win32k.sys, for
+    // instance, is a kernel image mapped only in the processes that use it.
     //
     // The `turbofish` parameter is appended verbatim after the predicate path
     // so the blanket emitter can pass `::<__Os>` to make the predicate's
@@ -835,34 +1052,21 @@ macro_rules! _private_define_modules {
     // emitters pass an empty turbofish - the impl's concrete bounds let
     // inference resolve the predicate's generic.
     //
-    // Arm order: literal `process = "..."` precedes the path arm because
-    // `:literal` is the narrower matcher.
-    //
 
-    (@mode_expr { kernel } turbofish: $tf:tt) => {
-        $crate::reactor::ModuleMode::Kernel
+    (@process_expr { } turbofish: $tf:tt) => {
+        ::std::option::Option::None
     };
 
-    (@mode_expr { user } turbofish: $tf:tt) => {
-        $crate::reactor::ModuleMode::User {
-            process: ::std::option::Option::None,
-        }
+    (@process_expr { name $name:literal } turbofish: $tf:tt) => {
+        ::std::option::Option::Some(
+            $crate::reactor::ModuleProcessFilter::Name($name),
+        )
     };
 
-    (@mode_expr { user, process = $name:literal } turbofish: $tf:tt) => {
-        $crate::reactor::ModuleMode::User {
-            process: ::std::option::Option::Some(
-                $crate::reactor::ModuleProcessFilter::Name($name),
-            ),
-        }
-    };
-
-    (@mode_expr { user, process = $($path:tt)+ } turbofish: { $($tf:tt)* }) => {
-        $crate::reactor::ModuleMode::User {
-            process: ::std::option::Option::Some(
-                $crate::reactor::ModuleProcessFilter::Predicate(&$($path)+ $($tf)*),
-            ),
-        }
+    (@process_expr { predicate $($path:tt)+ } turbofish: { $($tf:tt)* }) => {
+        ::std::option::Option::Some(
+            $crate::reactor::ModuleProcessFilter::Predicate(&$($path)+ $($tf)*),
+        )
     };
 
     //

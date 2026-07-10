@@ -24,8 +24,8 @@ pub struct Resolved<Os>
 where
     Os: OsAdapter,
 {
-    /// The process the module was found in, or `None` for kernel modules.
-    pub process: Option<ProcessObject>,
+    /// Process in which the module was resolved.
+    pub process: ProcessObject,
 
     /// Virtual address of the loaded module image.
     pub image_base: Va,
@@ -66,7 +66,8 @@ where
     }
 }
 
-/// Resolves a kernel module by name and extracts its [`DebugSignature`].
+/// Resolves a kernel module by name in the first process matching
+/// `process` predicate and extracts its [`DebugSignature`].
 ///
 /// # Platform-specific
 ///
@@ -74,6 +75,37 @@ where
 ///   - Walks `PsLoadedModuleList` to find the matching
 ///     `_KLDR_DATA_TABLE_ENTRY`.
 ///   - Reads the [`CodeView`] directly from its `DllBase`.
+///
+/// # Notes
+///
+/// Use [`AnyProcess`] to resolve the module from any process that loads it.
+///
+/// The system process is usually the first in the enumeration, unless it
+/// has been maliciously unlinked. To pin resolution to the system process,
+/// use:
+///
+/// ```no_run
+/// # use isr_cache::IsrCache;
+/// # use vmi::{
+/// #     VmiState,
+/// #     arch::amd64::Amd64,
+/// #     driver::VmiRead,
+/// #     os::windows::WindowsOs,
+/// #     utils::resolver::resolve_kernel_module_in,
+/// # };
+/// #
+/// # fn example<Driver>(
+/// #     vmi: &VmiState<WindowsOs<Driver>>,
+/// #     isr: &IsrCache,
+/// # ) -> Result<(), Box<dyn std::error::Error>>
+/// # where
+/// #     Driver: VmiRead<Architecture = Amd64>,
+/// # {
+/// let system_process = vmi.os().system_process()?;
+/// resolve_kernel_module_in(vmi, isr, "ntoskrnl.exe", &system_process)?;
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// # Examples
 ///
@@ -83,7 +115,7 @@ where
 /// #     VmiState,
 /// #     arch::amd64::Amd64,
 /// #     driver::VmiRead,
-/// #     os::windows::WindowsOs,
+/// #     os::{AnyProcess, windows::WindowsOs},
 /// #     utils::resolver::resolve_kernel_module,
 /// # };
 /// #
@@ -94,23 +126,53 @@ where
 /// # where
 /// #     Driver: VmiRead<Architecture = Amd64>,
 /// # {
-/// resolve_kernel_module(vmi, isr, "ntoskrnl.exe")?;
-/// resolve_kernel_module(vmi, isr, "netio.sys")?;
+/// resolve_kernel_module(vmi, isr, "ntoskrnl.exe", AnyProcess)?;
+/// resolve_kernel_module(vmi, isr, "netio.sys", AnyProcess)?;
+/// resolve_kernel_module(vmi, isr, "win32k.sys", "csrss.exe")?;
 /// # Ok(())
 /// # }
 /// ```
 ///
 /// [`DebugSignature`]: OsAdapter::DebugSignature
 /// [`CodeView`]: isr_cache::CodeView
+/// [`AnyProcess`]: vmi_core::os::AnyProcess
 pub fn resolve_kernel_module<Os>(
     vmi: &VmiState<Os>,
     isr: &IsrCache,
     name: &str,
+    process: impl ProcessPredicate<Os>,
 ) -> Result<Option<Resolved<Os>>, VmiError>
 where
     Os: OsAdapter,
 {
-    Os::resolve_kernel_module(vmi, isr, name)
+    for process in vmi.os().filter_processes(process)? {
+        let process = process?;
+
+        if let Some(resolved) = resolve_kernel_module_in(vmi, isr, name, &process)? {
+            return Ok(Some(resolved));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Resolves a kernel module by name within `process`'s address space and
+/// extracts its [`DebugSignature`].
+///
+/// This is the single-process form of [`resolve_kernel_module`], which
+/// iterates the processes matching a predicate and delegates here.
+///
+/// [`DebugSignature`]: OsAdapter::DebugSignature
+pub fn resolve_kernel_module_in<Os>(
+    vmi: &VmiState<Os>,
+    isr: &IsrCache,
+    name: &str,
+    process: &Os::Process<'_>,
+) -> Result<Option<Resolved<Os>>, VmiError>
+where
+    Os: OsAdapter,
+{
+    Os::resolve_kernel_module(vmi, isr, name, process)
 }
 
 /// Resolves a user module by name in the first process matching
@@ -182,6 +244,33 @@ pub fn resolve_user_module<Os>(
     isr: &IsrCache,
     name: &str,
     process: impl ProcessPredicate<Os>,
+) -> Result<Option<Resolved<Os>>, VmiError>
+where
+    Os: OsAdapter,
+{
+    for process in vmi.os().filter_processes(process)? {
+        let process = process?;
+
+        if let Some(resolved) = resolve_user_module_in(vmi, isr, name, &process)? {
+            return Ok(Some(resolved));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Resolves a user module by name within `process` and extracts its
+/// [`DebugSignature`].
+///
+/// This is the single-process form of [`resolve_user_module`], which
+/// iterates the processes matching a predicate and delegates here.
+///
+/// [`DebugSignature`]: OsAdapter::DebugSignature
+pub fn resolve_user_module_in<Os>(
+    vmi: &VmiState<Os>,
+    isr: &IsrCache,
+    name: &str,
+    process: &Os::Process<'_>,
 ) -> Result<Option<Resolved<Os>>, VmiError>
 where
     Os: OsAdapter,

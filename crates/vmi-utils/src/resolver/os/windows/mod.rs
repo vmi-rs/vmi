@@ -2,8 +2,8 @@ mod kernel_module;
 mod user_module;
 
 use isr_cache::{CodeView, IsrCache};
-use vmi_core::{VmiError, VmiState, driver::VmiRead, os::ProcessPredicate};
-use vmi_os_windows::WindowsOs;
+use vmi_core::{VmiError, VmiState, driver::VmiRead};
+use vmi_os_windows::{WindowsOs, WindowsProcess};
 
 use super::{super::ArchAdapter, OsAdapter, Resolved};
 
@@ -26,8 +26,9 @@ where
         vmi: &VmiState<Self>,
         isr: &IsrCache,
         name: &str,
+        process: &WindowsProcess<Driver>,
     ) -> Result<Option<Resolved<Self>>, VmiError> {
-        kernel_module::resolve(vmi, isr, name)
+        kernel_module::resolve(vmi, isr, name, process)
     }
 
     #[tracing::instrument(name = "resolver", skip_all)]
@@ -35,7 +36,7 @@ where
         vmi: &VmiState<Self>,
         isr: &IsrCache,
         name: &str,
-        process: impl ProcessPredicate<Self>,
+        process: &WindowsProcess<Driver>,
     ) -> Result<Option<Resolved<Self>>, VmiError> {
         user_module::resolve(vmi, isr, name, process)
     }

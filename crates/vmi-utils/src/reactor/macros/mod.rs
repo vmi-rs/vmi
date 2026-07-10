@@ -38,8 +38,9 @@ pub mod __private {
     ///
     /// Existing slots are left unchanged, which lets callers pre-populate
     /// entries with `with_kernel`, `with_module`, or `with_module_in_process`.
-    /// Empty slots are resolved from [`Module::METADATA`]: kernel modules use
-    /// the kernel resolver, and user modules use the configured process filter.
+    /// Empty slots are resolved from [`Module::METADATA`]. Each slot honors its
+    /// optional process filter. Without a filter, a kernel module resolves in
+    /// the system process and a user module resolves across any process.
     ///
     /// Resolved [`CodeView`] signatures are loaded through the ISR cache,
     /// and the resulting profile references are stored in the module table.
@@ -83,14 +84,25 @@ pub mod __private {
                 continue;
             }
 
-            let resolved = match &meta.mode {
-                ModuleMode::Kernel => crate::resolver::resolve_kernel_module(&vmi, isr, meta.name)?,
-                ModuleMode::User { process } => match process {
+            let resolved = match meta.mode {
+                ModuleMode::Kernel => match meta.process {
                     Some(ModuleProcessFilter::Name(name)) => {
-                        crate::resolver::resolve_user_module(&vmi, isr, meta.name, *name)?
+                        crate::resolver::resolve_kernel_module(&vmi, isr, meta.name, name)?
                     }
                     Some(ModuleProcessFilter::Predicate(predicate)) => {
-                        crate::resolver::resolve_user_module(&vmi, isr, meta.name, *predicate)?
+                        crate::resolver::resolve_kernel_module(&vmi, isr, meta.name, predicate)?
+                    }
+                    None => {
+                        let process = vmi.os().system_process()?;
+                        crate::resolver::resolve_kernel_module_in(&vmi, isr, meta.name, &process)?
+                    }
+                },
+                ModuleMode::User => match meta.process {
+                    Some(ModuleProcessFilter::Name(name)) => {
+                        crate::resolver::resolve_user_module(&vmi, isr, meta.name, name)?
+                    }
+                    Some(ModuleProcessFilter::Predicate(predicate)) => {
+                        crate::resolver::resolve_user_module(&vmi, isr, meta.name, predicate)?
                     }
                     None => crate::resolver::resolve_user_module(&vmi, isr, meta.name, AnyProcess)?,
                 },
@@ -101,7 +113,7 @@ pub mod __private {
                     let entry = isr.entry_from_codeview(resolved.debug_signature)?;
                     let profile = cache_slot.insert(entry).profile()?;
                     *table_slot = Some(ResolvedModule {
-                        process: resolved.process,
+                        process: Some(resolved.process),
                         base_address: resolved.image_base,
                         profile: profile.into(),
                     });
@@ -266,29 +278,29 @@ mod tests {
             /// Rustdoc before attribute.
             #[allow(dead_code)] // Allow attributes. Can be before or after Rustdoc.
             pub enum Module {
-                /// Default kernel mode (no `mode(...)`).
+                /// Default kernel mode (no `mode = ...`).
                 #[module(name = "module1")]
                 Module1,
 
                 /// Explicit kernel mode.
-                #[module(name = "module2", mode(kernel))]
+                #[module(name = "module2", mode = kernel)]
                 /// Rustdoc after attribute.
                 Module2,
 
                 /// User mode, no process filter.
-                #[module(name = "module3", mode(user), optional)]
+                #[module(name = "module3", mode = user, optional)]
                 Module3,
 
                 /// User mode, process filter by literal name.
-                #[module(optional, name = "module4", mode(user, process = "lsass.exe"))]
+                #[module(optional, name = "module4", mode = user, process = "lsass.exe")]
                 Module4,
 
                 /// User mode, process filter by bare-ident predicate.
-                #[module(name = "module5", mode(user, process = match_by_name))]
+                #[module(name = "module5", mode = user, process = match_by_name)]
                 Module5,
 
                 /// User mode, process filter by fully-qualified predicate.
-                #[module(name = "module6", mode(user, process = self::match_by_name))]
+                #[module(name = "module6", mode = user, process = self::match_by_name)]
                 Module6,
             }
 
@@ -403,10 +415,13 @@ mod tests {
                 where Driver::Architecture: ArchAdapter<Driver>
             )]
             pub enum AnchoredWhereModule {
-                #[module(name = "kmod", mode(kernel))]
+                #[module(name = "kmod", mode = kernel)]
                 Kmod,
 
-                #[module(name = "umod", mode(user, process = match_windows_process))]
+                #[module(name = "kmod-pinned", mode = kernel, process = match_windows_process)]
+                KmodPinned,
+
+                #[module(name = "umod", mode = user, process = match_windows_process)]
                 Umod,
             }
 
@@ -428,7 +443,7 @@ mod tests {
                 where Driver: VmiRead, Driver::Architecture: ArchAdapter<Driver>
             )]
             pub enum AnchoredBareModule {
-                #[module(name = "a", mode(user, process = match_windows_process))]
+                #[module(name = "a", mode = user, process = match_windows_process)]
                 A,
             }
 
@@ -447,7 +462,7 @@ mod tests {
                 #[module(name = "a")]
                 A,
 
-                #[module(name = "b", mode(user))]
+                #[module(name = "b", mode = user)]
                 B,
             }
         }
@@ -531,8 +546,10 @@ mod tests {
         }
     }
 
-    /// `#[module(...)]` argument ordering. `name = "..."`, `mode(...)`, and
-    /// `optional` may appear in any order.
+    /// `#[module(...)]` argument ordering. `name = "..."`, `mode = ...`,
+    /// `process = ...`, and `optional` may appear in any order. Includes a
+    /// `process = <predicate>` that is not the last argument, which exercises
+    /// the predicate scanner terminating on the next comma.
     #[test]
     fn test_module_arg_order() {
         define_modules! {
@@ -546,16 +563,16 @@ mod tests {
                 #[module(name = "c", optional)]
                 C,
 
-                #[module(mode(user), name = "d")]
+                #[module(mode = user, name = "d")]
                 D,
 
-                #[module(optional, mode(kernel), name = "e")]
+                #[module(optional, mode = kernel, name = "e")]
                 E,
 
-                #[module(name = "f", optional, mode(user, process = match_by_name))]
+                #[module(process = match_by_name, name = "f", optional, mode = user)]
                 F,
 
-                #[module(mode(user, process = "lsass.exe"), optional, name = "g")]
+                #[module(process = "lsass.exe", mode = user, optional, name = "g")]
                 G,
             }
 
@@ -564,9 +581,12 @@ mod tests {
         }
     }
 
-    /// Every `mode(...)` shape in one enum: omitted (default kernel),
-    /// `kernel`, `user`, `user, process = "literal"`, `user, process = ident`,
-    /// `user, process = path::with::segments`.
+    /// Every `mode = ...` / `process = ...` shape in one enum: omitted
+    /// (default kernel), explicit `kernel`, `user`, and both privilege
+    /// levels combined with each `process = ...` form (literal name,
+    /// bare-ident predicate, and fully-qualified path predicate). A kernel
+    /// module may pin a process too, for images like `win32k.sys` that are
+    /// not mapped everywhere.
     #[test]
     fn test_mode_shapes() {
         define_modules! {
@@ -576,23 +596,35 @@ mod tests {
                 Default,
 
                 /// Explicit kernel.
-                #[module(name = "kernel", mode(kernel))]
+                #[module(name = "kernel", mode = kernel)]
                 Kernel,
 
+                /// Kernel pinned by literal-name filter.
+                #[module(name = "kernel-by-name", mode = kernel, process = "csrss.exe")]
+                KernelByName,
+
+                /// Kernel pinned by bare-ident predicate.
+                #[module(name = "kernel-by-ident", mode = kernel, process = match_by_name)]
+                KernelByIdent,
+
+                /// Kernel pinned by fully-qualified path predicate.
+                #[module(name = "kernel-by-path", mode = kernel, process = self::match_by_name)]
+                KernelByPath,
+
                 /// User with no process filter.
-                #[module(name = "any-user", mode(user))]
+                #[module(name = "any-user", mode = user)]
                 AnyUser,
 
                 /// User with literal-name filter.
-                #[module(name = "by-name", mode(user, process = "lsass.exe"))]
+                #[module(name = "by-name", mode = user, process = "lsass.exe")]
                 ByName,
 
                 /// User with bare-ident predicate.
-                #[module(name = "by-ident", mode(user, process = match_by_name))]
+                #[module(name = "by-ident", mode = user, process = match_by_name)]
                 ByIdent,
 
                 /// User with fully-qualified path predicate.
-                #[module(name = "by-path", mode(user, process = self::match_by_name))]
+                #[module(name = "by-path", mode = user, process = self::match_by_name)]
                 ByPath,
             }
 

@@ -111,7 +111,7 @@ define_modules! {
         /// `ncrypt.dll` in `lsass.exe`.
         // Note that `.., process = "lsass.exe"` would also work, but this
         // demonstrates how to use a custom predicate.
-        #[module(name = "ncrypt.dll", mode(user, process = match_lsass))]
+        #[module(name = "ncrypt.dll", mode = user, process = match_lsass)]
         NcryptDll,
     }
 
@@ -312,10 +312,6 @@ fn main() -> Result<(), Error> {
             .context("ncrypt.dll not found in lsass.exe")?
     };
 
-    let ncrypt_process = ncrypt_resolved
-        .process
-        .context("resolved ncrypt.dll is not associated with a process")?;
-
     let ncrypt_entry = isr
         .entry_from_codeview(ncrypt_resolved.debug_signature)
         .context("cannot find symbols for ncrypt.dll")?;
@@ -334,7 +330,7 @@ fn main() -> Result<(), Error> {
         .with_kernel(kernel_info.base_address, profile)
         .with_module_in_process(
             Module::NcryptDll,
-            ncrypt_process,
+            ncrypt_resolved.process,
             ncrypt_resolved.image_base,
             ncrypt_profile,
         )
