@@ -56,11 +56,13 @@
 //!     ]
 //! }
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # use vmi::driver::xen::VmiXenDriver;
-//! # let vmi: vmi::VmiSession<WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
-//! # let pid = unimplemented!();
-//! #
+//! # fn example<Driver>(
+//! #     vmi: &vmi::VmiSession<WindowsOs<Driver>>,
+//! #     pid: vmi::os::ProcessId,
+//! # ) -> Result<(), Box<dyn std::error::Error>>
+//! # where
+//! #     Driver: vmi::driver::VmiFullDriver<Architecture = Amd64>,
+//! # {
 //! // Create and execute the injection handler
 //! vmi.handle(|vmi| {
 //!     UserInjectorHandler::new(
