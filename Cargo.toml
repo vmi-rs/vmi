@@ -59,7 +59,7 @@ isr-core = "0.7.0"
 isr-dl-windows = "0.7.0"
 isr-macros = "0.7.0"
 
-xen = { package = "libxen", version = "0.5.0" }
+xen = { package = "libxen", version = "0.5.1" }
 
 #
 # For development.
