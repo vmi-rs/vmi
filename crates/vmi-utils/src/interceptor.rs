@@ -121,6 +121,22 @@ where
                     return Ok(page.shadow_gfn);
                 }
 
+                if page.breakpoints.is_empty() {
+                    // The view was reset when the last breakpoint was removed,
+                    // but the shadow page is retained for reuse. Refresh it in
+                    // case the original page changed, then reactivate its view
+                    // mapping before inserting the new breakpoint.
+                    activate_shadow_page(vmi, page)?;
+
+                    tracing::debug!(
+                        %address,
+                        %original_gfn,
+                        shadow_gfn = %page.shadow_gfn,
+                        %view,
+                        "reactivated shadow page"
+                    );
+                }
+
                 page
             }
             Entry::Vacant(entry) => {
