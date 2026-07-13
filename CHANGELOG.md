@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter may now pin a kernel module (e.g. `win32k.sys` in `csrss.exe`), and
   `ModuleMode` no longer carries the `Os` generic or the process filter, which
   now lives on `ModuleMetadata`.
+- **Breaking:** `PageTableMonitor` now reference-counts repeated monitoring of
+  the same address and view. `unmonitor` releases one reference, while the new
+  `unmonitor_by_force` method removes the monitored address regardless of its
+  reference count.
 
 ### Added
 

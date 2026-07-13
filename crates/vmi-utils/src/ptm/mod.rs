@@ -117,7 +117,11 @@ where
     /// Logs the monitor state for debugging.
     fn dump(&self);
 
-    /// Begins monitoring a virtual address for page table changes.
+    /// Acquires a reference to monitoring a virtual address for page table
+    /// changes.
+    ///
+    /// Repeated calls for the same address and view increment its reference
+    /// count and must be balanced by calls to [`unmonitor`](Self::unmonitor).
     fn monitor(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -126,8 +130,16 @@ where
         tag: Tag,
     ) -> Result<(), VmiError>;
 
-    /// Stops monitoring a virtual address.
+    /// Releases one reference to a monitored virtual address.
     fn unmonitor(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+    ) -> Result<(), VmiError>;
+
+    /// Stops monitoring a virtual address and releases all of its references.
+    fn unmonitor_by_force(
         &mut self,
         vmi: &VmiCore<Driver>,
         ctx: impl Into<AddressContext>,
@@ -185,9 +197,12 @@ where
         self.inner.dump();
     }
 
-    /// Begins monitoring a virtual address for page table changes.
+    /// Acquires a reference to monitoring a virtual address for page table
+    /// changes.
     ///
-    /// Walks the page table hierarchy and write-protects the relevant pages.
+    /// On the first reference, walks the page table hierarchy and
+    /// write-protects the relevant pages. Repeated calls for the same address
+    /// and view increment its reference count.
     pub fn monitor(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -198,10 +213,11 @@ where
         self.inner.monitor(vmi, ctx, view, tag)
     }
 
-    /// Stops monitoring a virtual address.
+    /// Releases one reference to a monitored virtual address.
     ///
-    /// Removes write protection from page table pages that no longer have
-    /// any monitored entries.
+    /// The address is removed after its last reference is released. This also
+    /// removes write protection from page table pages that no longer have any
+    /// monitored entries.
     pub fn unmonitor(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -209,6 +225,18 @@ where
         view: View,
     ) -> Result<(), VmiError> {
         self.inner.unmonitor(vmi, ctx, view)
+    }
+
+    /// Stops monitoring a virtual address regardless of its reference count.
+    ///
+    /// This releases all references to the address.
+    pub fn unmonitor_by_force(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+    ) -> Result<(), VmiError> {
+        self.inner.unmonitor_by_force(vmi, ctx, view)
     }
 
     /// Stops monitoring all virtual addresses and restores memory access.

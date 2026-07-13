@@ -9,8 +9,8 @@
 //! The implementation maintains three indexes:
 //!
 //! - **VA index** (`vas`): Maps each monitored virtual address (identified by
-//!   [`AddressContext`] and [`View`]) to its state: the tag, walk chain of
-//!   entry keys, paged-in status, and resolved physical address.
+//!   [`AddressContext`] and [`View`]) to its state: the tag, reference count,
+//!   walk chain of entry keys, paged-in status, and resolved physical address.
 //!
 //! - **Entry index** (`entries`): Maps each monitored page table entry
 //!   (identified by its physical address and [`View`]) to the cached PTE
@@ -62,6 +62,8 @@ type TableKey = (View, Gfn);
 /// Per-VA monitoring state.
 struct MonitoredVa<Tag> {
     tag: Tag,
+    /// Number of callers monitoring this virtual address.
+    references: u32,
     /// Whether the full translation chain resolves to a data page.
     paged_in: bool,
     /// Resolved physical address (valid when `paged_in` is true).
@@ -318,6 +320,38 @@ where
 
         Ok(())
     }
+
+    /// Releases a monitored VA, optionally ignoring its reference count.
+    fn unmonitor_internal<Driver>(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+        force: bool,
+    ) -> Result<(), VmiError>
+    where
+        Driver: VmiRead + VmiSetProtection,
+    {
+        let ctx = ctx.into();
+        let va_key = (view, ctx);
+
+        let va = match self.vas.get_mut(&va_key) {
+            Some(va) => va,
+            None => return Ok(()),
+        };
+
+        if !force && va.references > 1 {
+            va.references -= 1;
+            return Ok(());
+        }
+
+        let va = self.vas.remove(&va_key).expect("monitored VA");
+        for entry_key in va.entry_keys {
+            self.detach_va_from_entry(vmi, va_key, entry_key);
+        }
+
+        Ok(())
+    }
 }
 
 // ─── PageTableMonitorArchAdapter ────────────────────────────────────────────
@@ -362,6 +396,7 @@ where
                 root = %ctx.root,
                 view = %view,
                 tag = ?va.tag,
+                references = va.references,
                 paged_in = va.paged_in,
                 resolved_pa = ?va.resolved_pa,
                 chain_len = va.entry_keys.len(),
@@ -380,9 +415,12 @@ where
         let ctx = ctx.into();
         let va_key = (view, ctx);
 
-        // Re-monitoring: tear down existing state first.
-        if self.vas.contains_key(&va_key) {
-            self.unmonitor(vmi, ctx, view)?;
+        if let Some(va) = self.vas.get_mut(&va_key) {
+            va.references = va
+                .references
+                .checked_add(1)
+                .expect("monitored VA reference count overflow");
+            return Ok(());
         }
 
         let mut entry_keys = Vec::new();
@@ -429,6 +467,7 @@ where
             va_key,
             MonitoredVa {
                 tag,
+                references: 1,
                 paged_in,
                 resolved_pa,
                 entry_keys,
@@ -444,19 +483,16 @@ where
         ctx: impl Into<AddressContext>,
         view: View,
     ) -> Result<(), VmiError> {
-        let ctx = ctx.into();
-        let va_key = (view, ctx);
+        self.unmonitor_internal(vmi, ctx, view, false)
+    }
 
-        let va = match self.vas.remove(&va_key) {
-            Some(va) => va,
-            None => return Ok(()),
-        };
-
-        for entry_key in va.entry_keys {
-            self.detach_va_from_entry(vmi, va_key, entry_key);
-        }
-
-        Ok(())
+    fn unmonitor_by_force(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        ctx: impl Into<AddressContext>,
+        view: View,
+    ) -> Result<(), VmiError> {
+        self.unmonitor_internal(vmi, ctx, view, true)
     }
 
     fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
@@ -479,7 +515,7 @@ where
 
         for (v, ctx) in va_keys {
             debug_assert_eq!(v, view);
-            let _ = self.unmonitor(vmi, ctx, view);
+            let _ = self.unmonitor_by_force(vmi, ctx, view);
         }
     }
 

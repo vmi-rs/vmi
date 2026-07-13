@@ -294,15 +294,44 @@ fn monitor_remonitor_same_va() -> Result<(), VmiError> {
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 1);
 
-    // Monitor the same VA again - should update in-place without doubling.
+    // Monitor the same VA again - should add a reference without doubling.
     ptm.monitor(&vmi, test_ctx(), VIEW, "test2")?;
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 1);
 
-    // Unmonitor once should fully clean up.
+    // Releasing one reference should keep the VA monitored.
+    ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
+    assert_eq!(ptm.monitored_tables(), 4);
+    assert_eq!(ptm.monitored_entries(), 4);
+    assert_eq!(ptm.paged_in_entries(), 1);
+
+    // Releasing the last reference should fully clean up.
     ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
     assert_eq!(ptm.monitored_tables(), 0);
+    assert_eq!(ptm.monitored_entries(), 0);
     assert_eq!(ptm.paged_in_entries(), 0);
+
+    Ok(())
+}
+
+#[test]
+fn unmonitor_by_force_ignores_references() -> Result<(), VmiError> {
+    let driver = MockPtmDriver::new();
+    build_full_hierarchy(&driver);
+
+    let vmi = make_vmi(driver)?;
+    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+
+    ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
+    ptm.monitor(&vmi, test_ctx(), VIEW, "test2")?;
+
+    ptm.unmonitor_by_force(&vmi, test_ctx(), VIEW)?;
+    assert_eq!(ptm.monitored_tables(), 0);
+    assert_eq!(ptm.monitored_entries(), 0);
+    assert_eq!(ptm.paged_in_entries(), 0);
+
+    // Force-removing an absent VA should be a no-op.
+    ptm.unmonitor_by_force(&vmi, test_ctx(), VIEW)?;
 
     Ok(())
 }
@@ -376,7 +405,8 @@ fn unmonitor_view_only_affects_target_view() -> Result<(), VmiError> {
     let vmi = make_vmi(driver)?;
     let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
 
-    ptm.monitor(&vmi, test_ctx(), view0, "v0")?;
+    ptm.monitor(&vmi, test_ctx(), view0, "v0-1")?;
+    ptm.monitor(&vmi, test_ctx(), view0, "v0-2")?;
     ptm.monitor(&vmi, test_ctx(), view1, "v1")?;
     assert_eq!(ptm.paged_in_entries(), 2);
 
