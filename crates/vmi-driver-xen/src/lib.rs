@@ -28,6 +28,18 @@ use xen::{
 pub use self::arch::ArchAdapter;
 use self::convert::{FromExt, IntoExt, TryFromExt};
 
+struct XenView {
+    view: XenAltP2MView,
+    default_access: xen::MemoryAccess,
+}
+
+fn is_missing_altp2m_entry(err: &xen::XenError) -> bool {
+    matches!(
+        err,
+        xen::XenError::Io(inner) if inner.raw_os_error() == Some(libc::ESRCH)
+    )
+}
+
 /// VMI driver for Xen hypervisor.
 pub struct VmiXenDriver<Arch>
 where
@@ -42,7 +54,7 @@ where
     pub(crate) info: XenDomainInfo,
 
     pub(crate) ring: RefCell<VmEventRing>,
-    pub(crate) views: RefCell<HashMap<u16, XenAltP2MView>>,
+    pub(crate) views: RefCell<HashMap<u16, XenView>>,
     pub(crate) event_processing_overhead: RefCell<Duration>,
 }
 
@@ -204,29 +216,69 @@ where
     Arch: ArchAdapter,
 {
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
-        if view.0 == 0 {
-            return Ok(self
-                .domain
-                .get_mem_access(gfn.0)
-                .map_err(VmiError::driver)?
-                .into_ext());
-        }
-
-        match self.views.borrow().get(&view.0) {
-            Some(view) => Ok(view
-                .get_mem_access(gfn.0)
-                .map_err(VmiError::driver)?
-                .into_ext()),
-            None => Err(VmiError::ViewNotFound),
-        }
+        Ok(self.memory_access_with_options(gfn, view)?.0)
     }
 
     fn memory_access_with_options(
         &self,
-        _gfn: Gfn,
-        _view: View,
+        gfn: Gfn,
+        view: View,
     ) -> Result<(MemoryAccess, MemoryAccessOptions), VmiError> {
-        Err(VmiError::NotSupported)
+        // As of Xen 4.22, xc_altp2m_get_mem_access() reports ESRCH for a valid
+        // GFN whose entry has not been materialized in a lazy altp2m view.
+        // Ideally, Xen would return the view's effective default access in
+        // this case. Until it does, validate the GFN through the domain p2m,
+        // discard its unrelated access value and fall back to the default
+        // access recorded for the view. Materialized Xen modes are decoded
+        // into both permissions and options.
+
+        if view.0 == 0 {
+            let xen_access = self
+                .domain
+                .get_mem_access(gfn.0)
+                .map_err(VmiError::driver)?;
+
+            let access = MemoryAccess::from_ext(xen_access);
+            let options = MemoryAccessOptions::from_ext(xen_access);
+
+            tracing::trace!(%gfn, %view, ?xen_access, "get memory access");
+
+            return Ok((access, options));
+        }
+
+        let views = self.views.borrow();
+        let xen_view = match views.get(&view.0) {
+            Some(view) => view,
+            None => return Err(VmiError::ViewNotFound),
+        };
+
+        let xen_access = match xen_view.view.get_mem_access(gfn.0) {
+            Ok(xen_access) => xen_access,
+            Err(err) if is_missing_altp2m_entry(&err) => {
+                // Confirm the GFN exists in the base p2m before treating ESRCH
+                // as a lazy, unmaterialized altp2m entry.
+                self.domain
+                    .get_mem_access(gfn.0)
+                    .map_err(VmiError::driver)?;
+
+                let xen_access = xen_view.default_access;
+
+                let access = MemoryAccess::from_ext(xen_access);
+                let options = MemoryAccessOptions::from_ext(xen_access);
+
+                tracing::trace!(%gfn, %view, ?xen_access, "get memory access (default)");
+
+                return Ok((access, options));
+            }
+            Err(err) => return Err(VmiError::driver(err)),
+        };
+
+        let access = MemoryAccess::from_ext(xen_access);
+        let options = MemoryAccessOptions::from_ext(xen_access);
+
+        tracing::trace!(%gfn, %view, ?xen_access, "get memory access");
+
+        Ok((access, options))
     }
 }
 
@@ -251,6 +303,7 @@ where
 
         match self.views.borrow().get(&view.0) {
             Some(view) => view
+                .view
                 .set_mem_access(gfn.into(), access.into_ext())
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
@@ -285,6 +338,7 @@ where
 
         match self.views.borrow().get(&view.0) {
             Some(view) => view
+                .view
                 .set_mem_access(gfn.into(), xen_access)
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
@@ -319,13 +373,21 @@ where
     }
 
     fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
+        let default_access = default_access.into_ext();
+
         let view = self
             .altp2m
-            .create_view(default_access.into_ext())
+            .create_view(default_access)
             .map_err(VmiError::driver)?;
 
         let id = view.id();
-        self.views.borrow_mut().insert(id, view);
+        self.views.borrow_mut().insert(
+            id,
+            XenView {
+                view,
+                default_access,
+            },
+        );
 
         Ok(View(id))
     }
@@ -348,7 +410,7 @@ where
         }
 
         match self.views.borrow().get(&view.0) {
-            Some(view) => view.switch().map_err(VmiError::driver),
+            Some(view) => view.view.switch().map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
         }
     }
@@ -361,6 +423,7 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => view
+                .view
                 .change_gfn(old_gfn.into(), new_gfn.into())
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
@@ -375,6 +438,7 @@ where
         match self.views.borrow().get(&view.0) {
             // WARNING: This will change access permissions of the GFN!
             Some(view) => view
+                .view
                 .change_gfn(gfn.into(), u64::MAX)
                 .map_err(VmiError::driver),
             None => Err(VmiError::ViewNotFound),
@@ -517,5 +581,22 @@ where
 
     fn reset_state(&self) -> Result<(), VmiError> {
         Arch::reset_state(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_missing_altp2m_entry;
+
+    #[test]
+    fn identifies_missing_altp2m_entries() {
+        let missing = xen::XenError::Io(std::io::Error::from_raw_os_error(libc::ESRCH));
+        let invalid = xen::XenError::Io(std::io::Error::from_raw_os_error(libc::EINVAL));
+
+        assert!(is_missing_altp2m_entry(&missing));
+        assert!(!is_missing_altp2m_entry(&invalid));
+        assert!(!is_missing_altp2m_entry(&xen::XenError::Other(
+            "other error"
+        )));
     }
 }
