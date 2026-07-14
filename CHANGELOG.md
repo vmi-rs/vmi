@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table
   hierarchy for a given virtual address. On AMD64 this writes `CR3`.
+- **Breaking:** `VmiQueryProtection` now requires a
+  `memory_access_with_options` method that returns both the memory access
+  permissions and associated `MemoryAccessOptions` for a GFN and view.
 - **Breaking:** `vmi_utils::resolver` now resolves modules within a specific
   process. `resolve_kernel_module` gains a `process` predicate parameter (pass
   `AnyProcess` for the previous behavior), and `Resolved::process` is now a

@@ -81,6 +81,14 @@ pub trait VmiWrite: VmiDriver {
 pub trait VmiQueryProtection: VmiDriver {
     /// Returns the memory access permissions for a specific GFN.
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError>;
+
+    /// Returns the memory access permissions for a specific GFN with
+    /// additional options.
+    fn memory_access_with_options(
+        &self,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<(MemoryAccess, MemoryAccessOptions), VmiError>;
 }
 
 /// Capability to modify memory access permissions.

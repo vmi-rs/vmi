@@ -220,6 +220,14 @@ where
             None => Err(VmiError::ViewNotFound),
         }
     }
+
+    fn memory_access_with_options(
+        &self,
+        _gfn: Gfn,
+        _view: View,
+    ) -> Result<(MemoryAccess, MemoryAccessOptions), VmiError> {
+        Err(VmiError::NotSupported)
+    }
 }
 
 impl<Arch> VmiSetProtection for VmiXenDriver<Arch>

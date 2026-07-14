@@ -78,6 +78,14 @@ impl VmiQueryProtection for MockPtmDriver {
     fn memory_access(&self, _gfn: Gfn, _view: View) -> Result<MemoryAccess, VmiError> {
         Ok(MemoryAccess::RW)
     }
+
+    fn memory_access_with_options(
+        &self,
+        _gfn: Gfn,
+        _view: View,
+    ) -> Result<(MemoryAccess, MemoryAccessOptions), VmiError> {
+        Err(VmiError::NotSupported)
+    }
 }
 
 impl VmiSetProtection for MockPtmDriver {
