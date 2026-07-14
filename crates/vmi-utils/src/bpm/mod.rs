@@ -416,6 +416,32 @@ where
         breakpoints.contains_key(&(key, ctx))
     }
 
+    /// Checks if the event occurred at a physical location managed by this
+    /// breakpoint manager, regardless of its key or address context.
+    pub(crate) fn contains_by_event_location(
+        &self,
+        event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
+    ) -> bool {
+        let (_, pa, view) = match self.address_for_event(event) {
+            Some(location) => location,
+            None => return false,
+        };
+
+        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
+        let breakpoints = match self.active_breakpoints.get(&(view, gfn)) {
+            Some(breakpoints) => breakpoints,
+            None => return false,
+        };
+
+        let offset = <Interface::Driver as VmiDriver>::Architecture::va_offset(Va(event
+            .registers()
+            .instruction_pointer()));
+
+        breakpoints.values().flatten().any(|breakpoint| {
+            <Interface::Driver as VmiDriver>::Architecture::va_offset(breakpoint.ctx().va) == offset
+        })
+    }
+
     /// Checks if a breakpoint is active for the given address.
     pub fn contains_by_address(&self, ctx: impl Into<AddressContext>, key: Key) -> bool {
         let ctx = ctx.into();
@@ -549,12 +575,14 @@ where
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(update.pa);
         let view = update.view;
 
-        let breakpoints_by_ctx = match self.remove_active_breakpoints_by_location(vmi, gfn, view)? {
-            Some(breakpoints_by_ctx) => breakpoints_by_ctx,
+        let breakpoints = match self
+            .remove_active_breakpoints_by_address_at_location(vmi, update.ctx, gfn, view)?
+        {
+            Some(breakpoints) => breakpoints,
             None => return Ok(false),
         };
 
-        for breakpoint in breakpoints_by_ctx.into_values().flatten() {
+        for breakpoint in breakpoints {
             self.insert_pending_breakpoint(breakpoint);
         }
 
@@ -815,6 +843,40 @@ where
         }
 
         Ok(Some(last_breakpoint_removed))
+    }
+
+    /// Removes all active breakpoints for an address at a `(view, GFN)` pair.
+    fn remove_active_breakpoints_by_address_at_location(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        ctx: AddressContext,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<Option<PendingBreakpoints<Key, Tag>>, VmiError> {
+        let breakpoints_by_key = match self.active_breakpoints.get(&(view, gfn)) {
+            Some(breakpoints_by_ctx) => breakpoints_by_ctx
+                .iter()
+                .filter_map(|(&(key, breakpoint_ctx), breakpoints)| {
+                    (breakpoint_ctx == ctx).then_some((key, breakpoints.clone()))
+                })
+                .collect::<Vec<_>>(),
+            None => return Ok(None),
+        };
+
+        if breakpoints_by_key.is_empty() {
+            return Ok(None);
+        }
+
+        let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
+        let mut removed = PendingBreakpoints::new();
+
+        for (key, breakpoints) in breakpoints_by_key {
+            let result = self.remove_active_breakpoint(vmi, ctx, pa, key, view)?;
+            debug_assert!(result.is_some());
+            removed.extend(breakpoints);
+        }
+
+        Ok(Some(removed))
     }
 
     /// Removes all active breakpoints for a given `(view, GFN)` pair.
@@ -1165,5 +1227,126 @@ where
         let ctx = AddressContext::new(ip, root);
 
         Some((ctx, pa, view))
+    }
+}
+
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests {
+    use vmi_arch_amd64::Amd64;
+    use vmi_core::{
+        AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, View,
+        VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage, VmiRead, VmiSetProtection,
+    };
+
+    use super::{Breakpoint, BreakpointManager, MemoryController};
+    use crate::ptm::{PageEntryUpdate, PageTableMonitorEvent};
+
+    struct MockDriver;
+
+    impl VmiDriver for MockDriver {
+        type Architecture = Amd64;
+
+        fn info(&self) -> Result<VmiInfo, VmiError> {
+            Ok(VmiInfo {
+                page_size: Amd64::PAGE_SIZE,
+                page_shift: 12,
+                max_gfn: Gfn(0xffff),
+                vcpus: 1,
+            })
+        }
+    }
+
+    impl VmiRead for MockDriver {
+        fn read_page(&self, _gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+            Err(VmiError::Other("unexpected read"))
+        }
+    }
+
+    impl VmiSetProtection for MockDriver {
+        fn set_memory_access(
+            &self,
+            _gfn: Gfn,
+            _view: View,
+            _access: MemoryAccess,
+        ) -> Result<(), VmiError> {
+            Ok(())
+        }
+
+        fn set_memory_access_with_options(
+            &self,
+            _gfn: Gfn,
+            _view: View,
+            _access: MemoryAccess,
+            _options: MemoryAccessOptions,
+        ) -> Result<(), VmiError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn page_out_only_moves_the_affected_address_context() -> Result<(), VmiError> {
+        const VIEW: View = View(1);
+        const SHARED_GFN: Gfn = Gfn(5);
+        const NEW_GFN: Gfn = Gfn(6);
+        const VA: Va = Va(0x123);
+
+        let vmi = VmiCore::new(MockDriver)?;
+        let mut bpm = BreakpointManager::<MemoryController<MockDriver>, u8, u8>::new();
+        let first_ctx = AddressContext::new(VA, Pa(0x1000));
+        let second_ctx = AddressContext::new(VA, Pa(0x2000));
+        let shared_pa = Amd64::pa_from_gfn(SHARED_GFN) + Amd64::va_offset(VA);
+
+        let first_breakpoint: Breakpoint<u8, u8> = Breakpoint::new(first_ctx, VIEW)
+            .with_key(1)
+            .with_tag(1)
+            .into();
+        let second_key_breakpoint: Breakpoint<u8, u8> = Breakpoint::new(first_ctx, VIEW)
+            .with_key(2)
+            .with_tag(2)
+            .into();
+        let aliased_breakpoint: Breakpoint<u8, u8> = Breakpoint::new(second_ctx, VIEW)
+            .with_key(1)
+            .with_tag(3)
+            .into();
+
+        assert!(bpm.insert_with_hint(&vmi, first_breakpoint, Some(shared_pa))?);
+        assert!(bpm.insert_with_hint(&vmi, second_key_breakpoint, Some(shared_pa))?);
+        assert!(bpm.insert_with_hint(&vmi, aliased_breakpoint, Some(shared_pa))?);
+
+        assert!(bpm.handle_ptm_event(
+            &vmi,
+            &PageTableMonitorEvent::PageOut(PageEntryUpdate {
+                view: VIEW,
+                ctx: first_ctx,
+                pa: shared_pa,
+            }),
+        )?);
+
+        assert!(!bpm.contains_by_address(first_ctx, 1));
+        assert!(!bpm.contains_by_address(first_ctx, 2));
+        assert!(bpm.contains_by_address(second_ctx, 1));
+        assert_eq!(bpm.pending_breakpoints[&(VIEW, first_ctx)].len(), 2);
+        assert!(!bpm.pending_breakpoints.contains_key(&(VIEW, second_ctx)));
+        assert_eq!(bpm.active_breakpoints[&(VIEW, SHARED_GFN)].len(), 1);
+        assert!(bpm.active_gfns_by_view[&VIEW].contains(&SHARED_GFN));
+
+        let new_pa = Amd64::pa_from_gfn(NEW_GFN) + Amd64::va_offset(VA);
+        assert!(bpm.handle_ptm_event(
+            &vmi,
+            &PageTableMonitorEvent::PageIn(PageEntryUpdate {
+                view: VIEW,
+                ctx: first_ctx,
+                pa: new_pa,
+            }),
+        )?);
+
+        assert!(bpm.contains_by_address(first_ctx, 1));
+        assert!(bpm.contains_by_address(first_ctx, 2));
+        assert!(bpm.contains_by_address(second_ctx, 1));
+        assert!(!bpm.pending_breakpoints.contains_key(&(VIEW, first_ctx)));
+        assert_eq!(bpm.active_breakpoints[&(VIEW, SHARED_GFN)].len(), 1);
+        assert_eq!(bpm.active_breakpoints[&(VIEW, NEW_GFN)].len(), 2);
+
+        Ok(())
     }
 }

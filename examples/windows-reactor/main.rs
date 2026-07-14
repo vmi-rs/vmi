@@ -2,6 +2,8 @@
 //! monitor certain events in a Windows guest VM.
 //!
 //! In particular, we monitor these functions:
+//! - `ntdll.dll!NtCreateFile`: to log requested file names and the returned
+//!   handles.
 //! - `nt!NtWriteFile`: to log the full path of files being written to.
 //! - `netio.sys!KfdClassify` and `netio.sys!KfdIsLayerEmpty`: to log network
 //!   connections and their originating process.
@@ -50,6 +52,9 @@
 //!  INFO reactor{vcpu=3 view=1 pid=4 tid=0}:interrupt:KfdClassify: protocol=IPPROTO_TCP local_ip=192.168.1.1 local_port=55598 remote_ip=54.91.177.181 remote_port=443 pid=8120
 //!  INFO reactor{vcpu=0 view=1 pid=664 tid=788}:interrupt:SslGenerateSessionKeys: client_random="4a8979877a9386a10d1e488eea06eb33a6650008538514ba0d91d1a8ad50d45e" secret="61b835e7246e00bcca42f2067d0efebbb3809897118c6f20025056afbb7cd89d3cded737d15c26ab04f9b339d65810d5"
 //! ...
+//!  INFO reactor{vcpu=2 view=1 pid=5432 tid=2112}:interrupt:NtCreateFile: object_name="example.txt"
+//!  INFO reactor{vcpu=2 view=1 pid=5432 tid=2112}:interrupt:NtCreateFileReturn: status=0x00000000 handle=0x00000000000004b4
+//! ...
 //!  INFO reactor{vcpu=3 view=1 pid=2500 tid=5140}:interrupt:NtWriteFile: handle=0x00000000000004b4 path="\\Device\\HarddiskVolume2\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157"
 //!  INFO reactor{vcpu=3 view=1 pid=2500 tid=5140}:interrupt:NtWriteFile: handle=0x00000000000004b4 path="\\Device\\HarddiskVolume2\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache\\MetaData\\FB0D848F74F70BB2EAA93746D24D9749"
 //!  INFO reactor{vcpu=0 view=1 pid=5432 tid=2112}:interrupt:NtWriteFile: handle=0x00000000000018c0 path="\\Device\\HarddiskVolume2\\Users\\John\\AppData\\Local\\Microsoft\\Edge\\User Data\\Edge-Local-State-Tmp-53f0e37f-8e8f-4a36-87aa-4b0582035293.tmp"
@@ -59,7 +64,7 @@
 //! DEBUG active breakpoints removed active=1 gfn=0x0000000000005a37 view=1 breakpoints={((), AddressContext { va: 0xfffff8010bc37e10, root: 0x00000000001aa000 }): {Breakpoint { ctx: AddressContext { va: 0xfffff8010bc37e10, root: 0x00000000001aa000 }, view: View(1), global: true, key: (), tag: KfdClassify }}}
 //! DEBUG active breakpoints removed active=0 gfn=0x0000000000005a35 view=1 breakpoints={((), AddressContext { va: 0xfffff8010bc35520, root: 0x00000000001aa000 }): {Breakpoint { ctx: AddressContext { va: 0xfffff8010bc35520, root: 0x00000000001aa000 }, view: View(1), global: true, key: (), tag: KfdIsLayerEmpty }}}
 //! ...
-//!  INFO hit counts NtWriteFile=773 KfdClassify=30 KfdIsLayerEmpty=2131 SslGenerateSessionKeys=3
+//!  INFO hit counts NtCreateFile=981 NtCreateFileReturn=981 NtWriteFile=773 KfdClassify=30 KfdIsLayerEmpty=2131 SslGenerateSessionKeys=3
 //! ```
 //!
 
@@ -67,6 +72,7 @@
 
 mod ncrypt;
 mod netio;
+mod ntdll;
 mod ntoskrnl;
 
 use std::sync::{Arc, atomic::AtomicBool};
@@ -104,6 +110,10 @@ define_modules! {
         where Driver::Architecture: ArchAdapter<Driver>
     )]
     enum Module {
+        /// `ntdll.dll`
+        #[module(name = "ntdll.dll", mode = user)]
+        NtDll,
+
         /// `netio.sys`
         #[module(name = "netio.sys")]
         NetioSys,
@@ -128,6 +138,12 @@ define_events! {
         /// `nt!NtWriteFile`
         NtWriteFile,
 
+        // `ntdll.dll`
+        NtDll {
+            /// `ntdll.dll!NtCreateFile`
+            NtCreateFile,
+        },
+
         // `netio.sys`
         NetioSys {
             /// `netio.sys!KfdClassify`
@@ -147,6 +163,8 @@ define_events! {
 
 #[derive(Default)]
 struct NetIo {
+    NtCreateFile_counter: u64,
+    NtCreateFile_return_counter: u64,
     NtWriteFile_counter: u64,
     KfdClassify_counter: u64,
     KfdIsLayerEmpty_counter: u64,
@@ -154,6 +172,33 @@ struct NetIo {
 }
 
 impl NetIo {
+    #[tracing::instrument(skip_all)]
+    fn NtCreateFile<Driver>(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+    where
+        Driver: VmiRead,
+        Driver::Architecture: ArchAdapter<Driver>,
+    {
+        self.NtCreateFile_counter += 1;
+        ntdll::NtCreateFile(vmi)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn NtCreateFileReturn<Driver>(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        FileHandleAddress: u64,
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture>, VmiError>
+    where
+        Driver: VmiRead,
+        Driver::Architecture: ArchAdapter<Driver>,
+    {
+        self.NtCreateFile_return_counter += 1;
+        ntdll::NtCreateFileReturn(vmi, FileHandleAddress)
+    }
+
     #[tracing::instrument(skip_all)]
     fn NtWriteFile<Driver>(
         &mut self,
@@ -210,6 +255,8 @@ impl NetIo {
 impl Drop for NetIo {
     fn drop(&mut self) {
         tracing::info!(
+            NtCreateFile = self.NtCreateFile_counter,
+            NtCreateFileReturn = self.NtCreateFile_return_counter,
             NtWriteFile = self.NtWriteFile_counter,
             KfdClassify = self.KfdClassify_counter,
             KfdIsLayerEmpty = self.KfdIsLayerEmpty_counter,
@@ -233,10 +280,23 @@ where
         event: Self::Event,
     ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture, Self::Output>, VmiError> {
         match event {
+            Self::Event::NtCreateFile => self.NtCreateFile(vmi),
             Self::Event::NtWriteFile => self.NtWriteFile(vmi),
             Self::Event::KfdClassify => self.KfdClassify(vmi),
             Self::Event::KfdIsLayerEmpty => self.KfdIsLayerEmpty(vmi),
             Self::Event::SslGenerateSessionKeys => self.SslGenerateSessionKeys(vmi),
+        }
+    }
+
+    fn handle_return(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        event: Self::Event,
+        cookie: u64,
+    ) -> Result<Action<<WindowsOs<Driver> as VmiOs>::Architecture, Self::Output>, VmiError> {
+        match event {
+            Self::Event::NtCreateFile => self.NtCreateFileReturn(vmi, cookie),
+            _ => Ok(Action::Default),
         }
     }
 }
@@ -334,8 +394,8 @@ fn main() -> Result<(), Error> {
             ncrypt_resolved.image_base,
             ncrypt_profile,
         )
-        // This will automatically resolve the `netio.sys` module and load
-        // its profile.
+        // This will automatically resolve the `ntdll.dll` and `netio.sys`
+        // modules and load their profiles.
         //
         // Note that if we hadn't called `with_module_in_process` for
         // `ncrypt.dll`, it would also be automatically resolved here.

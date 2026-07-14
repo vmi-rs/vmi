@@ -15,12 +15,14 @@
 //! it also emits a resolver that produces a collection of [`ResolvedEvent`]s.
 //! [`Reactor::new`] then installs breakpoints for them.
 //!
-//! Hits arrive at [`ReactorHandler::handle_event`] as the event enum value.
+//! Entry hits arrive at [`ReactorHandler::handle_event`] as the event enum
+//! value. A handler can return [`Action::TrackReturn`] to receive the matching
+//! invocation's return through [`ReactorHandler::handle_return`].
 //!
-//! If `handle_event` tries to read a paged-out memory and returns
-//! [`VmiError::Translation`], the reactor will inject a page fault
-//! to the guest and wait for the next event (which should be the retry
-//! of the instruction that caused the page fault).
+//! If a handler callback tries to read paged-out memory and returns
+//! [`VmiError::Translation`], the reactor will inject a page fault to the guest
+//! and wait for the next event, which should retry the faulting instruction.
+//! A return frame is retained when its callback returns a translation error.
 //!
 //! [`BreakpointManager`]: crate::bpm::BreakpointManager
 //! [`PageTableMonitor`]: crate::ptm::PageTableMonitor
@@ -30,6 +32,7 @@ mod event;
 pub mod macros;
 mod module;
 mod profile;
+mod return_tracker;
 
 use std::{
     cell::RefCell,
@@ -41,11 +44,14 @@ use std::{
 
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
 use vmi_core::{
-    Architecture, MemoryAccess, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiOs,
-    VmiSession, driver::VmiFullDriver, os::VmiOsProcess as _,
+    Architecture, MemoryAccess, Registers as _, View, VmiContext, VmiError, VmiEventResponse,
+    VmiHandler, VmiOs, VmiSession,
+    driver::VmiFullDriver,
+    os::{ThreadObject, VmiOsProcess as _, VmiOsThread as _},
 };
 use vmi_os_windows::WindowsOs;
 
+use self::return_tracker::{ReturnFrame, ReturnTracker};
 pub use self::{
     event::{EventMetadata, ReactorEvent, ResolvedEvent},
     module::{ModuleMetadata, ModuleMode, ModuleProcessFilter, ReactorModule, ResolvedModule},
@@ -80,6 +86,17 @@ where
     /// Produce an output, take the default action and then terminate
     /// the reactor.
     Done(T),
+
+    /// Intercept the current function invocation when it returns.
+    ///
+    /// The reactor reads the saved return address from the current stack,
+    /// installs a breakpoint there, and passes `cookie` unchanged to
+    /// [`ReactorHandler::handle_return`].
+    ///
+    /// This action uses the default event response and cannot be combined with
+    /// [`Action::Response`]. If the invocation never reaches its saved return
+    /// address, the return breakpoint remains installed until reactor cleanup.
+    TrackReturn(u64),
 }
 
 /// Handles events delivered by the [`Reactor`].
@@ -104,6 +121,27 @@ where
         vmi: &VmiContext<Os>,
         event: Self::Event,
     ) -> Result<Action<Os::Architecture, Self::Output>, VmiError>;
+
+    /// Handles the return of an invocation previously selected with
+    /// [`Action::TrackReturn`].
+    ///
+    /// The default implementation takes the default action and lets the
+    /// guest continue. Returning [`Action::TrackReturn`] from this callback
+    /// is not supported.
+    fn handle_return(
+        &mut self,
+        _vmi: &VmiContext<Os>,
+        _event: Self::Event,
+        _cookie: u64,
+    ) -> Result<Action<Os::Architecture, Self::Output>, VmiError> {
+        Ok(Action::Default)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BreakpointKind {
+    Entry,
+    Return,
 }
 
 /// VMI event loop that delivers breakpoint hits at handler-declared symbols
@@ -117,7 +155,7 @@ where
     <Handler::Event as ReactorEvent>::Module: ReactorModule<Os>,
 {
     /// Breakpoint manager that maintains our breakpoints.
-    bpm: BreakpointManager<BreakpointController<Os::Driver>, (), Handler::Event>,
+    bpm: BreakpointManager<BreakpointController<Os::Driver>, BreakpointKind, Handler::Event>,
 
     /// Page table monitor that monitors the pages containing our breakpoints.
     ptm: PageTableMonitor<Os::Driver, Handler::Event>,
@@ -127,6 +165,9 @@ where
 
     /// Handler that processes our events.
     handler: Handler,
+
+    /// Outstanding function invocations grouped by thread and return site.
+    returns: ReturnTracker<Handler::Event>,
 
     /// Output produced by the handler.
     output: RefCell<Option<Handler::Output>>,
@@ -181,7 +222,10 @@ where
             };
 
             let cx = (event.address, root);
-            let bp = Breakpoint::new(cx, view).global().with_tag(event.event);
+            let bp = Breakpoint::new(cx, view)
+                .global()
+                .with_key(BreakpointKind::Entry)
+                .with_tag(event.event);
 
             bpm.insert(&vmi, bp)?;
             ptm.monitor(&vmi, cx, view, event.event)?;
@@ -192,6 +236,7 @@ where
             ptm,
             view,
             handler,
+            returns: ReturnTracker::default(),
             output: RefCell::new(None),
             termination_flag: None,
         })
@@ -259,9 +304,9 @@ where
 
     /// Handles a software breakpoint interrupt.
     ///
-    /// Looks up the event tag in [`BreakpointManager`], delivers it to
-    /// [`ReactorHandler::handle_event`], and applies the returned
-    /// [`Action`].
+    /// Looks up entry and return breakpoints in [`BreakpointManager`],
+    /// delivers the event to the matching [`ReactorHandler`] callback, and
+    /// applies the returned [`Action`].
     ///
     /// Unknown breakpoints are reinjected so the guest can handle them.
     /// Stale breakpoint events (e.g. when we removed a breakpoint, but
@@ -272,21 +317,54 @@ where
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
-        let tag = match self.bpm.get_by_event(vmi.event(), ()) {
-            Some(mut breakpoints) => {
+        let return_site = self
+            .bpm
+            .get_by_event(vmi.event(), BreakpointKind::Return)
+            .map(|mut breakpoints| {
                 assert!(
                     breakpoints.len() == 1,
-                    "multiple breakpoints for the same event"
+                    "multiple return breakpoints for the same event"
                 );
 
-                breakpoints.next().expect("breakpoint").tag()
-            }
-            None => {
-                if BreakpointController::is_breakpoint(vmi, vmi.event())? {
-                    tracing::debug!("unknown breakpoint, reinjecting");
-                    return Ok(VmiEventResponse::reinject_interrupt());
+                breakpoints.next().expect("return breakpoint").ctx()
+            });
+
+        if let Some(site) = return_site {
+            let thread = vmi.os().current_thread()?.object()?;
+            let stack_pointer = vmi.registers().stack_pointer();
+
+            if let Some(frame) = self.returns.get(thread, site, stack_pointer) {
+                if self.output.borrow().is_some() {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
                 }
 
+                return self.handle_function_return(vmi, thread, frame);
+            }
+        }
+
+        let tag = self
+            .bpm
+            .get_by_event(vmi.event(), BreakpointKind::Entry)
+            .map(|mut breakpoints| {
+                assert!(
+                    breakpoints.len() == 1,
+                    "multiple entry breakpoints for the same event"
+                );
+
+                breakpoints.next().expect("entry breakpoint").tag()
+            });
+
+        let tag = match tag {
+            Some(tag) => tag,
+            None if self.bpm.contains_by_event_location(vmi.event()) => {
+                tracing::debug!("ignoring breakpoint hit from another address context");
+                return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+            }
+            None if BreakpointController::is_breakpoint(vmi, vmi.event())? => {
+                tracing::debug!("unknown breakpoint, reinjecting");
+                return Ok(VmiEventResponse::reinject_interrupt());
+            }
+            None => {
                 tracing::debug!("ignoring old breakpoint event");
                 return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
             }
@@ -302,6 +380,110 @@ where
             Action::Done(output) => {
                 self.output.borrow_mut().replace(output);
             }
+            Action::TrackReturn(cookie) => self.track_return(vmi, tag, cookie)?,
+        }
+
+        Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
+    }
+
+    /// Tracks the current invocation until it reaches its saved return address.
+    fn track_return(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        event: Handler::Event,
+        cookie: u64,
+    ) -> Result<(), VmiError> {
+        let thread = vmi.os().current_thread()?.object()?;
+        let return_address = vmi.return_address()?;
+        let return_site = vmi.address_context(return_address);
+        let stack_pointer = vmi
+            .registers()
+            .stack_pointer()
+            .checked_add(vmi.registers().effective_address_width() as u64)
+            .ok_or(VmiError::OutOfBounds)?;
+
+        let frame = ReturnFrame {
+            event,
+            cookie,
+            site: return_site,
+            stack_pointer,
+        };
+
+        if !self.returns.push(thread, frame) {
+            return Ok(());
+        }
+
+        let breakpoint: Breakpoint<BreakpointKind, Handler::Event> =
+            Breakpoint::new(return_site, self.view)
+                .with_key(BreakpointKind::Return)
+                .with_tag(event)
+                .into();
+
+        if let Err(err) = self.bpm.insert(vmi, breakpoint) {
+            let (removed, site_was_removed) = self
+                .returns
+                .pop(thread)
+                .expect("newly tracked return frame");
+            debug_assert_eq!(removed, frame);
+            debug_assert!(site_was_removed);
+            return Err(err);
+        }
+
+        if let Err(err) = self.ptm.monitor(vmi, return_site, self.view, event) {
+            if let Err(remove_err) = self.bpm.remove(vmi, breakpoint) {
+                tracing::error!(%remove_err, "failed to roll back return breakpoint");
+            }
+
+            let (removed, site_was_removed) = self
+                .returns
+                .pop(thread)
+                .expect("newly tracked return frame");
+            debug_assert_eq!(removed, frame);
+            debug_assert!(site_was_removed);
+            return Err(err);
+        }
+
+        Ok(())
+    }
+
+    /// Delivers a function return and releases its return-site reference.
+    fn handle_function_return(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        thread: ThreadObject,
+        frame: ReturnFrame<Handler::Event>,
+    ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
+        let action = self.handler.handle_return(vmi, frame.event, frame.cookie)?;
+
+        if matches!(action, Action::TrackReturn(_)) {
+            return Err(VmiError::Other(
+                "return handler cannot track another return",
+            ));
+        }
+
+        let (removed, site_was_removed) = self
+            .returns
+            .pop(thread)
+            .expect("matched return frame must be tracked");
+        debug_assert_eq!(removed, frame);
+
+        if site_was_removed {
+            let breakpoint = Breakpoint::new(frame.site, self.view)
+                .with_key(BreakpointKind::Return)
+                .with_tag(frame.event);
+
+            let breakpoint_was_removed = self.bpm.remove(vmi, breakpoint)?;
+            debug_assert!(breakpoint_was_removed);
+            self.ptm.unmonitor(vmi, frame.site, self.view)?;
+        }
+
+        match action {
+            Action::Default => {}
+            Action::Response(response) => return Ok(response),
+            Action::Done(output) => {
+                self.output.borrow_mut().replace(output);
+            }
+            Action::TrackReturn(_) => unreachable!(),
         }
 
         Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))

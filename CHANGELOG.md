@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference count.
 - **Breaking:** `PageTableMonitor` now requires `VmiQueryProtection` so it can
   preserve the access permissions of page-table pages while monitoring them.
+- **Breaking:** `vmi_utils::reactor::Action` adds `TrackReturn(u64)`, which
+  installs a breakpoint at the current invocation's saved return address.
+  `ReactorHandler` gains a default `handle_return` callback that receives the
+  original event and the user-provided cookie.
 
 ### Added
 
@@ -51,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multiple references to the same physical breakpoint.
 - Reinserting a breakpoint after the last breakpoint on a page was removed now
   refreshes the retained shadow page and maps it back into the target view.
+- Breakpoint lifecycle handling now supports multiple logical breakpoints at
+  the same physical location and only moves the affected address context to
+  pending on page-out.
 - `PageTableMonitor` now restores the captured access permissions of table
   pages instead of leaving execution disabled after monitoring ends.
 - `VmiXenDriver` now falls back to a view's default access when Xen cannot
