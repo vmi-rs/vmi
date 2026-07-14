@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BreakpointController` no longer panics in debug builds when removing one of
+  multiple references to the same physical breakpoint.
 - Reinserting a breakpoint after the last breakpoint on a page was removed now
   refreshes the retained shadow page and maps it back into the target view.
 - `PageTableMonitor` now restores the captured access permissions of table

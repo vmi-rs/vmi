@@ -82,7 +82,10 @@ where
         view: View,
     ) -> Result<(), VmiError> {
         let breakpoint_was_removed = self.interceptor.remove_breakpoint(vmi, pa, view)?;
-        debug_assert_eq!(breakpoint_was_removed, Some(true));
+        debug_assert!(
+            breakpoint_was_removed.is_some(),
+            "trying to remove a breakpoint that is not installed"
+        );
         Ok(())
     }
 
