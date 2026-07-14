@@ -15,12 +15,14 @@ use super::super::{PageTableMonitor, PageTableMonitorEvent};
 
 struct MockPtmDriver {
     pages: RefCell<HashMap<Gfn, Vec<u8>>>,
+    access: RefCell<HashMap<(View, Gfn), MemoryAccess>>,
 }
 
 impl MockPtmDriver {
     fn new() -> Self {
         Self {
             pages: RefCell::new(HashMap::new()),
+            access: RefCell::new(HashMap::new()),
         }
     }
 
@@ -38,6 +40,18 @@ impl MockPtmDriver {
             .get_mut(&gfn)
             .unwrap_or_else(|| panic!("no page at {:?}", gfn));
         page[offset..offset + 8].copy_from_slice(&pte.0.to_le_bytes());
+    }
+
+    fn set_initial_access(&self, gfn: Gfn, view: View, access: MemoryAccess) {
+        self.access.borrow_mut().insert((view, gfn), access);
+    }
+
+    fn access(&self, gfn: Gfn, view: View) -> MemoryAccess {
+        self.access
+            .borrow()
+            .get(&(view, gfn))
+            .copied()
+            .unwrap_or(MemoryAccess::RWX)
     }
 }
 
@@ -75,8 +89,8 @@ impl VmiRead for MockPtmDriver {
 }
 
 impl VmiQueryProtection for MockPtmDriver {
-    fn memory_access(&self, _gfn: Gfn, _view: View) -> Result<MemoryAccess, VmiError> {
-        Ok(MemoryAccess::RW)
+    fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
+        Ok(self.access(gfn, view))
     }
 
     fn memory_access_with_options(
@@ -91,20 +105,22 @@ impl VmiQueryProtection for MockPtmDriver {
 impl VmiSetProtection for MockPtmDriver {
     fn set_memory_access(
         &self,
-        _gfn: Gfn,
-        _view: View,
-        _access: MemoryAccess,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
     ) -> Result<(), VmiError> {
+        self.access.borrow_mut().insert((view, gfn), access);
         Ok(())
     }
 
     fn set_memory_access_with_options(
         &self,
-        _gfn: Gfn,
-        _view: View,
-        _access: MemoryAccess,
+        gfn: Gfn,
+        view: View,
+        access: MemoryAccess,
         _options: MemoryAccessOptions,
     ) -> Result<(), VmiError> {
+        self.access.borrow_mut().insert((view, gfn), access);
         Ok(())
     }
 }
@@ -231,6 +247,40 @@ fn monitor_unmonitor_lifecycle() -> Result<(), VmiError> {
 }
 
 #[test]
+fn restores_captured_table_access() -> Result<(), VmiError> {
+    let driver = MockPtmDriver::new();
+    build_full_hierarchy(&driver);
+
+    let expected = [
+        (PML4_GFN, MemoryAccess::RWX),
+        (PDPT_GFN, MemoryAccess::RW),
+        (PD_GFN, MemoryAccess::RX),
+        (PT_GFN, MemoryAccess::R),
+    ];
+
+    for &(gfn, access) in &expected {
+        driver.set_initial_access(gfn, VIEW, access);
+    }
+
+    let vmi = make_vmi(driver)?;
+    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+
+    ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
+
+    for &(gfn, _) in &expected {
+        assert_eq!(vmi.driver().access(gfn, VIEW), MemoryAccess::R);
+    }
+
+    ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
+
+    for &(gfn, access) in &expected {
+        assert_eq!(vmi.driver().access(gfn, VIEW), access);
+    }
+
+    Ok(())
+}
+
+#[test]
 fn multiple_vas_sharing_page_table_pages() -> Result<(), VmiError> {
     let driver = MockPtmDriver::new();
     build_full_hierarchy(&driver);
@@ -255,17 +305,20 @@ fn multiple_vas_sharing_page_table_pages() -> Result<(), VmiError> {
     // Both share PML4, PDPT, PD, PT pages = 4 tables.
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 2);
+    assert_eq!(vmi.driver().access(PT_GFN, VIEW), MemoryAccess::R);
 
     // Unmonitor first VA - shared tables should remain.
     ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
     assert_eq!(ptm.paged_in_entries(), 1);
     // The 4 tables should still be monitored because VA2 uses them.
     assert_eq!(ptm.monitored_tables(), 4);
+    assert_eq!(vmi.driver().access(PT_GFN, VIEW), MemoryAccess::R);
 
     // Unmonitor second VA - now all tables should be gone.
     ptm.unmonitor(&vmi, ctx2, VIEW)?;
     assert_eq!(ptm.monitored_tables(), 0);
     assert_eq!(ptm.paged_in_entries(), 0);
+    assert_eq!(vmi.driver().access(PT_GFN, VIEW), MemoryAccess::RWX);
 
     Ok(())
 }
@@ -281,11 +334,17 @@ fn unmonitor_all_clears_state() -> Result<(), VmiError> {
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 4);
     assert_eq!(ptm.paged_in_entries(), 1);
+    for gfn in [PML4_GFN, PDPT_GFN, PD_GFN, PT_GFN] {
+        assert_eq!(vmi.driver().access(gfn, VIEW), MemoryAccess::R);
+    }
 
     ptm.unmonitor_all(&vmi);
     assert_eq!(ptm.monitored_tables(), 0);
     assert_eq!(ptm.monitored_entries(), 0);
-    // Note: paged_in is not cleared by unmonitor_all (known leak per plan).
+    assert_eq!(ptm.paged_in_entries(), 0);
+    for gfn in [PML4_GFN, PDPT_GFN, PD_GFN, PT_GFN] {
+        assert_eq!(vmi.driver().access(gfn, VIEW), MemoryAccess::RWX);
+    }
 
     Ok(())
 }

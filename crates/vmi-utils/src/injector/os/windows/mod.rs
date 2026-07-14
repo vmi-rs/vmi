@@ -5,8 +5,8 @@ use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
     VmiCore, VmiError,
     driver::{
-        VmiDriver, VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
-        VmiVmControl, VmiWrite,
+        VmiDriver, VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead,
+        VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite,
     },
     trace::Hex,
 };
@@ -26,6 +26,7 @@ where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiQueryRegisters
         + VmiEventControl

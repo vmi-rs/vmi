@@ -35,7 +35,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use vmi_core::{
     AddressContext, Pa, VcpuId, View, VmiCore, VmiError,
-    driver::{VmiDriver, VmiRead, VmiSetProtection},
+    driver::{VmiDriver, VmiQueryProtection, VmiRead, VmiSetProtection},
 };
 
 pub use self::arch::ArchAdapter;
@@ -87,7 +87,7 @@ pub enum PageTableMonitorEvent {
 /// selected via [`ArchAdapter`].
 pub struct PageTableMonitor<Driver, Tag = &'static str>
 where
-    Driver: VmiRead + VmiSetProtection,
+    Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     Driver::Architecture: ArchAdapter<Driver, Tag>,
     Tag: TagType,
 {
@@ -165,7 +165,7 @@ where
 
 impl<Driver, Tag> PageTableMonitor<Driver, Tag>
 where
-    Driver: VmiRead + VmiSetProtection,
+    Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     Driver::Architecture: ArchAdapter<Driver, Tag>,
     Tag: TagType,
 {

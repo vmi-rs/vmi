@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same address and view. `unmonitor` releases one reference, while the new
   `unmonitor_by_force` method removes the monitored address regardless of its
   reference count.
+- **Breaking:** `PageTableMonitor` now requires `VmiQueryProtection` so it can
+  preserve the access permissions of page-table pages while monitoring them.
 
 ### Added
 
@@ -47,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Reinserting a breakpoint after the last breakpoint on a page was removed now
   refreshes the retained shadow page and maps it back into the target view.
+- `PageTableMonitor` now restores the captured access permissions of table
+  pages instead of leaving execution disabled after monitoring ends.
 - `VmiXenDriver` now falls back to a view's default access when Xen cannot
   query an unmaterialized altp2m entry, while continuing to query materialized
   entries directly. Xen transition modes are reported as their effective

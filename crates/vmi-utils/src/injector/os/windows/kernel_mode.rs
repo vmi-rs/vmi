@@ -3,8 +3,8 @@ use vmi_core::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
     VmiHandler, VmiSession,
     driver::{
-        VmiDriver, VmiEventControl, VmiQueryRegisters, VmiRead, VmiSetProtection, VmiViewControl,
-        VmiVmControl, VmiWrite,
+        VmiDriver, VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead,
+        VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite,
     },
     os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
     trace::Hex,
@@ -45,6 +45,7 @@ where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiViewControl
         + VmiVmControl,
@@ -81,6 +82,7 @@ where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiQueryRegisters
         + VmiEventControl
@@ -149,6 +151,7 @@ where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl
@@ -422,6 +425,7 @@ where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl

@@ -20,9 +20,10 @@
 //!   VAs for efficient dirty processing.
 //!
 //! - **Table index** (`tables`): Maps each write-protected page table page
-//!   (identified by [`Gfn`] and [`View`]) to a reference count of monitored
-//!   entries within it. Write protection is applied when the first entry on a
-//!   page is monitored, and removed when the last is unmonitored.
+//!   (identified by [`Gfn`] and [`View`]) to the original access permissions
+//!   and a reference count of monitored entries within it. Write protection is
+//!   applied when the first entry on a page is monitored, and the original
+//!   permissions are restored when the last is unmonitored.
 //!
 //! # Dirty Processing Order
 //!
@@ -39,7 +40,7 @@ use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
     View, VmiCore, VmiError,
-    driver::{VmiDriver, VmiRead, VmiSetProtection},
+    driver::{VmiDriver, VmiQueryProtection, VmiRead, VmiSetProtection},
 };
 
 use super::super::{
@@ -85,6 +86,14 @@ struct MonitoredEntry {
     va_levels: HashMap<VaKey, PageTableLevel>,
 }
 
+/// Per-table monitoring state.
+struct MonitoredTable {
+    /// Number of monitored entries within this table page.
+    references: u32,
+    /// Access permissions captured before the table page was write-protected.
+    previous_access: MemoryAccess,
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Returns `true` if this PTE terminates the page walk (leaf PT level or
@@ -110,7 +119,7 @@ where
 
 impl<Driver, Tag> ArchAdapter<Driver, Tag> for Amd64
 where
-    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiSetProtection,
+    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiQueryProtection + VmiSetProtection,
     Tag: TagType,
 {
     type Monitor = PageTableMonitorAmd64<Tag>;
@@ -132,7 +141,7 @@ where
     /// Monitored page table entries with bidirectional VA references.
     entries: HashMap<EntryKey, MonitoredEntry>,
     /// Write-protected page table pages with reference counts.
-    tables: HashMap<TableKey, usize>,
+    tables: HashMap<TableKey, MonitoredTable>,
     /// Dirty entries pending processing, tracked per-vCPU.
     ///
     /// Dirty entries must be per-vCPU because the singlestep mechanism is
@@ -159,19 +168,42 @@ where
         view: View,
     ) -> Result<(), VmiError>
     where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let table_key = (view, gfn);
-        let refcount = self.tables.entry(table_key).or_insert(0);
-        if *refcount == 0 {
-            vmi.set_memory_access_with_options(
-                gfn,
-                view,
-                MemoryAccess::R,
-                MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
-            )?;
+
+        if let Some(table) = self.tables.get_mut(&table_key) {
+            table.references = table
+                .references
+                .checked_add(1)
+                .expect("monitored table reference count overflow");
+            return Ok(());
         }
-        *refcount += 1;
+
+        let previous_access = vmi.memory_access(gfn, view)?;
+        tracing::trace!(
+            %gfn,
+            %view,
+            ?previous_access,
+            previous_access_bits = previous_access.bits(),
+            "captured table page memory access"
+        );
+
+        vmi.set_memory_access_with_options(
+            gfn,
+            view,
+            MemoryAccess::R,
+            MemoryAccessOptions::IGNORE_PAGE_WALK_UPDATES,
+        )?;
+
+        self.tables.insert(
+            table_key,
+            MonitoredTable {
+                references: 1,
+                previous_access,
+            },
+        );
+
         Ok(())
     }
 
@@ -180,19 +212,34 @@ where
     /// in case the view was destroyed before unmonitoring.
     fn remove_table_ref<Driver>(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View)
     where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let table_key = (view, gfn);
-        if let Some(refcount) = self.tables.get_mut(&table_key) {
-            *refcount -= 1;
-            if *refcount == 0 {
-                self.tables.remove(&table_key);
-                match vmi.set_memory_access(gfn, view, MemoryAccess::RW) {
-                    Ok(()) | Err(VmiError::ViewNotFound) => {}
-                    Err(err) => {
-                        tracing::warn!(%gfn, %view, %err, "failed to restore memory access");
-                    }
-                }
+        let table = match self.tables.get_mut(&table_key) {
+            Some(table) => table,
+            None => return,
+        };
+
+        if table.references > 1 {
+            table.references -= 1;
+            return;
+        }
+
+        let previous_access = table.previous_access;
+        self.tables.remove(&table_key);
+
+        tracing::trace!(
+            %gfn,
+            %view,
+            ?previous_access,
+            previous_access_bits = previous_access.bits(),
+            "restoring table page memory access"
+        );
+
+        match vmi.set_memory_access(gfn, view, previous_access) {
+            Ok(()) | Err(VmiError::ViewNotFound) => {}
+            Err(err) => {
+                tracing::warn!(%gfn, %view, %err, "failed to restore memory access");
             }
         }
     }
@@ -205,7 +252,7 @@ where
         va_key: VaKey,
         (view, pa): EntryKey,
     ) where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let entry_key = (view, pa);
         let entry = match self.entries.get_mut(&entry_key) {
@@ -229,7 +276,7 @@ where
         va_key: VaKey,
         anchor_key: EntryKey,
     ) where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let va = match self.vas.get_mut(&va_key) {
             Some(va) => va,
@@ -265,7 +312,7 @@ where
         events: &mut Vec<PageTableMonitorEvent>,
     ) -> Result<(), VmiError>
     where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let va_key = (view, ctx);
         let mut current_gfn = start_gfn;
@@ -330,7 +377,7 @@ where
         force: bool,
     ) -> Result<(), VmiError>
     where
-        Driver: VmiRead + VmiSetProtection,
+        Driver: VmiRead + VmiQueryProtection + VmiSetProtection,
     {
         let ctx = ctx.into();
         let va_key = (view, ctx);
@@ -358,7 +405,7 @@ where
 
 impl<Driver, Tag> PageTableMonitorAdapter<Driver, Tag> for PageTableMonitorAmd64<Tag>
 where
-    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiSetProtection,
+    Driver: VmiDriver<Architecture = Amd64> + VmiRead + VmiQueryProtection + VmiSetProtection,
     Tag: TagType,
 {
     fn new() -> Self {
@@ -496,8 +543,8 @@ where
     }
 
     fn unmonitor_all(&mut self, vmi: &VmiCore<Driver>) {
-        for &(view, gfn) in self.tables.keys() {
-            let _ = vmi.set_memory_access(gfn, view, MemoryAccess::RW);
+        for (&(view, gfn), table) in &self.tables {
+            let _ = vmi.set_memory_access(gfn, view, table.previous_access);
         }
         self.tables.clear();
         self.entries.clear();
