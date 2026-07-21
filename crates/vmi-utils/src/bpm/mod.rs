@@ -121,7 +121,7 @@ where
 #[derive(Debug)]
 struct GlobalBreakpoint {
     root: Pa,
-    gfns: HashSet<Gfn>,
+    gfns: HashMap<Gfn, u32>,
 }
 
 /*
@@ -272,16 +272,8 @@ where
         pa: Option<Pa>,
     ) -> Result<bool, VmiError> {
         let breakpoint = breakpoint.into();
-        let Breakpoint { ctx, view, key, .. } = breakpoint;
 
-        if self
-            .remove_pending_breakpoints_by_address(ctx, view)
-            .is_some()
-        {
-            //
-            // TODO: assert that there are no active breakpoints for this (view, ctx)
-            //
-
+        if self.remove_pending_breakpoint(breakpoint) {
             return Ok(true);
         }
 
@@ -290,7 +282,8 @@ where
             None => return Ok(false),
         };
 
-        let breakpoint_was_removed = self.remove_active_breakpoint(vmi, ctx, pa, key, view)?;
+        let breakpoint_was_removed =
+            self.remove_active_breakpoint_definition(vmi, breakpoint, pa)?;
         Ok(breakpoint_was_removed.is_some())
     }
 
@@ -348,36 +341,27 @@ where
         vmi: &VmiCore<Interface::Driver>,
         view: View,
     ) -> Result<bool, VmiError> {
-        //
-        // First remove all pending breakpoints for this view (if any).
-        //
+        let mut removed = false;
 
-        if let Some(pending_ctxs) = self.pending_ctx_by_view.remove(&view) {
+        if let Some(pending_ctxs) = self.pending_ctx_by_view.get(&view).cloned() {
             for ctx in pending_ctxs {
-                self.remove_pending_breakpoints_by_address(ctx, view);
+                removed |= self
+                    .remove_pending_breakpoints_by_address(ctx, view)
+                    .is_some();
             }
-        };
-
-        //
-        // Then remove all active breakpoints for this view.
-        //
-
-        let gfns = match self.active_gfns_by_view.remove(&view) {
-            Some(gfns) => gfns,
-            None => return Ok(false),
-        };
-
-        //
-        // Set of GFNs should never be empty.
-        //
-
-        debug_assert!(!gfns.is_empty(), "active_gfns_by_view is empty");
-
-        for gfn in gfns {
-            self.remove_active_breakpoints_by_location(vmi, gfn, view)?;
         }
 
-        Ok(true)
+        if let Some(gfns) = self.active_gfns_by_view.get(&view).cloned() {
+            debug_assert!(!gfns.is_empty(), "active_gfns_by_view is empty");
+
+            for gfn in gfns {
+                removed |= self
+                    .remove_active_breakpoints_by_location(vmi, gfn, view)?
+                    .is_some();
+            }
+        }
+
+        Ok(removed)
     }
 
     /// Returns an iterator over the breakpoints for the given event.
@@ -427,25 +411,14 @@ where
     ///
     /// This function removes all active and pending breakpoints.
     pub fn clear(&mut self, vmi: &VmiCore<Interface::Driver>) -> Result<(), VmiError> {
-        let mut to_remove = Vec::new();
+        let locations = self.active_breakpoints.keys().copied().collect::<Vec<_>>();
 
-        for (&(view, gfn), breakpoints) in &self.active_breakpoints {
-            for &(key, ctx) in breakpoints.keys() {
-                let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
-                to_remove.push((key, view, pa, ctx));
-            }
+        for (view, gfn) in locations {
+            self.remove_active_breakpoints_by_location(vmi, gfn, view)?;
         }
 
         self.pending_breakpoints.clear();
-
-        for (key, view, pa, ctx) in to_remove {
-            if let Err(err) = self.remove_active_breakpoint(vmi, ctx, pa, key, view) {
-                tracing::error!(
-                    %err, %pa, %ctx, %view, ?key,
-                    "failed to remove breakpoint"
-                );
-            }
-        }
+        self.pending_ctx_by_view.clear();
 
         debug_assert!(self.active_breakpoints.is_empty());
         debug_assert!(self.active_global_breakpoints.is_empty());
@@ -524,9 +497,37 @@ where
             Some(breakpoints) => breakpoints,
             None => return Ok(false),
         };
+        let mut activated = Vec::with_capacity(breakpoints.len());
 
         for breakpoint in breakpoints {
-            self.insert_active_breakpoint(vmi, breakpoint, pa)?;
+            if let Err(err) = self.insert_active_breakpoint(vmi, breakpoint, pa) {
+                self.insert_pending_breakpoint(breakpoint);
+
+                for activated_breakpoint in activated {
+                    match self.remove_active_breakpoint_definition(vmi, activated_breakpoint, pa) {
+                        Ok(Some(_)) => {
+                            self.insert_pending_breakpoint(activated_breakpoint);
+                        }
+                        Ok(None) => {
+                            tracing::error!(
+                                ?activated_breakpoint,
+                                "activated breakpoint disappeared during page-in rollback"
+                            );
+                        }
+                        Err(rollback_err) => {
+                            tracing::error!(
+                                %rollback_err,
+                                ?activated_breakpoint,
+                                "failed to roll back breakpoint after page-in failure"
+                            );
+                        }
+                    }
+                }
+
+                return Err(err);
+            }
+
+            activated.push(breakpoint);
         }
 
         Ok(true)
@@ -572,123 +573,83 @@ where
     fn insert_active_breakpoint(
         &mut self,
         vmi: &VmiCore<Interface::Driver>,
-        breakpoint: Breakpoint<Key, Tag>,
+        mut breakpoint: Breakpoint<Key, Tag>,
         pa: Pa,
     ) -> Result<bool, VmiError> {
-        //
-        // The code in this function roughly follows the following logic:
-        //
-        // let breakpoint_was_inserted = self
-        //     .active_breakpoints
-        //     .entry((view, gfn))
-        //     .or_default()
-        //     .entry((key, ctx))
-        //     .or_default()
-        //     .insert(tag);
-        //
-        // self.gfns_for_address.insert((key, ctx), (view, gfn))
-        //
-        // Except that:
-        // - breakpoint_was_inserted is true ONLY if the breakpoint was inserted
-        //   (i.e., not just updated with a new tag)
-        // - asserts are used to ensure that the internal state is consistent
-        //
+        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
+
+        if breakpoint.global {
+            self.normalize_global_context(breakpoint.view, &mut breakpoint.ctx);
+        }
 
         let Breakpoint {
-            mut ctx,
+            ctx,
             view,
             global,
             key,
             tag,
         } = breakpoint;
-        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
-        //
-        // If this breakpoint should be global, update the global breakpoints.
-        // Also, verify that global breakpoint for this address is was not
-        // already registered, or that it was registered with the same root.
-        //
+        if let Some(breakpoints) = self
+            .active_breakpoints
+            .get_mut(&(view, gfn))
+            .and_then(|breakpoints_by_ctx| breakpoints_by_ctx.get_mut(&(key, ctx)))
+        {
+            let had_global_breakpoint = breakpoints.iter().any(|breakpoint| breakpoint.global);
+            let definition_was_inserted = breakpoints.insert(breakpoint);
+
+            if definition_was_inserted && global && !had_global_breakpoint {
+                self.register_global_breakpoint(gfn, view, ctx);
+            }
+
+            debug_assert!(self.active_locations.contains_key(&(key, ctx)));
+            return Ok(false);
+        }
+
+        let page_was_inserted = !self.active_breakpoints.contains_key(&(view, gfn));
+
+        self.controller.insert_breakpoint(vmi, pa, view)?;
+
+        if page_was_inserted && let Err(err) = self.controller.monitor(vmi, gfn, view) {
+            if let Err(rollback_err) = self.remove_controller_breakpoint(vmi, pa, view) {
+                tracing::error!(
+                    %rollback_err,
+                    %pa,
+                    %view,
+                    "failed to roll back breakpoint after monitor failure"
+                );
+            }
+
+            return Err(err);
+        }
+
+        self.active_breakpoints
+            .entry((view, gfn))
+            .or_default()
+            .insert((key, ctx), HashSet::from([breakpoint]));
+
+        let location_was_inserted = self
+            .active_locations
+            .entry((key, ctx))
+            .or_default()
+            .insert((view, gfn));
+        debug_assert!(location_was_inserted);
+
+        if page_was_inserted {
+            self.insert_monitored_location(gfn, view);
+        }
 
         if global {
-            self.register_global_breakpoint(gfn, view, &mut ctx);
+            self.register_global_breakpoint(gfn, view, ctx);
         }
 
-        //
-        // page_was_inserted is true if a new `(view, GFN)` pair was inserted
-        // breakpoint_was_inserted is true if a new `(key, ctx)` pair was inserted
-        //
+        tracing::debug!(
+            active = self.active_breakpoints.len(),
+            %gfn, %ctx, %view, %global, ?key, ?tag,
+            "active breakpoint inserted"
+        );
 
-        let (breakpoint_was_inserted, page_was_inserted) =
-            match self.active_breakpoints.entry((view, gfn)) {
-                Entry::Occupied(mut entry) => {
-                    let breakpoints = entry.get_mut();
-
-                    match breakpoints.entry((key, ctx)) {
-                        Entry::Occupied(mut entry) => {
-                            let breakpoints = entry.get_mut();
-                            breakpoints.insert(breakpoint);
-                            (false, false)
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(HashSet::from([breakpoint]));
-                            (true, false)
-                        }
-                    }
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(HashMap::from([((key, ctx), HashSet::from([breakpoint]))]));
-                    (true, true)
-                }
-            };
-
-        if breakpoint_was_inserted {
-            tracing::debug!(
-                active = self.active_breakpoints.len(),
-                %gfn, %ctx, %view, %global, ?key, ?tag,
-                "active breakpoint inserted"
-            );
-
-            //
-            // REVIEW:
-            // Should monitor + insert_breakpoint be atomic? (i.e., should we
-            // consider vmi.pause() + vmi.resume()?)
-            //
-
-            //
-            // Update the monitored GFNs.
-            // Also, verify that the monitored GFNs are consistent with the
-            // active breakpoints.
-            //
-
-            self.install_breakpoint(vmi, pa, view, key, ctx)?;
-
-            //
-            // If this is a new `(view, GFN)` pair, it needs to be monitored.
-            //
-            // IMPORTANT: It is important to monitor the page AFTER the
-            //            breakpoint is inserted. Otherwise, the page access
-            //            might change during the GFN remapping.
-            //
-
-            if page_was_inserted {
-                self.monitor_page_for_changes(vmi, gfn, view)?;
-            }
-        }
-        else {
-            //
-            // If the breakpoint was not inserted, it means it is already
-            // in the active breakpoints.
-            //
-            // Verify that the monitored GFNs are consistent.
-            //
-
-            debug_assert!(
-                self.active_locations.contains_key(&(key, ctx)),
-                "desynchronized active breakpoints and monitored gfns"
-            );
-        }
-
-        Ok(breakpoint_was_inserted)
+        Ok(true)
     }
 
     /// Removes an active breakpoint.
@@ -707,112 +668,117 @@ where
         key: Key,
         view: View,
     ) -> Result<Option<bool>, VmiError> {
-        //
-        // First check if this `(view, GFN)` already has a breakpoint.
-        //
+        self.remove_active_breakpoint_internal(vmi, ctx.into(), pa, key, view, None)
+    }
 
+    /// Removes one exact breakpoint definition.
+    fn remove_active_breakpoint_definition(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        mut breakpoint: Breakpoint<Key, Tag>,
+        pa: Pa,
+    ) -> Result<Option<bool>, VmiError> {
+        if breakpoint.global {
+            self.normalize_global_context(breakpoint.view, &mut breakpoint.ctx);
+        }
+
+        self.remove_active_breakpoint_internal(
+            vmi,
+            breakpoint.ctx,
+            pa,
+            breakpoint.key,
+            breakpoint.view,
+            Some(breakpoint),
+        )
+    }
+
+    /// Removes either one definition or every definition for an active key.
+    fn remove_active_breakpoint_internal(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        ctx: AddressContext,
+        pa: Pa,
+        key: Key,
+        view: View,
+        definition: Option<Breakpoint<Key, Tag>>,
+    ) -> Result<Option<bool>, VmiError> {
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
-
-        let mut gfn_entry = match self.active_breakpoints.entry((view, gfn)) {
-            Entry::Occupied(gfn_entry) => gfn_entry,
-            Entry::Vacant(_) => return Ok(None),
+        let breakpoints_by_ctx = match self.active_breakpoints.get(&(view, gfn)) {
+            Some(breakpoints_by_ctx) => breakpoints_by_ctx,
+            None => return Ok(None),
+        };
+        let breakpoints = match breakpoints_by_ctx.get(&(key, ctx)) {
+            Some(breakpoints) => breakpoints,
+            None => return Ok(None),
         };
 
-        //
-        // If this `(view, GFN)` has a breakpoint, verify that the monitored
-        // locations are consistent with the active breakpoints.
-        //
+        if let Some(definition) = definition {
+            if !breakpoints.contains(&definition) {
+                return Ok(None);
+            }
 
-        debug_assert!(
-            self.active_gfns_by_view.contains_key(&view)
-                && self.active_gfns_by_view[&view].contains(&gfn),
-            "desynchronized active_breakpoints and active_gfns_by_view"
-        );
+            if breakpoints.len() > 1 {
+                let unregister_global = definition.global
+                    && breakpoints
+                        .iter()
+                        .filter(|breakpoint| breakpoint.global)
+                        .count()
+                        == 1;
 
-        let ctx = ctx.into();
+                self.active_breakpoints
+                    .get_mut(&(view, gfn))
+                    .and_then(|breakpoints_by_ctx| breakpoints_by_ctx.get_mut(&(key, ctx)))
+                    .expect("active breakpoint disappeared")
+                    .remove(&definition);
 
-        //
-        // This `(view, GFN)` has a breakpoint.
-        // Check if the specified `(key, ctx)` has a breakpoint.
-        //
-
-        let breakpoints_by_ctx = gfn_entry.get_mut();
-
-        let breakpoints = match breakpoints_by_ctx.remove(&(key, ctx)) {
-            Some(breakpoints) => breakpoints,
-            None => {
-                //
-                // This `(key, ctx)` doesn't have a breakpoint for this `(view, GFN)`.
-                // Keep the breakpoint for the current `(view, GFN)`.
-                //
-                // Also, verify that the active locations are consistent with the
-                // active breakpoints.
-                //
-
-                if !self.active_locations.contains_key(&(key, ctx)) {
-                    tracing::debug!(
-                        %gfn, %ctx, %view, ?key,
-                        "breakpoint not found for key"
-                    );
+                if unregister_global {
+                    self.unregister_global_breakpoint(gfn, view, ctx);
                 }
-                else {
-                    tracing::error!(
-                        %gfn, %ctx, %view, ?key,
-                        "breakpoint not found for key"
-                    );
-                }
-
-                debug_assert!(
-                    !self.active_locations.contains_key(&(key, ctx)),
-                    "desynchronized active_breakpoints and active_locations"
-                );
 
                 return Ok(Some(false));
             }
-        };
+        }
 
-        let last_breakpoint_removed = breakpoints_by_ctx.is_empty();
+        let last_breakpoint_removed = breakpoints_by_ctx.len() == 1;
+
+        self.remove_controller_breakpoint(vmi, pa, view)?;
+
+        if last_breakpoint_removed && let Err(err) = self.unmonitor_controller_page(vmi, gfn, view)
+        {
+            if let Err(rollback_err) = self.controller.insert_breakpoint(vmi, pa, view) {
+                tracing::error!(
+                    %rollback_err,
+                    %pa,
+                    %view,
+                    "failed to restore breakpoint after unmonitor failure"
+                );
+            }
+
+            return Err(err);
+        }
+
+        let breakpoints = self
+            .active_breakpoints
+            .get_mut(&(view, gfn))
+            .expect("active breakpoint page disappeared")
+            .remove(&(key, ctx))
+            .expect("active breakpoint disappeared");
+
+        if breakpoints.iter().any(|breakpoint| breakpoint.global) {
+            self.unregister_global_breakpoint(gfn, view, ctx);
+        }
+
+        self.remove_active_location(gfn, view, key, ctx);
 
         if last_breakpoint_removed {
-            //
-            // There are no more breakpoints registered for this `(view, GFN)`.
-            // Remove the breakpoint for the current `(view, GFN)`.
-            //
-
-            tracing::debug!(
-                %gfn, %ctx, %view, ?key, ?breakpoints,
-                "breakpoint removed"
-            );
-
-            gfn_entry.remove();
-        }
-        else {
-            //
-            // There are still other breakpoints registered for this `(view, GFN)`.
-            // Keep the breakpoint for the current `(view, GFN)`.
-            //
-
-            tracing::debug!(
-                %gfn, %ctx, %view, ?key,
-                remaining = breakpoints_by_ctx.len(),
-                "breakpoint still in use"
-            );
+            self.active_breakpoints.remove(&(view, gfn));
+            self.remove_monitored_location(gfn, view);
         }
 
-        self.uninstall_breakpoint(vmi, pa, view, key, ctx)?;
-
-        if last_breakpoint_removed {
-            //
-            // Because there are no more breakpoints for this `(view, GFN)`,
-            // unmonitor the `(view, GFN)` pair.
-            //
-            // IMPORTANT: It is important to unmonitor the page AFTER the
-            //            breakpoint is removed. Otherwise, the page access
-            //            might change during the GFN remapping.
-            //
-
-            self.unmonitor_page_for_changes(vmi, gfn, view)?;
-        }
+        tracing::debug!(
+            %gfn, %ctx, %view, ?key, ?breakpoints,
+            "active breakpoint removed"
+        );
 
         Ok(Some(last_breakpoint_removed))
     }
@@ -824,21 +790,39 @@ where
         gfn: Gfn,
         view: View,
     ) -> Result<Option<ActiveBreakpoints<Key, Tag>>, VmiError> {
-        let breakpoints = match self.active_breakpoints.remove(&(view, gfn)) {
+        let breakpoints = match self.active_breakpoints.get(&(view, gfn)).cloned() {
             Some(breakpoints) => breakpoints,
             None => return Ok(None),
         };
-
-        //
-        // REVIEW:
-        // Should remove_breakpoint + unmonitor be atomic? (i.e., should we
-        // consider vmi.pause() + vmi.resume()?)
-        //
+        let mut removed = Vec::with_capacity(breakpoints.len());
 
         for &(key, ctx) in breakpoints.keys() {
             let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
-            self.uninstall_breakpoint(vmi, pa, view, key, ctx)?;
+
+            if let Err(err) = self.remove_controller_breakpoint(vmi, pa, view) {
+                self.restore_controller_breakpoints(vmi, view, &removed);
+                return Err(err);
+            }
+
+            removed.push((key, ctx, pa));
         }
+
+        if let Err(err) = self.unmonitor_controller_page(vmi, gfn, view) {
+            self.restore_controller_breakpoints(vmi, view, &removed);
+            return Err(err);
+        }
+
+        self.active_breakpoints.remove(&(view, gfn));
+
+        for (&(key, ctx), definitions) in &breakpoints {
+            if definitions.iter().any(|breakpoint| breakpoint.global) {
+                self.unregister_global_breakpoint(gfn, view, ctx);
+            }
+
+            self.remove_active_location(gfn, view, key, ctx);
+        }
+
+        self.remove_monitored_location(gfn, view);
 
         tracing::debug!(
             active = self.active_breakpoints.len(),
@@ -847,8 +831,6 @@ where
             ?breakpoints,
             "active breakpoints removed"
         );
-
-        self.unmonitor_page_for_changes(vmi, gfn, view)?;
 
         Ok(Some(breakpoints))
     }
@@ -931,23 +913,42 @@ where
 
         Some(breakpoints)
     }
+    /// Removes one exact pending breakpoint definition.
+    fn remove_pending_breakpoint(&mut self, breakpoint: Breakpoint<Key, Tag>) -> bool {
+        let ctx = breakpoint.ctx;
+        let view = breakpoint.view;
+        let (definition_was_removed, address_is_empty) =
+            match self.pending_breakpoints.get_mut(&(view, ctx)) {
+                Some(breakpoints) => {
+                    let definition_was_removed = breakpoints.remove(&breakpoint);
+                    (definition_was_removed, breakpoints.is_empty())
+                }
+                None => return false,
+            };
 
-    fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, ctx: &mut AddressContext) {
+        if definition_was_removed && address_is_empty {
+            self.remove_pending_breakpoints_by_address(ctx, view);
+        }
+
+        definition_was_removed
+    }
+
+    fn normalize_global_context(&self, view: View, ctx: &mut AddressContext) {
+        if let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va)) {
+            ctx.root = global_breakpoint.root;
+        }
+    }
+
+    fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, ctx: AddressContext) {
         match self.active_global_breakpoints.entry((view, ctx.va)) {
             Entry::Occupied(mut entry) => {
                 let global_breakpoint = entry.get_mut();
-                let gfn_was_inserted = global_breakpoint.gfns.insert(gfn);
-                debug_assert!(
-                    gfn_was_inserted,
-                    "trying to register a global breakpoint that is already registered"
-                );
-
-                ctx.root = global_breakpoint.root;
+                *global_breakpoint.gfns.entry(gfn).or_default() += 1;
             }
             Entry::Vacant(entry) => {
                 entry.insert(GlobalBreakpoint {
                     root: ctx.root,
-                    gfns: HashSet::from([gfn]),
+                    gfns: HashMap::from([(gfn, 1)]),
                 });
             }
         }
@@ -959,24 +960,26 @@ where
         view: View,
         ctx: AddressContext,
     ) -> Option<bool> {
-        match self.active_global_breakpoints.entry((view, ctx.va)) {
-            Entry::Occupied(mut entry) => {
-                let global_breakpoint = entry.get_mut();
-                let page_was_removed = global_breakpoint.gfns.remove(&gfn);
-                debug_assert!(
-                    page_was_removed,
-                    "trying to unregister a global breakpoint that is not registered"
-                );
+        let mut global_breakpoint = match self.active_global_breakpoints.entry((view, ctx.va)) {
+            Entry::Occupied(entry) => entry,
+            Entry::Vacant(_) => return None,
+        };
+        let gfns = &mut global_breakpoint.get_mut().gfns;
+        let references = gfns.get_mut(&gfn)?;
 
-                if !global_breakpoint.gfns.is_empty() {
-                    return Some(false);
-                }
-
-                entry.remove();
-                Some(true)
-            }
-            Entry::Vacant(_) => None,
+        if *references > 1 {
+            *references -= 1;
+            return Some(false);
         }
+
+        gfns.remove(&gfn);
+
+        if !gfns.is_empty() {
+            return Some(false);
+        }
+
+        global_breakpoint.remove();
+        Some(true)
     }
 
     fn insert_monitored_location(&mut self, gfn: Gfn, view: View) {
@@ -1036,102 +1039,66 @@ where
         }
     }
 
-    fn monitor_page_for_changes(
-        &mut self,
-        vmi: &VmiCore<Interface::Driver>,
-        gfn: Gfn,
-        view: View,
-    ) -> Result<(), VmiError> {
-        self.insert_monitored_location(gfn, view);
-        self.controller.monitor(vmi, gfn, view)
-    }
-
-    fn unmonitor_page_for_changes(
-        &mut self,
-        vmi: &VmiCore<Interface::Driver>,
-        gfn: Gfn,
-        view: View,
-    ) -> Result<(), VmiError> {
-        self.remove_monitored_location(gfn, view);
-        match self.controller.unmonitor(vmi, gfn, view) {
-            Ok(()) => Ok(()),
-            Err(VmiError::ViewNotFound) => {
-                //
-                // The view was not found. This can happen if the view was
-                // destroyed before the breakpoint was removed.
-                //
-                // In this case, we can safely ignore the error.
-                //
-                Ok(())
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    fn install_breakpoint(
-        &mut self,
-        vmi: &VmiCore<Interface::Driver>,
-        pa: Pa,
-        view: View,
-        key: Key,
-        ctx: AddressContext,
-    ) -> Result<(), VmiError> {
-        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
-        let view_gfn_was_inserted = self
-            .active_locations
-            .entry((key, ctx))
-            .or_default()
-            .insert((view, gfn));
-
-        debug_assert!(
-            view_gfn_was_inserted,
-            "trying to install a breakpoint that is already installed"
-        );
-
-        self.controller.insert_breakpoint(vmi, pa, view)
-    }
-
-    fn uninstall_breakpoint(
-        &mut self,
-        vmi: &VmiCore<Interface::Driver>,
-        pa: Pa,
-        view: View,
-        key: Key,
-        ctx: AddressContext,
-    ) -> Result<(), VmiError> {
-        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
-        self.unregister_global_breakpoint(gfn, view, ctx);
-
+    /// Removes a location from the active breakpoint index.
+    fn remove_active_location(&mut self, gfn: Gfn, view: View, key: Key, ctx: AddressContext) {
         match self.active_locations.entry((key, ctx)) {
             Entry::Occupied(mut entry) => {
-                let view_gfns = entry.get_mut();
-                let view_gfn_was_removed = view_gfns.remove(&(view, gfn));
-                debug_assert!(
-                    view_gfn_was_removed,
-                    "trying to uninstall a breakpoint that is not installed"
-                );
+                let locations = entry.get_mut();
+                let location_was_removed = locations.remove(&(view, gfn));
+                debug_assert!(location_was_removed);
 
-                if view_gfns.is_empty() {
+                if locations.is_empty() {
                     entry.remove();
                 }
             }
             Entry::Vacant(_) => {
-                panic!("trying to uninstall a breakpoint that is not installed");
+                panic!("trying to remove an active location that is not registered");
             }
         }
+    }
 
+    /// Removes a breakpoint while treating a destroyed view as already clean.
+    fn remove_controller_breakpoint(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        pa: Pa,
+        view: View,
+    ) -> Result<(), VmiError> {
         match self.controller.remove_breakpoint(vmi, pa, view) {
-            Ok(()) => Ok(()),
-            Err(VmiError::ViewNotFound) => {
-                //
-                // The view was not found. This can happen if the view was
-                // destroyed before the breakpoint was removed.
-                //
-                // In this case, we can safely ignore the error.
-                //
-                Ok(())
-            }
+            Ok(()) | Err(VmiError::ViewNotFound) => Ok(()),
             Err(err) => Err(err),
+        }
+    }
+
+    /// Stops monitoring a page while tolerating a destroyed view.
+    fn unmonitor_controller_page(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<(), VmiError> {
+        match self.controller.unmonitor(vmi, gfn, view) {
+            Ok(()) | Err(VmiError::ViewNotFound) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Restores physical breakpoints removed by a failed group operation.
+    fn restore_controller_breakpoints(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        view: View,
+        breakpoints: &[(Key, AddressContext, Pa)],
+    ) {
+        for &(_, _, pa) in breakpoints {
+            if let Err(err) = self.controller.insert_breakpoint(vmi, pa, view) {
+                tracing::error!(
+                    %err,
+                    %pa,
+                    %view,
+                    "failed to restore breakpoint after group removal failure"
+                );
+            }
         }
     }
 
@@ -1167,3 +1134,7 @@ where
         Some((ctx, pa, view))
     }
 }
+
+/// Verifies breakpoint definitions, controllers, and manager behavior.
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests;

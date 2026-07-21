@@ -28,9 +28,14 @@ use vmi_core::{
 /// Stores the original content that was replaced by the breakpoint instruction
 /// and tracks the number of references to this breakpoint location.
 struct Breakpoint {
+    /// Byte offset within the page.
     #[expect(unused)]
     offset: u16,
+
+    /// Bytes replaced by the breakpoint instruction.
     original_content: Vec<u8>, // until [u8; Arch::BREAKPOINT.len()] is allowed
+
+    /// Number of active users of this breakpoint.
     references: u32,
 }
 
@@ -39,9 +44,16 @@ struct Breakpoint {
 /// Maintains the mapping between original and shadow pages, along with all
 /// breakpoint locations within the page.
 struct Page {
+    /// Guest frame containing the original page.
     original_gfn: Gfn,
+
+    /// Guest frame containing the shadow page.
     shadow_gfn: Gfn,
+
+    /// View that maps the original frame to the shadow frame.
     view: View,
+
+    /// Breakpoints keyed by their byte offset within the page.
     breakpoints: HashMap<u16, Breakpoint>,
 }
 
@@ -60,15 +72,28 @@ where
 }
 
 /// Core implementation of software breakpoint handling.
-#[derive(Default)]
 pub struct Interceptor<Driver>
 where
     Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
     <Driver::Architecture as Architecture>::EventReason:
         EventReason<Architecture = Driver::Architecture>,
 {
+    /// Pages keyed by view and original guest frame.
     pages: HashMap<(View, Gfn), Page>,
+
+    /// Associates the interceptor with its driver type.
     _marker: std::marker::PhantomData<Driver>,
+}
+
+impl<Driver> Default for Interceptor<Driver>
+where
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
+    <Driver::Architecture as Architecture>::EventReason:
+        EventReason<Architecture = Driver::Architecture>,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<Driver> Interceptor<Driver>
@@ -105,7 +130,7 @@ where
         }
 
         // Check if the page already has a breakpoint.
-        let page = match self.pages.entry((view, original_gfn)) {
+        let (page, deactivate_on_error) = match self.pages.entry((view, original_gfn)) {
             Entry::Occupied(entry) => {
                 let page = entry.into_mut();
 
@@ -121,7 +146,8 @@ where
                     return Ok(page.shadow_gfn);
                 }
 
-                if page.breakpoints.is_empty() {
+                let deactivate_on_error = page.breakpoints.is_empty();
+                if deactivate_on_error {
                     // The view was reset when the last breakpoint was removed,
                     // but the shadow page is retained for reuse. Refresh it in
                     // case the original page changed, then reactivate its view
@@ -137,7 +163,7 @@ where
                     );
                 }
 
-                page
+                (page, deactivate_on_error)
             }
             Entry::Vacant(entry) => {
                 // Create a shadow page for the original page.
@@ -148,7 +174,17 @@ where
                     breakpoints: HashMap::new(),
                 };
 
-                activate_shadow_page(vmi, &page)?;
+                if let Err(err) = activate_shadow_page(vmi, &page) {
+                    let _ = vmi.free_gfn(page.shadow_gfn).inspect_err(|err| {
+                        tracing::error!(
+                            shadow_gfn = %page.shadow_gfn,
+                            %err,
+                            "failed to free shadow page after activation failure"
+                        );
+                    });
+
+                    return Err(err);
+                }
 
                 tracing::debug!(
                     %address,
@@ -158,20 +194,44 @@ where
                     "created shadow page"
                 );
 
-                entry.insert(page)
+                (entry.insert(page), true)
             }
         };
 
         // Replace the original content with a breakpoint instruction.
-        let shadow = vmi.driver().read_page(page.shadow_gfn)?;
-        let original_content =
-            shadow[offset..offset + Driver::Architecture::BREAKPOINT.len()].to_vec();
+        let install_result = (|| {
+            let shadow = vmi.driver().read_page(page.shadow_gfn)?;
+            let original_content =
+                shadow[offset..offset + Driver::Architecture::BREAKPOINT.len()].to_vec();
 
-        vmi.driver().write_page(
-            page.shadow_gfn,
-            offset as u64,
-            Driver::Architecture::BREAKPOINT,
-        )?;
+            vmi.driver().write_page(
+                page.shadow_gfn,
+                offset as u64,
+                Driver::Architecture::BREAKPOINT,
+            )?;
+
+            Ok(original_content)
+        })();
+
+        let original_content = match install_result {
+            Ok(original_content) => original_content,
+            Err(err) => {
+                if deactivate_on_error {
+                    let _ = vmi
+                        .reset_view_gfn(page.view, page.original_gfn)
+                        .inspect_err(|err| {
+                            tracing::error!(
+                                view = %page.view,
+                                original_gfn = %page.original_gfn,
+                                %err,
+                                "failed to reset view after breakpoint installation failure"
+                            );
+                        });
+                }
+
+                return Err(err);
+            }
+        };
 
         // Save the original content of the breakpoint.
         let offset = offset as u16;
@@ -207,6 +267,7 @@ where
         self.remove_breakpoint_internal(vmi, address, view, true)
     }
 
+    /// Removes one reference or forcibly removes the entire breakpoint.
     fn remove_breakpoint_internal(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -222,6 +283,8 @@ where
             Some(page) => page,
             None => return Ok(None),
         };
+
+        let is_last_breakpoint = page.breakpoints.len() == 1;
 
         // Check if the breakpoint at the given offset exists.
         let breakpoint = match page.breakpoints.get_mut(&offset) {
@@ -245,19 +308,34 @@ where
         vmi.driver()
             .write_page(page.shadow_gfn, offset as u64, &breakpoint.original_content)?;
 
+        // Reset the mapping before removing the final bookkeeping entry. If
+        // resetting fails, restore the breakpoint instruction so the physical
+        // page and the in-memory state remain consistent and removal can be
+        // retried.
+        if is_last_breakpoint {
+            let reset_result = vmi.reset_view_gfn(page.view, page.original_gfn);
+            if let Err(err) = reset_result {
+                let _ = vmi
+                    .driver()
+                    .write_page(
+                        page.shadow_gfn,
+                        offset as u64,
+                        Driver::Architecture::BREAKPOINT,
+                    )
+                    .inspect_err(|err| {
+                        tracing::error!(
+                            shadow_gfn = %page.shadow_gfn,
+                            %err,
+                            "failed to restore breakpoint after view reset failure"
+                        );
+                    });
+
+                return Err(err);
+            }
+        }
+
         // Remove the breakpoint from the page.
         page.breakpoints.remove(&offset);
-
-        // If the page has no more breakpoints, reset the view of the page to
-        // the original page.
-        if page.breakpoints.is_empty() {
-            vmi.reset_view_gfn(page.view, page.original_gfn)?;
-
-            // Free the shadow page.
-            // TODO: figure out why it's not working
-            //vmi.free_gfn(page.shadow_gfn)?;
-            //self.pages.remove(&(view, gfn));
-        }
 
         Ok(Some(true))
     }
@@ -291,3 +369,7 @@ where
         page.breakpoints.contains_key(&offset)
     }
 }
+
+/// Verifies interceptor behavior with deterministic mock drivers.
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests;
