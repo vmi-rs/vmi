@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Global breakpoint bookkeeping no longer panics in debug builds. Inserting the
+  same global breakpoint twice, or global breakpoints whose VA is backed by a
+  shared physical page across roots or keys, is now handled by reference
+  counting the pages a global VA spans. Removing a non-global breakpoint that
+  shares a VA with a global one no longer disturbs the global's tracking.
 - Activating a breakpoint now drops any pending copy of the same breakpoint, so
   a breakpoint can no longer be both pending and active. Previously removing such
   a breakpoint cleared only the pending copy and leaked the installed one.
