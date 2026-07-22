@@ -1648,6 +1648,130 @@ fn global_breakpoint_spans_pages_and_remove_by_event_clears_all() -> Result<(), 
     Ok(())
 }
 
+#[test]
+fn global_breakpoint_duplicate_insert_is_idempotent() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    let pa = pa_at(CODE_GFN, OFFSET);
+    assert!(manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?);
+    // A second identical global insert is a no-op, not a panic.
+    assert!(!manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?);
+    assert_eq!(rec_count(is_insert), 1);
+
+    Ok(())
+}
+
+#[test]
+fn global_breakpoint_second_root_same_page_is_idempotent() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    // Two roots that map the same VA to the same physical page collapse onto a
+    // single global breakpoint.
+    let pa = pa_at(CODE_GFN, OFFSET);
+    assert!(manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?);
+    assert!(!manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT2, VIEW), Some(pa))?);
+    assert_eq!(rec_count(is_insert), 1);
+
+    Ok(())
+}
+
+#[test]
+fn global_breakpoints_with_distinct_keys_share_a_page() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+
+    // Two owners install a global breakpoint at the same VA on the same page.
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    assert!(manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx, VIEW).global().with_key(1u32),
+        Some(pa)
+    )?);
+    assert!(manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx, VIEW).global().with_key(2u32),
+        Some(pa)
+    )?);
+
+    // Removing one owner keeps the global breakpoint matching for the other.
+    manager.remove_with_hint(
+        &vmi,
+        Breakpoint::new(ctx, VIEW).global().with_key(1u32),
+        Some(pa),
+    )?;
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
+    assert!(manager.contains_by_event(&event, 2u32));
+    assert!(!manager.contains_by_event(&event, 1u32));
+
+    // Removing the second owner tears the page down and stops matching.
+    manager.remove_with_hint(
+        &vmi,
+        Breakpoint::new(ctx, VIEW).global().with_key(2u32),
+        Some(pa),
+    )?;
+    assert!(!manager.contains_by_event(&event, 2u32));
+
+    Ok(())
+}
+
+#[test]
+fn removing_nonglobal_leaves_global_at_same_va_intact() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    // A global breakpoint and a non-global breakpoint share a VA but sit on
+    // different physical pages.
+    manager.insert_with_hint(
+        &vmi,
+        bp_global(OFFSET, ROOT1, VIEW),
+        Some(pa_at(CODE_GFN, OFFSET)),
+    )?;
+    manager.insert_with_hint(
+        &vmi,
+        bp(OFFSET, ROOT2, VIEW),
+        Some(pa_at(OTHER_GFN, OFFSET)),
+    )?;
+
+    // Removing the non-global one must not disturb the global bookkeeping.
+    assert!(manager.remove_with_hint(
+        &vmi,
+        bp(OFFSET, ROOT2, VIEW),
+        Some(pa_at(OTHER_GFN, OFFSET))
+    )?);
+
+    // The global breakpoint still matches regardless of root.
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
+    assert!(manager.contains_by_event(&event, ()));
+
+    Ok(())
+}
+
+#[test]
+fn global_breakpoint_added_onto_existing_context_matches_any_root() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    // A non-global breakpoint occupies the (key, context) bucket first.
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_tag("a"), Some(pa))?;
+    // A global breakpoint at the same (key, context) is added onto that bucket.
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx, VIEW).global().with_tag("b"),
+        Some(pa),
+    )?;
+
+    // The global breakpoint must still match regardless of root.
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
+    assert!(manager.contains_by_event(&event, ()));
+
+    Ok(())
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Error propagation and ViewNotFound tolerance
 ///////////////////////////////////////////////////////////////////////////////
