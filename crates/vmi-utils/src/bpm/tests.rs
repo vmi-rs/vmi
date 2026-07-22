@@ -1212,6 +1212,22 @@ fn remove_by_view_empty_returns_false() -> Result<(), VmiError> {
 }
 
 #[test]
+fn remove_by_view_with_only_pending_returns_true() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    // The view holds only a pending breakpoint, no active one.
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), None)?;
+
+    // A pending breakpoint was removed, so the call reports true.
+    assert!(manager.remove_by_view(&vmi, VIEW)?);
+    // The pending breakpoint is gone: re-inserting it reports a fresh entry.
+    assert!(manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), None)?);
+
+    Ok(())
+}
+
+#[test]
 fn remove_by_view_also_clears_pending() -> Result<(), VmiError> {
     let vmi = make_vmi(MockDriver::new())?;
     let mut manager = RecManager::new();
