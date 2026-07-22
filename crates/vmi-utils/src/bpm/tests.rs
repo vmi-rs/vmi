@@ -1541,6 +1541,25 @@ fn different_keys_are_independent() -> Result<(), VmiError> {
     Ok(())
 }
 
+#[test]
+fn remove_pending_only_affects_requested_key() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+
+    let ctx = ctx_at(OFFSET, ROOT1);
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(1u32), None)?;
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(2u32), None)?;
+
+    // Removing one key's pending breakpoint leaves another key's intact.
+    assert!(manager.remove_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(1u32), None)?);
+    // Key 2 is still pending: re-inserting reports it already exists.
+    assert!(!manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(2u32), None)?);
+    // Key 1 is gone: re-inserting reports a fresh entry.
+    assert!(manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(1u32), None)?);
+
+    Ok(())
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Global breakpoints
 ///////////////////////////////////////////////////////////////////////////////
