@@ -1055,6 +1055,29 @@ fn remove_pending_returns_true_without_calls() -> Result<(), VmiError> {
 }
 
 #[test]
+fn activating_a_pending_breakpoint_drops_the_pending_copy() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    // Register the breakpoint as pending, then activate the same breakpoint.
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW), None)?;
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW), Some(pa))?;
+    rec_clear_log();
+
+    // Removal now tears down the active copy instead of stopping at a stale
+    // pending copy and leaking the installed breakpoint.
+    assert!(manager.remove_with_hint(&vmi, Breakpoint::new(ctx, VIEW), Some(pa))?);
+    assert_eq!(rec_count(is_remove), 1);
+    assert!(!manager.contains_by_address(ctx, ()));
+    // No stray pending copy remains either.
+    assert!(manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW), None)?);
+
+    Ok(())
+}
+
+#[test]
 fn remove_unknown_returns_false() -> Result<(), VmiError> {
     let vmi = make_vmi(MockDriver::new())?;
     let mut manager = RecManager::new();
