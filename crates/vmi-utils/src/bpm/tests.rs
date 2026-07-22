@@ -1069,6 +1069,25 @@ fn remove_unknown_returns_false() -> Result<(), VmiError> {
     Ok(())
 }
 
+#[test]
+fn remove_absent_context_on_populated_page_returns_false() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    // One breakpoint occupies the page.
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
+
+    // A different context on the same page was never installed: removal reports
+    // that nothing was found rather than a spurious success.
+    assert!(!manager.remove_with_hint(
+        &vmi,
+        bp(OFFSET2, ROOT1, VIEW),
+        Some(pa_at(CODE_GFN, OFFSET2))
+    )?);
+
+    Ok(())
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // remove_by_event
 ///////////////////////////////////////////////////////////////////////////////
