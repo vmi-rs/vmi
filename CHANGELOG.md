@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activating a breakpoint now drops any pending copy of the same breakpoint, so
   a breakpoint can no longer be both pending and active. Previously removing such
   a breakpoint cleared only the pending copy and leaked the installed one.
+- `BreakpointManager::remove` and `remove_with_hint` now tear down an installed
+  breakpoint even when a pending breakpoint shares its `(key, address)`.
+  Previously removal stopped at the pending copy and returned success while
+  leaving the active breakpoint installed.
 - `BreakpointManager::remove` and `remove_with_hint` now remove only the
   pending breakpoints registered under the requested key. Previously they
   dropped every pending breakpoint at the same `(view, address)`, silently

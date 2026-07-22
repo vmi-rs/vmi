@@ -296,17 +296,23 @@ where
         // Removing a pending breakpoint only affects the requested key, leaving
         // pending breakpoints registered under other keys at the same address
         // in place.
-        if self.remove_pending_breakpoints_by_key(ctx, view, key) {
-            return Ok(true);
-        }
+        //
+        // A pending copy and an active copy can coexist at the same (key, ctx)
+        // (for example registered pending under one tag and activated under
+        // another), so both are torn down. Otherwise a successful return could
+        // leave an installed breakpoint behind.
+        let pending_removed = self.remove_pending_breakpoints_by_key(ctx, view, key);
 
         let pa = match pa {
             Some(pa) => pa,
-            None => return Ok(false),
+            None => return Ok(pending_removed),
         };
 
-        let breakpoint_was_removed = self.remove_active_breakpoint(vmi, ctx, pa, key, view)?;
-        Ok(breakpoint_was_removed.is_some())
+        let active_removed = self
+            .remove_active_breakpoint(vmi, ctx, pa, key, view)?
+            .is_some();
+
+        Ok(pending_removed || active_removed)
     }
 
     /// Removes a breakpoint by event that caused the breakpoint.
