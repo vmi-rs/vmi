@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BreakpointManager::clear` no longer panics in debug builds, or leaves a stale
+  per-view pending index in release builds, when a pending breakpoint was
+  registered. The `pending_ctx_by_view` map is now cleared alongside the pending
+  breakpoints.
 - `Interceptor` no longer leaks a shadow frame when activating a page fails
   partway through inserting the first breakpoint. The allocated frame is now
   retained and reused when the insertion is retried.
