@@ -310,3 +310,6 @@ where
         page.breakpoints.contains_key(&offset)
     }
 }
+
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests;
