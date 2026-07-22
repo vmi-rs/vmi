@@ -1405,3 +1405,27 @@ fn remove_propagates_restore_write_error() -> Result<(), VmiError> {
 
     Ok(())
 }
+
+#[test]
+fn failed_activation_does_not_leak_shadow_gfn() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    // Fail the view remap during the first activation of a new page.
+    driver.arm_fault(Op::ChangeView, 1);
+
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+
+    let address = bp_address(CODE_GFN, OFFSET);
+    // The first insert allocates a shadow frame, then fails to activate it.
+    assert!(interceptor.insert_breakpoint(&vmi, address, VIEW).is_err());
+
+    // Retrying (the second view remap is not armed to fail) must reuse the frame
+    // the failed attempt allocated rather than leaking it and allocating another.
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    assert_eq!(vmi.driver().count(is_allocate), 1);
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+
+    Ok(())
+}
