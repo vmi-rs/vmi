@@ -608,6 +608,10 @@ where
         // - asserts are used to ensure that the internal state is consistent
         //
 
+        // Activating a breakpoint supersedes any pending copy of it, so the
+        // same breakpoint is never both pending and active at once.
+        self.remove_pending_breakpoint(&breakpoint);
+
         let Breakpoint {
             mut ctx,
             view,
@@ -947,6 +951,29 @@ where
         );
 
         Some(breakpoints)
+    }
+
+    /// Removes the exact pending breakpoint if present.
+    ///
+    /// Returns `true` if it was removed.
+    fn remove_pending_breakpoint(&mut self, breakpoint: &Breakpoint<Key, Tag>) -> bool {
+        let key = (breakpoint.view, breakpoint.ctx);
+
+        let breakpoints = match self.pending_breakpoints.get_mut(&key) {
+            Some(breakpoints) => breakpoints,
+            None => return false,
+        };
+
+        if !breakpoints.remove(breakpoint) {
+            return false;
+        }
+
+        if breakpoints.is_empty() {
+            self.pending_breakpoints.remove(&key);
+            self.forget_pending_ctx(breakpoint.ctx, breakpoint.view);
+        }
+
+        true
     }
 
     /// Removes every pending breakpoint with `key` at `(view, ctx)`.
