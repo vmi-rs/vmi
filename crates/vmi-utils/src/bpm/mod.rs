@@ -782,7 +782,7 @@ where
                     "desynchronized active_breakpoints and active_locations"
                 );
 
-                return Ok(Some(false));
+                return Ok(None);
             }
         };
 
