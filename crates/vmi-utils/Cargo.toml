@@ -33,6 +33,7 @@ vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
 vmi = { workspace = true, features = ["arch-amd64", "os-windows", "utils"] }
+vmi-driver-mock = { workspace = true, features = ["arch-amd64"] }
 
 [features]
 default = []

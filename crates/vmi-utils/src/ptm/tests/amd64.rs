@@ -1,129 +1,10 @@
-use std::{cell::RefCell, collections::HashMap};
-
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
-    View, VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage, VmiQueryProtection, VmiRead,
-    VmiSetProtection,
+    AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, Va, VcpuId, View, VmiCore, VmiError,
 };
+use vmi_driver_mock::arch::amd64::{MockDriver, make_large_pte, make_not_present_pte, make_pte};
 
 use super::super::{PageTableMonitor, PageTableMonitorEvent};
-
-///////////////////////////////////////////////////////////////////////////////
-// Mock Driver
-///////////////////////////////////////////////////////////////////////////////
-
-struct MockPtmDriver {
-    pages: RefCell<HashMap<Gfn, Vec<u8>>>,
-    access: RefCell<HashMap<(View, Gfn), MemoryAccess>>,
-}
-
-impl MockPtmDriver {
-    fn new() -> Self {
-        Self {
-            pages: RefCell::new(HashMap::new()),
-            access: RefCell::new(HashMap::new()),
-        }
-    }
-
-    /// Inserts a blank 4KB page at the given GFN.
-    fn insert_page(&self, gfn: Gfn) {
-        self.pages.borrow_mut().insert(gfn, vec![0u8; 4096]);
-    }
-
-    /// Writes a page table entry at the given physical address.
-    fn write_pte(&self, pa: Pa, pte: PageTableEntry) {
-        let gfn = Amd64::gfn_from_pa(pa);
-        let offset = Amd64::pa_offset(pa) as usize;
-        let mut pages = self.pages.borrow_mut();
-        let page = pages
-            .get_mut(&gfn)
-            .unwrap_or_else(|| panic!("no page at {:?}", gfn));
-        page[offset..offset + 8].copy_from_slice(&pte.0.to_le_bytes());
-    }
-
-    fn set_initial_access(&self, gfn: Gfn, view: View, access: MemoryAccess) {
-        self.access.borrow_mut().insert((view, gfn), access);
-    }
-
-    fn access(&self, gfn: Gfn, view: View) -> MemoryAccess {
-        self.access
-            .borrow()
-            .get(&(view, gfn))
-            .copied()
-            .unwrap_or(MemoryAccess::RWX)
-    }
-}
-
-fn make_pte(gfn: Gfn) -> PageTableEntry {
-    PageTableEntry((gfn.0 << 12) | 1)
-}
-
-fn make_large_pte(gfn: Gfn) -> PageTableEntry {
-    PageTableEntry((gfn.0 << 12) | (1 << 7) | 1)
-}
-
-fn make_not_present_pte() -> PageTableEntry {
-    PageTableEntry(0)
-}
-
-impl VmiDriver for MockPtmDriver {
-    type Architecture = Amd64;
-
-    fn info(&self) -> Result<VmiInfo, VmiError> {
-        Ok(VmiInfo {
-            page_size: 4096,
-            page_shift: 12,
-            max_gfn: Gfn(0xFFFF),
-            vcpus: 1,
-        })
-    }
-}
-
-impl VmiRead for MockPtmDriver {
-    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        let pages = self.pages.borrow();
-        let page = pages.get(&gfn).ok_or(VmiError::Other("page not found"))?;
-        Ok(VmiMappedPage::new(page.clone()))
-    }
-}
-
-impl VmiQueryProtection for MockPtmDriver {
-    fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
-        Ok(self.access(gfn, view))
-    }
-
-    fn memory_access_with_options(
-        &self,
-        _gfn: Gfn,
-        _view: View,
-    ) -> Result<(MemoryAccess, MemoryAccessOptions), VmiError> {
-        Err(VmiError::NotSupported)
-    }
-}
-
-impl VmiSetProtection for MockPtmDriver {
-    fn set_memory_access(
-        &self,
-        gfn: Gfn,
-        view: View,
-        access: MemoryAccess,
-    ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
-    }
-
-    fn set_memory_access_with_options(
-        &self,
-        gfn: Gfn,
-        view: View,
-        access: MemoryAccess,
-        _options: MemoryAccessOptions,
-    ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test Helpers
@@ -151,7 +32,7 @@ fn test_ctx() -> AddressContext {
 }
 
 /// Builds a full PML4->PDPT->PD->PT->DATA chain in the mock driver.
-fn build_full_hierarchy(driver: &MockPtmDriver) {
+fn build_full_hierarchy(driver: &MockDriver) {
     driver.insert_page(PML4_GFN);
     driver.insert_page(PDPT_GFN);
     driver.insert_page(PD_GFN);
@@ -195,7 +76,7 @@ fn expected_data_pa() -> Pa {
     Amd64::pa_from_gfn(DATA_GFN) + Amd64::va_offset(TEST_VA)
 }
 
-fn make_vmi(driver: MockPtmDriver) -> Result<VmiCore<MockPtmDriver>, VmiError> {
+fn make_vmi(driver: MockDriver) -> Result<VmiCore<MockDriver>, VmiError> {
     let mut vmi = VmiCore::new(driver)?;
     vmi.disable_gfn_cache();
     Ok(vmi)
@@ -207,11 +88,11 @@ fn make_vmi(driver: MockPtmDriver) -> Result<VmiCore<MockPtmDriver>, VmiError> {
 
 #[test]
 fn monitor_already_paged_in_address() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -227,11 +108,11 @@ fn monitor_already_paged_in_address() -> Result<(), VmiError> {
 
 #[test]
 fn monitor_unmonitor_lifecycle() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 4);
@@ -248,7 +129,7 @@ fn monitor_unmonitor_lifecycle() -> Result<(), VmiError> {
 
 #[test]
 fn restores_captured_table_access() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let expected = [
@@ -263,7 +144,7 @@ fn restores_captured_table_access() -> Result<(), VmiError> {
     }
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -282,7 +163,7 @@ fn restores_captured_table_access() -> Result<(), VmiError> {
 
 #[test]
 fn multiple_vas_sharing_page_table_pages() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // VA2 = 0x2000 shares PML4/PDPT/PD with VA=0x1000 but has a different PT entry.
@@ -297,7 +178,7 @@ fn multiple_vas_sharing_page_table_pages() -> Result<(), VmiError> {
     let ctx2 = AddressContext::new(va2, root_pa());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "test2")?;
@@ -325,11 +206,11 @@ fn multiple_vas_sharing_page_table_pages() -> Result<(), VmiError> {
 
 #[test]
 fn unmonitor_all_clears_state() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 4);
@@ -351,11 +232,11 @@ fn unmonitor_all_clears_state() -> Result<(), VmiError> {
 
 #[test]
 fn monitor_remonitor_same_va() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 4);
@@ -383,11 +264,11 @@ fn monitor_remonitor_same_va() -> Result<(), VmiError> {
 
 #[test]
 fn unmonitor_by_force_ignores_references() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
     ptm.monitor(&vmi, test_ctx(), VIEW, "test2")?;
@@ -406,12 +287,12 @@ fn unmonitor_by_force_ignores_references() -> Result<(), VmiError> {
 #[test]
 fn monitor_not_present_at_every_level() -> Result<(), VmiError> {
     // Monitoring a VA where the PML4 entry itself is not present.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     driver.insert_page(PML4_GFN);
     // PML4 entry is zeroed (not present).
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 1); // Only PML4 page.
@@ -423,11 +304,11 @@ fn monitor_not_present_at_every_level() -> Result<(), VmiError> {
 
 #[test]
 fn unmonitor_nonexistent_va_is_noop() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     // Unmonitor something that was never monitored.
     ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
@@ -439,14 +320,14 @@ fn unmonitor_nonexistent_va_is_noop() -> Result<(), VmiError> {
 
 #[test]
 fn unmonitor_with_not_present_intermediate() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Zero the PD entry *before* monitoring so the PT subtree is not resolved.
     driver.write_pte(pd_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -463,14 +344,14 @@ fn unmonitor_with_not_present_intermediate() -> Result<(), VmiError> {
 
 #[test]
 fn unmonitor_view_only_affects_target_view() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let view0 = View(0);
     let view1 = View(1);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), view0, "v0-1")?;
     ptm.monitor(&vmi, test_ctx(), view0, "v0-2")?;
@@ -490,7 +371,7 @@ fn unmonitor_view_only_affects_target_view() -> Result<(), VmiError> {
 
 #[test]
 fn different_roots_are_independent() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Build a second PML4 root with its own hierarchy.
@@ -527,7 +408,7 @@ fn different_roots_are_independent() -> Result<(), VmiError> {
     let ctx2 = AddressContext::new(TEST_VA, root2);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "root1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "root2")?;
@@ -556,14 +437,14 @@ fn different_roots_are_independent() -> Result<(), VmiError> {
 
 #[test]
 fn page_change_pfn_at_pt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -588,7 +469,7 @@ fn page_change_pfn_at_pt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_change_pfn_at_pd_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Build an alternate PT -> DATA2 chain.
@@ -602,7 +483,7 @@ fn page_change_pfn_at_pd_level() -> Result<(), VmiError> {
     driver.write_pte(new_pt_entry_pa, make_pte(new_data_gfn));
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -628,7 +509,7 @@ fn page_change_pfn_at_pd_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_change_pfn_at_pdpt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Build an alternate PD -> PT -> DATA2 chain.
@@ -648,7 +529,7 @@ fn page_change_pfn_at_pdpt_level() -> Result<(), VmiError> {
     driver.write_pte(new_pt_entry_pa, make_pte(new_data_gfn));
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -675,7 +556,7 @@ fn page_change_pfn_at_pdpt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_change_pfn_at_pml4_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Build an alternate PDPT -> PD -> PT -> DATA2 chain.
@@ -701,7 +582,7 @@ fn page_change_pfn_at_pml4_level() -> Result<(), VmiError> {
     driver.write_pte(new_pt_entry_pa, make_pte(new_data_gfn));
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -730,11 +611,11 @@ fn page_change_pfn_at_pml4_level() -> Result<(), VmiError> {
 fn permission_bit_change_produces_no_events() -> Result<(), VmiError> {
     // Changing only non-structural bits (accessed, dirty, etc.) should not
     // produce any events.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -762,11 +643,11 @@ fn permission_bit_change_produces_no_events() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_at_pt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -789,11 +670,11 @@ fn page_out_at_pt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_at_pd_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -821,11 +702,11 @@ fn page_out_at_pd_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_at_pdpt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -853,11 +734,11 @@ fn page_out_at_pdpt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_at_pml4_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -885,7 +766,7 @@ fn page_out_at_pml4_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_at_shared_level_affects_all_vas() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // VA2 = 0x2000 shares PML4/PDPT/PD/PT with VA=0x1000.
@@ -900,7 +781,7 @@ fn page_out_at_shared_level_affects_all_vas() -> Result<(), VmiError> {
     let ctx2 = AddressContext::new(va2, root_pa());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "test2")?;
@@ -930,14 +811,14 @@ fn page_out_at_shared_level_affects_all_vas() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_at_pt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Zero the PT entry *before* monitoring, so the VA isn't paged in.
     driver.write_pte(pt_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -960,14 +841,14 @@ fn page_in_at_pt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_at_pd_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Zero the PD entry *before* monitoring so the PT subtree is not resolved.
     driver.write_pte(pd_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -995,14 +876,14 @@ fn page_in_at_pd_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_at_pdpt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Zero the PDPT entry *before* monitoring.
     driver.write_pte(pdpt_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -1028,14 +909,14 @@ fn page_in_at_pdpt_level() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_at_pml4_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     // Zero the PML4 entry *before* monitoring.
     driver.write_pte(pml4_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -1066,11 +947,11 @@ fn page_in_at_pml4_level() -> Result<(), VmiError> {
 #[test]
 fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
     // Full round trip: paged in → page out → page in.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1100,11 +981,11 @@ fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
 #[test]
 fn page_out_at_pd_then_page_in_restores_subtree() -> Result<(), VmiError> {
     // Page out at PD level (removes PT monitoring), then page in restores it.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 4);
@@ -1140,11 +1021,11 @@ fn page_out_at_pd_then_page_in_restores_subtree() -> Result<(), VmiError> {
 
 #[test]
 fn hierarchical_dirty_ordering() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1178,11 +1059,11 @@ fn hierarchical_dirty_ordering() -> Result<(), VmiError> {
 
 #[test]
 fn no_dirty_entries_returns_empty() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1195,11 +1076,11 @@ fn no_dirty_entries_returns_empty() -> Result<(), VmiError> {
 
 #[test]
 fn mark_dirty_nonexistent_entry_returns_false() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1213,11 +1094,11 @@ fn mark_dirty_nonexistent_entry_returns_false() -> Result<(), VmiError> {
 
 #[test]
 fn dirty_entry_unchanged_produces_no_events() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1237,14 +1118,14 @@ fn dirty_entry_unchanged_produces_no_events() -> Result<(), VmiError> {
 
 #[test]
 fn multiple_dirty_marks_same_entry_deduplicates() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1267,11 +1148,11 @@ fn multiple_dirty_marks_same_entry_deduplicates() -> Result<(), VmiError> {
 #[test]
 fn process_dirty_after_unmonitor_is_safe() -> Result<(), VmiError> {
     // Mark dirty, then unmonitor, then process. Should not crash.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1293,7 +1174,7 @@ fn process_dirty_after_unmonitor_is_safe() -> Result<(), VmiError> {
 fn shared_higher_level_pfn_change_rebuilds_both_vas() -> Result<(), VmiError> {
     // Two VAs share PML4/PDPT/PD. When PD entry PFN changes, both VAs
     // should page out and then page in via the new PT page.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let va2 = Va(0x2000);
@@ -1322,7 +1203,7 @@ fn shared_higher_level_pfn_change_rebuilds_both_vas() -> Result<(), VmiError> {
     let ctx2 = AddressContext::new(va2, root_pa());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "test2")?;
@@ -1361,7 +1242,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
     // This tests that dirty processing uses the correct per-VA level,
     // not a single level stored on the shared entry.
 
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     let shared_gfn = Gfn(3);
 
     // ── Root1: PML4(1) -> PDPT(2) -> PD(3)[1] -> PT(4)[0] -> DATA(5) ──
@@ -1441,7 +1322,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
     let ctx2 = AddressContext::new(va2, root2_pa);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, ctx1, VIEW, "root1_pd")?;
     ptm.monitor(&vmi, ctx2, VIEW, "root2_pt")?;
@@ -1504,7 +1385,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Builds PML4->PDPT->PD(large)->DATA hierarchy (no PT level).
-fn build_large_page_hierarchy(driver: &MockPtmDriver) {
+fn build_large_page_hierarchy(driver: &MockDriver) {
     driver.insert_page(PML4_GFN);
     driver.insert_page(PDPT_GFN);
     driver.insert_page(PD_GFN);
@@ -1528,7 +1409,7 @@ fn expected_large_page_pa(gfn: Gfn) -> Pa {
 
 #[test]
 fn large_page_initial_monitoring() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
 
     // Build hierarchy up to PD level, then PD entry is a large page.
     driver.insert_page(PML4_GFN);
@@ -1550,7 +1431,7 @@ fn large_page_initial_monitoring() -> Result<(), VmiError> {
     driver.write_pte(pd_entry_pa, make_large_pte(DATA_GFN));
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1563,14 +1444,14 @@ fn large_page_initial_monitoring() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_pfn_change() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_large_page_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1596,11 +1477,11 @@ fn large_page_pfn_change() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_page_out() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_large_page_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1623,14 +1504,14 @@ fn large_page_page_out() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_page_in() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_large_page_hierarchy(&driver);
 
     // Zero the PD entry *before* monitoring so the large page is not resolved.
     driver.write_pte(pd_entry_pa(), make_not_present_pte());
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 0);
@@ -1654,7 +1535,7 @@ fn large_page_page_in() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_1gb_at_pdpt_level() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
 
     // Build hierarchy: PML4 -> PDPT(large 1GB) -> DATA
     driver.insert_page(PML4_GFN);
@@ -1671,7 +1552,7 @@ fn large_page_1gb_at_pdpt_level() -> Result<(), VmiError> {
     driver.write_pte(pdpt_pa, make_large_pte(DATA_GFN));
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -1684,7 +1565,7 @@ fn large_page_1gb_at_pdpt_level() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_1gb_pfn_change() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
 
     driver.insert_page(PML4_GFN);
     driver.insert_page(PDPT_GFN);
@@ -1702,7 +1583,7 @@ fn large_page_1gb_pfn_change() -> Result<(), VmiError> {
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1731,11 +1612,11 @@ fn large_page_1gb_pfn_change() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_transition_regular_to_large_same_pfn() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1765,14 +1646,14 @@ fn large_page_transition_regular_to_large_same_pfn() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_transition_regular_to_large_different_pfn() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1800,11 +1681,11 @@ fn large_page_transition_regular_to_large_different_pfn() -> Result<(), VmiError
 
 #[test]
 fn large_page_transition_large_to_regular_same_pfn() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_large_page_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1831,14 +1712,14 @@ fn large_page_transition_large_to_regular_same_pfn() -> Result<(), VmiError> {
 
 #[test]
 fn large_page_transition_large_to_regular_different_pfn() -> Result<(), VmiError> {
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_large_page_hierarchy(&driver);
 
     let new_pt_gfn = Gfn(10);
     driver.insert_page(new_pt_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1865,7 +1746,7 @@ fn large_page_transition_large_to_regular_different_pfn() -> Result<(), VmiError
 #[test]
 fn large_page_transition_large_to_large_pfn_change_at_pdpt() -> Result<(), VmiError> {
     // 1GB large page at PDPT level changes PFN while remaining large.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     driver.insert_page(PML4_GFN);
     driver.insert_page(PDPT_GFN);
     driver.insert_page(DATA_GFN);
@@ -1880,7 +1761,7 @@ fn large_page_transition_large_to_large_pfn_change_at_pdpt() -> Result<(), VmiEr
     driver.insert_page(new_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.monitored_tables(), 2);
@@ -1913,14 +1794,14 @@ const VCPU_1: VcpuId = VcpuId(1);
 fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
     // Mark dirty on vCPU 0, then process on vCPU 1 - vCPU 1 should see
     // no dirty entries. Only vCPU 0's processing should produce events.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -1956,7 +1837,7 @@ fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
 fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
     // Two VAs, each written by a different vcpu. Each vcpu should only
     // process its own dirty entry.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let va2 = Va(0x2000);
@@ -1974,7 +1855,7 @@ fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
     driver.insert_page(new_data2);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "test2")?;
@@ -2010,11 +1891,11 @@ fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
 #[test]
 fn process_empty_vcpu_returns_empty() -> Result<(), VmiError> {
     // Processing a vcpu that has never had dirty entries should be a no-op.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
@@ -2029,14 +1910,14 @@ fn process_empty_vcpu_returns_empty() -> Result<(), VmiError> {
 fn same_entry_marked_dirty_by_multiple_vcpus() -> Result<(), VmiError> {
     // The same entry is marked dirty by two vcpus (e.g., both singlestepped
     // on the same page table page). Each vcpu should process it independently.
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
     build_full_hierarchy(&driver);
 
     let new_data_gfn = Gfn(10);
     driver.insert_page(new_data_gfn);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
     assert_eq!(ptm.paged_in_entries(), 1);
@@ -2090,7 +1971,7 @@ fn walk_subtree_does_not_mask_pending_dirty_entry() -> Result<(), VmiError> {
     // Bug: walk_subtree overwrites cached_pte → Root2's change is masked.
     // Fix: walk_subtree preserves cached_pte → Root2's change is detected.
 
-    let driver = MockPtmDriver::new();
+    let driver = MockDriver::new();
 
     // ── Root1 hierarchy ──
     let pml4_1 = Gfn(30);
@@ -2151,7 +2032,7 @@ fn walk_subtree_does_not_mask_pending_dirty_entry() -> Result<(), VmiError> {
     let ctx2 = AddressContext::new(TEST_VA, root2);
 
     let vmi = make_vmi(driver)?;
-    let mut ptm = PageTableMonitor::<MockPtmDriver>::new();
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
 
     ptm.monitor(&vmi, ctx1, VIEW, "root1")?;
     ptm.monitor(&vmi, ctx2, VIEW, "root2")?;

@@ -50,6 +50,7 @@ pub use self::breakpoint::{
 };
 
 mod controller;
+
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use vmi_core::{
@@ -59,6 +60,9 @@ use vmi_core::{
 
 pub use self::controller::{BreakpointController, MemoryController, TapController};
 use crate::ptm::{PageEntryUpdate, PageTableMonitorEvent};
+
+#[cfg(test)]
+mod tests;
 
 /// Breakpoint manager.
 pub struct BreakpointManager<Controller, Key = (), Tag = &'static str>

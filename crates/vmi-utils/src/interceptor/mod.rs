@@ -34,6 +34,9 @@ use vmi_core::{
     driver::{VmiRead, VmiViewControl, VmiVmControl, VmiWrite},
 };
 
+#[cfg(test)]
+mod tests;
+
 /// A single software breakpoint installed at one offset within a page.
 struct Breakpoint {
     /// In-page byte offset of the breakpoint.

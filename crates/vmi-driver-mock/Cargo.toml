@@ -1,0 +1,29 @@
+[package]
+name = "vmi-driver-mock"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = false
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "In-memory mock VmiDriver for testing"
+keywords = [
+    "vmi",
+    "mock",
+    "testing",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+vmi-core = { workspace = true }
+vmi-arch-amd64 = { workspace = true, optional = true }
+
+[features]
+default = []
+
+arch-amd64 = ["vmi-arch-amd64"]
