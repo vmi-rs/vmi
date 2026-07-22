@@ -1181,3 +1181,6 @@ where
         Some((ctx, pa, view))
     }
 }
+
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests;
