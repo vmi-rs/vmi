@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BreakpointManager::remove` and `remove_with_hint` now return `false` when the
+  requested breakpoint was never installed, even if another breakpoint occupies
+  the same page. Previously they reported success in that case.
 - `BreakpointManager::clear` no longer panics in debug builds, or leaves a stale
   per-view pending index in release builds, when a pending breakpoint was
   registered. The `pending_ctx_by_view` map is now cleared alongside the pending

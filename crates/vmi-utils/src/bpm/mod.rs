@@ -782,7 +782,10 @@ where
                     "desynchronized active_breakpoints and active_locations"
                 );
 
-                return Ok(Some(false));
+                // Nothing was removed for this `(key, ctx)`. Report "not found"
+                // rather than "removed but others remain", which the page still
+                // being occupied would otherwise imply.
+                return Ok(None);
             }
         };
 
