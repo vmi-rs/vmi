@@ -451,6 +451,7 @@ where
         }
 
         self.pending_breakpoints.clear();
+        self.pending_ctx_by_view.clear();
 
         for (key, view, pa, ctx) in to_remove {
             if let Err(err) = self.remove_active_breakpoint(vmi, ctx, pa, key, view) {
