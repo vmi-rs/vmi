@@ -1078,6 +1078,29 @@ fn activating_a_pending_breakpoint_drops_the_pending_copy() -> Result<(), VmiErr
 }
 
 #[test]
+fn remove_tears_down_active_when_pending_sibling_shares_context() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    // A pending copy (tag "a") and an active copy (tag "b") share the same
+    // (key, context). Activation only drops the exact pending copy, so the
+    // differently-tagged pending sibling survives alongside the active one.
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_tag("a"), None)?;
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_tag("b"), Some(pa))?;
+    rec_clear_log();
+
+    // Removal must tear down the installed active breakpoint, not stop at the
+    // pending sibling and leak it.
+    assert!(manager.remove_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_tag("b"), Some(pa))?);
+    assert_eq!(rec_count(is_remove), 1);
+    assert!(!manager.contains_by_address(ctx, ()));
+
+    Ok(())
+}
+
+#[test]
 fn remove_unknown_returns_false() -> Result<(), VmiError> {
     let vmi = make_vmi(MockDriver::new())?;
     let mut manager = RecManager::new();
