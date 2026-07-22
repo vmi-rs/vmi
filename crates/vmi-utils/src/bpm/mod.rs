@@ -366,10 +366,14 @@ where
         // First remove all pending breakpoints for this view (if any).
         //
 
+        let mut removed = false;
+
         if let Some(pending_ctxs) = self.pending_ctx_by_view.remove(&view) {
             for ctx in pending_ctxs {
                 self.remove_pending_breakpoints_by_address(ctx, view);
             }
+
+            removed = true;
         };
 
         //
@@ -378,7 +382,7 @@ where
 
         let gfns = match self.active_gfns_by_view.remove(&view) {
             Some(gfns) => gfns,
-            None => return Ok(false),
+            None => return Ok(removed),
         };
 
         //
