@@ -23,3 +23,6 @@ pub mod resolver;
 
 mod hexdump;
 pub use self::hexdump::{Representation, hexdump};
+
+#[cfg(all(test, feature = "arch-amd64"))]
+mod mock_driver;
