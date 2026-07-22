@@ -159,15 +159,18 @@ where
                 page
             }
             Entry::Vacant(entry) => {
-                // Create a shadow page for the original page.
-                let page = Page {
+                // Track the shadow page before activating it. If activation
+                // fails, the page and its allocated GFN stay recorded so a later
+                // insertion reuses them through the reactivation path above,
+                // instead of leaking the frame and allocating a new one.
+                let page = entry.insert(Page {
                     original_gfn,
                     shadow_gfn: vmi.allocate_gfn()?,
                     view,
                     breakpoints: HashMap::new(),
-                };
+                });
 
-                activate_shadow_page(vmi, &page)?;
+                activate_shadow_page(vmi, page)?;
 
                 tracing::debug!(
                     %address,
@@ -177,7 +180,7 @@ where
                     "created shadow page"
                 );
 
-                entry.insert(page)
+                page
             }
         };
 
