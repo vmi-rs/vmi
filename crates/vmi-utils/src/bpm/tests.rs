@@ -1403,6 +1403,22 @@ fn clear_on_empty_manager_is_ok() -> Result<(), VmiError> {
     Ok(())
 }
 
+#[test]
+fn clear_after_pending_insert_does_not_panic() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+
+    // A pending breakpoint populates the per-view pending index, which clear()
+    // must also drain to keep its internal maps consistent.
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), None)?;
+    manager.clear(&vmi)?;
+
+    // The pending breakpoint is gone: re-inserting it reports a fresh entry.
+    assert!(manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), None)?);
+
+    Ok(())
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // contains / get_by_event
 ///////////////////////////////////////////////////////////////////////////////
