@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BreakpointManager::remove` and `remove_with_hint` now remove only the
+  pending breakpoints registered under the requested key. Previously they
+  dropped every pending breakpoint at the same `(view, address)`, silently
+  deleting breakpoints owned by other keys.
 - `BreakpointManager::remove_by_view` now returns `true` when it removed only
   pending breakpoints for the view. Previously it returned `false` unless the
   view also had active breakpoints.

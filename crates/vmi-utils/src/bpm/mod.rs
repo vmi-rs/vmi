@@ -288,14 +288,10 @@ where
         let breakpoint = breakpoint.into();
         let Breakpoint { ctx, view, key, .. } = breakpoint;
 
-        if self
-            .remove_pending_breakpoints_by_address(ctx, view)
-            .is_some()
-        {
-            //
-            // TODO: assert that there are no active breakpoints for this (view, ctx)
-            //
-
+        // Removing a pending breakpoint only affects the requested key, leaving
+        // pending breakpoints registered under other keys at the same address
+        // in place.
+        if self.remove_pending_breakpoints_by_key(ctx, view, key) {
             return Ok(true);
         }
 
@@ -951,6 +947,49 @@ where
         );
 
         Some(breakpoints)
+    }
+
+    /// Removes every pending breakpoint with `key` at `(view, ctx)`.
+    ///
+    /// Returns `true` if any were removed.
+    fn remove_pending_breakpoints_by_key(
+        &mut self,
+        ctx: AddressContext,
+        view: View,
+        key: Key,
+    ) -> bool {
+        let breakpoints = match self.pending_breakpoints.get_mut(&(view, ctx)) {
+            Some(breakpoints) => breakpoints,
+            None => return false,
+        };
+
+        let before = breakpoints.len();
+        breakpoints.retain(|breakpoint| breakpoint.key != key);
+
+        if breakpoints.len() == before {
+            return false;
+        }
+
+        if breakpoints.is_empty() {
+            self.pending_breakpoints.remove(&(view, ctx));
+            self.forget_pending_ctx(ctx, view);
+        }
+
+        true
+    }
+
+    /// Drops `ctx` from the per-view pending index, removing the view entry when
+    /// it becomes empty.
+    fn forget_pending_ctx(&mut self, ctx: AddressContext, view: View) {
+        match self.pending_ctx_by_view.entry(view) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().remove(&ctx);
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+            }
+            Entry::Vacant(_) => {}
+        }
     }
 
     fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, ctx: &mut AddressContext) {
