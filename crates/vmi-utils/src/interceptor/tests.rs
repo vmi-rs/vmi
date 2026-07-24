@@ -455,6 +455,40 @@ fn remove_only_breakpoint_restores_original_and_resets_view() -> Result<(), VmiE
 }
 
 #[test]
+fn remove_restores_an_original_int3_opcode() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    // The original instruction at the target is itself an INT3 (0xcc), equal to
+    // the breakpoint opcode.
+    driver.write_original(CODE_GFN, OFFSET as usize, &[0xcc]);
+
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+
+    let address = bp_address(CODE_GFN, OFFSET);
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+
+    vmi.driver().clear_log();
+    assert_eq!(
+        interceptor.remove_breakpoint(&vmi, address, VIEW)?,
+        Some(true)
+    );
+
+    // Removal writes back the saved original content, not a hardcoded
+    // non-breakpoint value, so the restore write is issued and the byte stays
+    // 0xcc.
+    assert!(vmi.driver().calls().contains(&Call::WritePage {
+        gfn: shadow,
+        offset: OFFSET,
+        len: 1,
+    }));
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+
+    Ok(())
+}
+
+#[test]
 fn remove_last_breakpoint_performs_expected_driver_sequence() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
@@ -1085,6 +1119,32 @@ fn insert_propagates_read_page_error() -> Result<(), VmiError> {
     let address = bp_address(CODE_GFN, OFFSET);
     assert!(interceptor.insert_breakpoint(&vmi, address, VIEW).is_err());
     assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+
+    Ok(())
+}
+
+#[test]
+fn insert_propagates_install_read_error_and_can_retry() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    // A fresh insert reads twice: (1) the activation copy of the original page,
+    // (2) the shadow read that captures the original opcode before writing the
+    // breakpoint. Fail the second, a distinct site from the activation read.
+    driver.arm_fault(Op::ReadPage, 2);
+
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+
+    let address = bp_address(CODE_GFN, OFFSET);
+    assert!(interceptor.insert_breakpoint(&vmi, address, VIEW).is_err());
+
+    // The shadow frame allocated by the failed attempt is retained; retrying
+    // (the read is no longer armed to fail) reuses it rather than leaking it and
+    // allocating another.
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    assert_eq!(vmi.driver().count(is_allocate), 1);
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
 
     Ok(())
 }
