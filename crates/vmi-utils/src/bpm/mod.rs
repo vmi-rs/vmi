@@ -382,7 +382,7 @@ where
 
     /// Returns an iterator over the breakpoints for the given event.
     pub fn get_by_event(
-        &mut self,
+        &self,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> Option<impl ExactSizeIterator<Item = Breakpoint<Key, Tag>> + use<'_, Interface, Key, Tag>>
