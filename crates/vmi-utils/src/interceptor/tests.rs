@@ -104,6 +104,31 @@ fn is_reset_view(call: &Call) -> bool {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Construction
+///////////////////////////////////////////////////////////////////////////////
+
+#[test]
+fn new_and_default_start_without_breakpoints() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+
+    // Both constructors yield an interceptor that tracks nothing: no event
+    // matches and removing any address reports "not found".
+    for mut interceptor in [
+        Interceptor::<MockDriver>::new(),
+        Interceptor::<MockDriver>::default(),
+    ] {
+        let event = breakpoint_event(Some(VIEW), CODE_GFN, OFFSET);
+        assert!(!interceptor.contains_breakpoint(&event));
+        assert_eq!(
+            interceptor.remove_breakpoint(&vmi, bp_address(CODE_GFN, OFFSET), VIEW)?,
+            None
+        );
+    }
+
+    Ok(())
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Insert: Shadow Creation
 ///////////////////////////////////////////////////////////////////////////////
 
