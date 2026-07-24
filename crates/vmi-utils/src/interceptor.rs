@@ -116,7 +116,7 @@ where
 
         debug_assert!(offset < Driver::Architecture::PAGE_SIZE as usize);
 
-        // Check if the breakpoint doesn't cross a page boundary.
+        // Reject a breakpoint whose bytes would run past the end of the page.
         if offset + Driver::Architecture::BREAKPOINT.len()
             > Driver::Architecture::PAGE_SIZE as usize
         {
