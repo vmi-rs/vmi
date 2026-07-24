@@ -13,6 +13,20 @@
 //! addresses that aren't currently mapped to physical memory - these will be
 //! automatically activated once the address translation becomes available.
 //!
+//! # Consistency on error
+//!
+//! Inserting, removing, and clearing breakpoints each perform several VMI
+//! operations through the controller while updating the manager's internal
+//! bookkeeping, and none of this is applied as a single transaction. If an
+//! underlying operation fails, the steps that already succeeded are not undone,
+//! and the manager's tracking maps can be left out of sync with the physical
+//! breakpoints in the guest. Most methods surface this by returning an error,
+//! [`clear`] instead logs the desync and continues. Either way, treat the VM
+//! as being in an undefined state and do not assume a failed call had no
+//! effect.
+//!
+//! [`clear`]: BreakpointManager::clear
+//!
 //! # Controllers
 //!
 //! The breakpoint manager works with controllers that implement the

@@ -13,6 +13,17 @@
 //! The original page content is preserved, allowing the `Interceptor` to
 //! restore the original state when breakpoints are removed.
 //!
+//! # Consistency on error
+//!
+//! Inserting and removing a breakpoint each perform several distinct VMI
+//! operations - allocating a shadow frame, copying the page, remapping the
+//! guest view, and writing or restoring the breakpoint byte - and these are
+//! not applied as a single transaction. If one step fails, the steps that
+//! already succeeded are not undone. When a method returns an error, treat the
+//! VM as being in an undefined state. The breakpoint may be partially installed
+//! or partially removed, and the guest view may still point at the shadow page.
+//! Callers must not assume a failed call had no effect.
+//!
 //! [`BreakpointController`]: crate::bpm::BreakpointController
 
 use std::collections::{HashMap, hash_map::Entry};
