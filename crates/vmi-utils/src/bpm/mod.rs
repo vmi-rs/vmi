@@ -655,19 +655,18 @@ where
                     match breakpoints.entry((key, ctx)) {
                         Entry::Occupied(mut entry) => {
                             let breakpoints = entry.get_mut();
-                            let bucket_had_global =
-                                breakpoints.iter().any(|breakpoint| breakpoint.global);
+                            let bucket_had_global = breakpoints.has_global();
                             breakpoints.insert(breakpoint);
                             (false, false, bucket_had_global)
                         }
                         Entry::Vacant(entry) => {
-                            entry.insert(HashSet::from([breakpoint]));
+                            entry.insert(breakpoint.into());
                             (true, false, false)
                         }
                     }
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(HashMap::from([((key, ctx), HashSet::from([breakpoint]))]));
+                    entry.insert(HashMap::from([((key, ctx), breakpoint.into())]));
                     (true, true, false)
                 }
             };
@@ -817,7 +816,7 @@ where
             }
         };
 
-        let global = breakpoints.iter().any(|breakpoint| breakpoint.global);
+        let global = breakpoints.has_global();
         let last_breakpoint_removed = breakpoints_by_ctx.is_empty();
 
         if last_breakpoint_removed {

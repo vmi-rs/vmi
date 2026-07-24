@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_set::IntoIter},
     fmt::Debug,
     hash::Hash,
 };
@@ -18,8 +18,79 @@ pub trait TagType: Debug + Copy + Eq + Hash {}
 impl<T> TagType for T where T: Debug + Copy + Eq + Hash {}
 
 pub(super) type ActiveBreakpoints<Key, Tag> =
-    HashMap<(Key, AddressContext), HashSet<Breakpoint<Key, Tag>>>;
+    HashMap<(Key, AddressContext), BreakpointBucket<Key, Tag>>;
 pub(super) type PendingBreakpoints<Key, Tag> = HashSet<Breakpoint<Key, Tag>>;
+
+/// The active breakpoints sharing one `(view, GFN, key, ctx)`, paired with a
+/// running count of how many are global so [`BreakpointBucket::has_global`] is
+/// O(1) instead of a scan of the set. Members differ only by tag and the global
+/// flag, since view, GFN, key, and context are fixed by the map keys above.
+#[derive(Debug)]
+pub(super) struct BreakpointBucket<Key, Tag>
+where
+    Key: KeyType,
+    Tag: TagType,
+{
+    /// The breakpoints in this bucket.
+    breakpoints: HashSet<Breakpoint<Key, Tag>>,
+
+    /// How many entries in `breakpoints` have their `global` flag set.
+    global_count: usize,
+}
+
+impl<Key, Tag> BreakpointBucket<Key, Tag>
+where
+    Key: KeyType,
+    Tag: TagType,
+{
+    /// Inserts `breakpoint`, returning whether it was newly added.
+    pub fn insert(&mut self, breakpoint: Breakpoint<Key, Tag>) -> bool {
+        let global = breakpoint.global;
+        let inserted = self.breakpoints.insert(breakpoint);
+
+        if inserted && global {
+            self.global_count += 1;
+        }
+
+        inserted
+    }
+
+    /// Returns whether any breakpoint in the bucket is global.
+    pub fn has_global(&self) -> bool {
+        self.global_count > 0
+    }
+
+    /// Iterates the breakpoints in the bucket.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Breakpoint<Key, Tag>> {
+        self.breakpoints.iter()
+    }
+}
+
+impl<Key, Tag> IntoIterator for BreakpointBucket<Key, Tag>
+where
+    Key: KeyType,
+    Tag: TagType,
+{
+    type Item = Breakpoint<Key, Tag>;
+    type IntoIter = IntoIter<Breakpoint<Key, Tag>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.breakpoints.into_iter()
+    }
+}
+
+impl<Key, Tag> From<Breakpoint<Key, Tag>> for BreakpointBucket<Key, Tag>
+where
+    Key: KeyType,
+    Tag: TagType,
+{
+    fn from(value: Breakpoint<Key, Tag>) -> Self {
+        Self {
+            breakpoints: HashSet::from([value]),
+            global_count: value.global as usize,
+        }
+    }
+}
 
 /// A breakpoint definition.
 ///
