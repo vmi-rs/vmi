@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Interceptor` no longer leaks a shadow frame when activating a page fails
   partway through inserting the first breakpoint. The allocated frame is now
   retained and reused when the insertion is retried.
+- `Interceptor` now implements `Default` for any supported driver. Previously
+  the derived `Default` required the driver itself to be `Default`, so
+  `Interceptor::default()` could not be used with real drivers.
 - `BreakpointController` no longer panics in debug builds when removing one of
   multiple references to the same physical breakpoint.
 - Reinserting a breakpoint after the last breakpoint on a page was removed now

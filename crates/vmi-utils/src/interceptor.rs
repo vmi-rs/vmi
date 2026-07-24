@@ -79,7 +79,6 @@ where
 }
 
 /// Core implementation of software breakpoint handling.
-#[derive(Default)]
 pub struct Interceptor<Driver>
 where
     Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
@@ -88,6 +87,17 @@ where
 {
     pages: HashMap<(View, Gfn), Page>,
     _marker: std::marker::PhantomData<Driver>,
+}
+
+impl<Driver> Default for Interceptor<Driver>
+where
+    Driver: VmiRead + VmiWrite + VmiViewControl + VmiVmControl,
+    <Driver::Architecture as Architecture>::EventReason:
+        EventReason<Architecture = Driver::Architecture>,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<Driver> Interceptor<Driver>
