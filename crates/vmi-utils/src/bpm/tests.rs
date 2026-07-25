@@ -1728,6 +1728,20 @@ fn memory_controller_check_event_maps_execute_access() -> Result<(), VmiError> {
 }
 
 #[test]
+fn memory_controller_check_event_maps_combined_execute_access() -> Result<(), VmiError> {
+    let controller = MemoryController::<MockDriver>::new();
+
+    // Any access carrying the execute bit maps, not just a bare X.
+    let rx = mem_event(Some(VIEW), CODE_GFN, va_at(OFFSET), MemoryAccess::RX);
+    assert_eq!(controller.check_event(&rx), Some((VIEW, CODE_GFN)));
+
+    let rwx = mem_event(Some(VIEW), CODE_GFN, va_at(OFFSET), MemoryAccess::RWX);
+    assert_eq!(controller.check_event(&rwx), Some((VIEW, CODE_GFN)));
+
+    Ok(())
+}
+
+#[test]
 fn memory_controller_check_event_ignores_non_execute_and_non_memory() {
     let controller = MemoryController::<MockDriver>::new();
 
@@ -1813,6 +1827,43 @@ fn breakpoint_builder_sets_global_flag() {
         Breakpoint::<(), &'static str>::from(Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW).global());
 
     assert!(breakpoint.global());
+}
+
+#[test]
+fn key_and_tag_can_be_set_in_either_order() {
+    let ctx = ctx_at(OFFSET, ROOT1);
+
+    // Setting the key before the tag builds the same breakpoint as the reverse.
+    let key_first =
+        Breakpoint::<u32, &'static str>::from(Breakpoint::new(ctx, VIEW).with_key(7).with_tag("t"));
+    let tag_first =
+        Breakpoint::<u32, &'static str>::from(Breakpoint::new(ctx, VIEW).with_tag("t").with_key(7));
+
+    assert_eq!(key_first, tag_first);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Breakpoint identity
+///////////////////////////////////////////////////////////////////////////////
+
+#[test]
+fn breakpoint_identity_distinguishes_all_fields() {
+    // Dedup relies on the derived Eq/Hash covering every distinguishing field,
+    // so changing any one of them must produce an unequal breakpoint.
+    let bp = |offset: u64, root: Pa, view: View, global: bool, key: u32, tag: &'static str| {
+        let builder = Breakpoint::new(ctx_at(offset, root), view);
+        let builder = if global { builder.global() } else { builder };
+        Breakpoint::<u32, &'static str>::from(builder.with_key(key).with_tag(tag))
+    };
+
+    let base = bp(OFFSET, ROOT1, VIEW, false, 1, "t");
+
+    assert_ne!(base, bp(OFFSET2, ROOT1, VIEW, false, 1, "t")); // va
+    assert_ne!(base, bp(OFFSET, ROOT2, VIEW, false, 1, "t")); // root
+    assert_ne!(base, bp(OFFSET, ROOT1, VIEW2, false, 1, "t")); // view
+    assert_ne!(base, bp(OFFSET, ROOT1, VIEW, true, 1, "t")); // global
+    assert_ne!(base, bp(OFFSET, ROOT1, VIEW, false, 2, "t")); // key
+    assert_ne!(base, bp(OFFSET, ROOT1, VIEW, false, 1, "u")); // tag
 }
 
 ///////////////////////////////////////////////////////////////////////////////
