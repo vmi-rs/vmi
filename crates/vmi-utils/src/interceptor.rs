@@ -34,25 +34,33 @@ use vmi_core::{
     driver::{VmiRead, VmiViewControl, VmiVmControl, VmiWrite},
 };
 
-/// A single breakpoint within a page.
-///
-/// Stores the original content that was replaced by the breakpoint instruction
-/// and tracks the number of references to this breakpoint location.
+/// A single software breakpoint installed at one offset within a page.
 struct Breakpoint {
+    /// In-page byte offset of the breakpoint.
     #[expect(unused)]
     offset: u16,
+
+    /// Original bytes replaced by the breakpoint instruction, restored on
+    /// removal.
     original_content: Vec<u8>, // until [u8; Arch::BREAKPOINT.len()] is allowed
+
+    /// Outstanding insertions of this location. It is torn down only when the
+    /// last one is released.
     references: u32,
 }
 
-/// A memory page containing one or more breakpoints.
-///
-/// Maintains the mapping between original and shadow pages, along with all
-/// breakpoint locations within the page.
+/// A shadowed guest page with the installed breakpoints.
 struct Page {
+    /// Guest frame the breakpoints apply to.
     original_gfn: Gfn,
+
+    /// Shadow frame holding the patched copy the view is remapped to.
     shadow_gfn: Gfn,
+
+    /// View whose mapping is redirected from the original frame to the shadow.
     view: View,
+
+    /// Breakpoints on this page, keyed by in-page offset.
     breakpoints: HashMap<u16, Breakpoint>,
 }
 
