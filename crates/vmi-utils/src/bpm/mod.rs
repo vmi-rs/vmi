@@ -72,7 +72,7 @@ where
     ///
     /// * Key: (View, GFN)
     /// * Value: Map of breakpoints, where each breakpoint is identified by
-    ///   (Key, AddressContext) and associated with a set of Breakpoints
+    ///   (Key, AddressContext)
     ///
     /// This map is synchronized with `active_global_breakpoints`, `active_locations`,
     /// and `active_gfns_by_view`.
@@ -111,8 +111,8 @@ where
 
     /// Stores pending breakpoints for addresses not currently in physical memory.
     ///
-    /// * Key: AddressContext (Virtual Address, Root)
-    /// * Value: Set of pending breakpoints for that address
+    /// * Key: (View, AddressContext)
+    /// * Value: Map of pending breakpoints for that address, one per owning key
     ///
     /// Breakpoints move between `active_breakpoints` and `pending_breakpoints`
     /// based on page-in and page-out events.
@@ -123,7 +123,7 @@ where
     /// removed.
     ///
     /// * Key: View
-    /// * Value: Set of pending breakpoints for that view
+    /// * Value: Set of addresses with pending breakpoints in this view
     ///
     /// This map is kept in sync with `pending_breakpoints`.
     pending_ctx_by_view: HashMap<View, HashSet<AddressContext>>,
@@ -243,7 +243,7 @@ where
 
         let pa = match pa {
             Some(pa) => pa,
-            None => return Ok(self.insert_pending_breakpoint(breakpoint)),
+            None => return self.insert_pending_breakpoint(breakpoint),
         };
 
         self.insert_active_breakpoint(vmi, breakpoint, pa)
@@ -409,9 +409,9 @@ where
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
         let breakpoints_by_ctx = self.active_breakpoints.get(&(view, gfn))?;
-        let breakpoints = breakpoints_by_ctx.get(&(key, ctx))?;
+        let breakpoint = breakpoints_by_ctx.get(&(key, ctx))?;
 
-        Some(breakpoints.iter().copied())
+        Some(std::iter::once(*breakpoint))
     }
 
     /// Checks if the given event was caused by a breakpoint.
@@ -544,7 +544,7 @@ where
             None => return Ok(false),
         };
 
-        for breakpoint in breakpoints {
+        for breakpoint in breakpoints.into_values() {
             self.insert_active_breakpoint(vmi, breakpoint, pa)?;
         }
 
@@ -573,8 +573,8 @@ where
             None => return Ok(false),
         };
 
-        for breakpoint in breakpoints_by_ctx.into_values().flatten() {
-            self.insert_pending_breakpoint(breakpoint);
+        for breakpoint in breakpoints_by_ctx.into_values() {
+            self.insert_pending_breakpoint(breakpoint)?;
         }
 
         Ok(true)
@@ -623,13 +623,30 @@ where
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
         //
-        // If this breakpoint should be global, update the global breakpoints.
-        // Also, verify that global breakpoint for this address is was not
-        // already registered, or that it was registered with the same root.
+        // If this breakpoint should be global, fold its root onto the canonical
+        // root already registered for this global VA, so all roots collapse onto
+        // a single active breakpoint. The page is registered only once the
+        // breakpoint is confirmed to be newly inserted, further below, so a
+        // repeated insertion does not register the page again.
         //
 
-        if global {
-            self.register_global_breakpoint(gfn, view, &mut ctx);
+        if global
+            && let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va))
+        {
+            ctx.root = global_breakpoint.root;
+        }
+
+        //
+        // An address already claimed by this key keeps the breakpoint it was
+        // claimed with, so the claim cannot be reinterpreted under it. The check
+        // runs before anything is mutated, leaving a rejected insertion without
+        // an effect.
+        //
+
+        if let Some(breakpoints) = self.active_breakpoints.get(&(view, gfn))
+            && let Some(existing) = breakpoints.get(&(key, ctx))
+        {
+            self.check_existing_breakpoint(existing, &breakpoint)?;
         }
 
         //
@@ -643,19 +660,15 @@ where
                     let breakpoints = entry.get_mut();
 
                     match breakpoints.entry((key, ctx)) {
-                        Entry::Occupied(mut entry) => {
-                            let breakpoints = entry.get_mut();
-                            breakpoints.insert(breakpoint);
-                            (false, false)
-                        }
+                        Entry::Occupied(_) => (false, false),
                         Entry::Vacant(entry) => {
-                            entry.insert(HashSet::from([breakpoint]));
+                            entry.insert(breakpoint);
                             (true, false)
                         }
                     }
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(HashMap::from([((key, ctx), HashSet::from([breakpoint]))]));
+                    entry.insert(HashMap::from([((key, ctx), breakpoint)]));
                     (true, true)
                 }
             };
@@ -666,6 +679,15 @@ where
                 %gfn, %ctx, %view, %global, ?key, ?tag,
                 "active breakpoint inserted"
             );
+
+            //
+            // Register the page under the global VA now that the claim is
+            // installed, so a repeated insertion does not register it again.
+            //
+
+            if global {
+                self.register_global_breakpoint(gfn, view, ctx.root, ctx.va);
+            }
 
             //
             // REVIEW:
@@ -757,8 +779,8 @@ where
 
         let breakpoints_by_ctx = gfn_entry.get_mut();
 
-        let breakpoints = match breakpoints_by_ctx.remove(&(key, ctx)) {
-            Some(breakpoints) => breakpoints,
+        let breakpoint = match breakpoints_by_ctx.remove(&(key, ctx)) {
+            Some(breakpoint) => breakpoint,
             None => {
                 //
                 // This `(key, ctx)` doesn't have a breakpoint for this `(view, GFN)`.
@@ -799,7 +821,7 @@ where
             //
 
             tracing::debug!(
-                %gfn, %ctx, %view, ?key, ?breakpoints,
+                %gfn, %ctx, %view, ?key, ?breakpoint,
                 "breakpoint removed"
             );
 
@@ -876,7 +898,10 @@ where
     ///
     /// Returns `true` if the breakpoint was newly inserted, `false` if it was
     /// already present.
-    fn insert_pending_breakpoint(&mut self, breakpoint: Breakpoint<Key, Tag>) -> bool {
+    fn insert_pending_breakpoint(
+        &mut self,
+        breakpoint: Breakpoint<Key, Tag>,
+    ) -> Result<bool, VmiError> {
         let Breakpoint {
             ctx,
             view,
@@ -886,11 +911,46 @@ where
             ..
         } = breakpoint;
 
-        let result = self
+        //
+        // As on the active side, an address already claimed by this key keeps
+        // the breakpoint it was claimed with. Rejecting the conflict here also
+        // keeps it out of `handle_page_in`, which would otherwise fail while
+        // restoring a pending breakpoint.
+        //
+
+        if let Some(breakpoints) = self.pending_breakpoints.get(&(view, ctx))
+            && let Some(existing) = breakpoints.get(&key)
+        {
+            self.check_existing_breakpoint(existing, &breakpoint)?;
+        }
+
+        let result = match self
             .pending_breakpoints
             .entry((view, ctx))
             .or_default()
-            .insert(breakpoint);
+            .entry(key)
+        {
+            Entry::Occupied(_) => {
+                //
+                // This key already claims the address, so the per-view index
+                // must already list its context. Checked here rather than after
+                // the match, because the index insertion below would repair a
+                // desync without reporting it.
+                //
+
+                debug_assert!(
+                    self.pending_ctx_by_view.contains_key(&view)
+                        && self.pending_ctx_by_view[&view].contains(&ctx),
+                    "desynchronized pending_breakpoints and pending_ctx_by_view"
+                );
+
+                false
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(breakpoint);
+                true
+            }
+        };
 
         self.pending_ctx_by_view
             .entry(view)
@@ -907,7 +967,7 @@ where
             "pending breakpoint inserted"
         );
 
-        result
+        Ok(result)
     }
 
     /// Removes all pending breakpoints for a given `(view, ctx)` pair.
@@ -951,8 +1011,11 @@ where
         Some(breakpoints)
     }
 
-    fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, ctx: &mut AddressContext) {
-        match self.active_global_breakpoints.entry((view, ctx.va)) {
+    /// Records that the global VA `(view, va)` is installed on `gfn`.
+    ///
+    /// Creates the entry with `root` as its canonical root on first use.
+    fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, root: Pa, va: Va) {
+        match self.active_global_breakpoints.entry((view, va)) {
             Entry::Occupied(mut entry) => {
                 let global_breakpoint = entry.get_mut();
                 let gfn_was_inserted = global_breakpoint.gfns.insert(gfn);
@@ -960,12 +1023,10 @@ where
                     gfn_was_inserted,
                     "trying to register a global breakpoint that is already registered"
                 );
-
-                ctx.root = global_breakpoint.root;
             }
             Entry::Vacant(entry) => {
                 entry.insert(GlobalBreakpoint {
-                    root: ctx.root,
+                    root,
                     gfns: HashSet::from([gfn]),
                 });
             }
@@ -1152,6 +1213,39 @@ where
             }
             Err(err) => Err(err),
         }
+    }
+
+    /// Checks `new_breakpoint` against the claim `existing_breakpoint` already
+    /// holds on the same key and address.
+    ///
+    /// An address holds one breakpoint per key, so a repeated insertion cannot
+    /// restate what that breakpoint is. Disagreeing on the global flag would
+    /// change when the installed breakpoint matches, which is rejected. A
+    /// disagreeing tag only relabels the same claim, so the existing tag is
+    /// kept and the new one is reported.
+    fn check_existing_breakpoint(
+        &self,
+        existing_breakpoint: &Breakpoint<Key, Tag>,
+        new_breakpoint: &Breakpoint<Key, Tag>,
+    ) -> Result<(), VmiError> {
+        if existing_breakpoint.global != new_breakpoint.global {
+            return Err(VmiError::Other(
+                "breakpoint already registered with a different global flag",
+            ));
+        }
+
+        if existing_breakpoint.tag != new_breakpoint.tag {
+            tracing::debug!(
+                ctx = %existing_breakpoint.ctx,
+                view = %existing_breakpoint.view,
+                key = ?existing_breakpoint.key,
+                existing_tag = ?existing_breakpoint.tag,
+                new_tag = ?new_breakpoint.tag,
+                "breakpoint already registered, keeping the existing tag"
+            );
+        }
+
+        Ok(())
     }
 
     fn pa_from_gfn_and_va(&self, gfn: Gfn, va: Va) -> Pa {

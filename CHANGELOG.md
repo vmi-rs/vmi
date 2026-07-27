@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference count.
 - **Breaking:** `PageTableMonitor` now requires `VmiQueryProtection` so it can
   preserve the access permissions of page-table pages while monitoring them.
+- **Breaking:** `BreakpointManager` now holds one breakpoint per owning key and
+  address instead of a set of differently tagged ones, matching how removal has
+  always identified a breakpoint. A repeated insertion keeps the tag the address
+  was first claimed with and reports the discarded one through a debug log. Use
+  a distinct key for a breakpoint that has to be inserted and removed
+  independently at an address another key already holds.
+- **Breaking:** `BreakpointManager::insert` and `insert_with_hint` now return an
+  error when the `global` flag disagrees with the breakpoint already registered
+  for that key and address, since honoring it would change when the installed
+  breakpoint matches. Previously both were kept and the address matched any
+  root.
 
 ### Added
 
@@ -47,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Inserting the same global breakpoint twice no longer trips the page
+  registration assertion in debug builds. The page is registered once the claim
+  is installed, so a repeated insertion cannot register it again.
 - `BreakpointManager::remove_by_view` now returns `true` when it removed only
   pending breakpoints for the view. Previously it returned `false` unless the
   view also had active breakpoints.

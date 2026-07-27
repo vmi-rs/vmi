@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use vmi_core::{AddressContext, View};
 
@@ -17,9 +13,11 @@ impl<T> KeyType for T where T: Debug + Copy + Eq + Hash {}
 pub trait TagType: Debug + Copy + Eq + Hash {}
 impl<T> TagType for T where T: Debug + Copy + Eq + Hash {}
 
-pub(super) type ActiveBreakpoints<Key, Tag> =
-    HashMap<(Key, AddressContext), HashSet<Breakpoint<Key, Tag>>>;
-pub(super) type PendingBreakpoints<Key, Tag> = HashSet<Breakpoint<Key, Tag>>;
+/// The active breakpoints on one `(view, GFN)`, one per owning key and address.
+pub(super) type ActiveBreakpoints<Key, Tag> = HashMap<(Key, AddressContext), Breakpoint<Key, Tag>>;
+
+/// The pending breakpoints at one `(view, ctx)`, one per owning key.
+pub(super) type PendingBreakpoints<Key, Tag> = HashMap<Key, Breakpoint<Key, Tag>>;
 
 /// A breakpoint definition.
 ///
