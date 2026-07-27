@@ -82,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BreakpointManager::remove` and `remove_with_hint` now return `false` when the
   requested breakpoint was never installed, even if another breakpoint occupies
   the same page. Previously they reported success in that case.
+- `BreakpointManager::remove` and `remove_with_hint` now look a global
+  breakpoint up by the canonical root registered for its virtual address, the
+  same way insertion does, and no longer stop at a pending copy they removed on
+  the way. Previously a global breakpoint inserted under a second root could not
+  be removed with that root, and removing one that still had a pending copy
+  reported success while leaving the active breakpoint installed.
 - `BreakpointManager::clear` no longer panics in debug builds, or leaves a stale
   per-view pending index in release builds, when a pending breakpoint was
   registered. The `pending_ctx_by_view` map is now cleared alongside the pending

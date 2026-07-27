@@ -286,6 +286,10 @@ where
     /// the pending breakpoints. If the physical address is provided, the
     /// breakpoint is removed from the active breakpoints.
     ///
+    /// A global breakpoint is matched by the canonical root registered for its
+    /// virtual address, so it can be removed with any of the roots it was
+    /// inserted with.
+    ///
     /// Returns `true` if the breakpoint was removed, `false` if it was not
     /// found.
     pub fn remove_with_hint(
@@ -295,22 +299,49 @@ where
         pa: Option<Pa>,
     ) -> Result<bool, VmiError> {
         let breakpoint = breakpoint.into();
-        let Breakpoint { ctx, view, key, .. } = breakpoint;
+        let Breakpoint {
+            mut ctx,
+            view,
+            global,
+            key,
+            ..
+        } = breakpoint;
 
         // Removing a pending breakpoint only affects the requested key, leaving
         // pending breakpoints registered under other keys at the same address
-        // in place.
-        if self.remove_pending_breakpoint(ctx, view, key) {
-            return Ok(true);
-        }
+        // in place. The pending copy is keyed by the context the caller
+        // registered it with, so it is looked up before the root is folded
+        // below.
+        //
+        // A global breakpoint can hold a pending copy under one root and an
+        // active copy under the canonical root at the same time, so removing the
+        // pending copy must not stop the teardown of the active one. Otherwise a
+        // successful return could leave an installed breakpoint behind.
+        let pending_removed = self.remove_pending_breakpoint(ctx, view, key);
 
         let pa = match pa {
             Some(pa) => pa,
-            None => return Ok(false),
+            None => return Ok(pending_removed),
         };
 
-        let breakpoint_was_removed = self.remove_active_breakpoint(vmi, ctx, pa, key, view)?;
-        Ok(breakpoint_was_removed.is_some())
+        //
+        // Insertion folds the root of a global breakpoint onto the canonical
+        // root registered for its virtual address, so the lookup below has to
+        // fold it the same way. Without this, a global breakpoint inserted
+        // under a second root cannot be removed with that root.
+        //
+
+        if global
+            && let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va))
+        {
+            ctx.root = global_breakpoint.root;
+        }
+
+        let active_removed = self
+            .remove_active_breakpoint(vmi, ctx, pa, key, view)?
+            .is_some();
+
+        Ok(pending_removed || active_removed)
     }
 
     /// Removes a breakpoint by event that caused the breakpoint.
