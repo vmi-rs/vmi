@@ -61,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Global breakpoint bookkeeping no longer panics in debug builds. Global
+  breakpoints whose VA is backed by a physical page shared across keys are now
+  handled by reference counting the pages a global VA spans. Removing a
+  non-global breakpoint that shares a VA with a global one no longer disturbs
+  the global's tracking.
 - Inserting the same global breakpoint twice no longer trips the page
   registration assertion in debug builds. The page is registered once the claim
   is installed, so a repeated insertion cannot register it again.

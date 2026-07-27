@@ -134,8 +134,17 @@ where
 
 #[derive(Debug)]
 struct GlobalBreakpoint {
+    /// Canonical translation root shared by every breakpoint at this VA.
     root: Pa,
-    gfns: HashSet<Gfn>,
+
+    /// Reference-counted physical pages backing this global VA.
+    ///
+    /// * Key: GFN
+    /// * Value: Number of active breakpoints at this VA that resolve to the GFN
+    ///
+    /// A page shared by several breakpoints stays registered until its last
+    /// breakpoint is removed.
+    gfns: HashMap<Gfn, usize>,
 }
 
 /*
@@ -621,8 +630,8 @@ where
         // If this breakpoint should be global, fold its root onto the canonical
         // root already registered for this global VA, so all roots collapse onto
         // a single active breakpoint. The page is registered only once the
-        // breakpoint is confirmed to be newly inserted, further below, so a
-        // repeated insertion does not register the page again.
+        // breakpoint is confirmed to be newly inserted, further below, so
+        // duplicates do not inflate the page reference count.
         //
 
         if global
@@ -680,8 +689,9 @@ where
             );
 
             //
-            // Register the page under the global VA now that the claim is
-            // installed, so a repeated insertion does not register it again.
+            // Register the page under the global VA. A claim keeps the global
+            // flag it was made with, so this pairs one-to-one with the release
+            // in `uninstall_breakpoint`.
             //
 
             if global {
@@ -811,6 +821,7 @@ where
             }
         };
 
+        let global = breakpoint.global;
         let last_breakpoint_removed = breakpoints_by_ctx.is_empty();
 
         if last_breakpoint_removed {
@@ -839,7 +850,7 @@ where
             );
         }
 
-        self.uninstall_breakpoint(vmi, pa, view, key, ctx)?;
+        self.uninstall_breakpoint(vmi, pa, view, key, ctx, global)?;
 
         if last_breakpoint_removed {
             //
@@ -875,9 +886,9 @@ where
         // consider vmi.pause() + vmi.resume()?)
         //
 
-        for &(key, ctx) in breakpoints.keys() {
+        for (&(key, ctx), breakpoint) in &breakpoints {
             let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
-            self.uninstall_breakpoint(vmi, pa, view, key, ctx)?;
+            self.uninstall_breakpoint(vmi, pa, view, key, ctx, breakpoint.global)?;
         }
 
         tracing::debug!(
@@ -1039,49 +1050,46 @@ where
 
     /// Records that the global VA `(view, va)` is installed on `gfn`.
     ///
-    /// Creates the entry with `root` as its canonical root on first use.
+    /// Creates the entry with `root` as its canonical root on first use, and
+    /// bumps the page's reference count so a page shared by several global
+    /// breakpoints survives until the last one is removed.
     fn register_global_breakpoint(&mut self, gfn: Gfn, view: View, root: Pa, va: Va) {
-        match self.active_global_breakpoints.entry((view, va)) {
-            Entry::Occupied(mut entry) => {
-                let global_breakpoint = entry.get_mut();
-                let gfn_was_inserted = global_breakpoint.gfns.insert(gfn);
-                debug_assert!(
-                    gfn_was_inserted,
-                    "trying to register a global breakpoint that is already registered"
-                );
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(GlobalBreakpoint {
-                    root,
-                    gfns: HashSet::from([gfn]),
-                });
-            }
-        }
+        let global_breakpoint = self
+            .active_global_breakpoints
+            .entry((view, va))
+            .or_insert_with(|| GlobalBreakpoint {
+                root,
+                gfns: HashMap::new(),
+            });
+
+        *global_breakpoint.gfns.entry(gfn).or_insert(0) += 1;
     }
 
-    fn unregister_global_breakpoint(
-        &mut self,
-        gfn: Gfn,
-        view: View,
-        ctx: AddressContext,
-    ) -> Option<bool> {
-        match self.active_global_breakpoints.entry((view, ctx.va)) {
-            Entry::Occupied(mut entry) => {
-                let global_breakpoint = entry.get_mut();
-                let page_was_removed = global_breakpoint.gfns.remove(&gfn);
-                debug_assert!(
-                    page_was_removed,
-                    "trying to unregister a global breakpoint that is not registered"
-                );
+    /// Releases one reference to `gfn` for the global VA `(view, va)`.
+    ///
+    /// Does nothing when the VA has no global entry or the page is not
+    /// registered, so it is safe to call for non-global removals. Drops the page
+    /// when its reference count reaches zero and the whole entry when its last
+    /// page is gone.
+    fn unregister_global_breakpoint(&mut self, gfn: Gfn, view: View, va: Va) {
+        let mut entry = match self.active_global_breakpoints.entry((view, va)) {
+            Entry::Occupied(entry) => entry,
+            Entry::Vacant(_) => return,
+        };
 
-                if !global_breakpoint.gfns.is_empty() {
-                    return Some(false);
+        let global_breakpoint = entry.get_mut();
+        match global_breakpoint.gfns.get_mut(&gfn) {
+            Some(references) => {
+                *references -= 1;
+                if *references == 0 {
+                    global_breakpoint.gfns.remove(&gfn);
                 }
-
-                entry.remove();
-                Some(true)
             }
-            Entry::Vacant(_) => None,
+            None => return,
+        }
+
+        if global_breakpoint.gfns.is_empty() {
+            entry.remove();
         }
     }
 
@@ -1204,9 +1212,16 @@ where
         view: View,
         key: Key,
         ctx: AddressContext,
+        global: bool,
     ) -> Result<(), VmiError> {
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
-        self.unregister_global_breakpoint(gfn, view, ctx);
+
+        // Only global breakpoints have global bookkeeping. Calling this for a
+        // non-global breakpoint that happens to share a VA with a global one
+        // would otherwise release the global's page reference by mistake.
+        if global {
+            self.unregister_global_breakpoint(gfn, view, ctx.va);
+        }
 
         match self.active_locations.entry((key, ctx)) {
             Entry::Occupied(mut entry) => {
