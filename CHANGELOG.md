@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inserting the same global breakpoint twice no longer trips the page
   registration assertion in debug builds. The page is registered once the claim
   is installed, so a repeated insertion cannot register it again.
+- `BreakpointManager::remove` and `remove_with_hint` now remove only the
+  pending breakpoint registered under the requested key. Previously they
+  dropped every pending breakpoint at the same `(view, address)`, silently
+  deleting breakpoints owned by other keys.
 - `BreakpointManager::remove_by_view` now returns `true` when it removed only
   pending breakpoints for the view. Previously it returned `false` unless the
   view also had active breakpoints.

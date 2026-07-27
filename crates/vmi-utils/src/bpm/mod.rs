@@ -288,14 +288,10 @@ where
         let breakpoint = breakpoint.into();
         let Breakpoint { ctx, view, key, .. } = breakpoint;
 
-        if self
-            .remove_pending_breakpoints_by_address(ctx, view)
-            .is_some()
-        {
-            //
-            // TODO: assert that there are no active breakpoints for this (view, ctx)
-            //
-
+        // Removing a pending breakpoint only affects the requested key, leaving
+        // pending breakpoints registered under other keys at the same address
+        // in place.
+        if self.remove_pending_breakpoint(ctx, view, key) {
             return Ok(true);
         }
 
@@ -969,7 +965,11 @@ where
         Ok(result)
     }
 
-    /// Removes all pending breakpoints for a given `(view, ctx)` pair.
+    /// Removes all pending breakpoints for a given `(view, ctx)` pair, along
+    /// with the `ctx` entry in the per-view pending index.
+    ///
+    /// Callers that empty a `(view, ctx)` entry themselves must finish through
+    /// this function rather than removing the entry directly.
     ///
     /// Returns the pending breakpoints if they were removed, `None` otherwise.
     fn remove_pending_breakpoints_by_address(
@@ -1008,6 +1008,29 @@ where
         );
 
         Some(breakpoints)
+    }
+
+    /// Removes the pending breakpoint claimed by `key` at `(view, ctx)`.
+    ///
+    /// Pending breakpoints registered under other keys at the same address are
+    /// left in place.
+    ///
+    /// Returns `true` if one was removed.
+    fn remove_pending_breakpoint(&mut self, ctx: AddressContext, view: View, key: Key) -> bool {
+        let breakpoints = match self.pending_breakpoints.get_mut(&(view, ctx)) {
+            Some(breakpoints) => breakpoints,
+            None => return false,
+        };
+
+        if breakpoints.remove(&key).is_none() {
+            return false;
+        }
+
+        if breakpoints.is_empty() {
+            self.remove_pending_breakpoints_by_address(ctx, view);
+        }
+
+        true
     }
 
     /// Records that the global VA `(view, va)` is installed on `gfn`.
