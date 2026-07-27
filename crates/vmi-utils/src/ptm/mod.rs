@@ -40,6 +40,9 @@ use vmi_core::{
 
 pub use self::arch::ArchAdapter;
 
+#[cfg(test)]
+mod tests;
+
 /// Trait bound for tag values attached to monitored addresses.
 ///
 /// Tags allow callers to identify monitored addresses in debug output
