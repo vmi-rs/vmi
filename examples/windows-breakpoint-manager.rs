@@ -279,12 +279,7 @@ where
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let tag = match self.bpm.get_by_event(vmi.event(), ()) {
-            Some(breakpoints) => {
-                // Breakpoints can have multiple tags, but we have set only one
-                // tag for each breakpoint.
-                let first_breakpoint = breakpoints.into_iter().next().expect("breakpoint");
-                first_breakpoint.tag()
-            }
+            Some(breakpoint) => breakpoint.tag(),
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {
                     // This breakpoint was not set by us. Reinject it.

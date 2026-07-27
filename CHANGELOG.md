@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for that key and address, since honoring it would change when the installed
   breakpoint matches. Previously both were kept and the address matched any
   root.
+- **Breaking:** `BreakpointManager::get_by_event` returns
+  `Option<Breakpoint<Key, Tag>>` instead of an iterator, now that an event
+  matches at most one breakpoint per key.
 
 ### Added
 

@@ -398,20 +398,19 @@ where
         Ok(true)
     }
 
-    /// Returns an iterator over the breakpoints for the given event.
+    /// Returns the breakpoint registered under `key` for the given event.
     pub fn get_by_event(
         &self,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
-    ) -> Option<impl ExactSizeIterator<Item = Breakpoint<Key, Tag>> + use<'_, Interface, Key, Tag>>
-    {
+    ) -> Option<Breakpoint<Key, Tag>> {
         let (ctx, pa, view) = self.address_for_event(event)?;
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
         let breakpoints_by_ctx = self.active_breakpoints.get(&(view, gfn))?;
         let breakpoint = breakpoints_by_ctx.get(&(key, ctx))?;
 
-        Some(std::iter::once(*breakpoint))
+        Some(*breakpoint)
     }
 
     /// Checks if the given event was caused by a breakpoint.
