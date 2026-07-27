@@ -644,6 +644,10 @@ where
             self.check_existing_breakpoint(existing, &breakpoint)?;
         }
 
+        // Activating a breakpoint supersedes any pending copy of it, so the
+        // same breakpoint is never both pending and active at once.
+        self.remove_pending_breakpoint(breakpoint.ctx, view, key);
+
         //
         // page_was_inserted is true if a new `(view, GFN)` pair was inserted
         // breakpoint_was_inserted is true if a new `(key, ctx)` pair was inserted
