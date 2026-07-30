@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table
   hierarchy for a given virtual address. On AMD64 this writes `CR3`.
+- **Breaking:** `Registers` trait now requires a `return_from_function` method,
+  which builds the general-purpose registers that make the current function
+  return a given value to its caller without executing its body. On AMD64 this
+  sets `RAX` to the value, sets `RIP` to the return address read from the stack,
+  and advances `RSP` past it.
 - **Breaking:** `VmiQueryProtection` now requires a
   `memory_access_with_options` method that returns both the memory access
   permissions and associated `MemoryAccessOptions` for a GFN and view.
@@ -53,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Xen domain from the `VMI_XEN_DOMAIN`, `VMI_XEN_DOMAIN_ID`, or
   `VMI_XEN_DOMAIN_NAME` environment variables.
 - `Va::null()` constructor returning a virtual address of `0`.
+- `VmiState::return_from_function` - the `VmiState` form of
+  `Registers::return_from_function`, which takes the `VmiCore` from the state.
 - `resolve_kernel_module_in` and `resolve_user_module_in` in
   `vmi_utils::resolver`, the single-process form of `resolve_kernel_module`
   and `resolve_user_module`.

@@ -311,6 +311,22 @@ pub trait Registers: Debug + Default + Clone + Copy {
     fn return_address<Driver>(&self, vmi: &VmiCore<Driver>) -> Result<Va, VmiError>
     where
         Driver: VmiRead<Architecture = Self::Architecture>;
+
+    /// Builds the general-purpose registers that make the current function
+    /// return `value` to its caller without executing its body.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: Sets `RAX` to `value`, sets `RIP` to the value read from
+    ///   the stack at `RSP`, and advances `RSP` by the effective address width
+    ///   to consume the return address.
+    fn return_from_function<Driver>(
+        &self,
+        vmi: &VmiCore<Driver>,
+        value: u64,
+    ) -> Result<Self::GpRegisters, VmiError>
+    where
+        Driver: VmiRead<Architecture = Self::Architecture>;
 }
 
 /// A memory access event, providing details about the accessed memory.

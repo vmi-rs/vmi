@@ -1,8 +1,7 @@
 use std::net::IpAddr;
 
 use vmi::{
-    Registers as _, Va, VmiContext, VmiError, VmiEventResponse, VmiOs,
-    arch::GpRegisters as _,
+    Va, VmiContext, VmiError, VmiEventResponse, VmiOs,
     driver::VmiRead,
     os::windows::{ArchAdapter, WindowsOs},
     utils::reactor::Action,
@@ -551,14 +550,7 @@ where
 
     tracing::trace!(?layerId, "overriding");
 
-    let return_address = vmi.return_address()?;
-    let stack_pointer = vmi.registers().stack_pointer();
-    let address_width = vmi.registers().address_width() as u64;
-
-    let mut registers = vmi.registers().gp_registers();
-    registers.set_result(0); // Return FALSE
-    registers.set_instruction_pointer(return_address.into());
-    registers.set_stack_pointer(stack_pointer + address_width);
+    let registers = vmi.return_from_function(0)?; // Return FALSE
 
     Ok(Action::Response(
         VmiEventResponse::default().with_registers(registers),

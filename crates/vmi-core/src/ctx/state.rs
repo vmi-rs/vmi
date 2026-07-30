@@ -3,7 +3,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use super::session::VmiSession;
 use crate::{
-    AccessContext, AddressContext, Architecture, Pa, Registers as _, Va, VcpuId, VmiCore, VmiError,
+    AccessContext, AddressContext, Architecture, Pa, Registers, Va, VcpuId, VmiCore, VmiError,
     VmiRead, VmiWrite,
     driver::VmiSetRegisters,
     os::{NoOS, VmiOs},
@@ -127,6 +127,16 @@ where
     /// Returns the return address from the current stack frame.
     pub fn return_address(&self) -> Result<Va, VmiError> {
         self.registers().return_address(self.core())
+    }
+
+    /// Builds the general-purpose registers that make the current function
+    /// return `value` to its caller without executing its body.
+    pub fn return_from_function(
+        &self,
+        value: u64,
+    ) -> Result<<<Os::Architecture as Architecture>::Registers as Registers>::GpRegisters, VmiError>
+    {
+        self.registers().return_from_function(self.core(), value)
     }
 
     /// Translates a virtual address to a physical address.
