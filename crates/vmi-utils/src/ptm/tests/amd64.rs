@@ -73,7 +73,7 @@ fn pml4_entry_pa() -> Pa {
 }
 
 fn expected_data_pa() -> Pa {
-    Amd64::pa_from_gfn(DATA_GFN) + Amd64::va_offset(TEST_VA)
+    Amd64::pa_in_gfn(DATA_GFN, TEST_VA)
 }
 
 fn make_vmi(driver: MockDriver) -> Result<VmiCore<MockDriver>, VmiError> {
@@ -461,7 +461,7 @@ fn page_change_pfn_at_pt_level() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data_gfn) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA)));
     assert_eq!(ptm.paged_in_entries(), 1);
 
     Ok(())
@@ -499,7 +499,7 @@ fn page_change_pfn_at_pd_level() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data_gfn) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA)));
     assert_eq!(ptm.paged_in_entries(), 1);
     // Old PT unmonitored, new PT monitored - still 4 tables.
     assert_eq!(ptm.monitored_tables(), 4);
@@ -546,7 +546,7 @@ fn page_change_pfn_at_pdpt_level() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data_gfn) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA)));
     assert_eq!(ptm.paged_in_entries(), 1);
     // Old PD+PT unmonitored, new PD+PT monitored - still 4 tables.
     assert_eq!(ptm.monitored_tables(), 4);
@@ -599,7 +599,7 @@ fn page_change_pfn_at_pml4_level() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data_gfn) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA)));
     assert_eq!(ptm.paged_in_entries(), 1);
     // Old PDPT+PD+PT unmonitored, new PDPT+PD+PT monitored - still 4 tables.
     assert_eq!(ptm.monitored_tables(), 4);
@@ -1350,8 +1350,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
     assert_eq!(page_ins.len(), 2, "both VAs should page in");
 
     // Verify root1 PageIn: resolved through new PT(20) -> DATA(21).
-    let root1_expected_pa =
-        Amd64::pa_from_gfn(new_data_1) + Amd64::va_offset_for(va1, PageTableLevel::Pt);
+    let root1_expected_pa = Amd64::pa_in_gfn_for(new_data_1, va1, PageTableLevel::Pt);
     let root1_in = events.iter().find_map(|e| match e {
         PageTableMonitorEvent::PageIn(u) if u.ctx == ctx1 => Some(u),
         _ => None,
@@ -1363,8 +1362,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
     );
 
     // Verify root2 PageIn: direct leaf at Gfn(20).
-    let root2_expected_pa =
-        Amd64::pa_from_gfn(new_gfn) + Amd64::va_offset_for(va2, PageTableLevel::Pt);
+    let root2_expected_pa = Amd64::pa_in_gfn_for(new_gfn, va2, PageTableLevel::Pt);
     let root2_in = events.iter().find_map(|e| match e {
         PageTableMonitorEvent::PageIn(u) if u.ctx == ctx2 => Some(u),
         _ => None,
@@ -1827,7 +1825,7 @@ fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data_gfn) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA)));
     assert_eq!(ptm.paged_in_entries(), 1);
 
     Ok(())
@@ -1874,14 +1872,14 @@ fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
     assert_eq!(events.len(), 2, "vcpu 1 should see VA2 page-out + page-in");
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(ref u) if u.ctx == ctx2));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data2) + Amd64::va_offset(va2)));
+        if u.pa == Amd64::pa_in_gfn(new_data2, va2)));
 
     // Process vcpu 0 - should only see VA1's change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_0)?;
     assert_eq!(events.len(), 2, "vcpu 0 should see VA1 page-out + page-in");
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(ref u) if u.ctx == test_ctx()));
     assert!(matches!(events[1], PageTableMonitorEvent::PageIn(ref u)
-        if u.pa == Amd64::pa_from_gfn(new_data1) + Amd64::va_offset(TEST_VA)));
+        if u.pa == Amd64::pa_in_gfn(new_data1, TEST_VA)));
 
     assert_eq!(ptm.paged_in_entries(), 2);
 

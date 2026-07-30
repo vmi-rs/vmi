@@ -87,6 +87,19 @@ pub trait Architecture {
     /// - **AMD64**: `pa = gfn << 12`
     fn pa_from_gfn(gfn: Gfn) -> Pa;
 
+    /// Combines a guest frame number (GFN) with the in-page offset of a
+    /// virtual address to form a guest physical address (GPA).
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `pa = (gfn << 12) + (va & 0xfff)`
+    fn pa_in_gfn(gfn: Gfn, va: Va) -> Pa;
+
+    /// Combines a guest frame number (GFN) with the in-page offset of a
+    /// virtual address for a given page table level to form a guest
+    /// physical address (GPA).
+    fn pa_in_gfn_for(gfn: Gfn, va: Va, level: Self::PageTableLevel) -> Pa;
+
     /// Extracts the offset within a page from a physical address.
     ///
     /// # Architecture-specific

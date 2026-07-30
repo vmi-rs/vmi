@@ -104,7 +104,7 @@ fn is_leaf(level: PageTableLevel, pte: PageTableEntry) -> bool {
 
 /// Computes the resolved physical address for a leaf PTE.
 fn leaf_pa(va: Va, level: PageTableLevel, pfn: Gfn) -> Pa {
-    Amd64::pa_from_gfn(pfn) + Amd64::va_offset_for(va, level)
+    Amd64::pa_in_gfn_for(pfn, va, level)
 }
 
 /// Reads a single page table entry from guest physical memory.

@@ -34,8 +34,7 @@ where
         };
 
         let va = Va(event.registers().instruction_pointer());
-        let pa = Driver::Architecture::pa_from_gfn(interrupt.gfn())
-            + Driver::Architecture::va_offset(va);
+        let pa = Driver::Architecture::pa_in_gfn(interrupt.gfn(), va);
 
         let mut content = vec![0; Driver::Architecture::BREAKPOINT.len()];
         vmi.read(pa, &mut content)?;

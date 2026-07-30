@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return a given value to its caller without executing its body. On AMD64 this
   sets `RAX` to the value, sets `RIP` to the return address read from the stack,
   and advances `RSP` past it.
+- **Breaking:** `Architecture` trait now requires `pa_in_gfn` and
+  `pa_in_gfn_for` methods, which combine a guest frame number with the in-page
+  offset of a guest virtual address to form a guest physical address. On AMD64
+  `pa_in_gfn` returns `(gfn << 12) + (va & 0xfff)`, and `pa_in_gfn_for` masks
+  the offset to the page size of the given page-table level.
 - **Breaking:** `VmiQueryProtection` now requires a
   `memory_access_with_options` method that returns both the memory access
   permissions and associated `MemoryAccessOptions` for a GFN and view.

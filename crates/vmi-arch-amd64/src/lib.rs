@@ -66,6 +66,14 @@ impl Architecture for Amd64 {
         Pa(gfn.0 << Self::PAGE_SHIFT)
     }
 
+    fn pa_in_gfn(gfn: Gfn, va: Va) -> Pa {
+        Self::pa_in_gfn_for(gfn, va, PageTableLevel::Pt)
+    }
+
+    fn pa_in_gfn_for(gfn: Gfn, va: Va, level: Self::PageTableLevel) -> Pa {
+        Self::pa_from_gfn(gfn) + Self::va_offset_for(va, level)
+    }
+
     fn pa_offset(pa: Pa) -> u64 {
         pa.0 & !Self::PAGE_MASK
     }
@@ -149,9 +157,7 @@ impl Architecture for Amd64 {
         }
 
         if pml4e.large() {
-            return Ok(
-                Self::pa_from_gfn(pml4e.pfn()) + Self::va_offset_for(va, PageTableLevel::Pml4)
-            );
+            return Ok(Self::pa_in_gfn_for(pml4e.pfn(), va, PageTableLevel::Pml4));
         }
 
         // Read the PDPT table
@@ -166,9 +172,7 @@ impl Architecture for Amd64 {
         }
 
         if pdpte.large() {
-            return Ok(
-                Self::pa_from_gfn(pdpte.pfn()) + Self::va_offset_for(va, PageTableLevel::Pdpt)
-            );
+            return Ok(Self::pa_in_gfn_for(pdpte.pfn(), va, PageTableLevel::Pdpt));
         }
 
         // Read the PD table
@@ -183,7 +187,7 @@ impl Architecture for Amd64 {
         }
 
         if pde.large() {
-            return Ok(Self::pa_from_gfn(pde.pfn()) + Self::va_offset_for(va, PageTableLevel::Pd));
+            return Ok(Self::pa_in_gfn_for(pde.pfn(), va, PageTableLevel::Pd));
         }
 
         // Read the PT table
@@ -197,7 +201,7 @@ impl Architecture for Amd64 {
             return Err(VmiError::translation((va, root)));
         }
 
-        Ok(Self::pa_from_gfn(pte.pfn()) + Self::va_offset_for(va, PageTableLevel::Pt))
+        Ok(Self::pa_in_gfn_for(pte.pfn(), va, PageTableLevel::Pt))
     }
 }
 
@@ -323,9 +327,7 @@ impl Amd64 {
         if pml4e.large() {
             return VaTranslation {
                 entries,
-                pa: Some(
-                    Self::pa_from_gfn(pml4e.pfn()) + Self::va_offset_for(va, PageTableLevel::Pml4),
-                ),
+                pa: Some(Self::pa_in_gfn_for(pml4e.pfn(), va, PageTableLevel::Pml4)),
             };
         }
 
@@ -352,9 +354,7 @@ impl Amd64 {
         if pdpte.large() {
             return VaTranslation {
                 entries,
-                pa: Some(
-                    Self::pa_from_gfn(pdpte.pfn()) + Self::va_offset_for(va, PageTableLevel::Pdpt),
-                ),
+                pa: Some(Self::pa_in_gfn_for(pdpte.pfn(), va, PageTableLevel::Pdpt)),
             };
         }
 
@@ -381,9 +381,7 @@ impl Amd64 {
         if pde.large() {
             return VaTranslation {
                 entries,
-                pa: Some(
-                    Self::pa_from_gfn(pde.pfn()) + Self::va_offset_for(va, PageTableLevel::Pd),
-                ),
+                pa: Some(Self::pa_in_gfn_for(pde.pfn(), va, PageTableLevel::Pd)),
             };
         }
 
@@ -405,7 +403,7 @@ impl Amd64 {
 
         VaTranslation {
             entries,
-            pa: Some(Self::pa_from_gfn(pte.pfn()) + Self::va_offset_for(va, PageTableLevel::Pt)),
+            pa: Some(Self::pa_in_gfn_for(pte.pfn(), va, PageTableLevel::Pt)),
         }
     }
 }

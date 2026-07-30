@@ -1325,8 +1325,7 @@ where
     }
 
     fn pa_from_gfn_and_va(&self, gfn: Gfn, va: Va) -> Pa {
-        <Interface::Driver as VmiDriver>::Architecture::pa_from_gfn(gfn)
-            + <Interface::Driver as VmiDriver>::Architecture::va_offset(va)
+        <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, va)
     }
 
     fn address_for_event(
