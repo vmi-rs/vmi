@@ -379,7 +379,7 @@ where
         };
 
         for (view, gfn) in views {
-            let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
+            let pa = <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, ctx.va);
 
             //
             // If breakpoints are being removed by event, there should be no
@@ -488,7 +488,7 @@ where
 
         for (&(view, gfn), breakpoints) in &self.active_breakpoints {
             for &(key, ctx) in breakpoints.keys() {
-                let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
+                let pa = <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, ctx.va);
                 to_remove.push((key, view, pa, ctx));
             }
         }
@@ -922,7 +922,7 @@ where
         //
 
         for (&(key, ctx), breakpoint) in &breakpoints {
-            let pa = self.pa_from_gfn_and_va(gfn, ctx.va);
+            let pa = <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, ctx.va);
             self.uninstall_breakpoint(vmi, pa, view, key, ctx, breakpoint.global)?;
         }
 
@@ -1324,10 +1324,6 @@ where
         Ok(())
     }
 
-    fn pa_from_gfn_and_va(&self, gfn: Gfn, va: Va) -> Pa {
-        <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, va)
-    }
-
     fn address_for_event(
         &self,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
@@ -1338,7 +1334,7 @@ where
         };
 
         let ip = Va(event.registers().instruction_pointer());
-        let pa = self.pa_from_gfn_and_va(gfn, ip);
+        let pa = <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, ip);
 
         //
         // If there is a global breakpoint for this address, fix the root

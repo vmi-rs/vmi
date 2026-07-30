@@ -38,8 +38,8 @@ use std::collections::{HashMap, HashSet};
 
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
-    View, VmiCore, VmiError,
+    AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, VcpuId, View,
+    VmiCore, VmiError,
     driver::{VmiDriver, VmiQueryProtection, VmiRead, VmiSetProtection},
 };
 
@@ -100,11 +100,6 @@ struct MonitoredTable {
 /// large page at a higher level).
 fn is_leaf(level: PageTableLevel, pte: PageTableEntry) -> bool {
     level == PageTableLevel::Pt || pte.large()
-}
-
-/// Computes the resolved physical address for a leaf PTE.
-fn leaf_pa(va: Va, level: PageTableLevel, pfn: Gfn) -> Pa {
-    Amd64::pa_in_gfn_for(pfn, va, level)
 }
 
 /// Reads a single page table entry from guest physical memory.
@@ -348,7 +343,7 @@ where
             }
 
             if is_leaf(level, pte) {
-                let pa = leaf_pa(ctx.va, level, pte.pfn());
+                let pa = Amd64::pa_in_gfn_for(pte.pfn(), ctx.va, level);
                 if let Some(va) = self.vas.get_mut(&va_key) {
                     va.paged_in = true;
                     va.resolved_pa = Some(pa);
@@ -501,7 +496,7 @@ where
             }
 
             if is_leaf(level, pte) {
-                resolved_pa = Some(leaf_pa(ctx.va, level, pte.pfn()));
+                resolved_pa = Some(Amd64::pa_in_gfn_for(pte.pfn(), ctx.va, level));
                 paged_in = true;
                 break;
             }
@@ -674,7 +669,7 @@ where
                 // ── Setup new mapping ────────────────────────────────────
                 if need_setup {
                     if new_leaf {
-                        let pa = leaf_pa(ctx.va, level, new_pte.pfn());
+                        let pa = Amd64::pa_in_gfn_for(new_pte.pfn(), ctx.va, level);
                         if let Some(va) = self.vas.get_mut(&va_key) {
                             va.paged_in = true;
                             va.resolved_pa = Some(pa);

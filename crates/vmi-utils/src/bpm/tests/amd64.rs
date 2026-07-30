@@ -305,7 +305,7 @@ fn mem_event(view: Option<View>, gfn: Gfn, va: Va, access: MemoryAccess) -> VmiE
         ..Default::default()
     };
     let reason = EventReason::MemoryAccess(EventMemoryAccess {
-        pa: pa_at(gfn, Amd64::va_offset(va)),
+        pa: Amd64::pa_in_gfn(gfn, va),
         va,
         access,
         flags: MemoryAccessFlags::empty(),
@@ -621,7 +621,7 @@ fn insert_translates_and_activates_when_mapped() -> Result<(), VmiError> {
     let inserted = manager.insert(&vmi, Breakpoint::new(AddressContext::new(va, root), VIEW))?;
 
     assert!(inserted);
-    let expected_pa = pa_at(data, Amd64::va_offset(va));
+    let expected_pa = Amd64::pa_in_gfn(data, va);
     assert_eq!(
         rec_calls(),
         vec![
