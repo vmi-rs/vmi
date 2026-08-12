@@ -1,0 +1,11 @@
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+    set(BRIDGE_ASM_SOURCE src/arch/x64/intrin.S)
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "X86")
+    set(BRIDGE_ASM_SOURCE src/arch/x86/intrin.S)
+else()
+    message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+add_library(bridge STATIC ${BRIDGE_ASM_SOURCE})
+target_include_directories(bridge PUBLIC include)
+target_compile_options(bridge PRIVATE --target=${CMAKE_CXX_COMPILER_TARGET})

@@ -1,0 +1,4 @@
+add_executable(transfer_file_by_handle main.cpp)
+target_link_libraries(transfer_file_by_handle PRIVATE scfw bridge)
+set_target_properties(transfer_file_by_handle PROPERTIES SCFW_OPT_LTO OFF)
+scfw_extract_shellcode(transfer_file_by_handle)

@@ -1,8 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    fmt::Debug,
-};
+use std::fmt::Debug;
 
 use vmi_arch_amd64::{Amd64, EventInterrupt, EventReason, EventSinglestep, Interrupt, Registers};
 use vmi_core::{
@@ -10,150 +6,77 @@ use vmi_core::{
     VmiEventFlags, VmiInfo, VmiMappedPage, VmiRead, VmiViewControl, VmiVmControl, VmiWrite,
 };
 
-/// One driver operation that should fail when next attempted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Fault {
-    /// Fails shadow-page allocation.
-    Allocate,
+use crate::test_support::{Amd64TestVm, DriverCall, DriverFault};
 
-    /// Fails a read from the given GFN.
-    Read(Gfn),
-
-    /// Fails a write at the given GFN and byte offset.
-    Write(Gfn, u64),
-
-    /// Fails the given view mapping change.
-    Change(View, Gfn, Gfn),
-
-    /// Fails the given view mapping reset.
-    Reset(View, Gfn),
-}
-
-/// One observable driver call made by the interceptor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Call {
-    /// Allocates the given GFN.
-    Allocate(Gfn),
-
-    /// Frees the given GFN.
-    Free(Gfn),
-
-    /// Reads the given GFN.
-    Read(Gfn),
-
-    /// Writes the given GFN, byte offset, and byte count.
-    Write(Gfn, u64, usize),
-
-    /// Changes a view mapping from one GFN to another.
-    Change(View, Gfn, Gfn),
-
-    /// Resets a view mapping for the given GFN.
-    Reset(View, Gfn),
-}
-
-/// Models guest pages, view mappings, allocation, and injected failures.
+/// Exposes the capabilities required by the interceptor.
 pub(super) struct MockInterceptorDriver {
-    /// Guest physical pages keyed by GFN.
-    pages: RefCell<HashMap<Gfn, Vec<u8>>>,
-
-    /// Explicit shadow mappings keyed by view and original GFN.
-    mappings: RefCell<HashMap<(View, Gfn), Gfn>>,
-
-    /// GFN returned by the next successful allocation.
-    next_gfn: Cell<u64>,
-
-    /// Driver operation that should fail once.
-    fault: Cell<Option<Fault>>,
-
-    /// Calls attempted against the driver in chronological order.
-    calls: RefCell<Vec<Call>>,
+    /// Shared guest state and low-level driver behavior.
+    vm: Amd64TestVm,
 }
 
 impl MockInterceptorDriver {
     /// Creates a driver with no pages or mappings.
     fn new() -> Self {
         Self {
-            pages: RefCell::new(HashMap::new()),
-            mappings: RefCell::new(HashMap::new()),
-            next_gfn: Cell::new(FIRST_SHADOW_GFN.0),
-            fault: Cell::new(None),
-            calls: RefCell::new(Vec::new()),
+            vm: Amd64TestVm::new(FIRST_SHADOW_GFN),
         }
     }
 
     /// Adds an initialized guest page.
     fn insert_page(&self, gfn: Gfn, content: Vec<u8>) {
-        assert_eq!(content.len(), Amd64::PAGE_SIZE as usize);
-        assert!(self.pages.borrow_mut().insert(gfn, content).is_none());
+        self.vm.insert_page(gfn, content);
     }
 
     /// Replaces an existing guest page.
     pub(super) fn replace_page(&self, gfn: Gfn, content: Vec<u8>) {
-        assert_eq!(content.len(), Amd64::PAGE_SIZE as usize);
-        let previous = self.pages.borrow_mut().insert(gfn, content);
-        assert!(previous.is_some(), "no page at {gfn:?}");
+        self.vm.replace_page(gfn, content);
     }
 
     /// Returns a copy of a guest page.
     pub(super) fn page(&self, gfn: Gfn) -> Vec<u8> {
-        self.pages
-            .borrow()
-            .get(&gfn)
-            .unwrap_or_else(|| panic!("no page at {gfn:?}"))
-            .clone()
+        self.vm.page(gfn)
     }
 
     /// Returns whether a guest page exists.
     pub(super) fn has_page(&self, gfn: Gfn) -> bool {
-        self.pages.borrow().contains_key(&gfn)
+        self.vm.has_page(gfn)
     }
 
     /// Returns the explicit mapping for a view and original GFN.
     pub(super) fn mapping(&self, view: View, gfn: Gfn) -> Option<Gfn> {
-        self.mappings.borrow().get(&(view, gfn)).copied()
+        self.vm.mapping(view, gfn)
     }
 
     /// Configures one matching driver operation to fail.
-    pub(super) fn fail_on(&self, fault: Fault) {
-        assert!(self.fault.replace(Some(fault)).is_none());
-    }
-
-    /// Consumes and reports a matching configured failure.
-    fn take_fault(&self, actual: Fault) -> bool {
-        if self.fault.get() == Some(actual) {
-            self.fault.set(None);
-            true
-        }
-        else {
-            false
-        }
+    pub(super) fn fail_on(&self, fault: DriverFault) {
+        self.vm.fail_on(fault);
     }
 
     /// Returns the chronological driver call history.
-    pub(super) fn calls(&self) -> Vec<Call> {
-        self.calls.borrow().clone()
+    pub(super) fn calls(&self) -> Vec<DriverCall> {
+        self.vm.calls()
     }
 
     /// Clears the driver call history.
     pub(super) fn clear_calls(&self) {
-        self.calls.borrow_mut().clear();
+        self.vm.clear_calls();
     }
 
     /// Counts allocations in the current call history.
     pub(super) fn allocation_count(&self) -> usize {
-        self.calls
-            .borrow()
+        self.vm
+            .calls()
             .iter()
-            .filter(|call| matches!(call, Call::Allocate(_)))
+            .filter(|call| matches!(call, DriverCall::Allocate(_)))
             .count()
     }
 
     /// Counts view resets in the current call history.
     pub(super) fn reset_count(&self) -> usize {
-        self.calls
-            .borrow()
+        self.vm
+            .calls()
             .iter()
-            .filter(|call| matches!(call, Call::Reset(..)))
+            .filter(|call| matches!(call, DriverCall::Reset(..)))
             .count()
     }
 }
@@ -162,56 +85,19 @@ impl VmiDriver for MockInterceptorDriver {
     type Architecture = Amd64;
 
     fn info(&self) -> Result<VmiInfo, VmiError> {
-        Ok(VmiInfo {
-            page_size: Amd64::PAGE_SIZE,
-            page_shift: Amd64::PAGE_SHIFT,
-            max_gfn: Gfn(0xffff),
-            vcpus: 1,
-        })
+        Ok(self.vm.info())
     }
 }
 
 impl VmiRead for MockInterceptorDriver {
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        self.calls.borrow_mut().push(Call::Read(gfn));
-        if self.take_fault(Fault::Read(gfn)) {
-            return Err(VmiError::Other("injected read failure"));
-        }
-
-        let page = self
-            .pages
-            .borrow()
-            .get(&gfn)
-            .ok_or(VmiError::Other("page not found"))?
-            .clone();
-        Ok(VmiMappedPage::new(page))
+        self.vm.read_page(gfn)
     }
 }
 
 impl VmiWrite for MockInterceptorDriver {
     fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
-        self.calls
-            .borrow_mut()
-            .push(Call::Write(gfn, offset, content.len()));
-        if self.take_fault(Fault::Write(gfn, offset)) {
-            return Err(VmiError::Other("injected write failure"));
-        }
-
-        let page = {
-            let mut pages = self.pages.borrow_mut();
-            let page = pages
-                .get_mut(&gfn)
-                .ok_or(VmiError::Other("page not found"))?;
-            let offset = offset as usize;
-            let end = offset
-                .checked_add(content.len())
-                .ok_or(VmiError::OutOfBounds)?;
-            let destination = page.get_mut(offset..end).ok_or(VmiError::OutOfBounds)?;
-            destination.copy_from_slice(content);
-            page.clone()
-        };
-
-        Ok(VmiMappedPage::new(page))
+        self.vm.write_page(gfn, offset, content)
     }
 }
 
@@ -233,25 +119,11 @@ impl VmiViewControl for MockInterceptorDriver {
     }
 
     fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
-        self.calls
-            .borrow_mut()
-            .push(Call::Change(view, old_gfn, new_gfn));
-        if self.take_fault(Fault::Change(view, old_gfn, new_gfn)) {
-            return Err(VmiError::Other("injected view-change failure"));
-        }
-
-        self.mappings.borrow_mut().insert((view, old_gfn), new_gfn);
-        Ok(())
+        self.vm.change_view_gfn(view, old_gfn, new_gfn)
     }
 
     fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
-        self.calls.borrow_mut().push(Call::Reset(view, gfn));
-        if self.take_fault(Fault::Reset(view, gfn)) {
-            return Err(VmiError::Other("injected view-reset failure"));
-        }
-
-        self.mappings.borrow_mut().remove(&(view, gfn));
-        Ok(())
+        self.vm.reset_view_gfn(view, gfn)
     }
 }
 
@@ -265,17 +137,7 @@ impl VmiVmControl for MockInterceptorDriver {
     }
 
     fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
-        if self.take_fault(Fault::Allocate) {
-            return Err(VmiError::Other("injected allocation failure"));
-        }
-
-        let gfn = Gfn(self.next_gfn.get());
-        self.next_gfn.set(gfn.0 + 1);
-        self.pages
-            .borrow_mut()
-            .insert(gfn, vec![0; Amd64::PAGE_SIZE as usize]);
-        self.calls.borrow_mut().push(Call::Allocate(gfn));
-        Ok(gfn)
+        self.vm.allocate_gfn()
     }
 
     fn allocate_gfn_at(&self, _gfn: Gfn) -> Result<(), VmiError> {
@@ -283,12 +145,7 @@ impl VmiVmControl for MockInterceptorDriver {
     }
 
     fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        self.calls.borrow_mut().push(Call::Free(gfn));
-        self.pages
-            .borrow_mut()
-            .remove(&gfn)
-            .ok_or(VmiError::Other("page not found"))?;
-        Ok(())
+        self.vm.free_gfn(gfn)
     }
 
     fn inject_interrupt(&self, _vcpu: VcpuId, _interrupt: Interrupt) -> Result<(), VmiError> {

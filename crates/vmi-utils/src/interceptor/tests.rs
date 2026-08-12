@@ -2,11 +2,12 @@ use vmi_arch_amd64::Amd64;
 use vmi_core::{Architecture, Gfn, VmiError};
 
 use self::mock::{
-    Call, FIRST_SHADOW_GFN, Fault, MockInterceptorDriver, OFFSET, ORIGINAL_GFN, OTHER_GFN,
-    OTHER_OFFSET, OTHER_VIEW, VIEW, address, assert_injected_error, breakpoint_event,
-    non_breakpoint_event, page_content, test_vmi, with_breakpoint,
+    FIRST_SHADOW_GFN, MockInterceptorDriver, OFFSET, ORIGINAL_GFN, OTHER_GFN, OTHER_OFFSET,
+    OTHER_VIEW, VIEW, address, assert_injected_error, breakpoint_event, non_breakpoint_event,
+    page_content, test_vmi, with_breakpoint,
 };
 use super::Interceptor;
+use crate::test_support::{DriverCall, DriverFault};
 
 /// Verifies breakpoint rejection for multi-byte instructions at page boundaries.
 mod cross_page;
@@ -54,12 +55,12 @@ fn first_insert_copies_patches_and_maps_a_shadow_page() -> Result<(), VmiError> 
     assert_eq!(
         vmi.driver().calls(),
         vec![
-            Call::Allocate(shadow),
-            Call::Read(ORIGINAL_GFN),
-            Call::Write(shadow, 0, Amd64::PAGE_SIZE as usize),
-            Call::Change(VIEW, ORIGINAL_GFN, shadow),
-            Call::Read(shadow),
-            Call::Write(shadow, OFFSET, Amd64::BREAKPOINT.len()),
+            DriverCall::Allocate(shadow),
+            DriverCall::Read(ORIGINAL_GFN),
+            DriverCall::Write(shadow, 0, Amd64::PAGE_SIZE as usize),
+            DriverCall::Change(VIEW, ORIGINAL_GFN, shadow),
+            DriverCall::Read(shadow),
+            DriverCall::Write(shadow, OFFSET, Amd64::BREAKPOINT.len()),
         ]
     );
 
@@ -138,8 +139,8 @@ fn duplicate_insert_adds_a_reference_without_touching_the_driver() -> Result<(),
     assert_eq!(
         vmi.driver().calls(),
         vec![
-            Call::Write(shadow, OFFSET, Amd64::BREAKPOINT.len()),
-            Call::Reset(VIEW, ORIGINAL_GFN),
+            DriverCall::Write(shadow, OFFSET, Amd64::BREAKPOINT.len()),
+            DriverCall::Reset(VIEW, ORIGINAL_GFN),
         ]
     );
 
@@ -352,11 +353,11 @@ fn reinsert_reuses_and_refreshes_an_inactive_shadow() -> Result<(), VmiError> {
     assert_eq!(
         vmi.driver().calls(),
         vec![
-            Call::Read(ORIGINAL_GFN),
-            Call::Write(shadow, 0, Amd64::PAGE_SIZE as usize),
-            Call::Change(VIEW, ORIGINAL_GFN, shadow),
-            Call::Read(shadow),
-            Call::Write(shadow, OTHER_OFFSET, Amd64::BREAKPOINT.len()),
+            DriverCall::Read(ORIGINAL_GFN),
+            DriverCall::Write(shadow, 0, Amd64::PAGE_SIZE as usize),
+            DriverCall::Change(VIEW, ORIGINAL_GFN, shadow),
+            DriverCall::Read(shadow),
+            DriverCall::Write(shadow, OTHER_OFFSET, Amd64::BREAKPOINT.len()),
         ]
     );
 
@@ -406,7 +407,7 @@ fn allocation_failure_leaves_no_page_or_mapping_and_can_retry() -> Result<(), Vm
     let vmi = test_vmi()?;
     let mut interceptor = Interceptor::<MockInterceptorDriver>::new();
     let address = address(ORIGINAL_GFN, OFFSET);
-    vmi.driver().fail_on(Fault::Allocate);
+    vmi.driver().fail_on(DriverFault::Allocate);
 
     assert_injected_error(interceptor.insert_breakpoint(&vmi, address, VIEW));
     assert!(!vmi.driver().has_page(FIRST_SHADOW_GFN));
@@ -425,9 +426,9 @@ fn allocation_failure_leaves_no_page_or_mapping_and_can_retry() -> Result<(), Vm
 #[test]
 fn activation_failure_frees_the_unregistered_shadow_and_can_retry() -> Result<(), VmiError> {
     for fault in [
-        Fault::Read(ORIGINAL_GFN),
-        Fault::Write(FIRST_SHADOW_GFN, 0),
-        Fault::Change(VIEW, ORIGINAL_GFN, FIRST_SHADOW_GFN),
+        DriverFault::Read(ORIGINAL_GFN),
+        DriverFault::Write(FIRST_SHADOW_GFN, 0),
+        DriverFault::Change(VIEW, ORIGINAL_GFN, FIRST_SHADOW_GFN),
     ] {
         let vmi = test_vmi()?;
         let mut interceptor = Interceptor::<MockInterceptorDriver>::new();
@@ -437,7 +438,11 @@ fn activation_failure_frees_the_unregistered_shadow_and_can_retry() -> Result<()
         assert_injected_error(interceptor.insert_breakpoint(&vmi, address, VIEW));
         assert!(!vmi.driver().has_page(FIRST_SHADOW_GFN));
         assert_eq!(vmi.driver().mapping(VIEW, ORIGINAL_GFN), None);
-        assert!(vmi.driver().calls().contains(&Call::Free(FIRST_SHADOW_GFN)));
+        assert!(
+            vmi.driver()
+                .calls()
+                .contains(&DriverCall::Free(FIRST_SHADOW_GFN))
+        );
         assert!(!interceptor.contains_breakpoint(&breakpoint_event(
             ORIGINAL_GFN,
             Some(VIEW),
@@ -457,8 +462,8 @@ fn activation_failure_frees_the_unregistered_shadow_and_can_retry() -> Result<()
 #[test]
 fn breakpoint_install_failure_rolls_back_mapping_and_can_retry() -> Result<(), VmiError> {
     for fault in [
-        Fault::Read(FIRST_SHADOW_GFN),
-        Fault::Write(FIRST_SHADOW_GFN, OFFSET),
+        DriverFault::Read(FIRST_SHADOW_GFN),
+        DriverFault::Write(FIRST_SHADOW_GFN, OFFSET),
     ] {
         let vmi = test_vmi()?;
         let original = vmi.driver().page(ORIGINAL_GFN);
@@ -493,7 +498,7 @@ fn restore_write_failure_keeps_breakpoint_active_for_retry() -> Result<(), VmiEr
     let address = address(ORIGINAL_GFN, OFFSET);
     let event = breakpoint_event(ORIGINAL_GFN, Some(VIEW), OFFSET);
     let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
-    vmi.driver().fail_on(Fault::Write(shadow, OFFSET));
+    vmi.driver().fail_on(DriverFault::Write(shadow, OFFSET));
 
     assert_injected_error(interceptor.remove_breakpoint(&vmi, address, VIEW));
     assert_eq!(
@@ -523,7 +528,7 @@ fn view_reset_failure_restores_breakpoint_state_for_retry() -> Result<(), VmiErr
     let address = address(ORIGINAL_GFN, OFFSET);
     let event = breakpoint_event(ORIGINAL_GFN, Some(VIEW), OFFSET);
     let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
-    vmi.driver().fail_on(Fault::Reset(VIEW, ORIGINAL_GFN));
+    vmi.driver().fail_on(DriverFault::Reset(VIEW, ORIGINAL_GFN));
 
     assert_injected_error(interceptor.remove_breakpoint(&vmi, address, VIEW));
     assert_eq!(

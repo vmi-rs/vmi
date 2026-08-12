@@ -1,7 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-};
+use std::cell::{Cell, RefCell};
 
 use vmi_arch_amd64::{
     Amd64, Cr3, EventInterrupt, EventMemoryAccess, EventReason, EventSinglestep, Interrupt,
@@ -15,6 +12,7 @@ use vmi_core::{
 };
 
 use super::super::{Breakpoint, TapController};
+use crate::test_support::{Amd64TestVm, DriverFault};
 
 /// Controller operation recorded by the mock driver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,62 +46,36 @@ pub(super) enum ControllerFault {
     Unmonitor,
 }
 
-/// Driver state shared with the mock and concrete controllers.
+/// Exposes the capabilities required by the BPM controllers and manager.
 pub(super) struct MockBpmDriver {
-    /// Guest physical pages keyed by GFN.
-    pages: RefCell<HashMap<Gfn, Vec<u8>>>,
-
-    /// Explicit view mappings keyed by view and original GFN.
-    mappings: RefCell<HashMap<(View, Gfn), Gfn>>,
-
-    /// Memory permissions keyed by view and GFN.
-    access: RefCell<HashMap<(View, Gfn), MemoryAccess>>,
+    /// Shared guest state and low-level driver behavior.
+    vm: Amd64TestVm,
 
     /// Calls made through the mock controller.
     controller_calls: RefCell<Vec<ControllerCall>>,
 
     /// Mock controller operation that should fail once.
     controller_fault: Cell<Option<ControllerFault>>,
-
-    /// Page read that should fail once.
-    read_fault: Cell<Option<Gfn>>,
-
-    /// GFN returned by the next shadow-page allocation.
-    next_gfn: Cell<u64>,
 }
 
 impl MockBpmDriver {
     /// Creates an empty mock driver.
     fn new() -> Self {
         Self {
-            pages: RefCell::new(HashMap::new()),
-            mappings: RefCell::new(HashMap::new()),
-            access: RefCell::new(HashMap::new()),
+            vm: Amd64TestVm::without_call_recording(FIRST_SHADOW_GFN),
             controller_calls: RefCell::new(Vec::new()),
             controller_fault: Cell::new(None),
-            read_fault: Cell::new(None),
-            next_gfn: Cell::new(FIRST_SHADOW_GFN.0),
         }
     }
 
     /// Adds a zero-filled page.
     fn insert_page(&self, gfn: Gfn) {
-        let previous = self
-            .pages
-            .borrow_mut()
-            .insert(gfn, vec![0; Amd64::PAGE_SIZE as usize]);
-        assert!(previous.is_none(), "page already exists at {gfn:?}");
+        self.vm.insert_zeroed_page(gfn);
     }
 
     /// Writes a page-table entry at a physical address.
     fn write_pte(&self, pa: Pa, pte: PageTableEntry) {
-        let gfn = Amd64::gfn_from_pa(pa);
-        let offset = Amd64::pa_offset(pa) as usize;
-        let mut pages = self.pages.borrow_mut();
-        let page = pages
-            .get_mut(&gfn)
-            .unwrap_or_else(|| panic!("no page at {gfn:?}"));
-        page[offset..offset + 8].copy_from_slice(&pte.0.to_le_bytes());
+        self.vm.write_pte(pa, pte);
     }
 
     /// Builds the paging hierarchy used by address-translation tests.
@@ -174,40 +146,29 @@ impl MockBpmDriver {
 
     /// Configures one read from the given GFN to fail.
     pub(super) fn fail_read(&self, gfn: Gfn) {
-        assert!(self.read_fault.replace(Some(gfn)).is_none());
+        self.vm.fail_on(DriverFault::Read(gfn));
     }
 
     /// Returns the current permissions for a page.
     pub(super) fn access(&self, gfn: Gfn, view: View) -> MemoryAccess {
-        self.access
-            .borrow()
-            .get(&(view, gfn))
-            .copied()
-            .unwrap_or(MemoryAccess::RWX)
+        self.vm
+            .memory_access(gfn, view)
+            .expect("test VM memory access should not fail")
     }
 
     /// Returns the explicit mapping for a page in a view.
     pub(super) fn mapping(&self, gfn: Gfn, view: View) -> Option<Gfn> {
-        self.mappings.borrow().get(&(view, gfn)).copied()
+        self.vm.mapping(view, gfn)
     }
 
     /// Returns a copy of a guest page.
     pub(super) fn page(&self, gfn: Gfn) -> Vec<u8> {
-        self.pages
-            .borrow()
-            .get(&gfn)
-            .unwrap_or_else(|| panic!("no page at {gfn:?}"))
-            .clone()
+        self.vm.page(gfn)
     }
 
     /// Replaces bytes in a guest page without recording a driver operation.
     pub(super) fn set_bytes(&self, gfn: Gfn, offset: u64, content: &[u8]) {
-        let mut pages = self.pages.borrow_mut();
-        let page = pages
-            .get_mut(&gfn)
-            .unwrap_or_else(|| panic!("no page at {gfn:?}"));
-        let offset = offset as usize;
-        page[offset..offset + content.len()].copy_from_slice(content);
+        self.vm.set_bytes(gfn, offset, content);
     }
 }
 
@@ -215,36 +176,19 @@ impl VmiDriver for MockBpmDriver {
     type Architecture = Amd64;
 
     fn info(&self) -> Result<VmiInfo, VmiError> {
-        Ok(VmiInfo {
-            page_size: Amd64::PAGE_SIZE,
-            page_shift: Amd64::PAGE_SHIFT,
-            max_gfn: Gfn(0xffff),
-            vcpus: 1,
-        })
+        Ok(self.vm.info())
     }
 }
 
 impl VmiRead for MockBpmDriver {
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        if self.read_fault.get() == Some(gfn) {
-            self.read_fault.set(None);
-            return Err(VmiError::Other("injected read failure"));
-        }
-
-        let page = self
-            .pages
-            .borrow()
-            .get(&gfn)
-            .ok_or(VmiError::Other("page not found"))?
-            .clone();
-        Ok(VmiMappedPage::new(page))
+        self.vm.read_page(gfn)
     }
 }
 
 impl VmiWrite for MockBpmDriver {
     fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
-        self.set_bytes(gfn, offset, content);
-        Ok(VmiMappedPage::new(self.page(gfn)))
+        self.vm.write_page(gfn, offset, content)
     }
 }
 
@@ -255,8 +199,7 @@ impl VmiSetProtection for MockBpmDriver {
         view: View,
         access: MemoryAccess,
     ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
+        self.vm.set_memory_access(gfn, view, access)
     }
 
     fn set_memory_access_with_options(
@@ -264,10 +207,10 @@ impl VmiSetProtection for MockBpmDriver {
         gfn: Gfn,
         view: View,
         access: MemoryAccess,
-        _options: MemoryAccessOptions,
+        options: MemoryAccessOptions,
     ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
+        self.vm
+            .set_memory_access_with_options(gfn, view, access, options)
     }
 }
 
@@ -289,13 +232,11 @@ impl VmiViewControl for MockBpmDriver {
     }
 
     fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
-        self.mappings.borrow_mut().insert((view, old_gfn), new_gfn);
-        Ok(())
+        self.vm.change_view_gfn(view, old_gfn, new_gfn)
     }
 
     fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
-        self.mappings.borrow_mut().remove(&(view, gfn));
-        Ok(())
+        self.vm.reset_view_gfn(view, gfn)
     }
 }
 
@@ -309,12 +250,7 @@ impl VmiVmControl for MockBpmDriver {
     }
 
     fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
-        let gfn = Gfn(self.next_gfn.get());
-        self.next_gfn.set(gfn.0 + 1);
-        self.pages
-            .borrow_mut()
-            .insert(gfn, vec![0; Amd64::PAGE_SIZE as usize]);
-        Ok(gfn)
+        self.vm.allocate_gfn()
     }
 
     fn allocate_gfn_at(&self, _gfn: Gfn) -> Result<(), VmiError> {
@@ -322,11 +258,7 @@ impl VmiVmControl for MockBpmDriver {
     }
 
     fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
-        self.pages
-            .borrow_mut()
-            .remove(&gfn)
-            .ok_or(VmiError::Other("page not found"))?;
-        Ok(())
+        self.vm.free_gfn(gfn)
     }
 
     fn inject_interrupt(&self, _vcpu: VcpuId, _interrupt: Interrupt) -> Result<(), VmiError> {

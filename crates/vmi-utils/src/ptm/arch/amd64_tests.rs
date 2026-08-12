@@ -1,5 +1,3 @@
-use std::{cell::RefCell, collections::HashMap};
-
 use vmi_arch_amd64::{Amd64, PageTableEntry, PageTableLevel};
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, MemoryAccessOptions, Pa, Va, VcpuId,
@@ -8,61 +6,61 @@ use vmi_core::{
 };
 
 use super::super::{PageTableMonitor, PageTableMonitorEvent};
+use crate::test_support::Amd64TestVm;
 
-///////////////////////////////////////////////////////////////////////////////
-// Mock Driver
-///////////////////////////////////////////////////////////////////////////////
+/// Allocation seed unused by the PTM capability wrapper.
+const FIRST_ALLOCATABLE_GFN: Gfn = Gfn(0);
 
+/// Exposes only the capabilities required by the page-table monitor.
 struct MockPtmDriver {
-    pages: RefCell<HashMap<Gfn, Vec<u8>>>,
-    access: RefCell<HashMap<(View, Gfn), MemoryAccess>>,
+    /// Shared guest pages and memory permissions.
+    vm: Amd64TestVm,
 }
 
 impl MockPtmDriver {
+    /// Creates empty PTM driver state.
     fn new() -> Self {
         Self {
-            pages: RefCell::new(HashMap::new()),
-            access: RefCell::new(HashMap::new()),
+            vm: Amd64TestVm::without_call_recording(FIRST_ALLOCATABLE_GFN),
         }
     }
 
-    /// Inserts a blank 4KB page at the given GFN.
+    /// Inserts a blank AMD64 page at the given GFN.
     fn insert_page(&self, gfn: Gfn) {
-        self.pages.borrow_mut().insert(gfn, vec![0u8; 4096]);
+        self.vm.insert_zeroed_page(gfn);
     }
 
-    /// Writes a page table entry at the given physical address.
+    /// Writes a page-table entry at the given physical address.
     fn write_pte(&self, pa: Pa, pte: PageTableEntry) {
-        let gfn = Amd64::gfn_from_pa(pa);
-        let offset = Amd64::pa_offset(pa) as usize;
-        let mut pages = self.pages.borrow_mut();
-        let page = pages
-            .get_mut(&gfn)
-            .unwrap_or_else(|| panic!("no page at {:?}", gfn));
-        page[offset..offset + 8].copy_from_slice(&pte.0.to_le_bytes());
+        self.vm.write_pte(pa, pte);
     }
 
+    /// Sets initial memory permissions without a VMI call.
     fn set_initial_access(&self, gfn: Gfn, view: View, access: MemoryAccess) {
-        self.access.borrow_mut().insert((view, gfn), access);
+        self.vm
+            .set_memory_access(gfn, view, access)
+            .expect("test VM memory access update should not fail");
     }
 
+    /// Returns the current memory permissions.
     fn access(&self, gfn: Gfn, view: View) -> MemoryAccess {
-        self.access
-            .borrow()
-            .get(&(view, gfn))
-            .copied()
-            .unwrap_or(MemoryAccess::RWX)
+        self.vm
+            .memory_access(gfn, view)
+            .expect("test VM memory access should not fail")
     }
 }
 
+/// Returns a present page-table entry.
 fn make_pte(gfn: Gfn) -> PageTableEntry {
     PageTableEntry((gfn.0 << 12) | 1)
 }
 
+/// Returns a present large-page entry.
 fn make_large_pte(gfn: Gfn) -> PageTableEntry {
     PageTableEntry((gfn.0 << 12) | (1 << 7) | 1)
 }
 
+/// Returns a non-present page-table entry.
 fn make_not_present_pte() -> PageTableEntry {
     PageTableEntry(0)
 }
@@ -71,26 +69,19 @@ impl VmiDriver for MockPtmDriver {
     type Architecture = Amd64;
 
     fn info(&self) -> Result<VmiInfo, VmiError> {
-        Ok(VmiInfo {
-            page_size: 4096,
-            page_shift: 12,
-            max_gfn: Gfn(0xFFFF),
-            vcpus: 1,
-        })
+        Ok(self.vm.info())
     }
 }
 
 impl VmiRead for MockPtmDriver {
     fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-        let pages = self.pages.borrow();
-        let page = pages.get(&gfn).ok_or(VmiError::Other("page not found"))?;
-        Ok(VmiMappedPage::new(page.clone()))
+        self.vm.read_page(gfn)
     }
 }
 
 impl VmiQueryProtection for MockPtmDriver {
     fn memory_access(&self, gfn: Gfn, view: View) -> Result<MemoryAccess, VmiError> {
-        Ok(self.access(gfn, view))
+        self.vm.memory_access(gfn, view)
     }
 
     fn memory_access_with_options(
@@ -109,8 +100,7 @@ impl VmiSetProtection for MockPtmDriver {
         view: View,
         access: MemoryAccess,
     ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
+        self.vm.set_memory_access(gfn, view, access)
     }
 
     fn set_memory_access_with_options(
@@ -118,16 +108,12 @@ impl VmiSetProtection for MockPtmDriver {
         gfn: Gfn,
         view: View,
         access: MemoryAccess,
-        _options: MemoryAccessOptions,
+        options: MemoryAccessOptions,
     ) -> Result<(), VmiError> {
-        self.access.borrow_mut().insert((view, gfn), access);
-        Ok(())
+        self.vm
+            .set_memory_access_with_options(gfn, view, access, options)
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Test Helpers
-///////////////////////////////////////////////////////////////////////////////
 
 /// Page table GFNs used in tests.
 const PML4_GFN: Gfn = Gfn(1);

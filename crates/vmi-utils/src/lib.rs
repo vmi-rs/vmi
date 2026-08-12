@@ -21,5 +21,8 @@ pub mod reactor;
 #[cfg(feature = "resolver")]
 pub mod resolver;
 
+#[cfg(all(test, feature = "arch-amd64"))]
+mod test_support;
+
 mod hexdump;
 pub use self::hexdump::{Representation, hexdump};

@@ -1,0 +1,4 @@
+add_executable(fetch_process_environment main.cpp)
+target_link_libraries(fetch_process_environment PRIVATE scfw bridge)
+set_target_properties(fetch_process_environment PROPERTIES SCFW_OPT_LTO OFF)
+scfw_extract_shellcode(fetch_process_environment)

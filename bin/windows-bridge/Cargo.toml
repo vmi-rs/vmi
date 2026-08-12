@@ -1,0 +1,20 @@
+[package]
+name = "windows-bridge"
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+
+[lints.clippy]
+all = "allow"
+pedantic = "allow"
+
+[dependencies]
+anyhow = { workspace = true }
+bitflags = { workspace = true }
+signal-hook = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+isr = { workspace = true, features = ["cache", "pdb", "dl-windows", "dwarf", "dl-linux"] }
+vmi = { workspace = true, features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
+xen = { workspace = true }

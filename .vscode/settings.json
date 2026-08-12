@@ -1,0 +1,8 @@
+{
+  "rust-analyzer.rustfmt.extraArgs": ["+nightly"],
+  "terminal.integrated.env.linux": {
+    "RUST_BACKTRACE": "full",
+    "VMI_XEN_DOMAIN": "win10-22h2"
+  },
+  "cmake.sourceDirectory": "/opt/dev/vmi-rs/vmi/bin/windows-bridge/scfw"
+}
