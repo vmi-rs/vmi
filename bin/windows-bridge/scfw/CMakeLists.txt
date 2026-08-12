@@ -1,4 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
+
+include(FetchContent)
+
+FetchContent_Declare(
+    scfw
+    GIT_REPOSITORY https://github.com/vmi-rs/scfw.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR cmake
+)
+FetchContent_MakeAvailable(scfw)
+
 project(windows_bridge_shellcode C CXX ASM)
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -17,6 +29,6 @@ set(SCFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SCFW_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(SCFW_OPT_CLEANUP ON CACHE BOOL "" FORCE)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../scfw ${CMAKE_CURRENT_BINARY_DIR}/scfw)
+add_subdirectory("${scfw_SOURCE_DIR}" "${scfw_BINARY_DIR}")
 add_subdirectory(proto)
 add_subdirectory(shellcodes)
