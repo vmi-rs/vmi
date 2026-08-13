@@ -40,70 +40,72 @@ const RESPONSE_CONTINUE: u64 = 0x0000_0000;
 const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
 /// Pull operation stage encoded in a terminal status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub(crate) enum PullStage {
-    /// No operation ran.
-    None = 0x00,
-
-    /// Parameter parsing failed.
-    Parameters = 0x01,
-
-    /// Initialization failed.
-    Initialization = 0x02,
-
-    /// Download completed or failed.
-    Download = 0x03,
-
-    /// Extraction completed or failed.
-    Extract = 0x04,
-
-    /// Execution completed or failed.
-    Execute = 0x05,
-}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PullStage(u8);
 
 impl PullStage {
-    /// Decodes a protocol stage value.
-    const fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0x00 => Some(Self::None),
-            0x01 => Some(Self::Parameters),
-            0x02 => Some(Self::Initialization),
-            0x03 => Some(Self::Download),
-            0x04 => Some(Self::Extract),
-            0x05 => Some(Self::Execute),
-            _ => None,
-        }
+    /// No operation ran.
+    const NONE: Self = Self(0x00);
+
+    /// Parameter parsing failed.
+    const PARAMETERS: Self = Self(0x01);
+
+    /// Initialization failed.
+    const INITIALIZATION: Self = Self(0x02);
+
+    /// Download completed or failed.
+    const DOWNLOAD: Self = Self(0x03);
+
+    /// Extraction completed or failed.
+    const EXTRACT: Self = Self(0x04);
+
+    /// Execution completed or failed.
+    const EXECUTE: Self = Self(0x05);
+}
+
+impl std::fmt::Debug for PullStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match *self {
+            Self::NONE => "None",
+            Self::PARAMETERS => "Parameters",
+            Self::INITIALIZATION => "Initialization",
+            Self::DOWNLOAD => "Download",
+            Self::EXTRACT => "Extract",
+            Self::EXECUTE => "Execute",
+            _ => return self.0.fmt(f),
+        };
+        f.write_str(name)
     }
 }
 
 /// Stable terminal status encoded by the pull shellcode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub(crate) enum PullTerminalStatus {
-    /// The requested stages completed successfully.
-    Success = 0x00,
-
-    /// The serialized parameters were invalid.
-    InvalidParameters = 0xfd,
-
-    /// A guest operation failed.
-    OperationFailed = 0xfe,
-
-    /// The host aborted a gated stage.
-    Aborted = 0xff,
-}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PullTerminalStatus(u8);
 
 impl PullTerminalStatus {
-    /// Decodes a protocol terminal status value.
-    const fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0x00 => Some(Self::Success),
-            0xfd => Some(Self::InvalidParameters),
-            0xfe => Some(Self::OperationFailed),
-            0xff => Some(Self::Aborted),
-            _ => None,
-        }
+    /// The requested stages completed successfully.
+    const SUCCESS: Self = Self(0x00);
+
+    /// The serialized parameters were invalid.
+    const INVALID_PARAMETERS: Self = Self(0xfd);
+
+    /// A guest operation failed.
+    const OPERATION_FAILED: Self = Self(0xfe);
+
+    /// The host aborted a gated stage.
+    const ABORTED: Self = Self(0xff);
+}
+
+impl std::fmt::Debug for PullTerminalStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match *self {
+            Self::SUCCESS => "Success",
+            Self::INVALID_PARAMETERS => "InvalidParameters",
+            Self::OPERATION_FAILED => "OperationFailed",
+            Self::ABORTED => "Aborted",
+            _ => return self.0.fmt(f),
+        };
+        f.write_str(name)
     }
 }
 
@@ -122,26 +124,12 @@ pub(crate) struct PullStatus {
 
 impl PullStatus {
     /// Decodes the packed status returned by the injector.
-    pub(crate) const fn decode(value: InjectorStatusCode) -> Option<Self> {
-        if value >> 24 != 0 {
-            return None;
-        }
-
-        let stage = match PullStage::from_u8(value as u8) {
-            Some(stage) => stage,
-            None => return None,
-        };
-
-        let status = match PullTerminalStatus::from_u8((value >> 16) as u8) {
-            Some(status) => status,
-            None => return None,
-        };
-
-        Some(Self {
-            stage,
-            status,
+    pub(crate) const fn decode(value: InjectorStatusCode) -> Self {
+        Self {
+            stage: PullStage(value as u8),
+            status: PullTerminalStatus((value >> 16) as u8),
             detail: (value >> 8) as u8,
-        })
+        }
     }
 
     /// Returns the stage that produced the result.
@@ -265,13 +253,13 @@ impl PullBridge {
         Some(BridgeResponse::new(response))
     }
 
-    /// Validates and completes the injector from a terminal result packet.
+    /// Completes the injector from a terminal result packet.
     fn exit_response(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         if packet.value3() != 0 || packet.value4() != 0 {
             return None;
         }
 
-        let result = PullStatus::decode(packet.value1())?;
+        let result = PullStatus::decode(packet.value1());
         tracing::debug!(
             stage = ?result.stage(),
             status = ?result.status(),
@@ -379,12 +367,35 @@ mod tests {
         assert_eq!(response.into_result(), Some(packed));
         assert_eq!(
             PullStatus::decode(packed),
-            Some(PullStatus {
-                stage: PullStage::Download,
-                status: PullTerminalStatus::OperationFailed,
+            PullStatus {
+                stage: PullStage::DOWNLOAD,
+                status: PullTerminalStatus::OPERATION_FAILED,
                 detail: 2,
-            })
+            }
         );
+    }
+
+    #[test]
+    fn corrupt_terminal_values_are_preserved() {
+        let bridge = PullBridge::new(PullPolicy::new(0, false, false));
+        let packed = 0xab7c_5de6;
+
+        let result = PullStatus::decode(packed);
+        assert_eq!(
+            result,
+            PullStatus {
+                stage: PullStage(0xe6),
+                status: PullTerminalStatus(0x7c),
+                detail: 0x5d,
+            }
+        );
+        assert_eq!(format!("{:?}", result.stage()), "230");
+        assert_eq!(format!("{:?}", result.status()), "124");
+
+        let response = bridge
+            .respond(packet(METHOD_EXIT).with_value1(packed))
+            .expect("corrupt terminal values must produce a response");
+        assert_eq!(response.into_result(), Some(packed));
     }
 
     #[test]
@@ -394,11 +405,6 @@ mod tests {
         assert!(
             bridge
                 .respond(packet(METHOD_EXTRACT).with_value1(1))
-                .is_none()
-        );
-        assert!(
-            bridge
-                .respond(packet(METHOD_EXIT).with_value1(1 << 24))
                 .is_none()
         );
         assert!(bridge.respond(packet(0x1234)).is_none());
