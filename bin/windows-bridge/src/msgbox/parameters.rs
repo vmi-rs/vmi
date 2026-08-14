@@ -1,3 +1,5 @@
+use crate::recipe::ShellcodeParameters;
+
 /// Host representation of the msgbox shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MsgboxParameters {
@@ -20,14 +22,17 @@ impl MsgboxParameters {
     /// Serializes the byte strings consumed by the shellcode.
     pub(crate) fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        self.append_to(&mut bytes);
+        self.encode(&mut bytes);
         bytes
     }
+}
 
-    /// Appends the title and text as consecutive NUL-terminated byte strings.
-    pub(super) fn append_to(&self, bytes: &mut Vec<u8>) {
-        append_string(bytes, &self.title);
-        append_string(bytes, &self.text);
+impl ShellcodeParameters for MsgboxParameters {
+    const ALIGNMENT: usize = 1;
+
+    fn encode(&self, output: &mut Vec<u8>) {
+        append_string(output, &self.title);
+        append_string(output, &self.text);
     }
 }
 
@@ -40,6 +45,11 @@ fn append_string(bytes: &mut Vec<u8>, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parameter_block_is_byte_aligned() {
+        assert_eq!(<MsgboxParameters as ShellcodeParameters>::ALIGNMENT, 1);
+    }
 
     #[test]
     fn serializes_title_before_text() {
