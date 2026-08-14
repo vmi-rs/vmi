@@ -1,5 +1,6 @@
 mod msgbox;
 mod pull;
+mod recipe;
 
 use std::sync::{Arc, atomic::AtomicBool};
 
