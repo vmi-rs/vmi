@@ -1,13 +1,7 @@
-use vmi::{
-    arch::amd64::Amd64,
-    driver::VmiMemory,
-    os::windows::WindowsOs,
-    utils::injector::Recipe,
-};
-
-use crate::recipe::{ShellcodeRecipeData, shellcode_recipe};
+use vmi::{arch::amd64::Amd64, driver::VmiMemory, os::windows::WindowsOs, utils::injector::Recipe};
 
 use super::parameters::MsgboxParameters;
+use crate::recipe::{ShellcodeRecipeData, shellcode_recipe};
 
 /// Msgbox shellcode embedded from the selected SCFW build artifact.
 const MSGBOX_SHELLCODE: &[u8] = include_bytes!(concat!(

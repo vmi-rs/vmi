@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(parameter_offset, 4);
         assert_eq!(&data.payload[..SHELLCODE.len()], SHELLCODE);
         assert_eq!(data.payload[SHELLCODE.len()], 0);
-        assert_eq!(&data.payload[parameter_offset..parameter_offset + 2], &[0x11, 0x22]);
+        assert_eq!(
+            &data.payload[parameter_offset..parameter_offset + 2],
+            &[0x11, 0x22]
+        );
         assert_eq!(data.payload.len() % PAGE_SIZE, 0);
     }
 

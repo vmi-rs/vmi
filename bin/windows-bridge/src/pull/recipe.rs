@@ -1,13 +1,7 @@
-use vmi::{
-    arch::amd64::Amd64,
-    driver::VmiMemory,
-    os::windows::WindowsOs,
-    utils::injector::Recipe,
-};
-
-use crate::recipe::{ShellcodeRecipeData, shellcode_recipe};
+use vmi::{arch::amd64::Amd64, driver::VmiMemory, os::windows::WindowsOs, utils::injector::Recipe};
 
 use super::parameters::PullParameters;
+use crate::recipe::{ShellcodeRecipeData, shellcode_recipe};
 
 /// Pull shellcode embedded from the selected SCFW build artifact.
 const PULL_SHELLCODE: &[u8] = include_bytes!(concat!(
