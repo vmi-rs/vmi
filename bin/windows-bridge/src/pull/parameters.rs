@@ -1,3 +1,5 @@
+use crate::recipe::ShellcodeParameters;
+
 bitflags::bitflags! {
     /// Operation and optional-field flags consumed by the pull shellcode.
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -88,38 +90,8 @@ impl PullParameters {
     /// Serializes the exact little-endian cursor format consumed by the shellcode.
     pub(crate) fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        self.append_to(&mut bytes);
+        self.encode(&mut bytes);
         bytes
-    }
-
-    /// Appends the exact little-endian cursor format to a byte buffer.
-    pub(super) fn append_to(&self, bytes: &mut Vec<u8>) {
-        bytes.extend_from_slice(&self.flags().bits().to_le_bytes());
-
-        if let Some(download) = &self.download {
-            append_wstring(bytes, &download.url);
-            append_wstring(bytes, &download.path);
-
-            if let Some(extraction_directory) = &download.extraction_directory {
-                append_wstring(bytes, extraction_directory);
-            }
-        }
-
-        if let Some(execution) = &self.execution {
-            append_wstring(bytes, &execution.path);
-
-            if let Some(arguments) = &execution.arguments {
-                append_wstring(bytes, arguments);
-            }
-
-            if let Some(working_directory) = &execution.working_directory {
-                append_wstring(bytes, working_directory);
-            }
-
-            if let Some(show_window) = execution.show_window {
-                bytes.extend_from_slice(&show_window.to_le_bytes());
-            }
-        }
     }
 
     /// Computes the operation and optional-field flags.
@@ -158,6 +130,39 @@ impl PullParameters {
         Self {
             download,
             execution,
+        }
+    }
+}
+
+impl ShellcodeParameters for PullParameters {
+    const ALIGNMENT: usize = std::mem::align_of::<u32>();
+
+    fn encode(&self, output: &mut Vec<u8>) {
+        output.extend_from_slice(&self.flags().bits().to_le_bytes());
+
+        if let Some(download) = &self.download {
+            append_wstring(output, &download.url);
+            append_wstring(output, &download.path);
+
+            if let Some(extraction_directory) = &download.extraction_directory {
+                append_wstring(output, extraction_directory);
+            }
+        }
+
+        if let Some(execution) = &self.execution {
+            append_wstring(output, &execution.path);
+
+            if let Some(arguments) = &execution.arguments {
+                append_wstring(output, arguments);
+            }
+
+            if let Some(working_directory) = &execution.working_directory {
+                append_wstring(output, working_directory);
+            }
+
+            if let Some(show_window) = execution.show_window {
+                output.extend_from_slice(&show_window.to_le_bytes());
+            }
         }
     }
 }
@@ -309,7 +314,17 @@ fn append_wstring(bytes: &mut Vec<u8>, value: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::align_of;
+
     use super::*;
+
+    #[test]
+    fn parameter_block_is_u32_aligned() {
+        assert_eq!(
+            <PullParameters as ShellcodeParameters>::ALIGNMENT,
+            align_of::<u32>()
+        );
+    }
 
     #[test]
     fn serializes_no_operation_request() {
