@@ -10,7 +10,7 @@ use vmi::{
 const PAGE_SIZE: usize = 0x1000;
 
 /// Encodes one shellcode parameter block and declares its required alignment.
-pub(crate) trait ShellcodeParameters {
+pub trait ShellcodeParameters {
     /// Alignment required for the parameter block's first byte.
     const ALIGNMENT: usize;
 
@@ -20,7 +20,7 @@ pub(crate) trait ShellcodeParameters {
 
 /// Data shared by the shellcode injection recipe steps.
 #[derive(Debug)]
-pub(crate) struct ShellcodeRecipeData {
+pub struct ShellcodeRecipeData {
     /// Complete host-side image copied into guest memory.
     payload: Vec<u8>,
 
@@ -64,7 +64,7 @@ impl ShellcodeRecipeData {
 
 /// Builds the shared `VirtualAlloc` to `CreateThread` shellcode recipe.
 #[tracing::instrument(name = "shellcode_recipe", skip_all)]
-pub(crate) fn shellcode_recipe<Driver>(
+pub fn shellcode_recipe<Driver>(
     shellcode: &'static [u8],
     parameters: &impl ShellcodeParameters,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
@@ -159,7 +159,7 @@ where
 }
 
 /// Rounds a byte count up to a power-of-two alignment.
-const fn align_up(mut value: usize, alignment: usize) -> usize {
+fn align_up(mut value: usize, alignment: usize) -> usize {
     debug_assert!(alignment.is_power_of_two());
     value += alignment - 1;
     value & !(alignment - 1)

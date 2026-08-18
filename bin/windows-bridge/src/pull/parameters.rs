@@ -26,18 +26,18 @@ bitflags::bitflags! {
 
 /// Marks a builder without a download operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DownloadDisabled;
+pub struct DownloadDisabled;
 
 /// Holds a download URL until its required destination path is supplied.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DownloadNeedsPath {
+pub struct DownloadNeedsPath {
     /// URL passed unchanged to `URLDownloadToFileW`.
     url: String,
 }
 
 /// Holds a complete download operation and its optional extraction stage.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DownloadEnabled {
+pub struct DownloadEnabled {
     /// URL passed unchanged to `URLDownloadToFileW`.
     url: String,
 
@@ -50,11 +50,11 @@ pub(crate) struct DownloadEnabled {
 
 /// Marks a builder without an execution operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ExecutionDisabled;
+pub struct ExecutionDisabled;
 
 /// Holds a complete execution operation and its optional fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExecutionEnabled {
+pub struct ExecutionEnabled {
     /// Guest executable path, including optional environment variables.
     path: String,
 
@@ -70,7 +70,7 @@ pub(crate) struct ExecutionEnabled {
 
 /// Host representation of the pull shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PullParameters {
+pub struct PullParameters {
     /// Optional complete download operation.
     download: Option<DownloadEnabled>,
 
@@ -80,7 +80,7 @@ pub(crate) struct PullParameters {
 
 impl PullParameters {
     /// Starts a no-op builder with download and execution disabled.
-    pub(crate) const fn builder() -> PullParametersBuilder {
+    pub fn builder() -> PullParametersBuilder {
         PullParametersBuilder {
             download: DownloadDisabled,
             execution: ExecutionDisabled,
@@ -88,7 +88,7 @@ impl PullParameters {
     }
 
     /// Serializes the exact little-endian cursor format consumed by the shellcode.
-    pub(crate) fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
         bytes
@@ -174,8 +174,7 @@ impl ShellcodeParameters for PullParameters {
 /// enabled download must be completed before execution is configured.
 #[derive(Debug)]
 #[must_use]
-pub(crate) struct PullParametersBuilder<Download = DownloadDisabled, Execution = ExecutionDisabled>
-{
+pub struct PullParametersBuilder<Download = DownloadDisabled, Execution = ExecutionDisabled> {
     /// Download operation state.
     download: Download,
 
@@ -185,7 +184,7 @@ pub(crate) struct PullParametersBuilder<Download = DownloadDisabled, Execution =
 
 impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Enables download and supplies its required URL.
-    pub(crate) fn download(
+    pub fn download(
         self,
         url: impl Into<String>,
     ) -> PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
@@ -198,7 +197,7 @@ impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
 
 impl PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
     /// Supplies the required destination path for an enabled download.
-    pub(crate) fn download_path(
+    pub fn download_path(
         self,
         path: impl Into<String>,
     ) -> PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
@@ -215,7 +214,7 @@ impl PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
 
 impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables extraction into the supplied guest directory.
-    pub(crate) fn extraction_directory(mut self, extraction_directory: impl Into<String>) -> Self {
+    pub fn extraction_directory(mut self, extraction_directory: impl Into<String>) -> Self {
         self.download.extraction_directory = Some(extraction_directory.into());
         self
     }
@@ -223,7 +222,7 @@ impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 
 impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Enables execution without a preceding download.
-    pub(crate) fn execute(
+    pub fn execute(
         self,
         path: impl Into<String>,
     ) -> PullParametersBuilder<DownloadDisabled, ExecutionEnabled> {
@@ -241,7 +240,7 @@ impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
 
 impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables execution after a complete download operation.
-    pub(crate) fn execute(
+    pub fn execute(
         self,
         path: impl Into<String>,
     ) -> PullParametersBuilder<DownloadEnabled, ExecutionEnabled> {
@@ -259,19 +258,19 @@ impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 
 impl<Download> PullParametersBuilder<Download, ExecutionEnabled> {
     /// Supplies a present argument slot. An empty string remains meaningful.
-    pub(crate) fn arguments(mut self, arguments: impl Into<String>) -> Self {
+    pub fn arguments(mut self, arguments: impl Into<String>) -> Self {
         self.execution.arguments = Some(arguments.into());
         self
     }
 
     /// Supplies a present guest working directory.
-    pub(crate) fn working_directory(mut self, working_directory: impl Into<String>) -> Self {
+    pub fn working_directory(mut self, working_directory: impl Into<String>) -> Self {
         self.execution.working_directory = Some(working_directory.into());
         self
     }
 
     /// Supplies an explicit Windows `SW_*` display value.
-    pub(crate) fn show_window(mut self, show_window: i32) -> Self {
+    pub fn show_window(mut self, show_window: i32) -> Self {
         self.execution.show_window = Some(show_window);
         self
     }
@@ -279,28 +278,28 @@ impl<Download> PullParametersBuilder<Download, ExecutionEnabled> {
 
 impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Finishes a no-op request.
-    pub(crate) fn build(self) -> PullParameters {
+    pub fn build(self) -> PullParameters {
         PullParameters::from_states(None, None)
     }
 }
 
 impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Finishes a request containing only download and optional extraction.
-    pub(crate) fn build(self) -> PullParameters {
+    pub fn build(self) -> PullParameters {
         PullParameters::from_states(Some(self.download), None)
     }
 }
 
 impl PullParametersBuilder<DownloadDisabled, ExecutionEnabled> {
     /// Finishes a request containing only execution.
-    pub(crate) fn build(self) -> PullParameters {
+    pub fn build(self) -> PullParameters {
         PullParameters::from_states(None, Some(self.execution))
     }
 }
 
 impl PullParametersBuilder<DownloadEnabled, ExecutionEnabled> {
     /// Finishes a request containing download and execution operations.
-    pub(crate) fn build(self) -> PullParameters {
+    pub fn build(self) -> PullParameters {
         PullParameters::from_states(Some(self.download), Some(self.execution))
     }
 }

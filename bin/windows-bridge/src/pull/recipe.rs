@@ -11,7 +11,7 @@ const PULL_SHELLCODE: &[u8] = include_bytes!(concat!(
 
 /// Builds the pull shellcode injection recipe.
 #[tracing::instrument(name = "pull_recipe", skip_all)]
-pub(crate) fn pull_recipe<Driver>(
+pub fn pull_recipe<Driver>(
     parameters: &PullParameters,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
 where

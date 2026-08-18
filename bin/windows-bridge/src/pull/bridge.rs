@@ -3,45 +3,18 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiRead,
     os::windows::WindowsOs,
+    trace::Hex,
     utils::{
-        bridge::{BridgeContract, BridgeHandler, BridgePacket, BridgeResponse},
+        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
         injector::InjectorStatusCode,
     },
 };
 
-/// Little-endian ASCII `VMIB` bridge signature.
-const BRIDGE_MAGIC: u32 = 0x4249_4d56;
-
-/// Pull bridge request identifier.
-const REQUEST_PULL: u16 = 0x0001;
-
-/// Little-endian ASCII `VMI-RS3!` response signature.
-const VERIFY_VALUE3: u64 = 0x2133_5352_2d49_4d56;
-
-/// Little-endian ASCII `VMI-RS4!` response signature.
-const VERIFY_VALUE4: u64 = 0x2134_5352_2d49_4d56;
-
-/// Download readiness and retry method.
-const METHOD_DOWNLOAD: u16 = 0x0001;
-
-/// Extraction policy gate method.
-const METHOD_EXTRACT: u16 = 0x0002;
-
-/// Execution policy gate method.
-const METHOD_EXECUTE: u16 = 0x0003;
-
-/// Terminal result method.
-const METHOD_EXIT: u16 = 0xffff;
-
-/// Allows the shellcode to continue its current stage.
-const RESPONSE_CONTINUE: u64 = 0x0000_0000;
-
-/// Aborts the shellcode's current stage.
-const RESPONSE_ABORT: u64 = 0xffff_ffff;
+use crate::bridge::{METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, impl_bridge_contract};
 
 /// Pull operation stage encoded in a terminal status.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PullStage(u8);
+struct PullStage(u8);
 
 impl PullStage {
     /// No operation ran.
@@ -80,7 +53,7 @@ impl std::fmt::Debug for PullStage {
 
 /// Stable terminal status encoded by the pull shellcode.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PullTerminalStatus(u8);
+struct PullTerminalStatus(u8);
 
 impl PullTerminalStatus {
     /// The requested stages completed successfully.
@@ -111,7 +84,7 @@ impl std::fmt::Debug for PullTerminalStatus {
 
 /// Decoded status returned by the injector after a terminal bridge packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PullStatus {
+struct PullStatus {
     /// Stage that produced the terminal result.
     stage: PullStage,
 
@@ -124,7 +97,7 @@ pub(crate) struct PullStatus {
 
 impl PullStatus {
     /// Decodes the packed status returned by the injector.
-    pub(crate) const fn decode(value: InjectorStatusCode) -> Self {
+    fn decode(value: InjectorStatusCode) -> Self {
         Self {
             stage: PullStage(value as u8),
             status: PullTerminalStatus((value >> 16) as u8),
@@ -133,24 +106,24 @@ impl PullStatus {
     }
 
     /// Returns the stage that produced the result.
-    pub(crate) const fn stage(self) -> PullStage {
+    fn stage(self) -> PullStage {
         self.stage
     }
 
     /// Returns the stable terminal status.
-    pub(crate) const fn status(self) -> PullTerminalStatus {
+    fn status(self) -> PullTerminalStatus {
         self.status
     }
 
     /// Returns the stage-specific detail code.
-    pub(crate) const fn detail(self) -> u8 {
+    fn detail(self) -> u8 {
         self.detail
     }
 }
 
 /// Host-side limits and permissions for a pull request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PullPolicy {
+struct PullPolicy {
     /// Number of retries allowed after failed download attempts.
     max_download_retries: u64,
 
@@ -163,11 +136,7 @@ pub(crate) struct PullPolicy {
 
 impl PullPolicy {
     /// Creates an explicit pull policy.
-    pub(crate) const fn new(
-        max_download_retries: u64,
-        allow_extract: bool,
-        allow_execute: bool,
-    ) -> Self {
+    fn new(max_download_retries: u64, allow_extract: bool, allow_execute: bool) -> Self {
         Self {
             max_download_retries,
             allow_extract,
@@ -178,37 +147,56 @@ impl PullPolicy {
 
 /// Handles pull stage gates and the terminal shellcode result.
 #[derive(Debug)]
-pub(crate) struct PullBridge {
+struct PullBridge {
     /// Policy applied to shellcode requests.
     policy: PullPolicy,
 }
 
+impl_bridge_contract!(PullBridge);
+
 impl PullBridge {
+    /// Download readiness and retry method.
+    const METHOD_DOWNLOAD: u16 = 0x0001;
+
+    /// Extraction policy gate method.
+    const METHOD_EXTRACT: u16 = 0x0002;
+
+    /// Execution policy gate method.
+    const METHOD_EXECUTE: u16 = 0x0003;
+
+    /// Terminal result method.
+    const METHOD_EXIT: u16 = METHOD_EXIT;
+
     /// Creates a pull bridge with the supplied host policy.
-    pub(crate) const fn new(policy: PullPolicy) -> Self {
+    fn new(policy: PullPolicy) -> Self {
         Self { policy }
     }
 
     /// Produces the protocol response for one pull packet.
-    fn respond(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         match packet.method() {
-            METHOD_DOWNLOAD => self.download_response(packet),
-            METHOD_EXTRACT => self.stage_response(packet, self.policy.allow_extract, "extract"),
-            METHOD_EXECUTE => self.stage_response(packet, self.policy.allow_execute, "execute"),
-            METHOD_EXIT => self.exit_response(packet),
-            _ => None,
+            Self::METHOD_DOWNLOAD => self.handle_download(packet),
+            Self::METHOD_EXTRACT => self.handle_extract(packet),
+            Self::METHOD_EXECUTE => self.handle_execute(packet),
+            Self::METHOD_EXIT => self.handle_exit(packet),
+            _ => {
+                tracing::error!(
+                    request = %Hex(packet.request()),
+                    method = %Hex(packet.method()),
+                    value1 = %Hex(packet.value1()),
+                    value2 = %Hex(packet.value2()),
+                    value3 = %Hex(packet.value3()),
+                    value4 = %Hex(packet.value4()),
+                    "unknown pull bridge method"
+                );
+
+                None
+            }
         }
     }
 
     /// Applies the download retry limit to a readiness or failure report.
-    fn download_response(
-        &self,
-        packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>> {
-        if packet.value3() != 0 || packet.value4() != 0 {
-            return None;
-        }
-
+    fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         let attempt = packet.value1();
         let response = if attempt == 0 || attempt <= self.policy.max_download_retries {
             RESPONSE_CONTINUE
@@ -226,6 +214,15 @@ impl PullBridge {
 
         Some(BridgeResponse::new(response))
     }
+    /// Applies the extraction policy to an extraction gate.
+    fn handle_extract(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+        self.stage_response(packet, self.policy.allow_extract, "extract")
+    }
+
+    /// Applies the execution policy to an execution gate.
+    fn handle_execute(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+        self.stage_response(packet, self.policy.allow_execute, "execute")
+    }
 
     /// Applies an independent host permission to an extraction or execution gate.
     fn stage_response(
@@ -234,14 +231,6 @@ impl PullBridge {
         allowed: bool,
         stage: &'static str,
     ) -> Option<BridgeResponse<InjectorStatusCode>> {
-        if packet.value1() != 0
-            || packet.value2() != 0
-            || packet.value3() != 0
-            || packet.value4() != 0
-        {
-            return None;
-        }
-
         let response = if allowed {
             RESPONSE_CONTINUE
         }
@@ -254,12 +243,9 @@ impl PullBridge {
     }
 
     /// Completes the injector from a terminal result packet.
-    fn exit_response(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        if packet.value3() != 0 || packet.value4() != 0 {
-            return None;
-        }
-
+    fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         let result = PullStatus::decode(packet.value1());
+
         tracing::debug!(
             stage = ?result.stage(),
             status = ?result.status(),
@@ -272,17 +258,12 @@ impl PullBridge {
     }
 }
 
-impl BridgeContract for PullBridge {
-    const MAGIC: Option<u32> = Some(BRIDGE_MAGIC);
-    const VERIFY_VALUE3: Option<u64> = Some(VERIFY_VALUE3);
-    const VERIFY_VALUE4: Option<u64> = Some(VERIFY_VALUE4);
-}
-
 impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for PullBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
-    const REQUEST: u16 = REQUEST_PULL;
+    /// Pull bridge request identifier.
+    const REQUEST: u16 = 0x0001;
 
     fn handle(
         &mut self,
@@ -294,17 +275,20 @@ where
             <Self as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST
         );
 
-        self.respond(packet)
+        self.handle_packet(packet)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use vmi::utils::bridge::BridgeContract;
+
     use super::*;
+    use crate::bridge::BRIDGE_MAGIC;
 
     /// Creates a packet routed to the pull handler.
     fn packet(method: u16) -> BridgePacket {
-        BridgePacket::new(BRIDGE_MAGIC, REQUEST_PULL, method)
+        BridgePacket::new(BRIDGE_MAGIC, 0x0001, method)
     }
 
     #[test]
@@ -326,13 +310,13 @@ mod tests {
 
         for attempt in [0, 1, 2] {
             let response = bridge
-                .respond(packet(METHOD_DOWNLOAD).with_value1(attempt))
+                .handle_packet(packet(PullBridge::METHOD_DOWNLOAD).with_value1(attempt))
                 .expect("valid download packet");
             assert_eq!(response.value1(), Some(RESPONSE_CONTINUE));
         }
 
         let response = bridge
-            .respond(packet(METHOD_DOWNLOAD).with_value1(3))
+            .handle_packet(packet(PullBridge::METHOD_DOWNLOAD).with_value1(3))
             .expect("valid download packet");
         assert_eq!(response.value1(), Some(RESPONSE_ABORT));
     }
@@ -342,12 +326,12 @@ mod tests {
         let bridge = PullBridge::new(PullPolicy::new(0, false, true));
 
         let extract = bridge
-            .respond(packet(METHOD_EXTRACT))
+            .handle_packet(packet(PullBridge::METHOD_EXTRACT))
             .expect("valid extract packet");
         assert_eq!(extract.value1(), Some(RESPONSE_ABORT));
 
         let execute = bridge
-            .respond(packet(METHOD_EXECUTE))
+            .handle_packet(packet(PullBridge::METHOD_EXECUTE))
             .expect("valid execute packet");
         assert_eq!(execute.value1(), Some(RESPONSE_CONTINUE));
     }
@@ -357,7 +341,7 @@ mod tests {
         let bridge = PullBridge::new(PullPolicy::new(0, false, false));
         let packed = 0x00fe_0203;
         let response = bridge
-            .respond(
+            .handle_packet(
                 packet(METHOD_EXIT)
                     .with_value1(packed)
                     .with_value2(0x8000_4005),
@@ -393,20 +377,8 @@ mod tests {
         assert_eq!(format!("{:?}", result.status()), "124");
 
         let response = bridge
-            .respond(packet(METHOD_EXIT).with_value1(packed))
+            .handle_packet(packet(METHOD_EXIT).with_value1(packed))
             .expect("corrupt terminal values must produce a response");
         assert_eq!(response.into_result(), Some(packed));
-    }
-
-    #[test]
-    fn malformed_packets_produce_no_response() {
-        let bridge = PullBridge::new(PullPolicy::new(0, true, true));
-
-        assert!(
-            bridge
-                .respond(packet(METHOD_EXTRACT).with_value1(1))
-                .is_none()
-        );
-        assert!(bridge.respond(packet(0x1234)).is_none());
     }
 }

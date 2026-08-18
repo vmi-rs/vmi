@@ -29,6 +29,7 @@ doc_overindented_list_items = "allow"
 
 [workspace.dependencies]
 bitflags = "2"
+clap = "4"
 elf = "0.8"
 indexmap = "2"
 kdmp-parser = "0.8"

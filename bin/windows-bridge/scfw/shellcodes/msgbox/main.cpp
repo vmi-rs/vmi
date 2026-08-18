@@ -69,7 +69,12 @@ entry(
     proto::reader parameters{ argument1 };
     const auto title = parameters.next_string();
     const auto text = parameters.next_string();
-    const auto result = MessageBoxA(NULL, text, title, MB_OK);
+    const auto result = MessageBoxA(
+        NULL,
+        text,
+        title,
+        MB_OK | MB_SETFOREGROUND | MB_TOPMOST
+        );
 
     bridge::exit(result);
 }

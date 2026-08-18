@@ -11,6 +11,7 @@ pedantic = "allow"
 [dependencies]
 anyhow = { workspace = true }
 bitflags = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 signal-hook = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

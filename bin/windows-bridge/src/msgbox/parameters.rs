@@ -2,7 +2,7 @@ use crate::recipe::ShellcodeParameters;
 
 /// Host representation of the msgbox shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MsgboxParameters {
+pub struct MsgboxParameters {
     /// Window title passed to `MessageBoxA`.
     title: String,
 
@@ -12,7 +12,7 @@ pub(crate) struct MsgboxParameters {
 
 impl MsgboxParameters {
     /// Creates a message box request.
-    pub(crate) fn new(title: impl Into<String>, text: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             title: title.into(),
             text: text.into(),
@@ -20,7 +20,7 @@ impl MsgboxParameters {
     }
 
     /// Serializes the byte strings consumed by the shellcode.
-    pub(crate) fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
         bytes

@@ -1,8 +1,5 @@
-/// Implements the msgbox bridge contract.
-pub(crate) mod bridge;
+mod bridge;
+mod parameters;
+mod recipe;
 
-/// Serializes the msgbox shellcode's sequential parameters.
-pub(crate) mod parameters;
-
-/// Builds the shellcode allocation and injection recipe.
-pub(crate) mod recipe;
+pub(crate) use self::{bridge::MsgboxBridge, parameters::MsgboxParameters, recipe::msgbox_recipe};
