@@ -84,7 +84,7 @@ impl std::fmt::Debug for PullTerminalStatus {
 
 /// Decoded status returned by the injector after a terminal bridge packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PullStatus {
+pub(crate) struct PullStatus {
     /// Stage that produced the terminal result.
     stage: PullStage,
 
@@ -97,12 +97,17 @@ struct PullStatus {
 
 impl PullStatus {
     /// Decodes the packed status returned by the injector.
-    fn decode(value: InjectorStatusCode) -> Self {
+    pub(crate) fn decode(value: InjectorStatusCode) -> Self {
         Self {
             stage: PullStage(value as u8),
             status: PullTerminalStatus((value >> 16) as u8),
             detail: (value >> 8) as u8,
         }
+    }
+
+    /// Returns whether all requested stages completed successfully.
+    pub(crate) fn is_success(self) -> bool {
+        self.status == PullTerminalStatus::SUCCESS
     }
 
     /// Returns the stage that produced the result.
@@ -123,7 +128,7 @@ impl PullStatus {
 
 /// Host-side limits and permissions for a pull request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PullPolicy {
+pub(crate) struct PullPolicy {
     /// Number of retries allowed after failed download attempts.
     max_download_retries: u64,
 
@@ -136,7 +141,7 @@ struct PullPolicy {
 
 impl PullPolicy {
     /// Creates an explicit pull policy.
-    fn new(max_download_retries: u64, allow_extract: bool, allow_execute: bool) -> Self {
+    pub(crate) fn new(max_download_retries: u64, allow_extract: bool, allow_execute: bool) -> Self {
         Self {
             max_download_retries,
             allow_extract,
@@ -147,7 +152,7 @@ impl PullPolicy {
 
 /// Handles pull stage gates and the terminal shellcode result.
 #[derive(Debug)]
-struct PullBridge {
+pub(crate) struct PullBridge {
     /// Policy applied to shellcode requests.
     policy: PullPolicy,
 }
@@ -168,7 +173,7 @@ impl PullBridge {
     const METHOD_EXIT: u16 = METHOD_EXIT;
 
     /// Creates a pull bridge with the supplied host policy.
-    fn new(policy: PullPolicy) -> Self {
+    pub(crate) fn new(policy: PullPolicy) -> Self {
         Self { policy }
     }
 
@@ -227,7 +232,7 @@ impl PullBridge {
     /// Applies an independent host permission to an extraction or execution gate.
     fn stage_response(
         &self,
-        packet: BridgePacket,
+        _packet: BridgePacket,
         allowed: bool,
         stage: &'static str,
     ) -> Option<BridgeResponse<InjectorStatusCode>> {
