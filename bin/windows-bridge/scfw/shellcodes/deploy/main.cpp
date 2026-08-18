@@ -1,5 +1,5 @@
 //////////////////////////////////////////////////////////////////////////
-// Pull shellcode protocol and execution model.
+// Deploy shellcode protocol and execution model.
 //////////////////////////////////////////////////////////////////////////
 //
 // This shellcode receives a packed parameter buffer through entry's first
@@ -158,7 +158,7 @@ DEFINE_GUID(IID_IShellDispatch, 0xD8F015C0, 0xC278, 0x11CE, 0xA4, 0x9E, 0x44, 0x
 
 // Bridge protocol signatures encoded as little-endian ASCII.
 constexpr uint32_t  BRIDGE_MAGIC = 0x42494d56;             // "VMIB"
-constexpr uint16_t  PULL_REQUEST = 0x0001;
+constexpr uint16_t  DEPLOY_REQUEST = 0x0001;
 constexpr uintptr_t BRIDGE_VERIFY_VALUE3 = 0x213353522d494d56; // "VMI-RS3!"
 constexpr uintptr_t BRIDGE_VERIFY_VALUE4 = 0x213453522d494d56; // "VMI-RS4!"
 
@@ -214,7 +214,7 @@ enum class stage : uint8_t {
 using bridge_client = proto::bridge::client<
     &proto::bridge::bridge_xen_vmcall,
     BRIDGE_MAGIC,
-    PULL_REQUEST,
+    DEPLOY_REQUEST,
     BRIDGE_VERIFY_VALUE3,
     BRIDGE_VERIFY_VALUE4
     >;

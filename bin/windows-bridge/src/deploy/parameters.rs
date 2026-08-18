@@ -1,7 +1,7 @@
 use crate::recipe::ShellcodeParameters;
 
 bitflags::bitflags! {
-    /// Operation and optional-field flags consumed by the pull shellcode.
+    /// Operation and optional-field flags consumed by the deploy shellcode.
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     struct ParameterFlags: u32 {
         /// Enables archive extraction after a download.
@@ -68,9 +68,9 @@ pub struct ExecutionEnabled {
     show_window: Option<i32>,
 }
 
-/// Host representation of the pull shellcode's sequential parameter block.
+/// Host representation of the deploy shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PullParameters {
+pub struct DeployParameters {
     /// Optional complete download operation.
     download: Option<DownloadEnabled>,
 
@@ -78,10 +78,10 @@ pub struct PullParameters {
     execution: Option<ExecutionEnabled>,
 }
 
-impl PullParameters {
+impl DeployParameters {
     /// Starts a no-op builder with download and execution disabled.
-    pub fn builder() -> PullParametersBuilder {
-        PullParametersBuilder {
+    pub fn builder() -> DeployParametersBuilder {
+        DeployParametersBuilder {
             download: DownloadDisabled,
             execution: ExecutionDisabled,
         }
@@ -134,7 +134,7 @@ impl PullParameters {
     }
 }
 
-impl ShellcodeParameters for PullParameters {
+impl ShellcodeParameters for DeployParameters {
     const ALIGNMENT: usize = std::mem::align_of::<u32>();
 
     fn encode(&self, output: &mut Vec<u8>) {
@@ -167,14 +167,14 @@ impl ShellcodeParameters for PullParameters {
     }
 }
 
-/// Builds one pull request while tracking enabled operations in its type.
+/// Builds one deploy request while tracking enabled operations in its type.
 ///
 /// Callers must supply strings accepted by the guest APIs. Values are not validated.
 /// Download setters are unavailable after [`execute`](Self::execute), so an
 /// enabled download must be completed before execution is configured.
 #[derive(Debug)]
 #[must_use]
-pub struct PullParametersBuilder<Download = DownloadDisabled, Execution = ExecutionDisabled> {
+pub struct DeployParametersBuilder<Download = DownloadDisabled, Execution = ExecutionDisabled> {
     /// Download operation state.
     download: Download,
 
@@ -182,26 +182,26 @@ pub struct PullParametersBuilder<Download = DownloadDisabled, Execution = Execut
     execution: Execution,
 }
 
-impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Enables download and supplies its required URL.
     pub fn download(
         self,
         url: impl Into<String>,
-    ) -> PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
-        PullParametersBuilder {
+    ) -> DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
+        DeployParametersBuilder {
             download: DownloadNeedsPath { url: url.into() },
             execution: self.execution,
         }
     }
 }
 
-impl PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
     /// Supplies the required destination path for an enabled download.
     pub fn download_path(
         self,
         path: impl Into<String>,
-    ) -> PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
-        PullParametersBuilder {
+    ) -> DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
+        DeployParametersBuilder {
             download: DownloadEnabled {
                 url: self.download.url,
                 path: path.into(),
@@ -212,7 +212,7 @@ impl PullParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
     }
 }
 
-impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables extraction into the supplied guest directory.
     pub fn extraction_directory(mut self, extraction_directory: impl Into<String>) -> Self {
         self.download.extraction_directory = Some(extraction_directory.into());
@@ -220,13 +220,13 @@ impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     }
 }
 
-impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Enables execution without a preceding download.
     pub fn execute(
         self,
         path: impl Into<String>,
-    ) -> PullParametersBuilder<DownloadDisabled, ExecutionEnabled> {
-        PullParametersBuilder {
+    ) -> DeployParametersBuilder<DownloadDisabled, ExecutionEnabled> {
+        DeployParametersBuilder {
             download: self.download,
             execution: ExecutionEnabled {
                 path: path.into(),
@@ -238,13 +238,13 @@ impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     }
 }
 
-impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables execution after a complete download operation.
     pub fn execute(
         self,
         path: impl Into<String>,
-    ) -> PullParametersBuilder<DownloadEnabled, ExecutionEnabled> {
-        PullParametersBuilder {
+    ) -> DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
+        DeployParametersBuilder {
             download: self.download,
             execution: ExecutionEnabled {
                 path: path.into(),
@@ -256,7 +256,7 @@ impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     }
 }
 
-impl<Download> PullParametersBuilder<Download, ExecutionEnabled> {
+impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     /// Supplies a present argument slot. An empty string remains meaningful.
     pub fn arguments(mut self, arguments: impl Into<String>) -> Self {
         self.execution.arguments = Some(arguments.into());
@@ -276,31 +276,31 @@ impl<Download> PullParametersBuilder<Download, ExecutionEnabled> {
     }
 }
 
-impl PullParametersBuilder<DownloadDisabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadDisabled, ExecutionDisabled> {
     /// Finishes a no-op request.
-    pub fn build(self) -> PullParameters {
-        PullParameters::from_states(None, None)
+    pub fn build(self) -> DeployParameters {
+        DeployParameters::from_states(None, None)
     }
 }
 
-impl PullParametersBuilder<DownloadEnabled, ExecutionDisabled> {
+impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Finishes a request containing only download and optional extraction.
-    pub fn build(self) -> PullParameters {
-        PullParameters::from_states(Some(self.download), None)
+    pub fn build(self) -> DeployParameters {
+        DeployParameters::from_states(Some(self.download), None)
     }
 }
 
-impl PullParametersBuilder<DownloadDisabled, ExecutionEnabled> {
+impl DeployParametersBuilder<DownloadDisabled, ExecutionEnabled> {
     /// Finishes a request containing only execution.
-    pub fn build(self) -> PullParameters {
-        PullParameters::from_states(None, Some(self.execution))
+    pub fn build(self) -> DeployParameters {
+        DeployParameters::from_states(None, Some(self.execution))
     }
 }
 
-impl PullParametersBuilder<DownloadEnabled, ExecutionEnabled> {
+impl DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
     /// Finishes a request containing download and execution operations.
-    pub fn build(self) -> PullParameters {
-        PullParameters::from_states(Some(self.download), Some(self.execution))
+    pub fn build(self) -> DeployParameters {
+        DeployParameters::from_states(Some(self.download), Some(self.execution))
     }
 }
 
@@ -320,21 +320,21 @@ mod tests {
     #[test]
     fn parameter_block_is_u32_aligned() {
         assert_eq!(
-            <PullParameters as ShellcodeParameters>::ALIGNMENT,
+            <DeployParameters as ShellcodeParameters>::ALIGNMENT,
             align_of::<u32>()
         );
     }
 
     #[test]
     fn serializes_no_operation_request() {
-        let bytes = PullParameters::builder().build().serialize();
+        let bytes = DeployParameters::builder().build().serialize();
 
         assert_eq!(bytes, [0, 0, 0, 0]);
     }
 
     #[test]
     fn serializes_all_conditional_slots_in_cursor_order() {
-        let parameters = PullParameters::builder()
+        let parameters = DeployParameters::builder()
             .download("u")
             .download_path("d")
             .extraction_directory("x")
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn builds_execute_only_parameters() {
-        let bytes = PullParameters::builder()
+        let bytes = DeployParameters::builder()
             .execute("program.exe")
             .build()
             .serialize();

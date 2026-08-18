@@ -1,6 +1,6 @@
 mod bridge;
+mod deploy;
 mod msgbox;
-mod pull;
 mod recipe;
 
 use std::sync::{Arc, atomic::AtomicBool};
@@ -18,8 +18,8 @@ use vmi::{
 };
 
 use crate::{
+    deploy::{DeployBridge, DeployParameters, DeployPolicy, DeployStatus, deploy_recipe},
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
-    pull::{PullBridge, PullParameters, PullPolicy, PullStatus, pull_recipe},
 };
 
 #[derive(Debug, Parser)]
@@ -36,7 +36,7 @@ enum Command {
     Msgbox(MsgboxArguments),
 
     /// Downloads, extracts, or executes content in a Windows process.
-    Pull(PullArguments),
+    Deploy(DeployArguments),
 }
 
 #[derive(Debug, Args)]
@@ -62,8 +62,8 @@ impl MsgboxArguments {
 }
 
 #[derive(Debug, Args)]
-struct PullArguments {
-    /// Name of the process in which the pull shellcode runs.
+struct DeployArguments {
+    /// Name of the process in which the deploy shellcode runs.
     #[arg(long, default_value = "explorer.exe")]
     process: String,
 
@@ -101,20 +101,20 @@ struct PullArguments {
 }
 
 #[derive(Debug)]
-struct PullRequest {
-    /// Name of the process in which the pull shellcode runs.
+struct DeployRequest {
+    /// Name of the process in which the deploy shellcode runs.
     process: String,
 
-    /// Serialized operations consumed by the pull shellcode.
-    parameters: PullParameters,
+    /// Serialized operations consumed by the deploy shellcode.
+    parameters: DeployParameters,
 
-    /// Host policy applied to pull stage gates.
-    policy: PullPolicy,
+    /// Host policy applied to deploy stage gates.
+    policy: DeployPolicy,
 }
 
-impl PullArguments {
-    /// Converts CLI arguments into a pull request.
-    fn into_request(self) -> PullRequest {
+impl DeployArguments {
+    /// Converts CLI arguments into a deploy request.
+    fn into_request(self) -> DeployRequest {
         let Self {
             process,
             url,
@@ -127,16 +127,16 @@ impl PullArguments {
             max_download_retries,
         } = self;
 
-        let policy = PullPolicy::new(
+        let policy = DeployPolicy::new(
             max_download_retries,
             extraction_directory.is_some(),
             execute.is_some(),
         );
 
         let parameters = match (url, execute) {
-            (None, None) => PullParameters::builder().build(),
+            (None, None) => DeployParameters::builder().build(),
             (None, Some(executable)) => {
-                let mut builder = PullParameters::builder().execute(executable);
+                let mut builder = DeployParameters::builder().execute(executable);
                 if let Some(arguments) = arguments {
                     builder = builder.arguments(arguments);
                 }
@@ -149,7 +149,7 @@ impl PullArguments {
                 builder.build()
             }
             (Some(url), None) => {
-                let mut builder = PullParameters::builder()
+                let mut builder = DeployParameters::builder()
                     .download(url)
                     .download_path(download_path.expect("download path required by clap"));
                 if let Some(extraction_directory) = extraction_directory {
@@ -158,7 +158,7 @@ impl PullArguments {
                 builder.build()
             }
             (Some(url), Some(executable)) => {
-                let mut download = PullParameters::builder()
+                let mut download = DeployParameters::builder()
                     .download(url)
                     .download_path(download_path.expect("download path required by clap"));
                 if let Some(extraction_directory) = extraction_directory {
@@ -179,7 +179,7 @@ impl PullArguments {
             }
         };
 
-        PullRequest {
+        DeployRequest {
             process,
             parameters,
             policy,
@@ -193,10 +193,10 @@ fn validate_msgbox_result(result: u64) -> Result<u64, Error> {
     Ok(result)
 }
 
-/// Decodes and validates a terminal pull status.
-fn validate_pull_result(result: u64) -> Result<PullStatus, Error> {
-    let status = PullStatus::decode(result);
-    anyhow::ensure!(status.is_success(), "pull failed: {status:?}");
+/// Decodes and validates a terminal deploy status.
+fn validate_deploy_result(result: u64) -> Result<DeployStatus, Error> {
+    let status = DeployStatus::decode(result);
+    anyhow::ensure!(status.is_success(), "deploy failed: {status:?}");
     Ok(status)
 }
 
@@ -245,9 +245,9 @@ fn run_msgbox(session: &WindowsVmiSession<'_>, arguments: MsgboxArguments) -> Re
     Ok(())
 }
 
-/// Runs a pull injection.
-fn run_pull(session: &WindowsVmiSession<'_>, arguments: PullArguments) -> Result<(), Error> {
-    let PullRequest {
+/// Runs a deploy injection.
+fn run_deploy(session: &WindowsVmiSession<'_>, arguments: DeployArguments) -> Result<(), Error> {
+    let DeployRequest {
         process,
         parameters,
         policy,
@@ -255,18 +255,18 @@ fn run_pull(session: &WindowsVmiSession<'_>, arguments: PullArguments) -> Result
     let process_id = find_process_id(session, &process)?;
     let result = session
         .handle(|session| {
-            InjectorHandler::<_, UserMode, _, PullBridge>::with_bridge(
+            InjectorHandler::<_, UserMode, _, DeployBridge>::with_bridge(
                 session,
-                PullBridge::new(policy),
-                pull_recipe(&parameters),
+                DeployBridge::new(policy),
+                deploy_recipe(&parameters),
             )?
             .with_pid(process_id)
         })?
-        .context("pull injection interrupted")?
-        .map_err(|packet| anyhow::anyhow!("unhandled pull bridge packet: {packet:?}"))?;
-    let status = validate_pull_result(result)?;
+        .context("deploy injection interrupted")?
+        .map_err(|packet| anyhow::anyhow!("unhandled deploy bridge packet: {packet:?}"))?;
+    let status = validate_deploy_result(result)?;
 
-    tracing::info!(?status, "pull completed");
+    tracing::info!(?status, "deploy completed");
     Ok(())
 }
 
@@ -317,7 +317,7 @@ fn main() -> Result<(), Error> {
 
     match cli.command {
         Command::Msgbox(arguments) => run_msgbox(&session, arguments),
-        Command::Pull(arguments) => run_pull(&session, arguments),
+        Command::Deploy(arguments) => run_deploy(&session, arguments),
     }
 }
 
@@ -341,11 +341,11 @@ mod tests {
     }
 
     #[test]
-    fn pull_command_uses_defaults() {
-        let cli = Cli::try_parse_from(["windows-bridge", "pull"]).unwrap();
-        let Command::Pull(arguments) = cli.command
+    fn deploy_command_uses_defaults() {
+        let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
+        let Command::Deploy(arguments) = cli.command
         else {
-            panic!("expected pull command");
+            panic!("expected deploy command");
         };
 
         assert_eq!(arguments.process, "explorer.exe");
@@ -360,33 +360,33 @@ mod tests {
     }
 
     #[test]
-    fn pull_command_builds_no_operation_request() {
-        let cli = Cli::try_parse_from(["windows-bridge", "pull"]).unwrap();
-        let Command::Pull(arguments) = cli.command
+    fn deploy_command_builds_no_operation_request() {
+        let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
+        let Command::Deploy(arguments) = cli.command
         else {
-            panic!("expected pull command");
+            panic!("expected deploy command");
         };
 
         let request = arguments.into_request();
 
         assert_eq!(request.parameters.serialize(), [0, 0, 0, 0]);
-        assert_eq!(request.policy, PullPolicy::new(0, false, false));
+        assert_eq!(request.policy, DeployPolicy::new(0, false, false));
     }
 
     #[test]
-    fn pull_command_maps_download_only_request() {
+    fn deploy_command_maps_download_only_request() {
         let cli = Cli::try_parse_from([
             "windows-bridge",
-            "pull",
+            "deploy",
             "--url",
             "u",
             "--download-path",
             "d",
         ])
         .unwrap();
-        let Command::Pull(arguments) = cli.command
+        let Command::Deploy(arguments) = cli.command
         else {
-            panic!("expected pull command");
+            panic!("expected deploy command");
         };
 
         let request = arguments.into_request();
@@ -399,14 +399,14 @@ mod tests {
                 b'd', 0, 0, 0, // download path
             ]
         );
-        assert_eq!(request.policy, PullPolicy::new(0, false, false));
+        assert_eq!(request.policy, DeployPolicy::new(0, false, false));
     }
 
     #[test]
-    fn pull_command_maps_execute_only_request() {
+    fn deploy_command_maps_execute_only_request() {
         let cli = Cli::try_parse_from([
             "windows-bridge",
-            "pull",
+            "deploy",
             "--execute",
             "e",
             "--arguments",
@@ -417,9 +417,9 @@ mod tests {
             "5",
         ])
         .unwrap();
-        let Command::Pull(arguments) = cli.command
+        let Command::Deploy(arguments) = cli.command
         else {
-            panic!("expected pull command");
+            panic!("expected deploy command");
         };
 
         let request = arguments.into_request();
@@ -434,18 +434,18 @@ mod tests {
                 5, 0, 0, 0, // show window
             ]
         );
-        assert_eq!(request.policy, PullPolicy::new(0, false, true));
+        assert_eq!(request.policy, DeployPolicy::new(0, false, true));
     }
 
     #[test]
-    fn pull_command_rejects_incomplete_operations() {
+    fn deploy_command_rejects_incomplete_operations() {
         let incomplete = [
-            &["windows-bridge", "pull", "--url", "u"][..],
-            &["windows-bridge", "pull", "--download-path", "d"][..],
-            &["windows-bridge", "pull", "--extract-to", "x"][..],
-            &["windows-bridge", "pull", "--arguments", "a"][..],
-            &["windows-bridge", "pull", "--working-directory", "w"][..],
-            &["windows-bridge", "pull", "--show-window", "1"][..],
+            &["windows-bridge", "deploy", "--url", "u"][..],
+            &["windows-bridge", "deploy", "--download-path", "d"][..],
+            &["windows-bridge", "deploy", "--extract-to", "x"][..],
+            &["windows-bridge", "deploy", "--arguments", "a"][..],
+            &["windows-bridge", "deploy", "--working-directory", "w"][..],
+            &["windows-bridge", "deploy", "--show-window", "1"][..],
         ];
 
         for arguments in incomplete {
@@ -454,10 +454,10 @@ mod tests {
     }
 
     #[test]
-    fn pull_command_maps_combined_request() {
+    fn deploy_command_maps_combined_request() {
         let cli = Cli::try_parse_from([
             "windows-bridge",
-            "pull",
+            "deploy",
             "--process",
             "notepad.exe",
             "--url",
@@ -478,9 +478,9 @@ mod tests {
             "3",
         ])
         .unwrap();
-        let Command::Pull(arguments) = cli.command
+        let Command::Deploy(arguments) = cli.command
         else {
-            panic!("expected pull command");
+            panic!("expected deploy command");
         };
 
         let request = arguments.into_request();
@@ -499,14 +499,14 @@ mod tests {
                 5, 0, 0, 0, // show window
             ]
         );
-        assert_eq!(request.policy, PullPolicy::new(3, true, true));
+        assert_eq!(request.policy, DeployPolicy::new(3, true, true));
     }
 
     #[test]
-    fn pull_result_distinguishes_success_from_failure() {
-        assert!(validate_pull_result(0x0000_0005).is_ok());
+    fn deploy_result_distinguishes_success_from_failure() {
+        assert!(validate_deploy_result(0x0000_0005).is_ok());
 
-        let error = validate_pull_result(0x00fe_0103).unwrap_err();
+        let error = validate_deploy_result(0x00fe_0103).unwrap_err();
         assert!(error.to_string().contains("OperationFailed"));
     }
 
