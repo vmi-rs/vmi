@@ -127,7 +127,7 @@ impl DeployStatus {
 }
 
 /// Host-side limits and permissions for a deploy request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DeployPolicy {
     /// Number of retries allowed after failed download attempts.
     max_download_retries: u64,
@@ -140,12 +140,37 @@ pub(crate) struct DeployPolicy {
 }
 
 impl DeployPolicy {
-    /// Creates an explicit deploy policy.
-    pub(crate) fn new(max_download_retries: u64, allow_extract: bool, allow_execute: bool) -> Self {
+    /// Sets the number of retries allowed after failed download attempts.
+    pub(crate) fn max_download_retries(self, max_download_retries: u64) -> Self {
         Self {
             max_download_retries,
+            ..self
+        }
+    }
+
+    /// Allows archive extraction.
+    pub(crate) fn allow_extract(self) -> Self {
+        self.maybe_allow_extract(true)
+    }
+
+    /// Allows archive extraction when `allow_extract` is true.
+    pub(crate) fn maybe_allow_extract(self, allow_extract: bool) -> Self {
+        Self {
             allow_extract,
+            ..self
+        }
+    }
+
+    /// Allows process execution.
+    pub(crate) fn allow_execute(self) -> Self {
+        self.maybe_allow_execute(true)
+    }
+
+    /// Allows process execution when `allow_execute` is true.
+    pub(crate) fn maybe_allow_execute(self, allow_execute: bool) -> Self {
+        Self {
             allow_execute,
+            ..self
         }
     }
 }
@@ -184,25 +209,14 @@ impl DeployBridge {
             Self::METHOD_EXTRACT => self.handle_extract(packet),
             Self::METHOD_EXECUTE => self.handle_execute(packet),
             Self::METHOD_EXIT => self.handle_exit(packet),
-            _ => {
-                tracing::error!(
-                    request = %Hex(packet.request()),
-                    method = %Hex(packet.method()),
-                    value1 = %Hex(packet.value1()),
-                    value2 = %Hex(packet.value2()),
-                    value3 = %Hex(packet.value3()),
-                    value4 = %Hex(packet.value4()),
-                    "unknown deploy bridge method"
-                );
-
-                None
-            }
+            _ => self.handle_unknown(packet),
         }
     }
 
     /// Applies the download retry limit to a readiness or failure report.
     fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         let attempt = packet.value1();
+        let native_code = packet.value2();
         let response = if attempt == 0 || attempt <= self.policy.max_download_retries {
             RESPONSE_CONTINUE
         }
@@ -210,12 +224,7 @@ impl DeployBridge {
             RESPONSE_ABORT
         };
 
-        tracing::debug!(
-            attempt,
-            native_code = packet.value2(),
-            response,
-            "deploy download gate"
-        );
+        tracing::debug!(attempt, native_code, response, "deploy download gate");
 
         Some(BridgeResponse::new(response))
     }
@@ -250,16 +259,32 @@ impl DeployBridge {
     /// Completes the injector from a terminal result packet.
     fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         let result = DeployStatus::decode(packet.value1());
+        let native_code = packet.value2();
 
         tracing::debug!(
             stage = ?result.stage(),
             status = ?result.status(),
             detail = result.detail(),
-            native_code = packet.value2(),
+            native_code,
             "deploy shellcode completed"
         );
 
         Some(BridgeResponse::default().with_result(packet.value1()))
+    }
+
+    /// Logs and rejects one packet with an unknown deploy bridge method.
+    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+        tracing::error!(
+            request = %Hex(packet.request()),
+            method = %Hex(packet.method()),
+            value1 = %Hex(packet.value1()),
+            value2 = %Hex(packet.value2()),
+            value3 = %Hex(packet.value3()),
+            value4 = %Hex(packet.value4()),
+            "unknown deploy bridge method"
+        );
+
+        None
     }
 }
 
@@ -310,8 +335,16 @@ mod tests {
     }
 
     #[test]
+    fn unknown_method_is_not_handled() {
+        let bridge = DeployBridge::new(DeployPolicy::default());
+
+        assert!(bridge.handle_unknown(packet(0x1234)).is_none());
+        assert!(bridge.handle_packet(packet(0x1234)).is_none());
+    }
+
+    #[test]
     fn download_gate_enforces_retry_boundary() {
-        let bridge = DeployBridge::new(DeployPolicy::new(2, false, false));
+        let bridge = DeployBridge::new(DeployPolicy::default().max_download_retries(2));
 
         for attempt in [0, 1, 2] {
             let response = bridge
@@ -328,7 +361,7 @@ mod tests {
 
     #[test]
     fn stage_gates_apply_permissions_independently() {
-        let bridge = DeployBridge::new(DeployPolicy::new(0, false, true));
+        let bridge = DeployBridge::new(DeployPolicy::default().allow_execute());
 
         let extract = bridge
             .handle_packet(packet(DeployBridge::METHOD_EXTRACT))
@@ -342,8 +375,27 @@ mod tests {
     }
 
     #[test]
+    fn conditional_stage_gates_apply_permissions_independently() {
+        let bridge = DeployBridge::new(
+            DeployPolicy::default()
+                .maybe_allow_extract(true)
+                .maybe_allow_execute(false),
+        );
+
+        let extract = bridge
+            .handle_packet(packet(DeployBridge::METHOD_EXTRACT))
+            .expect("valid extract packet");
+        assert_eq!(extract.value1(), Some(RESPONSE_CONTINUE));
+
+        let execute = bridge
+            .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
+            .expect("valid execute packet");
+        assert_eq!(execute.value1(), Some(RESPONSE_ABORT));
+    }
+
+    #[test]
     fn exit_completes_with_packed_status() {
-        let bridge = DeployBridge::new(DeployPolicy::new(0, false, false));
+        let bridge = DeployBridge::new(DeployPolicy::default());
         let packed = 0x00fe_0203;
         let response = bridge
             .handle_packet(
@@ -366,7 +418,7 @@ mod tests {
 
     #[test]
     fn corrupt_terminal_values_are_preserved() {
-        let bridge = DeployBridge::new(DeployPolicy::new(0, false, false));
+        let bridge = DeployBridge::new(DeployPolicy::default());
         let packed = 0xab7c_5de6;
 
         let result = DeployStatus::decode(packed);

@@ -26,27 +26,31 @@ impl MsgboxBridge {
     fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         match packet.method() {
             Self::METHOD_EXIT => self.handle_exit(packet),
-            _ => {
-                tracing::error!(
-                    request = %Hex(packet.request()),
-                    method = %Hex(packet.method()),
-                    value1 = %Hex(packet.value1()),
-                    value2 = %Hex(packet.value2()),
-                    value3 = %Hex(packet.value3()),
-                    value4 = %Hex(packet.value4()),
-                    "unknown msgbox bridge method"
-                );
-
-                None
-            }
+            _ => self.handle_unknown(packet),
         }
     }
 
     /// Completes the injector from a terminal message box packet.
     fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        tracing::debug!(result = packet.value1(), "msgbox shellcode completed");
+        let result = packet.value1();
+        tracing::debug!(result, "msgbox shellcode completed");
 
         Some(BridgeResponse::default().with_result(packet.value1()))
+    }
+
+    /// Logs and rejects one packet with an unknown msgbox bridge method.
+    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+        tracing::error!(
+            request = %Hex(packet.request()),
+            method = %Hex(packet.method()),
+            value1 = %Hex(packet.value1()),
+            value2 = %Hex(packet.value2()),
+            value3 = %Hex(packet.value3()),
+            value4 = %Hex(packet.value4()),
+            "unknown msgbox bridge method"
+        );
+
+        None
     }
 }
 
@@ -94,6 +98,12 @@ mod tests {
             <MsgboxBridge as BridgeContract>::VERIFY_VALUE4,
             Some(0x2134_5352_2d49_4d56)
         );
+    }
+
+    #[test]
+    fn unknown_method_is_not_handled() {
+        assert!(MsgboxBridge.handle_unknown(packet(0x1234)).is_none());
+        assert!(MsgboxBridge.handle_packet(packet(0x1234)).is_none());
     }
 
     #[test]

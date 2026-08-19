@@ -54,10 +54,22 @@ struct MsgboxArguments {
     text: String,
 }
 
+#[derive(Debug)]
+struct MsgboxRequest {
+    /// Name of the process in which the msgbox shellcode runs.
+    process: String,
+
+    /// Parameters consumed by the msgbox shellcode.
+    parameters: MsgboxParameters,
+}
+
 impl MsgboxArguments {
-    /// Converts CLI arguments into a target process and shellcode parameters.
-    fn into_request(self) -> (String, MsgboxParameters) {
-        (self.process, MsgboxParameters::new(self.title, self.text))
+    /// Converts CLI arguments into a msgbox request.
+    fn into_request(self) -> MsgboxRequest {
+        MsgboxRequest {
+            process: self.process,
+            parameters: MsgboxParameters::new(self.title, self.text),
+        }
     }
 }
 
@@ -127,56 +139,33 @@ impl DeployArguments {
             max_download_retries,
         } = self;
 
-        let policy = DeployPolicy::new(
-            max_download_retries,
-            extraction_directory.is_some(),
-            execute.is_some(),
-        );
+        let policy = DeployPolicy::default()
+            .max_download_retries(max_download_retries)
+            .maybe_allow_extract(extraction_directory.is_some())
+            .maybe_allow_execute(execute.is_some());
 
         let parameters = match (url, execute) {
             (None, None) => DeployParameters::builder().build(),
-            (None, Some(executable)) => {
-                let mut builder = DeployParameters::builder().execute(executable);
-                if let Some(arguments) = arguments {
-                    builder = builder.arguments(arguments);
-                }
-                if let Some(working_directory) = working_directory {
-                    builder = builder.working_directory(working_directory);
-                }
-                if let Some(show_window) = show_window {
-                    builder = builder.show_window(show_window);
-                }
-                builder.build()
-            }
-            (Some(url), None) => {
-                let mut builder = DeployParameters::builder()
-                    .download(url)
-                    .download_path(download_path.expect("download path required by clap"));
-                if let Some(extraction_directory) = extraction_directory {
-                    builder = builder.extraction_directory(extraction_directory);
-                }
-                builder.build()
-            }
-            (Some(url), Some(executable)) => {
-                let mut download = DeployParameters::builder()
-                    .download(url)
-                    .download_path(download_path.expect("download path required by clap"));
-                if let Some(extraction_directory) = extraction_directory {
-                    download = download.extraction_directory(extraction_directory);
-                }
-
-                let mut builder = download.execute(executable);
-                if let Some(arguments) = arguments {
-                    builder = builder.arguments(arguments);
-                }
-                if let Some(working_directory) = working_directory {
-                    builder = builder.working_directory(working_directory);
-                }
-                if let Some(show_window) = show_window {
-                    builder = builder.show_window(show_window);
-                }
-                builder.build()
-            }
+            (None, Some(executable)) => DeployParameters::builder()
+                .execute(executable)
+                .maybe_arguments(arguments)
+                .maybe_working_directory(working_directory)
+                .maybe_show_window(show_window)
+                .build(),
+            (Some(url), None) => DeployParameters::builder()
+                .download(url)
+                .download_path(download_path.expect("download path required by clap"))
+                .maybe_extraction_directory(extraction_directory)
+                .build(),
+            (Some(url), Some(executable)) => DeployParameters::builder()
+                .download(url)
+                .download_path(download_path.expect("download path required by clap"))
+                .maybe_extraction_directory(extraction_directory)
+                .execute(executable)
+                .maybe_arguments(arguments)
+                .maybe_working_directory(working_directory)
+                .maybe_show_window(show_window)
+                .build(),
         };
 
         DeployRequest {
@@ -226,8 +215,11 @@ fn find_process_id(
 
 /// Runs a message box injection.
 fn run_msgbox(session: &WindowsVmiSession<'_>, arguments: MsgboxArguments) -> Result<(), Error> {
-    let (process_name, parameters) = arguments.into_request();
-    let process_id = find_process_id(session, &process_name)?;
+    let MsgboxRequest {
+        process,
+        parameters,
+    } = arguments.into_request();
+    let process_id = find_process_id(session, &process)?;
     let result = session
         .handle(|session| {
             InjectorHandler::<_, UserMode, _, MsgboxBridge>::with_bridge(
@@ -326,6 +318,7 @@ mod tests {
     use clap::Parser as _;
 
     use super::*;
+    use crate::recipe::encode_parameters;
 
     #[test]
     fn msgbox_command_uses_defaults() {
@@ -369,8 +362,8 @@ mod tests {
 
         let request = arguments.into_request();
 
-        assert_eq!(request.parameters.serialize(), [0, 0, 0, 0]);
-        assert_eq!(request.policy, DeployPolicy::new(0, false, false));
+        assert_eq!(encode_parameters(&request.parameters), [0, 0, 0, 0]);
+        assert_eq!(request.policy, DeployPolicy::default());
     }
 
     #[test]
@@ -392,14 +385,14 @@ mod tests {
         let request = arguments.into_request();
 
         assert_eq!(
-            request.parameters.serialize(),
+            encode_parameters(&request.parameters),
             [
                 0x04, 0x00, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
                 b'd', 0, 0, 0, // download path
             ]
         );
-        assert_eq!(request.policy, DeployPolicy::new(0, false, false));
+        assert_eq!(request.policy, DeployPolicy::default());
     }
 
     #[test]
@@ -425,7 +418,7 @@ mod tests {
         let request = arguments.into_request();
 
         assert_eq!(
-            request.parameters.serialize(),
+            encode_parameters(&request.parameters),
             [
                 0x02, 0x07, 0x00, 0x00, // flags
                 b'e', 0, 0, 0, // executable path
@@ -434,7 +427,7 @@ mod tests {
                 5, 0, 0, 0, // show window
             ]
         );
-        assert_eq!(request.policy, DeployPolicy::new(0, false, true));
+        assert_eq!(request.policy, DeployPolicy::default().allow_execute());
     }
 
     #[test]
@@ -487,7 +480,7 @@ mod tests {
 
         assert_eq!(request.process, "notepad.exe");
         assert_eq!(
-            request.parameters.serialize(),
+            encode_parameters(&request.parameters),
             [
                 0x07, 0x07, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
@@ -499,7 +492,13 @@ mod tests {
                 5, 0, 0, 0, // show window
             ]
         );
-        assert_eq!(request.policy, DeployPolicy::new(3, true, true));
+        assert_eq!(
+            request.policy,
+            DeployPolicy::default()
+                .max_download_retries(3)
+                .allow_extract()
+                .allow_execute()
+        );
     }
 
     #[test]
@@ -528,10 +527,16 @@ mod tests {
             panic!("expected msgbox command");
         };
 
-        let (process, parameters) = arguments.into_request();
+        let MsgboxRequest {
+            process,
+            parameters,
+        } = arguments.into_request();
 
         assert_eq!(process, "notepad.exe");
-        assert_eq!(parameters.serialize(), b"Custom title\0Custom text\0");
+        assert_eq!(
+            encode_parameters(&parameters),
+            b"Custom title\0Custom text\0"
+        );
     }
 
     #[test]

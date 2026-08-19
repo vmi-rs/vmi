@@ -1,4 +1,4 @@
-use crate::recipe::ShellcodeParameters;
+use crate::recipe::{ParameterWriter, ShellcodeParameters};
 
 bitflags::bitflags! {
     /// Operation and optional-field flags consumed by the deploy shellcode.
@@ -87,13 +87,6 @@ impl DeployParameters {
         }
     }
 
-    /// Serializes the exact little-endian cursor format consumed by the shellcode.
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        self.encode(&mut bytes);
-        bytes
-    }
-
     /// Computes the operation and optional-field flags.
     fn flags(&self) -> ParameterFlags {
         let mut flags = ParameterFlags::empty();
@@ -135,33 +128,33 @@ impl DeployParameters {
 }
 
 impl ShellcodeParameters for DeployParameters {
-    const ALIGNMENT: usize = std::mem::align_of::<u32>();
+    const ALIGNMENT: usize = align_of::<u32>();
 
-    fn encode(&self, output: &mut Vec<u8>) {
-        output.extend_from_slice(&self.flags().bits().to_le_bytes());
+    fn encode(&self, writer: &mut ParameterWriter) {
+        writer.write_u32(self.flags().bits());
 
         if let Some(download) = &self.download {
-            append_wstring(output, &download.url);
-            append_wstring(output, &download.path);
+            writer.write_string_utf16(&download.url);
+            writer.write_string_utf16(&download.path);
 
             if let Some(extraction_directory) = &download.extraction_directory {
-                append_wstring(output, extraction_directory);
+                writer.write_string_utf16(extraction_directory);
             }
         }
 
         if let Some(execution) = &self.execution {
-            append_wstring(output, &execution.path);
+            writer.write_string_utf16(&execution.path);
 
             if let Some(arguments) = &execution.arguments {
-                append_wstring(output, arguments);
+                writer.write_string_utf16(arguments);
             }
 
             if let Some(working_directory) = &execution.working_directory {
-                append_wstring(output, working_directory);
+                writer.write_string_utf16(working_directory);
             }
 
             if let Some(show_window) = execution.show_window {
-                output.extend_from_slice(&show_window.to_le_bytes());
+                writer.write_i32(show_window);
             }
         }
     }
@@ -214,9 +207,19 @@ impl DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
 
 impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables extraction into the supplied guest directory.
-    pub fn extraction_directory(mut self, extraction_directory: impl Into<String>) -> Self {
-        self.download.extraction_directory = Some(extraction_directory.into());
-        self
+    pub fn extraction_directory(self, extraction_directory: impl Into<String>) -> Self {
+        self.maybe_extraction_directory(Some(extraction_directory.into()))
+    }
+
+    /// Supplies an optional extraction directory.
+    pub fn maybe_extraction_directory(self, extraction_directory: Option<String>) -> Self {
+        Self {
+            download: DownloadEnabled {
+                extraction_directory,
+                ..self.download
+            },
+            execution: self.execution,
+        }
     }
 }
 
@@ -258,21 +261,51 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 
 impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     /// Supplies a present argument slot. An empty string remains meaningful.
-    pub fn arguments(mut self, arguments: impl Into<String>) -> Self {
-        self.execution.arguments = Some(arguments.into());
-        self
+    pub fn arguments(self, arguments: impl Into<String>) -> Self {
+        self.maybe_arguments(Some(arguments.into()))
+    }
+
+    /// Supplies an optional argument slot. A present empty string remains meaningful.
+    pub fn maybe_arguments(self, arguments: Option<String>) -> Self {
+        Self {
+            download: self.download,
+            execution: ExecutionEnabled {
+                arguments,
+                ..self.execution
+            },
+        }
     }
 
     /// Supplies a present guest working directory.
-    pub fn working_directory(mut self, working_directory: impl Into<String>) -> Self {
-        self.execution.working_directory = Some(working_directory.into());
-        self
+    pub fn working_directory(self, working_directory: impl Into<String>) -> Self {
+        self.maybe_working_directory(Some(working_directory.into()))
+    }
+
+    /// Supplies an optional guest working directory.
+    pub fn maybe_working_directory(self, working_directory: Option<String>) -> Self {
+        Self {
+            download: self.download,
+            execution: ExecutionEnabled {
+                working_directory,
+                ..self.execution
+            },
+        }
     }
 
     /// Supplies an explicit Windows `SW_*` display value.
-    pub fn show_window(mut self, show_window: i32) -> Self {
-        self.execution.show_window = Some(show_window);
-        self
+    pub fn show_window(self, show_window: i32) -> Self {
+        self.maybe_show_window(Some(show_window))
+    }
+
+    /// Supplies an optional Windows `SW_*` display value.
+    pub fn maybe_show_window(self, show_window: Option<i32>) -> Self {
+        Self {
+            download: self.download,
+            execution: ExecutionEnabled {
+                show_window,
+                ..self.execution
+            },
+        }
     }
 }
 
@@ -304,18 +337,10 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
     }
 }
 
-/// Appends one UTF-16LE NUL-terminated string.
-fn append_wstring(bytes: &mut Vec<u8>, value: &str) {
-    for unit in value.encode_utf16().chain([0]) {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::mem::align_of;
-
     use super::*;
+    use crate::recipe::encode_parameters;
 
     #[test]
     fn parameter_block_is_u32_aligned() {
@@ -327,7 +352,7 @@ mod tests {
 
     #[test]
     fn serializes_no_operation_request() {
-        let bytes = DeployParameters::builder().build().serialize();
+        let bytes = encode_parameters(&DeployParameters::builder().build());
 
         assert_eq!(bytes, [0, 0, 0, 0]);
     }
@@ -344,7 +369,7 @@ mod tests {
             .show_window(5)
             .build();
 
-        let bytes = parameters.serialize();
+        let bytes = encode_parameters(&parameters);
 
         assert_eq!(
             bytes,
@@ -362,11 +387,35 @@ mod tests {
     }
 
     #[test]
+    fn maybe_setters_encode_only_present_values() {
+        let parameters = DeployParameters::builder()
+            .download("u")
+            .download_path("d")
+            .maybe_extraction_directory(Some("x".to_owned()))
+            .execute("e")
+            .maybe_arguments(None)
+            .maybe_working_directory(Some("w".to_owned()))
+            .maybe_show_window(None)
+            .build();
+        let bytes = encode_parameters(&parameters);
+
+        assert_eq!(
+            bytes,
+            [
+                0x07, 0x02, 0x00, 0x00, // flags
+                b'u', 0, 0, 0, // URL
+                b'd', 0, 0, 0, // download path
+                b'x', 0, 0, 0, // extraction directory
+                b'e', 0, 0, 0, // executable path
+                b'w', 0, 0, 0, // working directory
+            ]
+        );
+    }
+
+    #[test]
     fn builds_execute_only_parameters() {
-        let bytes = DeployParameters::builder()
-            .execute("program.exe")
-            .build()
-            .serialize();
+        let parameters = DeployParameters::builder().execute("program.exe").build();
+        let bytes = encode_parameters(&parameters);
 
         assert_eq!(&bytes[..4], &ParameterFlags::EXECUTE.bits().to_le_bytes());
     }
