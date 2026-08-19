@@ -10,30 +10,32 @@ use vmi::{
     },
 };
 
-use crate::bridge::{METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, impl_bridge_contract};
+use crate::bridge::{
+    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalStatus, impl_bridge_contract,
+};
 
 /// Deploy operation stage encoded in a terminal status.
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct DeployStage(u8);
+pub struct DeployStage(u8);
 
 impl DeployStage {
     /// No operation ran.
-    const NONE: Self = Self(0x00);
+    pub const NONE: Self = Self(0x00);
 
     /// Parameter parsing failed.
-    const PARAMETERS: Self = Self(0x01);
+    pub const PARAMETERS: Self = Self(0x01);
 
     /// Initialization failed.
-    const INITIALIZATION: Self = Self(0x02);
+    pub const INITIALIZATION: Self = Self(0x02);
 
     /// Download completed or failed.
-    const DOWNLOAD: Self = Self(0x03);
+    pub const DOWNLOAD: Self = Self(0x03);
 
     /// Extraction completed or failed.
-    const EXTRACT: Self = Self(0x04);
+    pub const EXTRACT: Self = Self(0x04);
 
     /// Execution completed or failed.
-    const EXECUTE: Self = Self(0x05);
+    pub const EXECUTE: Self = Self(0x05);
 }
 
 impl std::fmt::Debug for DeployStage {
@@ -51,45 +53,14 @@ impl std::fmt::Debug for DeployStage {
     }
 }
 
-/// Stable terminal status encoded by the deploy shellcode.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct DeployTerminalStatus(u8);
-
-impl DeployTerminalStatus {
-    /// The requested stages completed successfully.
-    const SUCCESS: Self = Self(0x00);
-
-    /// The serialized parameters were invalid.
-    const INVALID_PARAMETERS: Self = Self(0xfd);
-
-    /// A guest operation failed.
-    const OPERATION_FAILED: Self = Self(0xfe);
-
-    /// The host aborted a gated stage.
-    const ABORTED: Self = Self(0xff);
-}
-
-impl std::fmt::Debug for DeployTerminalStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let name = match *self {
-            Self::SUCCESS => "Success",
-            Self::INVALID_PARAMETERS => "InvalidParameters",
-            Self::OPERATION_FAILED => "OperationFailed",
-            Self::ABORTED => "Aborted",
-            _ => return self.0.fmt(f),
-        };
-        f.write_str(name)
-    }
-}
-
 /// Decoded status returned by the injector after a terminal bridge packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DeployStatus {
+pub struct DeployStatus {
     /// Stage that produced the terminal result.
     stage: DeployStage,
 
     /// Stable terminal status.
-    status: DeployTerminalStatus,
+    status: TerminalStatus,
 
     /// Stage-specific compact detail code.
     detail: u8,
@@ -97,38 +68,33 @@ pub(crate) struct DeployStatus {
 
 impl DeployStatus {
     /// Decodes the packed status returned by the injector.
-    pub(crate) fn decode(value: InjectorStatusCode) -> Self {
+    pub fn decode(value: InjectorStatusCode) -> Self {
         Self {
             stage: DeployStage(value as u8),
-            status: DeployTerminalStatus((value >> 16) as u8),
+            status: TerminalStatus((value >> 16) as u8),
             detail: (value >> 8) as u8,
         }
     }
 
-    /// Returns whether all requested stages completed successfully.
-    pub(crate) fn is_success(self) -> bool {
-        self.status == DeployTerminalStatus::SUCCESS
-    }
-
     /// Returns the stage that produced the result.
-    fn stage(self) -> DeployStage {
+    pub fn stage(self) -> DeployStage {
         self.stage
     }
 
     /// Returns the stable terminal status.
-    fn status(self) -> DeployTerminalStatus {
+    pub fn status(self) -> TerminalStatus {
         self.status
     }
 
     /// Returns the stage-specific detail code.
-    fn detail(self) -> u8 {
+    pub fn detail(self) -> u8 {
         self.detail
     }
 }
 
 /// Host-side limits and permissions for a deploy request.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DeployPolicy {
+pub struct DeployPolicy {
     /// Number of retries allowed after failed download attempts.
     max_download_retries: u64,
 
@@ -141,7 +107,7 @@ pub(crate) struct DeployPolicy {
 
 impl DeployPolicy {
     /// Sets the number of retries allowed after failed download attempts.
-    pub(crate) fn max_download_retries(self, max_download_retries: u64) -> Self {
+    pub fn max_download_retries(self, max_download_retries: u64) -> Self {
         Self {
             max_download_retries,
             ..self
@@ -149,12 +115,12 @@ impl DeployPolicy {
     }
 
     /// Allows archive extraction.
-    pub(crate) fn allow_extract(self) -> Self {
+    pub fn allow_extract(self) -> Self {
         self.maybe_allow_extract(true)
     }
 
     /// Allows archive extraction when `allow_extract` is true.
-    pub(crate) fn maybe_allow_extract(self, allow_extract: bool) -> Self {
+    pub fn maybe_allow_extract(self, allow_extract: bool) -> Self {
         Self {
             allow_extract,
             ..self
@@ -162,12 +128,12 @@ impl DeployPolicy {
     }
 
     /// Allows process execution.
-    pub(crate) fn allow_execute(self) -> Self {
+    pub fn allow_execute(self) -> Self {
         self.maybe_allow_execute(true)
     }
 
     /// Allows process execution when `allow_execute` is true.
-    pub(crate) fn maybe_allow_execute(self, allow_execute: bool) -> Self {
+    pub fn maybe_allow_execute(self, allow_execute: bool) -> Self {
         Self {
             allow_execute,
             ..self
@@ -177,7 +143,7 @@ impl DeployPolicy {
 
 /// Handles deploy stage gates and the terminal shellcode result.
 #[derive(Debug)]
-pub(crate) struct DeployBridge {
+pub struct DeployBridge {
     /// Policy applied to shellcode requests.
     policy: DeployPolicy,
 }
@@ -198,7 +164,7 @@ impl DeployBridge {
     const METHOD_EXIT: u16 = METHOD_EXIT;
 
     /// Creates a deploy bridge with the supplied host policy.
-    pub(crate) fn new(policy: DeployPolicy) -> Self {
+    pub fn new(policy: DeployPolicy) -> Self {
         Self { policy }
     }
 
@@ -217,6 +183,7 @@ impl DeployBridge {
     fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         let attempt = packet.value1();
         let native_code = packet.value2();
+
         let response = if attempt == 0 || attempt <= self.policy.max_download_retries {
             RESPONSE_CONTINUE
         }
@@ -228,14 +195,15 @@ impl DeployBridge {
 
         Some(BridgeResponse::new(response))
     }
+
     /// Applies the extraction policy to an extraction gate.
     fn handle_extract(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        self.stage_response(packet, self.policy.allow_extract, "extract")
+        self.stage_response(packet, self.policy.allow_extract, DeployStage::EXTRACT)
     }
 
     /// Applies the execution policy to an execution gate.
     fn handle_execute(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        self.stage_response(packet, self.policy.allow_execute, "execute")
+        self.stage_response(packet, self.policy.allow_execute, DeployStage::EXECUTE)
     }
 
     /// Applies an independent host permission to an extraction or execution gate.
@@ -243,7 +211,7 @@ impl DeployBridge {
         &self,
         _packet: BridgePacket,
         allowed: bool,
-        stage: &'static str,
+        stage: DeployStage,
     ) -> Option<BridgeResponse<InjectorStatusCode>> {
         let response = if allowed {
             RESPONSE_CONTINUE
@@ -252,7 +220,7 @@ impl DeployBridge {
             RESPONSE_ABORT
         };
 
-        tracing::debug!(stage, allowed, "deploy stage gate");
+        tracing::debug!(?stage, allowed, "deploy stage gate");
         Some(BridgeResponse::new(response))
     }
 
@@ -410,7 +378,7 @@ mod tests {
             DeployStatus::decode(packed),
             DeployStatus {
                 stage: DeployStage::DOWNLOAD,
-                status: DeployTerminalStatus::OPERATION_FAILED,
+                status: TerminalStatus::OPERATION_FAILED,
                 detail: 2,
             }
         );
@@ -426,7 +394,7 @@ mod tests {
             result,
             DeployStatus {
                 stage: DeployStage(0xe6),
-                status: DeployTerminalStatus(0x7c),
+                status: TerminalStatus(0x7c),
                 detail: 0x5d,
             }
         );

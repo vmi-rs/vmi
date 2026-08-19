@@ -18,6 +18,7 @@ use vmi::{
 };
 
 use crate::{
+    bridge::TerminalStatus,
     deploy::{DeployBridge, DeployParameters, DeployPolicy, DeployStatus, deploy_recipe},
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
@@ -185,7 +186,10 @@ fn validate_msgbox_result(result: u64) -> Result<u64, Error> {
 /// Decodes and validates a terminal deploy status.
 fn validate_deploy_result(result: u64) -> Result<DeployStatus, Error> {
     let status = DeployStatus::decode(result);
-    anyhow::ensure!(status.is_success(), "deploy failed: {status:?}");
+    anyhow::ensure!(
+        status.status() == TerminalStatus::SUCCESS,
+        "deploy failed: {status:?}"
+    );
     Ok(status)
 }
 

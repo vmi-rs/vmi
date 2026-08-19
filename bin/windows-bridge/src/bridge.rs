@@ -16,6 +16,37 @@ pub const RESPONSE_CONTINUE: u64 = 0x0000_0000;
 /// Aborts the shellcode's current stage.
 pub const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
+/// Stable terminal status encoded by the deploy shellcode.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct TerminalStatus(pub u8);
+
+impl TerminalStatus {
+    /// The requested stages completed successfully.
+    pub const SUCCESS: Self = Self(0x00);
+
+    /// The serialized parameters were invalid.
+    pub const INVALID_PARAMETERS: Self = Self(0xfd);
+
+    /// A guest operation failed.
+    pub const OPERATION_FAILED: Self = Self(0xfe);
+
+    /// The host aborted a gated stage.
+    pub const ABORTED: Self = Self(0xff);
+}
+
+impl std::fmt::Debug for TerminalStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match *self {
+            Self::SUCCESS => "Success",
+            Self::INVALID_PARAMETERS => "InvalidParameters",
+            Self::OPERATION_FAILED => "OperationFailed",
+            Self::ABORTED => "Aborted",
+            _ => return self.0.fmt(f),
+        };
+        f.write_str(name)
+    }
+}
+
 /// Implements the shared shellcode bridge contract for a handler.
 macro_rules! impl_bridge_contract {
     ($bridge:ty) => {

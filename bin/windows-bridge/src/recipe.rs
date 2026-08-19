@@ -19,38 +19,73 @@ pub struct ParameterWriter<'a> {
 
 impl<'a> ParameterWriter<'a> {
     /// Creates a writer at the output's current cursor position.
-    pub(crate) fn new(output: &'a mut Vec<u8>) -> Self {
+    pub fn new(output: &'a mut Vec<u8>) -> Self {
         Self { output }
     }
 
     /// Writes bytes unchanged.
-    pub(crate) fn write_bytes(&mut self, value: &[u8]) {
+    pub fn write_bytes(&mut self, value: &[u8]) {
         self.output.extend_from_slice(value);
     }
 
+    /// Writes a little-endian signed 8-bit integer.
+    #[expect(unused)]
+    pub fn write_i8(&mut self, value: i8) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
+    /// Writes a little-endian unsigned 8-bit integer.
+    pub fn write_u8(&mut self, value: u8) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
+    /// Writes a little-endian signed 16-bit integer.
+    #[expect(unused)]
+    pub fn write_i16(&mut self, value: i16) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
+    /// Writes a little-endian unsigned 16-bit integer.
+    pub fn write_u16(&mut self, value: u16) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
     /// Writes a little-endian signed 32-bit integer.
-    pub(crate) fn write_i32(&mut self, value: i32) {
+    pub fn write_i32(&mut self, value: i32) {
         self.write_bytes(&value.to_le_bytes());
     }
 
     /// Writes a little-endian unsigned 32-bit integer.
-    pub(crate) fn write_u32(&mut self, value: u32) {
+    pub fn write_u32(&mut self, value: u32) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
+    /// Writes a little-endian signed 64-bit integer.
+    #[expect(unused)]
+    pub fn write_i64(&mut self, value: i64) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
+    /// Writes a little-endian unsigned 64-bit integer.
+    #[expect(unused)]
+    pub fn write_u64(&mut self, value: u64) {
         self.write_bytes(&value.to_le_bytes());
     }
 
     /// Writes the string bytes unchanged followed by a NUL byte.
     ///
     /// This method does not transcode the value to a target ANSI code page.
-    pub(crate) fn write_string(&mut self, value: &str) {
+    pub fn write_string(&mut self, value: &str) {
         self.write_bytes(value.as_bytes());
-        self.output.push(0);
+        self.write_u8(0);
     }
 
     /// Writes UTF-16LE code units followed by a NUL code unit.
-    pub(crate) fn write_string_utf16(&mut self, value: &str) {
-        for unit in value.encode_utf16().chain([0]) {
+    pub fn write_string_utf16(&mut self, value: &str) {
+        for unit in value.encode_utf16() {
             self.write_bytes(&unit.to_le_bytes());
         }
+        self.write_u16(0);
     }
 }
 
@@ -65,7 +100,7 @@ pub trait ShellcodeParameters {
 
 /// Encodes a standalone parameter block for test assertions.
 #[cfg(test)]
-pub(crate) fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
+pub fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
     let mut output = Vec::new();
     parameters.encode(&mut ParameterWriter::new(&mut output));
     output
@@ -89,17 +124,17 @@ pub struct ShellcodeRecipeData {
 
 impl ShellcodeRecipeData {
     /// Builds the page-aligned shellcode and parameter payload.
-    fn new<Parameters>(shellcode: &'static [u8], parameters: &Parameters) -> Self
+    fn new<Parameters>(shellcode: impl AsRef<[u8]>, parameters: &Parameters) -> Self
     where
         Parameters: ShellcodeParameters,
     {
-        assert!(
+        debug_assert!(
             Parameters::ALIGNMENT.is_power_of_two(),
             "shellcode parameter alignment must be a nonzero power of two"
         );
 
         let mut payload = Vec::new();
-        payload.extend_from_slice(shellcode);
+        payload.extend_from_slice(shellcode.as_ref());
 
         // Align the parameter block within the shellcode payload.
         let parameter_offset = align_up(payload.len(), Parameters::ALIGNMENT);
@@ -127,7 +162,7 @@ impl ShellcodeRecipeData {
 /// Builds the shared `VirtualAlloc` to `CreateThread` shellcode recipe.
 #[tracing::instrument(name = "shellcode_recipe", skip_all)]
 pub fn shellcode_recipe<Driver>(
-    shellcode: &'static [u8],
+    shellcode: impl AsRef<[u8]>,
     parameters: &impl ShellcodeParameters,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
 where

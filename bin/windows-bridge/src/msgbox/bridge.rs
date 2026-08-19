@@ -14,7 +14,7 @@ use crate::bridge::{METHOD_EXIT, impl_bridge_contract};
 
 /// Handles the result returned by `MessageBoxA`.
 #[derive(Debug, Default)]
-pub(crate) struct MsgboxBridge;
+pub struct MsgboxBridge;
 
 impl_bridge_contract!(MsgboxBridge);
 
