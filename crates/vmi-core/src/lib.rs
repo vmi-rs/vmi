@@ -528,14 +528,17 @@ where
         self.read(ctx, &mut buffer)?;
 
         // try to find the null terminator
-        let position = buffer
-            .chunks_exact(2)
+        let (chunks, _) = buffer.as_chunks::<2>();
+        let position = chunks
+            .iter()
             .position(|chunk| chunk[0] == 0 && chunk[1] == 0);
 
         if let Some(position) = position {
             buffer.truncate(limit.min(position * 2));
-            return Ok(buffer
-                .chunks_exact(2)
+
+            let (chunks, _) = buffer.as_chunks::<2>();
+            return Ok(chunks
+                .iter()
                 .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                 .collect());
         }
@@ -545,8 +548,9 @@ where
             ctx.address += buffer.len() as u64;
             self.read(ctx, &mut page)?;
 
-            let position = page
-                .chunks_exact(2)
+            let (chunks, _) = page.as_chunks::<2>();
+            let position = chunks
+                .iter()
                 .position(|chunk| chunk[0] == 0 && chunk[1] == 0);
 
             if let Some(position) = position {
@@ -567,8 +571,9 @@ where
             }
         }
 
-        Ok(buffer
-            .chunks_exact(2)
+        let (chunks, _) = buffer.as_chunks::<2>();
+        Ok(chunks
+            .iter()
             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
             .collect())
     }

@@ -1404,9 +1404,9 @@ where
         ctx: impl Into<AccessContext>,
     ) -> Result<Vec<u16>, VmiError> {
         let buffer = Self::read_string32_in(vmi, ctx)?;
-
-        Ok(buffer
-            .chunks_exact(2)
+        let (chunks, _) = buffer.as_chunks::<2>();
+        Ok(chunks
+            .iter()
             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<_>>())
     }
@@ -1420,9 +1420,9 @@ where
         ctx: impl Into<AccessContext>,
     ) -> Result<Vec<u16>, VmiError> {
         let buffer = Self::read_string64_in(vmi, ctx)?;
-
-        Ok(buffer
-            .chunks_exact(2)
+        let (chunks, _) = buffer.as_chunks::<2>();
+        Ok(chunks
+            .iter()
             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<_>>())
     }

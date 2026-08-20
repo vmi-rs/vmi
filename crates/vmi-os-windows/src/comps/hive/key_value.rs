@@ -262,8 +262,9 @@ impl WindowsKeyValueData {
         /// Decodes a UTF-16 byte buffer into a `String`, stripping a single trailing
         /// NUL if present.
         fn decode_utf16(bytes: &[u8]) -> String {
-            let units = bytes
-                .chunks_exact(2)
+            let (chunks, _) = bytes.as_chunks::<2>();
+            let units = chunks
+                .iter()
                 .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                 .collect::<Vec<_>>();
             let end = units.iter().rposition(|&ch| ch != 0).map_or(0, |i| i + 1);
@@ -273,8 +274,9 @@ impl WindowsKeyValueData {
         /// Decodes a UTF-16 `REG_MULTI_SZ` buffer into a vector of strings, dropping
         /// empty elements that mark the terminator.
         fn decode_utf16_multi(bytes: &[u8]) -> Vec<String> {
-            let units = bytes
-                .chunks_exact(2)
+            let (chunks, _) = bytes.as_chunks::<2>();
+            let units = chunks
+                .iter()
                 .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                 .collect::<Vec<_>>();
 
