@@ -142,7 +142,6 @@ impl DeployArguments {
 
         let policy = DeployPolicy::default()
             .max_download_retries(max_download_retries)
-            .maybe_allow_extract(extraction_directory.is_some())
             .maybe_allow_execute(execute.is_some());
 
         let parameters = match (url, execute) {
@@ -270,7 +269,7 @@ fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
     let filter = EnvFilter::default()
-        .add_directive(tracing::Level::TRACE.into())
+        .add_directive(tracing::Level::DEBUG.into())
         .add_directive("reqwest=warn".parse()?)
         .add_directive("rustls=warn".parse()?);
 
@@ -500,7 +499,6 @@ mod tests {
             request.policy,
             DeployPolicy::default()
                 .max_download_retries(3)
-                .allow_extract()
                 .allow_execute()
         );
     }
@@ -509,7 +507,7 @@ mod tests {
     fn deploy_result_distinguishes_success_from_failure() {
         assert!(validate_deploy_result(0x0000_0005).is_ok());
 
-        let error = validate_deploy_result(0x00fe_0103).unwrap_err();
+        let error = validate_deploy_result(0x0001_fe03).unwrap_err();
         assert!(error.to_string().contains("OperationFailed"));
     }
 

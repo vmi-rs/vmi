@@ -88,6 +88,7 @@ struct failure {
 
 enum class status : uint8_t {
     success                 = 0x00,
+    waiting                 = 0x01,
     invalid_parameters      = 0xfd,
     operation_failed        = 0xfe,
     aborted                 = 0xff,
@@ -157,9 +158,9 @@ struct result {
     constexpr uintptr_t
     packed_status() const noexcept
     {
-        return static_cast<uintptr_t>(status_) << 16
-            | static_cast<uintptr_t>(code_) << 8
-            | static_cast<uintptr_t>(stage_);
+        return static_cast<uintptr_t>(stage_)
+            | static_cast<uintptr_t>(status_) << 8
+            | static_cast<uintptr_t>(code_) << 16;
     }
 
     [[nodiscard]]

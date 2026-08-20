@@ -82,9 +82,11 @@
 // Download creates the destination's parent directory. A failed download is
 // reported to the bridge host with its attempt number and HRESULT; a continue
 // response retries it, while an abort response terminates the request.
-// Extraction waits for a host gate, creates the output directory, and uses
-// Shell.Application to copy archive items. Execution waits for its host gate
-// and invokes ShellExecuteExW.
+// Extraction creates the output directory and uses Shell.Application to copy
+// archive items. Execution waits for its host gate and invokes
+// ShellExecuteExW.
+// A wait response parks the shellcode immediately before execution. The same
+// execute request is retried until the host continues or aborts it.
 //
 // The parser retains pointers into the supplied buffer and performs no bounds,
 // string-length, or string-content checks. The caller is responsible for
@@ -163,8 +165,7 @@ constexpr uintptr_t BRIDGE_VERIFY_VALUE3 = 0x213353522d494d56; // "VMI-RS3!"
 constexpr uintptr_t BRIDGE_VERIFY_VALUE4 = 0x213453522d494d56; // "VMI-RS4!"
 
 constexpr uint16_t method_download = 0x0001;
-constexpr uint16_t method_extract = 0x0002;
-constexpr uint16_t method_execute = 0x0003;
+constexpr uint16_t method_execute = 0x0002;
 constexpr uint16_t method_exit = 0xffff;
 
 constexpr uintptr_t response_continue = 0x00000000;
@@ -243,13 +244,6 @@ struct bridge: bridge_client {
         )
     {
         return wait(method_download, attempt, native_error_code);
-    }
-
-    static
-    bool
-    wait_for_extract()
-    {
-        return wait(method_extract);
     }
 
     static
@@ -883,11 +877,6 @@ Entry(
 
     if (wszExtractionPath != NULL)
     {
-        if (!bridge::wait_for_extract())
-        {
-            return result::aborted(stage::extract);
-        }
-
         //
         // Extract the downloaded archive.
         //

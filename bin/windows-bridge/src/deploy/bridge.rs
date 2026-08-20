@@ -11,10 +11,11 @@ use vmi::{
 };
 
 use crate::bridge::{
-    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalStatus, impl_bridge_contract,
+    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT, TerminalStatus,
+    impl_bridge_contract,
 };
 
-/// Deploy operation stage encoded in a terminal status.
+/// Deploy operation stage encoded in a packed result.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct DeployStage(u8);
 
@@ -53,43 +54,71 @@ impl std::fmt::Debug for DeployStage {
     }
 }
 
-/// Decoded status returned by the injector after a terminal bridge packet.
+/// Decoded status returned by the injector handler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeployStatus {
-    /// Stage that produced the terminal result.
+    /// Stage that produced the result.
     stage: DeployStage,
 
-    /// Stable terminal status.
+    /// Stable result status.
     status: TerminalStatus,
 
-    /// Stage-specific compact detail code.
-    detail: u8,
+    /// Stage-specific compact error code.
+    code: u8,
 }
 
 impl DeployStatus {
-    /// Decodes the packed status returned by the injector.
-    pub fn decode(value: InjectorStatusCode) -> Self {
+    /// Creates a status without a stage-specific error code.
+    pub const fn new(stage: DeployStage, status: TerminalStatus) -> Self {
         Self {
-            stage: DeployStage(value as u8),
-            status: TerminalStatus((value >> 16) as u8),
-            detail: (value >> 8) as u8,
+            stage,
+            status,
+            code: 0,
         }
     }
 
+    /// Decodes the packed status returned by the injector.
+    pub const fn decode(value: InjectorStatusCode) -> Self {
+        Self {
+            stage: DeployStage(value as u8),
+            status: TerminalStatus((value >> 8) as u8),
+            code: (value >> 16) as u8,
+        }
+    }
+
+    /// Encodes the status for use as an injector result.
+    pub const fn encode(self) -> InjectorStatusCode {
+        self.stage.0 as u64 | (self.status.0 as u64) << 8 | (self.code as u64) << 16
+    }
+
     /// Returns the stage that produced the result.
-    pub fn stage(self) -> DeployStage {
+    pub const fn stage(self) -> DeployStage {
         self.stage
     }
 
-    /// Returns the stable terminal status.
-    pub fn status(self) -> TerminalStatus {
+    /// Returns the stable result status.
+    pub const fn status(self) -> TerminalStatus {
         self.status
     }
 
-    /// Returns the stage-specific detail code.
-    pub fn detail(self) -> u8 {
-        self.detail
+    /// Returns the stage-specific error code.
+    pub const fn code(self) -> u8 {
+        self.code
     }
+}
+
+/// Host response when the shellcode reaches the execution gate.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ExecuteResponse {
+    /// Allows the shellcode to execute the configured program.
+    Continue,
+
+    /// Aborts the shellcode before process execution.
+    #[default]
+    Abort,
+
+    /// Parks the shellcode immediately before process execution.
+    Wait,
 }
 
 /// Host-side limits and permissions for a deploy request.
@@ -98,11 +127,8 @@ pub struct DeployPolicy {
     /// Number of retries allowed after failed download attempts.
     max_download_retries: u64,
 
-    /// Whether the host permits archive extraction.
-    allow_extract: bool,
-
-    /// Whether the host permits process execution.
-    allow_execute: bool,
+    /// Response returned when the shellcode reaches the execution gate.
+    execute_response: ExecuteResponse,
 }
 
 impl DeployPolicy {
@@ -114,34 +140,31 @@ impl DeployPolicy {
         }
     }
 
-    /// Allows archive extraction.
-    pub fn allow_extract(self) -> Self {
-        self.maybe_allow_extract(true)
-    }
-
-    /// Allows archive extraction when `allow_extract` is true.
-    pub fn maybe_allow_extract(self, allow_extract: bool) -> Self {
+    /// Sets the response returned at the execution gate.
+    pub fn execute_response(self, execute_response: ExecuteResponse) -> Self {
         Self {
-            allow_extract,
+            execute_response,
             ..self
         }
     }
 
     /// Allows process execution.
     pub fn allow_execute(self) -> Self {
-        self.maybe_allow_execute(true)
+        self.execute_response(ExecuteResponse::Continue)
     }
 
     /// Allows process execution when `allow_execute` is true.
     pub fn maybe_allow_execute(self, allow_execute: bool) -> Self {
-        Self {
-            allow_execute,
-            ..self
+        self.execute_response(if allow_execute {
+            ExecuteResponse::Continue
         }
+        else {
+            ExecuteResponse::Abort
+        })
     }
 }
 
-/// Handles deploy stage gates and the terminal shellcode result.
+/// Handles download and execute gates plus the terminal shellcode result.
 #[derive(Debug)]
 pub struct DeployBridge {
     /// Policy applied to shellcode requests.
@@ -154,11 +177,8 @@ impl DeployBridge {
     /// Download readiness and retry method.
     const METHOD_DOWNLOAD: u16 = 0x0001;
 
-    /// Extraction policy gate method.
-    const METHOD_EXTRACT: u16 = 0x0002;
-
     /// Execution policy gate method.
-    const METHOD_EXECUTE: u16 = 0x0003;
+    const METHOD_EXECUTE: u16 = 0x0002;
 
     /// Terminal result method.
     const METHOD_EXIT: u16 = METHOD_EXIT;
@@ -172,7 +192,6 @@ impl DeployBridge {
     fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
         match packet.method() {
             Self::METHOD_DOWNLOAD => self.handle_download(packet),
-            Self::METHOD_EXTRACT => self.handle_extract(packet),
             Self::METHOD_EXECUTE => self.handle_execute(packet),
             Self::METHOD_EXIT => self.handle_exit(packet),
             _ => self.handle_unknown(packet),
@@ -196,32 +215,21 @@ impl DeployBridge {
         Some(BridgeResponse::new(response))
     }
 
-    /// Applies the extraction policy to an extraction gate.
-    fn handle_extract(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        self.stage_response(packet, self.policy.allow_extract, DeployStage::EXTRACT)
-    }
-
-    /// Applies the execution policy to an execution gate.
-    fn handle_execute(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
-        self.stage_response(packet, self.policy.allow_execute, DeployStage::EXECUTE)
-    }
-
-    /// Applies an independent host permission to an extraction or execution gate.
-    fn stage_response(
-        &self,
-        _packet: BridgePacket,
-        allowed: bool,
-        stage: DeployStage,
-    ) -> Option<BridgeResponse<InjectorStatusCode>> {
-        let response = if allowed {
-            RESPONSE_CONTINUE
-        }
-        else {
-            RESPONSE_ABORT
+    /// Applies the configured response to an execution gate.
+    fn handle_execute(&self, _packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+        let response = match self.policy.execute_response {
+            ExecuteResponse::Continue => BridgeResponse::new(RESPONSE_CONTINUE),
+            ExecuteResponse::Abort => BridgeResponse::new(RESPONSE_ABORT),
+            ExecuteResponse::Wait => BridgeResponse::new(RESPONSE_WAIT).with_result(
+                DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING).encode(),
+            ),
         };
 
-        tracing::debug!(?stage, allowed, "deploy stage gate");
-        Some(BridgeResponse::new(response))
+        tracing::debug!(
+            response = ?self.policy.execute_response,
+            "deploy execute gate"
+        );
+        Some(response)
     }
 
     /// Completes the injector from a terminal result packet.
@@ -232,7 +240,7 @@ impl DeployBridge {
         tracing::debug!(
             stage = ?result.stage(),
             status = ?result.status(),
-            detail = result.detail(),
+            code = result.code(),
             native_code,
             "deploy shellcode completed"
         );
@@ -328,43 +336,64 @@ mod tests {
     }
 
     #[test]
-    fn stage_gates_apply_permissions_independently() {
-        let bridge = DeployBridge::new(DeployPolicy::default().allow_execute());
+    fn execute_gate_applies_configured_response() {
+        for (policy_response, wire_response, handler_result) in [
+            (ExecuteResponse::Continue, RESPONSE_CONTINUE, None),
+            (ExecuteResponse::Abort, RESPONSE_ABORT, None),
+            (ExecuteResponse::Wait, RESPONSE_WAIT, Some(0x0000_0105)),
+        ] {
+            let bridge =
+                DeployBridge::new(DeployPolicy::default().execute_response(policy_response));
+            let response = bridge
+                .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
+                .expect("valid execute packet");
 
-        let extract = bridge
-            .handle_packet(packet(DeployBridge::METHOD_EXTRACT))
-            .expect("valid extract packet");
-        assert_eq!(extract.value1(), Some(RESPONSE_ABORT));
-
-        let execute = bridge
-            .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
-            .expect("valid execute packet");
-        assert_eq!(execute.value1(), Some(RESPONSE_CONTINUE));
+            assert_eq!(response.value1(), Some(wire_response));
+            assert_eq!(response.into_result(), handler_result);
+        }
     }
 
     #[test]
-    fn conditional_stage_gates_apply_permissions_independently() {
-        let bridge = DeployBridge::new(
-            DeployPolicy::default()
-                .maybe_allow_extract(true)
-                .maybe_allow_execute(false),
-        );
+    fn execute_permission_helpers_map_to_response() {
+        for (policy, expected) in [
+            (DeployPolicy::default().allow_execute(), RESPONSE_CONTINUE),
+            (
+                DeployPolicy::default().maybe_allow_execute(true),
+                RESPONSE_CONTINUE,
+            ),
+            (
+                DeployPolicy::default().maybe_allow_execute(false),
+                RESPONSE_ABORT,
+            ),
+        ] {
+            let response = DeployBridge::new(policy)
+                .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
+                .expect("valid execute packet");
+            assert_eq!(response.value1(), Some(expected));
+        }
+    }
 
-        let extract = bridge
-            .handle_packet(packet(DeployBridge::METHOD_EXTRACT))
-            .expect("valid extract packet");
-        assert_eq!(extract.value1(), Some(RESPONSE_CONTINUE));
+    #[test]
+    fn status_api_is_const() {
+        const STATUS: DeployStatus =
+            DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING);
+        const PACKED: InjectorStatusCode = STATUS.encode();
+        const DECODED: DeployStatus = DeployStatus::decode(PACKED);
+        const STAGE: DeployStage = DECODED.stage();
+        const TERMINAL_STATUS: TerminalStatus = DECODED.status();
+        const CODE: u8 = DECODED.code();
 
-        let execute = bridge
-            .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
-            .expect("valid execute packet");
-        assert_eq!(execute.value1(), Some(RESPONSE_ABORT));
+        assert_eq!(PACKED, 0x0000_0105);
+        assert_eq!(DECODED, STATUS);
+        assert_eq!(STAGE, DeployStage::EXECUTE);
+        assert_eq!(TERMINAL_STATUS, TerminalStatus::WAITING);
+        assert_eq!(CODE, 0);
     }
 
     #[test]
     fn exit_completes_with_packed_status() {
         let bridge = DeployBridge::new(DeployPolicy::default());
-        let packed = 0x00fe_0203;
+        let packed = 0x0002_fe03;
         let response = bridge
             .handle_packet(
                 packet(METHOD_EXIT)
@@ -379,15 +408,14 @@ mod tests {
             DeployStatus {
                 stage: DeployStage::DOWNLOAD,
                 status: TerminalStatus::OPERATION_FAILED,
-                detail: 2,
+                code: 2,
             }
         );
     }
-
     #[test]
     fn corrupt_terminal_values_are_preserved() {
         let bridge = DeployBridge::new(DeployPolicy::default());
-        let packed = 0xab7c_5de6;
+        let packed = 0xab5d_7ce6;
 
         let result = DeployStatus::decode(packed);
         assert_eq!(
@@ -395,7 +423,7 @@ mod tests {
             DeployStatus {
                 stage: DeployStage(0xe6),
                 status: TerminalStatus(0x7c),
-                detail: 0x5d,
+                code: 0x5d,
             }
         );
         assert_eq!(format!("{:?}", result.stage()), "230");

@@ -13,16 +13,22 @@ pub const METHOD_EXIT: u16 = 0xffff;
 /// Allows the shellcode to continue its current stage.
 pub const RESPONSE_CONTINUE: u64 = 0x0000_0000;
 
+/// Leaves the shellcode waiting at its current stage.
+pub const RESPONSE_WAIT: u64 = 0x0000_0001;
+
 /// Aborts the shellcode's current stage.
 pub const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
-/// Stable terminal status encoded by the deploy shellcode.
+/// Stable deploy status encoded by the shellcode or host bridge.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct TerminalStatus(pub u8);
 
 impl TerminalStatus {
     /// The requested stages completed successfully.
     pub const SUCCESS: Self = Self(0x00);
+
+    /// The host bridge detached while the shellcode remains parked.
+    pub const WAITING: Self = Self(0x01);
 
     /// The serialized parameters were invalid.
     pub const INVALID_PARAMETERS: Self = Self(0xfd);
@@ -38,6 +44,7 @@ impl std::fmt::Debug for TerminalStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let name = match *self {
             Self::SUCCESS => "Success",
+            Self::WAITING => "Waiting",
             Self::INVALID_PARAMETERS => "InvalidParameters",
             Self::OPERATION_FAILED => "OperationFailed",
             Self::ABORTED => "Aborted",
