@@ -7,7 +7,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 use anyhow::{Context as _, Error};
 use clap::{Args, Parser, Subcommand};
-use isr::cache::IsrCache;
+use isr::{Profile, cache::IsrCache};
 use tracing_subscriber::EnvFilter;
 use vmi::{
     VcpuId, VmiCore, VmiSession,
@@ -19,7 +19,10 @@ use vmi::{
 
 use crate::{
     bridge::TerminalStatus,
-    deploy::{DeployBridge, DeployParameters, DeployPolicy, DeployStatus, deploy_recipe},
+    deploy::{
+        DeployBridge, DeployMonitor, DeployMonitorInterruptedOutput, DeployMonitorOutput,
+        DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse, deploy_recipe,
+    },
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
 
@@ -108,9 +111,19 @@ struct DeployArguments {
     #[arg(long, requires = "execute")]
     show_window: Option<i32>,
 
+    /// Monitors the launched guest executable until it terminates.
+    #[arg(long, requires = "execute")]
+    monitor: bool,
+
     /// Number of retries allowed after a failed download attempt.
     #[arg(long, default_value_t = 0)]
     max_download_retries: u64,
+}
+
+#[derive(Debug)]
+struct DeployMonitorRequest {
+    /// Kernel process name expected for the launched executable.
+    executable_name: String,
 }
 
 #[derive(Debug)]
@@ -123,11 +136,14 @@ struct DeployRequest {
 
     /// Host policy applied to deploy stage gates.
     policy: DeployPolicy,
+
+    /// Monitor configuration when execution must be observed.
+    monitor: Option<DeployMonitorRequest>,
 }
 
 impl DeployArguments {
     /// Converts CLI arguments into a deploy request.
-    fn into_request(self) -> DeployRequest {
+    fn into_request(self) -> Result<DeployRequest, Error> {
         let Self {
             process,
             url,
@@ -137,12 +153,33 @@ impl DeployArguments {
             arguments,
             working_directory,
             show_window,
+            monitor,
             max_download_retries,
         } = self;
 
-        let policy = DeployPolicy::default()
-            .max_download_retries(max_download_retries)
-            .maybe_allow_execute(execute.is_some());
+        let policy = DeployPolicy::default().max_download_retries(max_download_retries);
+        let policy = if monitor {
+            policy.execute_response(ExecuteResponse::Wait)
+        }
+        else {
+            policy.maybe_allow_execute(execute.is_some())
+        };
+
+        let monitor_request = if monitor {
+            let executable = execute
+                .as_deref()
+                .expect("execute required by clap when monitor is enabled");
+            let executable_name = windows_executable_basename(executable)
+                .with_context(|| {
+                    format!("monitor executable path has no basename: `{executable}`")
+                })?
+                .to_owned();
+
+            Some(DeployMonitorRequest { executable_name })
+        }
+        else {
+            None
+        };
 
         let parameters = match (url, execute) {
             (None, None) => DeployParameters::builder().build(),
@@ -168,12 +205,20 @@ impl DeployArguments {
                 .build(),
         };
 
-        DeployRequest {
+        Ok(DeployRequest {
             process,
             parameters,
             policy,
-        }
+            monitor: monitor_request,
+        })
     }
+}
+
+/// Returns the final component of a path using Windows path separators.
+fn windows_executable_basename(path: &str) -> Option<&str> {
+    path.rsplit(['\\', '/'])
+        .next()
+        .filter(|name| !name.is_empty())
 }
 
 /// Validates the result returned by `MessageBoxA`.
@@ -188,6 +233,18 @@ fn validate_deploy_result(result: u64) -> Result<DeployStatus, Error> {
     anyhow::ensure!(
         status.status() == TerminalStatus::SUCCESS,
         "deploy failed: {status:?}"
+    );
+    Ok(status)
+}
+
+/// Validates the injector handoff used before deploy monitoring begins.
+fn validate_deploy_waiting_result(result: u64) -> Result<DeployStatus, Error> {
+    let status = DeployStatus::decode(result);
+    anyhow::ensure!(
+        status.stage() == DeployStage::EXECUTE
+            && status.status() == TerminalStatus::WAITING
+            && status.code() == 0,
+        "deploy monitor handoff failed: {status:?}"
     );
     Ok(status)
 }
@@ -241,12 +298,18 @@ fn run_msgbox(session: &WindowsVmiSession<'_>, arguments: MsgboxArguments) -> Re
 }
 
 /// Runs a deploy injection.
-fn run_deploy(session: &WindowsVmiSession<'_>, arguments: DeployArguments) -> Result<(), Error> {
+fn run_deploy(
+    session: &WindowsVmiSession<'_>,
+    profile: &Profile,
+    terminate_flag: Arc<AtomicBool>,
+    arguments: DeployArguments,
+) -> Result<(), Error> {
     let DeployRequest {
         process,
         parameters,
         policy,
-    } = arguments.into_request();
+        monitor,
+    } = arguments.into_request()?;
     let process_id = find_process_id(session, &process)?;
     let result = session
         .handle(|session| {
@@ -259,10 +322,45 @@ fn run_deploy(session: &WindowsVmiSession<'_>, arguments: DeployArguments) -> Re
         })?
         .context("deploy injection interrupted")?
         .map_err(|packet| anyhow::anyhow!("unhandled deploy bridge packet: {packet:?}"))?;
-    let status = validate_deploy_result(result)?;
 
-    tracing::info!(?status, "deploy completed");
-    Ok(())
+    let Some(monitor) = monitor
+    else {
+        let status = validate_deploy_result(result)?;
+        tracing::info!(?status, "deploy completed");
+        return Ok(());
+    };
+
+    let status = validate_deploy_waiting_result(result)?;
+    tracing::info!(?status, "deploy injector parked at execute gate");
+
+    let interrupted_output = DeployMonitorInterruptedOutput::default();
+    let monitor_terminate_flag = terminate_flag.clone();
+    let monitor_interrupted_output = interrupted_output.clone();
+    let outcome = session
+        .handle(|session| {
+            DeployMonitor::new(
+                session,
+                profile,
+                monitor_terminate_flag,
+                monitor_interrupted_output,
+                monitor.executable_name,
+                process_id,
+            )
+        })?
+        .or_else(|| interrupted_output.take())
+        .context("deploy monitoring interrupted")?;
+
+    match outcome {
+        DeployMonitorOutput::ProcessTerminated { process_id } => {
+            tracing::info!(%process_id, "deploy monitoring completed");
+            Ok(())
+        }
+        DeployMonitorOutput::DeployFailed(status) => {
+            anyhow::bail!("deploy failed during monitoring: {status:?}")
+        }
+        DeployMonitorOutput::Cancelled => anyhow::bail!("deploy monitoring cancelled"),
+        DeployMonitorOutput::Failed(error) => anyhow::bail!("deploy monitoring failed: {error}"),
+    }
 }
 
 fn main() -> Result<(), Error> {
@@ -312,7 +410,7 @@ fn main() -> Result<(), Error> {
 
     match cli.command {
         Command::Msgbox(arguments) => run_msgbox(&session, arguments),
-        Command::Deploy(arguments) => run_deploy(&session, arguments),
+        Command::Deploy(arguments) => run_deploy(&session, &profile, terminate_flag, arguments),
     }
 }
 
@@ -356,6 +454,85 @@ mod tests {
     }
 
     #[test]
+    fn deploy_command_accepts_monitor_with_execute() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--execute",
+            r"C:\samples\sample.exe",
+            "--monitor",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command
+        else {
+            panic!("expected deploy command");
+        };
+
+        assert!(arguments.monitor);
+    }
+
+    #[test]
+    fn monitor_command_parks_the_execute_gate() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--execute",
+            r"C:\samples\sample.exe",
+            "--monitor",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command
+        else {
+            panic!("expected deploy command");
+        };
+
+        let request = arguments.into_request().unwrap();
+
+        assert_eq!(
+            request.policy,
+            DeployPolicy::default().execute_response(crate::deploy::ExecuteResponse::Wait)
+        );
+    }
+
+    #[test]
+    fn monitor_request_carries_executable_basename() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--execute",
+            r"C:\samples\sample.exe",
+            "--monitor",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command
+        else {
+            panic!("expected deploy command");
+        };
+
+        let request = arguments.into_request().unwrap();
+
+        assert_eq!(request.monitor.unwrap().executable_name, "sample.exe");
+    }
+    #[test]
+    fn windows_executable_basename_handles_both_separators() {
+        assert_eq!(
+            windows_executable_basename(r"C:\samples\sample.exe"),
+            Some("sample.exe")
+        );
+        assert_eq!(
+            windows_executable_basename("C:/samples/sample.exe"),
+            Some("sample.exe")
+        );
+    }
+
+    #[test]
+    fn windows_executable_basename_rejects_missing_final_component() {
+        for path in ["", "C:\\samples\\", "C:/samples/"] {
+            assert_eq!(windows_executable_basename(path), None);
+        }
+    }
+
+    #[test]
     fn deploy_command_builds_no_operation_request() {
         let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
         let Command::Deploy(arguments) = cli.command
@@ -363,7 +540,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request();
+        let request = arguments.into_request().unwrap();
 
         assert_eq!(encode_parameters(&request.parameters), [0, 0, 0, 0]);
         assert_eq!(request.policy, DeployPolicy::default());
@@ -385,7 +562,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request();
+        let request = arguments.into_request().unwrap();
 
         assert_eq!(
             encode_parameters(&request.parameters),
@@ -418,7 +595,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request();
+        let request = arguments.into_request().unwrap();
 
         assert_eq!(
             encode_parameters(&request.parameters),
@@ -442,6 +619,7 @@ mod tests {
             &["windows-bridge", "deploy", "--arguments", "a"][..],
             &["windows-bridge", "deploy", "--working-directory", "w"][..],
             &["windows-bridge", "deploy", "--show-window", "1"][..],
+            &["windows-bridge", "deploy", "--monitor"][..],
         ];
 
         for arguments in incomplete {
@@ -479,7 +657,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request();
+        let request = arguments.into_request().unwrap();
 
         assert_eq!(request.process, "notepad.exe");
         assert_eq!(
@@ -509,6 +687,14 @@ mod tests {
 
         let error = validate_deploy_result(0x0001_fe03).unwrap_err();
         assert!(error.to_string().contains("OperationFailed"));
+    }
+
+    #[test]
+    fn monitor_requires_execute_waiting_result() {
+        assert!(validate_deploy_waiting_result(0x0000_0105).is_ok());
+        assert!(validate_deploy_waiting_result(0x0000_0104).is_err());
+        assert!(validate_deploy_waiting_result(0x0000_0005).is_err());
+        assert!(validate_deploy_waiting_result(0x0001_0105).is_err());
     }
 
     #[test]

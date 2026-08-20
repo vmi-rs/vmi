@@ -126,11 +126,14 @@ pub struct DeployBridge {
 impl_bridge_contract!(DeployBridge);
 
 impl DeployBridge {
+    /// Deploy bridge request identifier.
+    pub(crate) const REQUEST: u16 = 0x0001;
+
     /// Download readiness and retry method.
     const METHOD_DOWNLOAD: u16 = 0x0001;
 
     /// Execution policy gate method.
-    const METHOD_EXECUTE: u16 = 0x0002;
+    pub(crate) const METHOD_EXECUTE: u16 = 0x0002;
 
     /// Terminal result method.
     const METHOD_EXIT: u16 = METHOD_EXIT;
@@ -222,7 +225,7 @@ where
     Driver: VmiRead<Architecture = Amd64>,
 {
     /// Deploy bridge request identifier.
-    const REQUEST: u16 = 0x0001;
+    const REQUEST: u16 = DeployBridge::REQUEST;
 
     fn handle(
         &mut self,
