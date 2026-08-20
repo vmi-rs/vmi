@@ -20,8 +20,8 @@ use vmi::{
 use crate::{
     bridge::TerminalStatus,
     deploy::{
-        DeployBridge, DeployMonitor, DeployMonitorInterruptedOutput, DeployMonitorOutput,
-        DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse, deploy_recipe,
+        DeployBridge, DeployMonitor, DeployMonitorOutput, DeployParameters, DeployPolicy,
+        DeployStage, DeployStatus, ExecuteResponse, deploy_recipe,
     },
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
@@ -249,6 +249,18 @@ fn validate_deploy_waiting_result(result: u64) -> Result<DeployStatus, Error> {
     Ok(status)
 }
 
+/// Resolves monitor completion when a signal interrupts the VMI wait.
+fn resolve_monitor_outcome(
+    outcome: Option<DeployMonitorOutput>,
+    terminated: bool,
+) -> Result<DeployMonitorOutput, Error> {
+    match outcome {
+        Some(outcome) => Ok(outcome),
+        None if terminated => Ok(Ok(None)),
+        None => anyhow::bail!("deploy monitoring interrupted"),
+    }
+}
+
 type WindowsVmiSession<'a> = VmiSession<'a, WindowsOs<VmiXenDriver<Amd64>>>;
 
 /// Finds the configured target process while the guest is paused.
@@ -333,33 +345,31 @@ fn run_deploy(
     let status = validate_deploy_waiting_result(result)?;
     tracing::info!(?status, "deploy injector parked at execute gate");
 
-    let interrupted_output = DeployMonitorInterruptedOutput::default();
     let monitor_terminate_flag = terminate_flag.clone();
-    let monitor_interrupted_output = interrupted_output.clone();
-    let outcome = session
-        .handle(|session| {
-            DeployMonitor::new(
-                session,
-                profile,
-                monitor_terminate_flag,
-                monitor_interrupted_output,
-                monitor.executable_name,
-                process_id,
-            )
-        })?
-        .or_else(|| interrupted_output.take())
-        .context("deploy monitoring interrupted")?;
+    let outcome = session.handle(|session| {
+        DeployMonitor::new(
+            session,
+            profile,
+            monitor_terminate_flag,
+            monitor.executable_name,
+            process_id,
+        )
+    })?;
+    let outcome = resolve_monitor_outcome(
+        outcome,
+        terminate_flag.load(std::sync::atomic::Ordering::Relaxed),
+    )?;
 
     match outcome {
-        DeployMonitorOutput::ProcessTerminated { process_id } => {
+        Ok(Some(process_id)) => {
             tracing::info!(%process_id, "deploy monitoring completed");
             Ok(())
         }
-        DeployMonitorOutput::DeployFailed(status) => {
-            anyhow::bail!("deploy failed during monitoring: {status:?}")
+        Ok(None) => {
+            tracing::info!("deploy monitoring cancelled");
+            Ok(())
         }
-        DeployMonitorOutput::Cancelled => anyhow::bail!("deploy monitoring cancelled"),
-        DeployMonitorOutput::Failed(error) => anyhow::bail!("deploy monitoring failed: {error}"),
+        Err(status) => anyhow::bail!("deploy failed during monitoring: {status:?}"),
     }
 }
 
@@ -695,6 +705,13 @@ mod tests {
         assert!(validate_deploy_waiting_result(0x0000_0104).is_err());
         assert!(validate_deploy_waiting_result(0x0000_0005).is_err());
         assert!(validate_deploy_waiting_result(0x0001_0105).is_err());
+    }
+
+    #[test]
+    fn monitor_termination_without_handler_output_is_graceful() {
+        let outcome = resolve_monitor_outcome(None, true).unwrap();
+
+        assert_eq!(outcome, Ok(None));
     }
 
     #[test]
