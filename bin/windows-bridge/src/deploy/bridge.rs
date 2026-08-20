@@ -11,13 +11,15 @@ use vmi::{
 };
 
 use crate::bridge::{
-    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT, TerminalStatus,
-    impl_bridge_contract,
+    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT, TerminalResult, TerminalStatus,
+    impl_bridge_contract, impl_bridge_stage,
 };
 
 /// Deploy operation stage encoded in a packed result.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct DeployStage(u8);
+
+impl_bridge_stage!(DeployStage);
 
 impl DeployStage {
     /// No operation ran.
@@ -55,57 +57,7 @@ impl std::fmt::Debug for DeployStage {
 }
 
 /// Decoded status returned by the injector handler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeployStatus {
-    /// Stage that produced the result.
-    stage: DeployStage,
-
-    /// Stable result status.
-    status: TerminalStatus,
-
-    /// Stage-specific compact error code.
-    code: u8,
-}
-
-impl DeployStatus {
-    /// Creates a status without a stage-specific error code.
-    pub const fn new(stage: DeployStage, status: TerminalStatus) -> Self {
-        Self {
-            stage,
-            status,
-            code: 0,
-        }
-    }
-
-    /// Decodes the packed status returned by the injector.
-    pub const fn decode(value: InjectorStatusCode) -> Self {
-        Self {
-            stage: DeployStage(value as u8),
-            status: TerminalStatus((value >> 8) as u8),
-            code: (value >> 16) as u8,
-        }
-    }
-
-    /// Encodes the status for use as an injector result.
-    pub const fn encode(self) -> InjectorStatusCode {
-        self.stage.0 as u64 | (self.status.0 as u64) << 8 | (self.code as u64) << 16
-    }
-
-    /// Returns the stage that produced the result.
-    pub const fn stage(self) -> DeployStage {
-        self.stage
-    }
-
-    /// Returns the stable result status.
-    pub const fn status(self) -> TerminalStatus {
-        self.status
-    }
-
-    /// Returns the stage-specific error code.
-    pub const fn code(self) -> u8 {
-        self.code
-    }
-}
+pub type DeployStatus = TerminalResult<DeployStage>;
 
 /// Host response when the shellcode reaches the execution gate.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -229,6 +181,7 @@ impl DeployBridge {
             response = ?self.policy.execute_response,
             "deploy execute gate"
         );
+
         Some(response)
     }
 
@@ -374,17 +327,18 @@ mod tests {
     }
 
     #[test]
-    fn status_api_is_const() {
+    fn status_api_keeps_const_construction_and_accessors() {
         const STATUS: DeployStatus =
             DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING);
-        const PACKED: InjectorStatusCode = STATUS.encode();
-        const DECODED: DeployStatus = DeployStatus::decode(PACKED);
-        const STAGE: DeployStage = DECODED.stage();
-        const TERMINAL_STATUS: TerminalStatus = DECODED.status();
-        const CODE: u8 = DECODED.code();
+        const STAGE: DeployStage = STATUS.stage();
+        const TERMINAL_STATUS: TerminalStatus = STATUS.status();
+        const CODE: u8 = STATUS.code();
 
-        assert_eq!(PACKED, 0x0000_0105);
-        assert_eq!(DECODED, STATUS);
+        let packed = STATUS.encode();
+        let decoded = DeployStatus::decode(packed);
+
+        assert_eq!(packed, 0x0000_0105);
+        assert_eq!(decoded, STATUS);
         assert_eq!(STAGE, DeployStage::EXECUTE);
         assert_eq!(TERMINAL_STATUS, TerminalStatus::WAITING);
         assert_eq!(CODE, 0);
@@ -403,14 +357,10 @@ mod tests {
             .expect("valid exit packet");
 
         assert_eq!(response.into_result(), Some(packed));
-        assert_eq!(
-            DeployStatus::decode(packed),
-            DeployStatus {
-                stage: DeployStage::DOWNLOAD,
-                status: TerminalStatus::OPERATION_FAILED,
-                code: 2,
-            }
-        );
+        let result = DeployStatus::decode(packed);
+        assert_eq!(result.stage(), DeployStage::DOWNLOAD);
+        assert_eq!(result.status(), TerminalStatus::OPERATION_FAILED);
+        assert_eq!(result.code(), 2);
     }
     #[test]
     fn corrupt_terminal_values_are_preserved() {
@@ -418,14 +368,9 @@ mod tests {
         let packed = 0xab5d_7ce6;
 
         let result = DeployStatus::decode(packed);
-        assert_eq!(
-            result,
-            DeployStatus {
-                stage: DeployStage(0xe6),
-                status: TerminalStatus(0x7c),
-                code: 0x5d,
-            }
-        );
+        assert_eq!(result.stage(), DeployStage(0xe6));
+        assert_eq!(result.status(), TerminalStatus(0x7c));
+        assert_eq!(result.code(), 0x5d);
         assert_eq!(format!("{:?}", result.stage()), "230");
         assert_eq!(format!("{:?}", result.status()), "124");
 
