@@ -208,11 +208,7 @@ where
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let tag = match self.bpm.get_by_event(vmi.event(), ()) {
-            Some(breakpoints) => breakpoints
-                .into_iter()
-                .next()
-                .expect("managed breakpoint")
-                .tag(),
+            Some(breakpoint) => breakpoint.tag(),
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {
                     tracing::warn!("unknown breakpoint, reinjecting");
