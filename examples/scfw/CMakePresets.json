@@ -1,0 +1,39 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "x64",
+            "displayName": "x64 Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-x64",
+            "toolchainFile": "_deps/scfw-src/cmake/toolchain.cmake",
+            "cacheVariables": {
+                "SCFW_TARGET": "x64",
+                "CMAKE_BUILD_TYPE": "Release",
+                "SCFW_FETCH_WINSDK": "ON"
+            }
+        },
+        {
+            "name": "x64-debug",
+            "displayName": "x64 Debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-x64-debug",
+            "toolchainFile": "_deps/scfw-src/cmake/toolchain.cmake",
+            "cacheVariables": {
+                "SCFW_TARGET": "x64",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SCFW_FETCH_WINSDK": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "x64",
+            "configurePreset": "x64"
+        },
+        {
+            "name": "x64-debug",
+            "configurePreset": "x64-debug"
+        }
+    ]
+}

@@ -45,6 +45,7 @@ zerocopy = "0.8"
 
 # [workspace.dev-dependencies]
 anyhow = "1"
+clap = "4"
 hex = "0.4"
 signal-hook = "0.4"
 tracing-subscriber = "0.3"
@@ -164,6 +165,7 @@ utils = [
 [dev-dependencies]
 anyhow = { workspace = true }
 bitflags = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 hex = { workspace = true }
 signal-hook = { workspace = true }
 tracing = { workspace = true }
@@ -221,6 +223,12 @@ required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 [[example]]
 name = "windows-recipe-writefile-advanced"
 path = "examples/windows-recipe-writefile-advanced.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
+name = "windows-bridge"
+path = "examples/windows-bridge/main.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
