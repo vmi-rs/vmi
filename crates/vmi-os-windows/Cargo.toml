@@ -34,5 +34,5 @@ vmi-core = { workspace = true }
 vmi-macros = { workspace = true }
 
 [dev-dependencies]
-isr = { workspace = true }
-vmi = { workspace = true }
+isr = { workspace = true, features = ["cache", "dl-windows"] }
+vmi = { workspace = true, features = ["arch-amd64", "os-windows"] }
