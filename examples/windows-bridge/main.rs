@@ -143,7 +143,7 @@ struct DeployRequest {
 
 impl DeployArguments {
     /// Converts CLI arguments into a deploy request.
-    fn into_request(self) -> Result<DeployRequest, Error> {
+    fn into_request(self) -> DeployRequest {
         let Self {
             process,
             url,
@@ -170,9 +170,7 @@ impl DeployArguments {
                 .as_deref()
                 .expect("execute required by clap when monitor is enabled");
             let executable_name = windows_executable_basename(executable)
-                .with_context(|| {
-                    format!("monitor executable path has no basename: `{executable}`")
-                })?
+                .expect("monitor executable path has no basename")
                 .to_owned();
 
             Some(DeployMonitorRequest { executable_name })
@@ -205,12 +203,12 @@ impl DeployArguments {
                 .build(),
         };
 
-        Ok(DeployRequest {
+        DeployRequest {
             process,
             parameters,
             policy,
             monitor: monitor_request,
-        })
+        }
     }
 }
 
@@ -321,7 +319,7 @@ fn run_deploy(
         parameters,
         policy,
         monitor,
-    } = arguments.into_request()?;
+    } = arguments.into_request();
     let process_id = find_process_id(session, &process)?;
     let result = session
         .handle(|session| {
@@ -496,7 +494,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(
             request.policy,
@@ -519,7 +517,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(request.monitor.unwrap().executable_name, "sample.exe");
     }
@@ -550,7 +548,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(encode_parameters(&request.parameters), [0, 0, 0, 0]);
         assert_eq!(request.policy, DeployPolicy::default());
@@ -572,7 +570,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(
             encode_parameters(&request.parameters),
@@ -605,7 +603,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(
             encode_parameters(&request.parameters),
@@ -667,7 +665,7 @@ mod tests {
             panic!("expected deploy command");
         };
 
-        let request = arguments.into_request().unwrap();
+        let request = arguments.into_request();
 
         assert_eq!(request.process, "notepad.exe");
         assert_eq!(
