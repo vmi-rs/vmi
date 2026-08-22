@@ -168,8 +168,8 @@ constexpr uint16_t method_download = 0x0001;
 constexpr uint16_t method_execute = 0x0002;
 constexpr uint16_t method_exit = 0xffff;
 
-constexpr uintptr_t response_continue = 0x00000000;
-constexpr uintptr_t response_abort = 0xffffffff;
+constexpr uint32_t response_continue = 0x00000000;
+constexpr uint32_t response_abort = 0xffffffff;
 
 constexpr DWORD bridge_wait_milliseconds = 250;
 constexpr DWORD extraction_poll_milliseconds = 100;
@@ -204,12 +204,12 @@ constexpr parameter_flags valid_flags =
     | execute_flags;
 
 enum class stage : uint8_t {
-    none                    = 0x00,
-    parameters              = 0x01,
-    initialization          = 0x02,
-    download                = 0x03,
-    extract                 = 0x04,
-    execute                 = 0x05,
+    none = 0x00,
+    parameters = 0x01,
+    initialization = 0x02,
+    download = 0x03,
+    extract = 0x04,
+    execute = 0x05,
 };
 
 using bridge_client = proto::bridge::client<
@@ -301,7 +301,7 @@ private:
 //////////////////////////////////////////////////////////////////////////
 
 enum class parameter_error : uint8_t {
-    flags                   = 0x01,
+    flags = 0x01,
 };
 
 template <>
@@ -552,8 +552,8 @@ CreateParentDirectory(
 //////////////////////////////////////////////////////////////////////////
 
 enum class download_error : uint8_t {
-    create_directory        = 0x01,
-    url_download            = 0x02,
+    create_directory = 0x01,
+    url_download = 0x02,
 };
 
 template <>
@@ -618,16 +618,16 @@ Download(
 //////////////////////////////////////////////////////////////////////////
 
 enum class extract_error : uint8_t {
-    create_directory        = 0x01,
-    create_shell            = 0x02,
-    open_archive            = 0x03,
-    open_output             = 0x04,
-    get_archive_items       = 0x05,
-    count_archive_items     = 0x06,
-    copy_items              = 0x07,
-    get_output_items        = 0x08,
-    count_output_items      = 0x09,
-    timeout                 = 0x0a,
+    create_directory = 0x01,
+    create_shell = 0x02,
+    open_archive = 0x03,
+    open_output = 0x04,
+    get_archive_items = 0x05,
+    count_archive_items = 0x06,
+    copy_items = 0x07,
+    get_output_items = 0x08,
+    count_output_items = 0x09,
+    timeout = 0x0a,
 };
 
 template <>
@@ -813,7 +813,7 @@ Extract(
 //////////////////////////////////////////////////////////////////////////
 
 enum class execute_error : uint8_t {
-    shell_execute           = 0x01,
+    shell_execute = 0x01,
 };
 
 template <>
@@ -930,21 +930,21 @@ Entry(
 }
 
 enum class initialization_error : uint8_t {
-    initialize_com          = 0x01,
-    expand_download_path    = 0x02,
-    expand_extraction_path  = 0x03,
-    expand_executable_path  = 0x04,
+    initialize_com = 0x01,
+    expand_download_path = 0x02,
+    expand_extraction_path = 0x03,
+    expand_executable_path = 0x04,
     expand_working_directory = 0x05,
 };
 
 template <>
 struct proto::is_error_code<initialization_error> : std::true_type {};
 
-result
+auto
 __fastcall
-__entry(
+DeployInternal(
     _In_ const parameters& parameters
-    )
+    ) -> result
 {
     //
     // Expand DownloadPath.
@@ -1087,11 +1087,11 @@ __entry(
     return result;
 }
 
-result
+auto
 __fastcall
-_entry(
+Deploy(
     _In_ void* data
-    )
+    ) -> result
 {
     if (!bridge::wait_for_host())
     {
@@ -1100,7 +1100,7 @@ _entry(
 
     if (const auto parameters = parse_parameters(data); parameters)
     {
-        return __entry(*parameters);
+        return DeployInternal(*parameters);
     }
     else
     {
@@ -1121,7 +1121,7 @@ entry(
 {
     (void)argument2;
 
-    bridge::exit(_entry(argument1));
+    bridge::exit(Deploy(argument1));
 }
 
 } // namespace sc
