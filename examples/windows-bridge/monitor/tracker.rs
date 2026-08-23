@@ -3,38 +3,38 @@ use std::collections::HashMap;
 use vmi::os::{ProcessId, ProcessObject};
 
 #[derive(Debug)]
-pub(super) struct Process {
-    pub(super) pid: ProcessId,
-    pub(super) ppid: ProcessId,
-    pub(super) name: String,
-    pub(super) terminated: bool,
+pub struct Process {
+    pub pid: ProcessId,
+    pub ppid: ProcessId,
+    pub name: String,
+    pub terminated: bool,
 }
 
 #[derive(Debug, Default)]
-pub(super) struct ProcessTracker {
+pub struct ProcessTracker {
     processes: HashMap<ProcessObject, Process>,
 }
 
 impl ProcessTracker {
-    pub(super) fn insert(&mut self, object: ProcessObject, process: Process) -> Option<Process> {
+    pub fn insert(&mut self, object: ProcessObject, process: Process) -> Option<Process> {
         self.processes.insert(object, process)
     }
 
-    pub(super) fn remove(&mut self, object: ProcessObject) -> Option<Process> {
+    pub fn remove(&mut self, object: ProcessObject) -> Option<Process> {
         self.processes.remove(&object)
     }
 
-    pub(super) fn mark_terminated(&mut self, object: ProcessObject) -> Option<&Process> {
+    pub fn mark_terminated(&mut self, object: ProcessObject) -> Option<&Process> {
         let process = self.get_mut(object)?;
         process.terminated = true;
         Some(process)
     }
 
-    pub(super) fn get(&self, object: ProcessObject) -> Option<&Process> {
+    pub fn get(&self, object: ProcessObject) -> Option<&Process> {
         self.processes.get(&object)
     }
 
-    pub(super) fn get_mut(&mut self, object: ProcessObject) -> Option<&mut Process> {
+    pub fn get_mut(&mut self, object: ProcessObject) -> Option<&mut Process> {
         self.processes.get_mut(&object)
     }
 }
