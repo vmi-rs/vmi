@@ -1,3 +1,5 @@
+mod tracker;
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -17,6 +19,7 @@ use vmi::{
     },
 };
 
+use self::tracker::{Process, ProcessTracker};
 use crate::{
     bridge::TerminalStatus,
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
@@ -37,50 +40,12 @@ fn process_name_matches(expected: &str, observed: &str) -> bool {
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case(observed))
 }
 
-/// Tracks the process selected at insertion time.
-#[derive(Debug)]
-struct ProcessTracker {
-    expected_name: String,
-    expected_parent: ProcessId,
-    process: Option<(ProcessObject, ProcessId)>,
-}
-
-impl ProcessTracker {
-    fn new(expected_name: impl Into<String>, expected_parent: ProcessId) -> Self {
-        Self {
-            expected_name: expected_name.into(),
-            expected_parent,
-            process: None,
-        }
-    }
-
-    /// Selects the first process matching the executable name and parent.
-    fn observe_process(
-        &mut self,
-        process: ProcessObject,
-        process_id: ProcessId,
-        name: &str,
-        parent_id: ProcessId,
-    ) -> bool {
-        if self.process.is_some()
-            || !process_name_matches(&self.expected_name, name)
-            || parent_id != self.expected_parent
-        {
-            return false;
-        }
-
-        self.process = Some((process, process_id));
-        true
-    }
-
-    /// Reports whether cleanup belongs to the selected process object.
-    fn observes_cleanup(&self, process: ProcessObject) -> bool {
-        matches!(self.process, Some((tracked, _)) if tracked == process)
-    }
-
-    fn process(&self) -> Option<(ProcessObject, ProcessId)> {
-        self.process
-    }
+fn process_matches_target(
+    expected_name: &str,
+    expected_ppid: ProcessId,
+    process: &Process,
+) -> bool {
+    process_name_matches(expected_name, &process.name) && process.ppid == expected_ppid
 }
 
 /// Returns a terminal deploy status only when it represents failure.
@@ -121,7 +86,10 @@ where
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
-    tracker: ProcessTracker,
+    processes: ProcessTracker,
+    expected_name: String,
+    expected_ppid: ProcessId,
+    target_process: Option<ProcessObject>,
     completion: Option<DeployMonitorOutput>,
 }
 
@@ -136,7 +104,7 @@ where
         profile: &Profile,
         terminate_flag: Arc<AtomicBool>,
         expected_name: String,
-        expected_parent: ProcessId,
+        expected_ppid: ProcessId,
     ) -> Result<Self, VmiError> {
         let registers = session.registers(VcpuId(0))?;
         let vmi = session.with_registers(&registers);
@@ -179,7 +147,10 @@ where
             view,
             bpm,
             ptm,
-            tracker: ProcessTracker::new(expected_name, expected_parent),
+            processes: ProcessTracker::default(),
+            expected_name,
+            expected_ppid,
+            target_process: None,
             completion: None,
         })
     }
@@ -223,8 +194,8 @@ where
         match tag {
             "PspInsertProcess" => self.PspInsertProcess(vmi)?,
             "MmCleanProcessAddressSpace" => self.MmCleanProcessAddressSpace(vmi)?,
-            "NtWriteFile" => self.NtWriteFile(),
-            "NtClose" => self.NtClose(),
+            "NtWriteFile" => self.NtWriteFile(vmi)?,
+            "NtClose" => self.NtClose(vmi)?,
             _ => panic!("unhandled deploy monitor hook: {tag}"),
         }
 
@@ -282,27 +253,38 @@ where
 
         let NewProcess = ProcessObject(Va(vmi.os().function_argument(0)?));
         let Parent = ProcessObject(Va(vmi.os().function_argument(1)?));
-        let process = vmi.os().process(NewProcess)?;
+        let new_process = vmi.os().process(NewProcess)?;
         let parent = vmi.os().process(Parent)?;
-        let process_id = process.id()?;
-        let parent_id = parent.id()?;
-        let name = process.name()?;
+        let process = Process {
+            pid: new_process.id()?,
+            ppid: parent.id()?,
+            name: new_process.name()?,
+            terminated: false,
+        };
+        let is_target = self.target_process.is_none()
+            && process_matches_target(&self.expected_name, self.expected_ppid, &process);
 
         tracing::info!(
             hook = "PspInsertProcess",
             process = %NewProcess,
-            %process_id,
-            name,
+            pid = %process.pid,
+            name = %process.name,
             parent = %Parent,
-            %parent_id,
+            ppid = %process.ppid,
             "kernel function called"
         );
 
-        if self
-            .tracker
-            .observe_process(NewProcess, process_id, &name, parent_id)
-        {
-            tracing::info!(%NewProcess, %process_id, name, "deployed process started");
+        self.processes.insert(NewProcess, process);
+
+        if is_target {
+            self.target_process = Some(NewProcess);
+            let process = self.processes.get(NewProcess).expect("inserted process");
+            tracing::info!(
+                process = %NewProcess,
+                pid = %process.pid,
+                name = %process.name,
+                "deployed process started"
+            );
         }
 
         Ok(())
@@ -320,28 +302,40 @@ where
         //
 
         let Process = ProcessObject(Va(vmi.os().function_argument(0)?));
-        let process = vmi.os().process(Process)?;
-        let process_id = process.id()?;
-        let name = process.name()?;
+        let Some(process) = self.processes.mark_terminated(Process)
+        else {
+            tracing::info!(
+                hook = "MmCleanProcessAddressSpace",
+                process = %Process,
+                tracked = false,
+                "kernel function called"
+            );
+            return Ok(());
+        };
 
         tracing::info!(
             hook = "MmCleanProcessAddressSpace",
             process = %Process,
-            %process_id,
-            name,
+            pid = %process.pid,
+            name = %process.name,
+            terminated = process.terminated,
+            tracked = true,
             "kernel function called"
         );
 
-        if self.tracker.observes_cleanup(Process) {
-            let (_, tracked_process_id) = self.tracker.process().expect("selected process");
-            self.completion = Some(Ok(Some(tracked_process_id)));
-            tracing::info!(%Process, %tracked_process_id, "deployed process terminated");
+        if self.target_process == Some(Process) {
+            self.completion = Some(Ok(Some(process.pid)));
+            tracing::info!(
+                process = %Process,
+                pid = %process.pid,
+                "deployed process terminated"
+            );
         }
 
         Ok(())
     }
 
-    fn NtWriteFile(&self) {
+    fn NtWriteFile(&self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // NTAPI
@@ -358,10 +352,32 @@ where
         //     );
         //
 
-        tracing::info!(hook = "NtWriteFile", "kernel function called");
+        let object = vmi.os().current_process()?.object()?;
+        if let Some(process) = self.processes.get(object) {
+            tracing::info!(
+                hook = "NtWriteFile",
+                process = %object,
+                pid = %process.pid,
+                ppid = %process.ppid,
+                name = %process.name,
+                terminated = process.terminated,
+                tracked = true,
+                "kernel function called"
+            );
+        }
+        else {
+            tracing::info!(
+                hook = "NtWriteFile",
+                process = %object,
+                tracked = false,
+                "kernel function called"
+            );
+        }
+
+        Ok(())
     }
 
-    fn NtClose(&self) {
+    fn NtClose(&self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // NTAPI
@@ -370,7 +386,29 @@ where
         //     );
         //
 
-        tracing::info!(hook = "NtClose", "kernel function called");
+        let object = vmi.os().current_process()?.object()?;
+        if let Some(process) = self.processes.get(object) {
+            tracing::info!(
+                hook = "NtClose",
+                process = %object,
+                pid = %process.pid,
+                ppid = %process.ppid,
+                name = %process.name,
+                terminated = process.terminated,
+                tracked = true,
+                "kernel function called"
+            );
+        }
+        else {
+            tracing::info!(
+                hook = "NtClose",
+                process = %object,
+                tracked = false,
+                "kernel function called"
+            );
+        }
+
+        Ok(())
     }
 
     fn dispatch(
@@ -450,10 +488,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use vmi::{
-        Va,
-        os::{ProcessId, ProcessObject},
-    };
+    use vmi::os::ProcessId;
 
     use super::*;
     use crate::{
@@ -461,67 +496,46 @@ mod tests {
         deploy::{DeployStage, DeployStatus},
     };
 
-    #[test]
-    fn process_selection_requires_matching_name_and_parent() {
-        let mut tracker = ProcessTracker::new("Sample.EXE", ProcessId(42));
+    fn process(name: &str, ppid: ProcessId) -> Process {
+        Process {
+            pid: ProcessId(100),
+            ppid,
+            name: name.to_owned(),
+            terminated: false,
+        }
+    }
 
-        assert!(!tracker.observe_process(
-            ProcessObject(Va(0x1000)),
-            ProcessId(100),
-            "other.exe",
+    #[test]
+    fn target_process_requires_matching_name_and_parent() {
+        assert!(!process_matches_target(
+            "Sample.EXE",
             ProcessId(42),
+            &process("other.exe", ProcessId(42)),
         ));
-        assert!(!tracker.observe_process(
-            ProcessObject(Va(0x2000)),
-            ProcessId(200),
-            "sample.exe",
-            ProcessId(7),
-        ));
-        assert!(tracker.observe_process(
-            ProcessObject(Va(0x3000)),
-            ProcessId(300),
-            "sample.exe",
+        assert!(!process_matches_target(
+            "Sample.EXE",
             ProcessId(42),
+            &process("sample.exe", ProcessId(7)),
         ));
-        assert_eq!(
-            tracker.process(),
-            Some((ProcessObject(Va(0x3000)), ProcessId(300)))
-        );
-        assert!(!tracker.observe_process(
-            ProcessObject(Va(0x4000)),
-            ProcessId(400),
-            "SAMPLE.EXE",
+        assert!(process_matches_target(
+            "Sample.EXE",
             ProcessId(42),
+            &process("sample.exe", ProcessId(42)),
         ));
     }
 
     #[test]
-    fn process_selection_accepts_kernel_truncated_name() {
-        let mut tracker = ProcessTracker::new("dynasample-full.exe", ProcessId(42));
-
-        assert!(!tracker.observe_process(
-            ProcessObject(Va(0x1000)),
-            ProcessId(100),
-            "dynasample",
+    fn target_process_accepts_kernel_truncated_name() {
+        assert!(!process_matches_target(
+            "dynasample-full.exe",
             ProcessId(42),
+            &process("dynasample", ProcessId(42)),
         ));
-        assert!(tracker.observe_process(
-            ProcessObject(Va(0x2000)),
-            ProcessId(200),
-            "dynasample-ful",
+        assert!(process_matches_target(
+            "dynasample-full.exe",
             ProcessId(42),
+            &process("dynasample-ful", ProcessId(42)),
         ));
-    }
-
-    #[test]
-    fn process_cleanup_requires_exact_selected_object() {
-        let mut tracker = ProcessTracker::new("sample.exe", ProcessId(42));
-        let selected = ProcessObject(Va(0x1000));
-
-        assert!(!tracker.observes_cleanup(selected));
-        assert!(tracker.observe_process(selected, ProcessId(100), "sample.exe", ProcessId(42)));
-        assert!(!tracker.observes_cleanup(ProcessObject(Va(0x2000))));
-        assert!(tracker.observes_cleanup(selected));
     }
 
     #[test]
