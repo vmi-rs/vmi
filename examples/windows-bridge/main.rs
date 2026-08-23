@@ -1,5 +1,6 @@
 mod bridge;
 mod deploy;
+mod monitor;
 mod msgbox;
 mod recipe;
 
@@ -20,9 +21,10 @@ use vmi::{
 use crate::{
     bridge::TerminalStatus,
     deploy::{
-        DeployBridge, DeployMonitor, DeployMonitorOutput, DeployParameters, DeployPolicy,
-        DeployStage, DeployStatus, ExecuteResponse, deploy_recipe,
+        DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
+        deploy_recipe,
     },
+    monitor::{DeployMonitor, DeployMonitorOutput},
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
 
