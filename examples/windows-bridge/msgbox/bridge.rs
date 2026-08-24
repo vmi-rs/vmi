@@ -4,13 +4,10 @@ use vmi::{
     driver::VmiRead,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::{
-        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
-        injector::InjectorStatusCode,
-    },
+    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
-use crate::bridge::{METHOD_EXIT, impl_bridge_contract};
+use crate::bridge::{BridgeStatusCode, METHOD_EXIT, impl_bridge_contract};
 
 /// Handles the result returned by `MessageBoxA`.
 #[derive(Debug, Default)]
@@ -23,7 +20,7 @@ impl MsgboxBridge {
     const METHOD_EXIT: u16 = METHOD_EXIT;
 
     /// Handles one msgbox bridge packet.
-    fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         match packet.method() {
             Self::METHOD_EXIT => self.handle_exit(packet),
             _ => self.handle_unknown(packet),
@@ -31,7 +28,7 @@ impl MsgboxBridge {
     }
 
     /// Completes the injector from a terminal message box packet.
-    fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let result = packet.value1();
         tracing::debug!(result, "msgbox shellcode completed");
 
@@ -39,7 +36,7 @@ impl MsgboxBridge {
     }
 
     /// Logs and rejects one packet with an unknown msgbox bridge method.
-    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         tracing::error!(
             request = %Hex(packet.request()),
             method = %Hex(packet.method()),
@@ -54,7 +51,7 @@ impl MsgboxBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for MsgboxBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for MsgboxBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
@@ -65,10 +62,10 @@ where
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>> {
+    ) -> Option<BridgeResponse<BridgeStatusCode>> {
         debug_assert_eq!(
             packet.request(),
-            <Self as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST
+            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
         );
 
         self.handle_packet(packet)

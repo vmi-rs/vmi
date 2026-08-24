@@ -11,15 +11,12 @@ use vmi::{
     driver::VmiRead,
     os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
     trace::Hex,
-    utils::{
-        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
-        injector::InjectorStatusCode,
-    },
+    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
 use crate::bridge::{
-    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalResult, impl_bridge_contract,
-    impl_bridge_stage,
+    BridgeStatusCode, METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalResult,
+    impl_bridge_contract, impl_bridge_stage,
 };
 
 /// Number of bytes shared with the guest for each transfer chunk.
@@ -187,7 +184,7 @@ impl FileTransferBridge {
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>>
+    ) -> Option<BridgeResponse<BridgeStatusCode>>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -208,7 +205,7 @@ impl FileTransferBridge {
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> BridgeResponse<InjectorStatusCode>
+    ) -> BridgeResponse<BridgeStatusCode>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -276,7 +273,7 @@ impl FileTransferBridge {
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> BridgeResponse<InjectorStatusCode>
+    ) -> BridgeResponse<BridgeStatusCode>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -297,7 +294,7 @@ impl FileTransferBridge {
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> BridgeResponse<InjectorStatusCode>
+    ) -> BridgeResponse<BridgeStatusCode>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -339,7 +336,7 @@ impl FileTransferBridge {
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> BridgeResponse<InjectorStatusCode>
+    ) -> BridgeResponse<BridgeStatusCode>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -375,7 +372,7 @@ impl FileTransferBridge {
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> BridgeResponse<InjectorStatusCode>
+    ) -> BridgeResponse<BridgeStatusCode>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -391,7 +388,7 @@ impl FileTransferBridge {
             "file-transfer shellcode completed"
         );
 
-        BridgeResponse::default().with_result(status.encode())
+        BridgeResponse::default()
     }
 
     /// Logs and rejects one unknown file-transfer method.
@@ -399,7 +396,7 @@ impl FileTransferBridge {
         &self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>>
+    ) -> Option<BridgeResponse<BridgeStatusCode>>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
@@ -417,7 +414,7 @@ impl FileTransferBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for FileTransferBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for FileTransferBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
@@ -427,7 +424,7 @@ where
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>> {
+    ) -> Option<BridgeResponse<BridgeStatusCode>> {
         self.handle_packet(vmi, packet)
     }
 }
