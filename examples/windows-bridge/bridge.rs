@@ -1,4 +1,5 @@
-use vmi::utils::injector::InjectorStatusCode;
+/// Packed status value carried by terminal bridge responses.
+pub type BridgeStatusCode = u64;
 
 /// Little-endian ASCII `VMIB` bridge signature.
 pub const BRIDGE_MAGIC: u32 = 0x4249_4d56;
@@ -103,15 +104,15 @@ impl<Stage: BridgeStage> TerminalResult<Stage> {
         self.code
     }
 
-    /// Encodes the result for use as an injector status code.
-    pub fn encode(self) -> InjectorStatusCode {
+    /// Encodes the result as a bridge status code.
+    pub fn encode(self) -> BridgeStatusCode {
         let stage = self.stage.into_raw();
 
         stage as u64 | (self.status.0 as u64) << 8 | (self.code as u64) << 16
     }
 
     /// Decodes the packed result returned by the injector.
-    pub fn decode(value: InjectorStatusCode) -> Self {
+    pub fn decode(value: BridgeStatusCode) -> Self {
         Self {
             stage: Stage::from_raw(value as u8),
             status: TerminalStatus((value >> 8) as u8),

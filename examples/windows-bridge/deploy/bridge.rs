@@ -4,15 +4,12 @@ use vmi::{
     driver::VmiRead,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::{
-        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
-        injector::InjectorStatusCode,
-    },
+    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
 use crate::bridge::{
-    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT, TerminalResult, TerminalStatus,
-    impl_bridge_contract, impl_bridge_stage,
+    BridgeStatusCode, METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT,
+    TerminalResult, TerminalStatus, impl_bridge_contract, impl_bridge_stage,
 };
 
 /// Deploy operation stage encoded in a packed result.
@@ -141,7 +138,7 @@ impl DeployBridge {
     }
 
     /// Produces the protocol response for one deploy packet.
-    fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         match packet.method() {
             Self::METHOD_DOWNLOAD => self.handle_download(packet),
             Self::METHOD_EXECUTE => self.handle_execute(packet),
@@ -151,7 +148,7 @@ impl DeployBridge {
     }
 
     /// Applies the download retry limit to a readiness or failure report.
-    fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let attempt = packet.value1();
         let native_code = packet.value2();
 
@@ -168,7 +165,7 @@ impl DeployBridge {
     }
 
     /// Applies the configured response to an execution gate.
-    fn handle_execute(&self, _packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_execute(&self, _packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let response = match self.policy.execute_response {
             ExecuteResponse::Continue => BridgeResponse::new(RESPONSE_CONTINUE),
             ExecuteResponse::Abort => BridgeResponse::new(RESPONSE_ABORT),
@@ -186,7 +183,7 @@ impl DeployBridge {
     }
 
     /// Completes the injector from a terminal result packet.
-    fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let result = DeployStatus::decode(packet.value1());
         let native_code = packet.value2();
 
@@ -202,7 +199,7 @@ impl DeployBridge {
     }
 
     /// Logs and rejects one packet with an unknown deploy bridge method.
-    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         tracing::error!(
             request = %Hex(packet.request()),
             method = %Hex(packet.method()),
@@ -217,7 +214,7 @@ impl DeployBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for DeployBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for DeployBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
@@ -227,10 +224,10 @@ where
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>> {
+    ) -> Option<BridgeResponse<BridgeStatusCode>> {
         debug_assert_eq!(
             packet.request(),
-            <Self as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST
+            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
         );
 
         self.handle_packet(packet)

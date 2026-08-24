@@ -14,7 +14,7 @@ use vmi::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
     VmiHandler, VmiSession, VmiVa as _,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
-    driver::{VmiFullDriver, VmiRead},
+    driver::VmiFullDriver,
     os::{
         ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
@@ -22,17 +22,16 @@ use vmi::{
     trace::Hex,
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
-        bridge::{Bridge, BridgeHandler, BridgePacket, BridgeResponse},
-        injector::InjectorStatusCode,
+        bridge::Bridge,
         ptm::PageTableMonitor,
     },
 };
 
 use self::tracker::ProcessTracker;
 use crate::{
-    bridge::TerminalStatus,
+    bridge::BridgeStatusCode,
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
-    file_transfer::{FileTransfer, FileTransferBridge, FileTransferStatus},
+    file_transfer::{FileTransfer, FileTransferBridge},
 };
 
 /// Shortest observed `_EPROCESS.ImageFileName` truncation.
@@ -59,91 +58,6 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     process_name_matches(expected_name, &process.name) && process.ppid == expected_ppid
-}
-
-/// Returns a terminal deploy status only when it represents failure.
-fn deploy_failure(status: DeployStatus) -> Option<DeployStatus> {
-    (status.status() != TerminalStatus::SUCCESS).then_some(status)
-}
-
-/// Typed terminal output from a deploy-monitor bridge handler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeployMonitorBridgeOutput {
-    /// Deploy shellcode completion.
-    Deploy(DeployStatus),
-
-    /// File-transfer shellcode completion.
-    FileTransfer(FileTransferStatus),
-}
-
-fn map_bridge_response(
-    response: BridgeResponse<InjectorStatusCode>,
-    map: impl FnOnce(InjectorStatusCode) -> DeployMonitorBridgeOutput,
-) -> BridgeResponse<DeployMonitorBridgeOutput> {
-    let result = response.result().copied().map(map);
-    let mut mapped = BridgeResponse::default();
-
-    if let Some(value) = response.value1() {
-        mapped = mapped.with_value1(value);
-    }
-    if let Some(value) = response.value2() {
-        mapped = mapped.with_value2(value);
-    }
-    if let Some(value) = response.value3() {
-        mapped = mapped.with_value3(value);
-    }
-    if let Some(value) = response.value4() {
-        mapped = mapped.with_value4(value);
-    }
-    if let Some(result) = result {
-        mapped = mapped.with_result(result);
-    }
-
-    mapped
-}
-
-impl<Driver> BridgeHandler<WindowsOs<Driver>, DeployMonitorBridgeOutput> for DeployBridge
-where
-    Driver: VmiRead<Architecture = Amd64>,
-{
-    const REQUEST: u16 =
-        <DeployBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST;
-
-    fn handle(
-        &mut self,
-        vmi: &VmiContext<'_, WindowsOs<Driver>>,
-        packet: BridgePacket,
-    ) -> Option<BridgeResponse<DeployMonitorBridgeOutput>> {
-        let response =
-            <DeployBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::handle(
-                self, vmi, packet,
-            )?;
-        Some(map_bridge_response(response, |result| {
-            DeployMonitorBridgeOutput::Deploy(DeployStatus::decode(result))
-        }))
-    }
-}
-
-impl<Driver> BridgeHandler<WindowsOs<Driver>, DeployMonitorBridgeOutput> for FileTransferBridge
-where
-    Driver: VmiRead<Architecture = Amd64>,
-{
-    const REQUEST: u16 =
-        <FileTransferBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST;
-
-    fn handle(
-        &mut self,
-        vmi: &VmiContext<'_, WindowsOs<Driver>>,
-        packet: BridgePacket,
-    ) -> Option<BridgeResponse<DeployMonitorBridgeOutput>> {
-        let response = <FileTransferBridge as BridgeHandler<
-            WindowsOs<Driver>,
-            InjectorStatusCode,
-        >>::handle(self, vmi, packet)?;
-        Some(map_bridge_response(response, |result| {
-            DeployMonitorBridgeOutput::FileTransfer(FileTransferStatus::decode(result))
-        }))
-    }
 }
 
 /// Process metadata and process-local handles marked for transfer.
@@ -229,8 +143,7 @@ where
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
-    bridge:
-        Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge), DeployMonitorBridgeOutput>,
+    bridge: Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge), BridgeStatusCode>,
     processes: ProcessTracker<Process<Driver>, Thread<Driver>>,
     expected_name: String,
     expected_ppid: ProcessId,
@@ -365,39 +278,24 @@ where
         Ok(VmiEventResponse::default().with_view(self.view))
     }
 
-    fn handle_bridge_output(&mut self, output: DeployMonitorBridgeOutput) {
-        match output {
-            DeployMonitorBridgeOutput::Deploy(status) => {
-                tracing::info!(?status, "deploy shellcode completed during monitoring");
-                if let Some(status) = deploy_failure(status) {
-                    self.completion = Some(Err(status));
-                }
-            }
-            DeployMonitorBridgeOutput::FileTransfer(status) => {
-                tracing::debug!(
-                    ?status,
-                    "file-transfer shellcode completed during monitoring"
-                );
-            }
-        }
-    }
-
     /// Dispatches deploy and file-transfer hypercalls through the composed bridge.
     fn hypercall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let hypercall = vmi.event().reason().as_hypercall();
+
         let mut registers = vmi.registers().gp_registers();
         registers.rip += hypercall.instruction_length as u64;
 
         if let Some(result) = self.bridge.dispatch(vmi) {
-            let response =
-                result.unwrap_or_else(|packet| panic!("unhandled bridge packet: {packet:?}"));
-            response.write_to(&mut registers);
-
-            if let Some(output) = response.into_result() {
-                self.handle_bridge_output(output);
+            match result {
+                Ok(response) => response.write_to(&mut registers),
+                Err(packet) => tracing::error!(
+                    request = packet.request(),
+                    method = packet.method(),
+                    "empty bridge response"
+                ),
             }
         }
 
@@ -837,10 +735,6 @@ mod tests {
     use vmi::{driver::xen::VmiXenDriver, os::ProcessId};
 
     use super::*;
-    use crate::{
-        bridge::TerminalStatus,
-        deploy::{DeployStage, DeployStatus},
-    };
 
     fn process(name: &str, ppid: ProcessId) -> Process<VmiXenDriver<Amd64>> {
         Process {
@@ -883,33 +777,6 @@ mod tests {
             ProcessId(42),
             &process("dynasample-ful", ProcessId(42)),
         ));
-    }
-
-    #[test]
-    fn bridge_response_maps_typed_completion_without_losing_values() {
-        let status = DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::SUCCESS);
-        let response = BridgeResponse::new(0x11)
-            .with_value2(0x22)
-            .with_result(status.encode());
-        let mapped = map_bridge_response(response, |result| {
-            DeployMonitorBridgeOutput::Deploy(DeployStatus::decode(result))
-        });
-
-        assert_eq!(mapped.value1(), Some(0x11));
-        assert_eq!(mapped.value2(), Some(0x22));
-        assert_eq!(
-            mapped.into_result(),
-            Some(DeployMonitorBridgeOutput::Deploy(status))
-        );
-    }
-
-    #[test]
-    fn terminal_deploy_failure_stops_monitoring() {
-        let success = DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::SUCCESS);
-        let failure = DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::OPERATION_FAILED);
-
-        assert_eq!(deploy_failure(success), None);
-        assert_eq!(deploy_failure(failure), Some(failure));
     }
 
     #[test]
