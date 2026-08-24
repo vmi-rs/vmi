@@ -28,7 +28,7 @@ use crate::{
         DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
         deploy_recipe,
     },
-    monitor::{DeployMonitor, DeployMonitorOutput},
+    monitor::{Monitor, MonitorOutput},
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
 
@@ -266,9 +266,9 @@ fn validate_deploy_waiting_result(result: u64) -> Result<DeployStatus, Error> {
 
 /// Resolves monitor completion when a signal interrupts the VMI wait.
 fn resolve_monitor_outcome(
-    outcome: Option<DeployMonitorOutput>,
+    outcome: Option<MonitorOutput>,
     terminated: bool,
-) -> Result<DeployMonitorOutput, Error> {
+) -> Result<MonitorOutput, Error> {
     match outcome {
         Some(outcome) => Ok(outcome),
         None if terminated => Ok(Ok(None)),
@@ -362,7 +362,7 @@ fn run_deploy(
 
     let monitor_terminate_flag = terminate_flag.clone();
     let outcome = session.handle(|session| {
-        DeployMonitor::new(
+        Monitor::new(
             session,
             profile,
             monitor_terminate_flag,
