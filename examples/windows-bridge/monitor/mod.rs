@@ -1,28 +1,38 @@
 mod tracker;
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use isr::{Profile, macros::symbols};
 use vmi::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
-    VmiHandler, VmiSession,
+    VmiHandler, VmiSession, VmiVa as _,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::VmiFullDriver,
-    os::{ProcessId, ProcessObject, VmiOsProcess as _, windows::WindowsOs},
+    os::{
+        ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
+        windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
+    },
+    trace::Hex,
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
-        bridge::{BridgeDispatch, BridgePacket},
+        bridge::{Bridge, BridgePacket},
+        injector::InjectorStatusCode,
         ptm::PageTableMonitor,
     },
 };
 
-use self::tracker::{Process, ProcessTracker};
+use self::tracker::ProcessTracker;
 use crate::{
     bridge::TerminalStatus,
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
+    file_transfer::{FileTransfer, FileTransferBridge, FileTransferBridgeState},
 };
 
 /// Shortest observed `_EPROCESS.ImageFileName` truncation.
@@ -40,11 +50,14 @@ fn process_name_matches(expected: &str, observed: &str) -> bool {
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case(observed))
 }
 
-fn process_matches_target(
+fn process_matches_target<Driver>(
     expected_name: &str,
     expected_ppid: ProcessId,
-    process: &Process,
-) -> bool {
+    process: &Process<Driver>,
+) -> bool
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
     process_name_matches(expected_name, &process.name) && process.ppid == expected_ppid
 }
 
@@ -53,10 +66,60 @@ fn deploy_failure(status: DeployStatus) -> Option<DeployStatus> {
     (status.status() != TerminalStatus::SUCCESS).then_some(status)
 }
 
+/// Process metadata and process-local handles marked for transfer.
+struct Process<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    pid: ProcessId,
+    ppid: ProcessId,
+    name: String,
+    terminated: bool,
+    file_transfers: HashMap<u64, FileTransfer<Driver>>,
+}
+
+impl<Driver> Process<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn mark_terminated(&mut self) {
+        self.terminated = true;
+    }
+
+    fn mark_file(&mut self, transfer: FileTransfer<Driver>) {
+        self.file_transfers.insert(transfer.handle(), transfer);
+    }
+
+    fn take_file(&mut self, handle: u64) -> Option<FileTransfer<Driver>> {
+        self.file_transfers.remove(&handle)
+    }
+}
+
+/// Thread metadata and the synchronous transfer currently using its stack.
+struct Thread<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    tid: ThreadId,
+    terminated: bool,
+    file_transfer: Option<FileTransfer<Driver>>,
+}
+
+impl<Driver> Thread<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn mark_terminated(&mut self) {
+        self.terminated = true;
+    }
+}
+
 symbols! {
     #[derive(Debug)]
     struct Symbols {
         PspInsertProcess: u64,
+        PspInsertThread: u64,
+        KeTerminateThread: u64,
         MmCleanProcessAddressSpace: u64,
         NtWriteFile: u64,
         NtClose: u64,
@@ -86,9 +149,11 @@ where
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
-    processes: ProcessTracker,
+    file_transfer_bridge: FileTransferBridgeState,
+    processes: ProcessTracker<Process<Driver>, Thread<Driver>>,
     expected_name: String,
     expected_ppid: ProcessId,
+    output_directory: PathBuf,
     target_process: Option<ProcessObject>,
     completion: Option<DeployMonitorOutput>,
 }
@@ -105,6 +170,7 @@ where
         terminate_flag: Arc<AtomicBool>,
         expected_name: String,
         expected_ppid: ProcessId,
+        output_directory: PathBuf,
     ) -> Result<Self, VmiError> {
         let registers = session.registers(VcpuId(0))?;
         let vmi = session.with_registers(&registers);
@@ -135,6 +201,8 @@ where
         };
 
         install("PspInsertProcess", symbols.PspInsertProcess)?;
+        install("PspInsertThread", symbols.PspInsertThread)?;
+        install("KeTerminateThread", symbols.KeTerminateThread)?;
         install(
             "MmCleanProcessAddressSpace",
             symbols.MmCleanProcessAddressSpace,
@@ -147,9 +215,11 @@ where
             view,
             bpm,
             ptm,
+            file_transfer_bridge: FileTransferBridgeState::default(),
             processes: ProcessTracker::default(),
             expected_name,
             expected_ppid,
+            output_directory,
             target_process: None,
             completion: None,
         })
@@ -193,9 +263,11 @@ where
 
         match tag {
             "PspInsertProcess" => self.PspInsertProcess(vmi)?,
+            "PspInsertThread" => self.PspInsertThread(vmi)?,
+            "KeTerminateThread" => self.KeTerminateThread(vmi)?,
             "MmCleanProcessAddressSpace" => self.MmCleanProcessAddressSpace(vmi)?,
             "NtWriteFile" => self.NtWriteFile(vmi)?,
-            "NtClose" => self.NtClose(vmi)?,
+            "NtClose" => return self.NtClose(vmi),
             _ => panic!("unhandled deploy monitor hook: {tag}"),
         }
 
@@ -211,7 +283,7 @@ where
         Ok(VmiEventResponse::default().with_view(self.view))
     }
 
-    /// Releases the execute gate and observes the shellcode's terminal status.
+    /// Dispatches deploy and file-transfer hypercalls through the composed bridge.
     fn hypercall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -221,18 +293,30 @@ where
         registers.rip += hypercall.instruction_length as u64;
 
         let packet = BridgePacket::from(vmi);
-        let mut bridge = DeployBridge::new(DeployPolicy::default().allow_execute());
-        if let Some(result) = bridge.dispatch(vmi, packet) {
-            let response = result
-                .unwrap_or_else(|packet| panic!("unhandled deploy bridge packet: {packet:?}"));
-            response.write_to(&mut registers);
+        let request = packet.request();
+        let result = {
+            let mut bridge = Bridge::<WindowsOs<Driver>, _, InjectorStatusCode>::new((
+                DeployBridge::new(DeployPolicy::default().allow_execute()),
+                FileTransferBridge::new(&mut self.file_transfer_bridge),
+            ));
+            bridge.dispatch(vmi)
+        };
+        let Some(result) = result
+        else {
+            tracing::warn!(%request, "unhandled bridge request during deploy monitoring");
+            return Ok(VmiEventResponse::default().with_registers(registers));
+        };
+        let response =
+            result.unwrap_or_else(|packet| panic!("unhandled bridge packet: {packet:?}"));
+        response.write_to(&mut registers);
 
-            if let Some(packed) = response.into_result() {
-                let status = DeployStatus::decode(packed);
-                tracing::info!(?status, "deploy shellcode completed during monitoring");
-                if let Some(status) = deploy_failure(status) {
-                    self.completion = Some(Err(status));
-                }
+        if request == DeployBridge::REQUEST
+            && let Some(packed) = response.into_result()
+        {
+            let status = DeployStatus::decode(packed);
+            tracing::info!(?status, "deploy shellcode completed during monitoring");
+            if let Some(status) = deploy_failure(status) {
+                self.completion = Some(Err(status));
             }
         }
 
@@ -260,6 +344,7 @@ where
             ppid: parent.id()?,
             name: new_process.name()?,
             terminated: false,
+            file_transfers: HashMap::new(),
         };
         let is_target = self.target_process.is_none()
             && process_matches_target(&self.expected_name, self.expected_ppid, &process);
@@ -274,11 +359,14 @@ where
             "kernel function called"
         );
 
-        self.processes.insert(NewProcess, process);
+        self.processes.insert_process(NewProcess, process);
 
         if is_target {
             self.target_process = Some(NewProcess);
-            let process = self.processes.get(NewProcess).expect("inserted process");
+            let process = self
+                .processes
+                .get_process(NewProcess)
+                .expect("inserted process");
             tracing::info!(
                 process = %NewProcess,
                 pid = %process.pid,
@@ -287,6 +375,87 @@ where
             );
         }
 
+        Ok(())
+    }
+
+    fn PspInsertThread(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
+        //
+        // VOID
+        // PspInsertThread (
+        //     _In_ PETHREAD Thread,
+        //     _In_ PEPROCESS Process,
+        //     ...
+        //     );
+        //
+
+        let thread_object = ThreadObject(Va(vmi.os().function_argument(0)?));
+        let process_object = ProcessObject(Va(vmi.os().function_argument(1)?));
+        let thread = Thread {
+            tid: vmi.os().thread(thread_object)?.id()?,
+            terminated: false,
+            file_transfer: None,
+        };
+        let tid = thread.tid;
+
+        if self
+            .processes
+            .insert_thread(process_object, thread_object, thread)
+            .is_err()
+        {
+            tracing::info!(
+                hook = "PspInsertThread",
+                thread = %thread_object,
+                %tid,
+                process = %process_object,
+                tracked = false,
+                "kernel function called"
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            hook = "PspInsertThread",
+            thread = %thread_object,
+            %tid,
+            process = %process_object,
+            tracked = true,
+            "kernel function called"
+        );
+        Ok(())
+    }
+
+    fn KeTerminateThread(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
+        //
+        // VOID
+        // KeTerminateThread (
+        //     _In_ PKTHREAD Thread
+        //     );
+        //
+
+        let thread_object = ThreadObject(Va(vmi.os().function_argument(0)?));
+        let process_object = self.processes.process_of(thread_object);
+        let Some(thread) = self.processes.get_thread_mut(thread_object)
+        else {
+            tracing::info!(
+                hook = "KeTerminateThread",
+                thread = %thread_object,
+                tracked = false,
+                "kernel function called"
+            );
+            return Ok(());
+        };
+
+        thread.mark_terminated();
+        tracing::info!(
+            hook = "KeTerminateThread",
+            thread = %thread_object,
+            tid = %thread.tid,
+            process = ?process_object,
+            terminated = thread.terminated,
+            transfer_active = thread.file_transfer.is_some(),
+            tracked = true,
+            "kernel function called"
+        );
         Ok(())
     }
 
@@ -302,7 +471,14 @@ where
         //
 
         let Process = ProcessObject(Va(vmi.os().function_argument(0)?));
-        let Some(process) = self.processes.mark_terminated(Process)
+        let thread_objects = self.processes.threads_of(Process).collect::<Vec<_>>();
+        for thread_object in thread_objects {
+            self.processes
+                .get_thread_mut(thread_object)
+                .expect("process thread index is consistent")
+                .mark_terminated();
+        }
+        let Some(process) = self.processes.get_process_mut(Process)
         else {
             tracing::info!(
                 hook = "MmCleanProcessAddressSpace",
@@ -313,6 +489,7 @@ where
             return Ok(());
         };
 
+        process.mark_terminated();
         tracing::info!(
             hook = "MmCleanProcessAddressSpace",
             process = %Process,
@@ -335,7 +512,7 @@ where
         Ok(())
     }
 
-    fn NtWriteFile(&self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
+    fn NtWriteFile(&mut self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
         //
         // NTSTATUS
         // NTAPI
@@ -352,32 +529,57 @@ where
         //     );
         //
 
-        let object = vmi.os().current_process()?.object()?;
-        if let Some(process) = self.processes.get(object) {
-            tracing::info!(
-                hook = "NtWriteFile",
-                process = %object,
-                pid = %process.pid,
-                ppid = %process.ppid,
-                name = %process.name,
-                terminated = process.terminated,
-                tracked = true,
-                "kernel function called"
-            );
-        }
-        else {
-            tracing::info!(
-                hook = "NtWriteFile",
-                process = %object,
-                tracked = false,
-                "kernel function called"
-            );
+        let current_process = vmi.os().current_process()?;
+        let process_object = current_process.object()?;
+        if self.target_process != Some(process_object) {
+            return Ok(());
         }
 
+        let FileHandle = vmi.os().function_argument(0)?;
+        if vmi.os().is_kernel_handle(FileHandle)? {
+            tracing::trace!(handle = %Hex(FileHandle), "ignoring kernel file handle");
+            return Ok(());
+        }
+
+        let Some(file_object) =
+            current_process.lookup_object::<WindowsFileObject<_>>(FileHandle)?
+        else {
+            tracing::warn!(handle = %Hex(FileHandle), "cannot resolve file handle");
+            return Ok(());
+        };
+        let path = file_object.full_path()?;
+        let process_id = self
+            .processes
+            .get_process(process_object)
+            .expect("target process is tracked")
+            .pid;
+        let transfer = FileTransfer::new(
+            process_id,
+            FileHandle,
+            file_object.va(),
+            path.clone(),
+            &self.output_directory,
+        );
+        self.processes
+            .get_process_mut(process_object)
+            .expect("target process is tracked")
+            .mark_file(transfer);
+
+        tracing::info!(
+            hook = "NtWriteFile",
+            process = %process_object,
+            pid = %process_id,
+            handle = %Hex(FileHandle),
+            path,
+            "marked file for transfer"
+        );
         Ok(())
     }
 
-    fn NtClose(&self, vmi: &VmiContext<WindowsOs<Driver>>) -> Result<(), VmiError> {
+    fn NtClose(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         //
         // NTSTATUS
         // NTAPI
@@ -386,29 +588,102 @@ where
         //     );
         //
 
-        let object = vmi.os().current_process()?.object()?;
-        if let Some(process) = self.processes.get(object) {
-            tracing::info!(
-                hook = "NtClose",
-                process = %object,
-                pid = %process.pid,
-                ppid = %process.ppid,
-                name = %process.name,
-                terminated = process.terminated,
-                tracked = true,
-                "kernel function called"
-            );
-        }
-        else {
-            tracing::info!(
-                hook = "NtClose",
-                process = %object,
-                tracked = false,
-                "kernel function called"
-            );
+        let thread_object = vmi.os().current_thread()?.object()?;
+        if self
+            .processes
+            .get_thread(thread_object)
+            .is_some_and(|thread| thread.file_transfer.is_some())
+        {
+            return self.advance_file_transfer(vmi, thread_object);
         }
 
-        Ok(())
+        let current_process = vmi.os().current_process()?;
+        let process_object = current_process.object()?;
+        if self.target_process != Some(process_object) {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+        if self.processes.get_thread(thread_object).is_none() {
+            tracing::warn!(%thread_object, "close on untracked target thread");
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+
+        let Handle = vmi.os().function_argument(0)?;
+        if vmi.os().is_kernel_handle(Handle)? {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+
+        let Some(mut transfer) = self
+            .processes
+            .get_process_mut(process_object)
+            .expect("target process is tracked")
+            .take_file(Handle)
+        else {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        };
+
+        let resolved = current_process.lookup_object::<WindowsFileObject<_>>(Handle)?;
+        if !resolved.is_some_and(|file_object| file_object.va() == transfer.file_object()) {
+            tracing::warn!(
+                handle = %Hex(Handle),
+                path = transfer.path(),
+                "discarding stale file-transfer handle"
+            );
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+
+        transfer.start(thread_object, &mut self.file_transfer_bridge);
+        self.processes
+            .get_thread_mut(thread_object)
+            .expect("target thread checked above")
+            .file_transfer = Some(transfer);
+        self.advance_file_transfer(vmi, thread_object)
+    }
+
+    fn advance_file_transfer(
+        &mut self,
+        vmi: &VmiContext<WindowsOs<Driver>>,
+        thread_object: ThreadObject,
+    ) -> Result<VmiEventResponse<Amd64>, VmiError> {
+        let thread = self
+            .processes
+            .get_thread_mut(thread_object)
+            .expect("active transfer thread is tracked");
+        let transfer = thread
+            .file_transfer
+            .as_mut()
+            .expect("active transfer thread has a transfer");
+        let Some(registers) = transfer.execute(vmi)?
+        else {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        };
+
+        if !transfer.done() {
+            return Ok(VmiEventResponse::default().with_registers(registers.gp_registers()));
+        }
+
+        let transfer = thread
+            .file_transfer
+            .take()
+            .expect("completed transfer remains attached to thread");
+        let status = self.file_transfer_bridge.finish(thread_object);
+        match status {
+            Some(status) => tracing::info!(
+                thread = %thread_object,
+                tid = %thread.tid,
+                path = transfer.path(),
+                ?status,
+                "file-transfer injection completed"
+            ),
+            None => tracing::warn!(
+                thread = %thread_object,
+                tid = %thread.tid,
+                path = transfer.path(),
+                "file-transfer injection completed without terminal status"
+            ),
+        }
+
+        Ok(VmiEventResponse::fast_singlestep(vmi.default_view())
+            .with_registers(registers.gp_registers()))
     }
 
     fn dispatch(
@@ -488,7 +763,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use vmi::os::ProcessId;
+    use vmi::{driver::xen::VmiXenDriver, os::ProcessId};
 
     use super::*;
     use crate::{
@@ -496,12 +771,13 @@ mod tests {
         deploy::{DeployStage, DeployStatus},
     };
 
-    fn process(name: &str, ppid: ProcessId) -> Process {
+    fn process(name: &str, ppid: ProcessId) -> Process<VmiXenDriver<Amd64>> {
         Process {
             pid: ProcessId(100),
             ppid,
             name: name.to_owned(),
             terminated: false,
+            file_transfers: HashMap::new(),
         }
     }
 

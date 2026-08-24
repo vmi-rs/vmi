@@ -1,10 +1,14 @@
 mod bridge;
 mod deploy;
+mod file_transfer;
 mod monitor;
 mod msgbox;
 mod recipe;
 
-use std::sync::{Arc, atomic::AtomicBool};
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use anyhow::{Context as _, Error};
 use clap::{Args, Parser, Subcommand};
@@ -117,6 +121,10 @@ struct DeployArguments {
     #[arg(long, requires = "execute")]
     monitor: bool,
 
+    /// Host directory receiving files written by the monitored process.
+    #[arg(long, default_value = "artifacts")]
+    output_directory: PathBuf,
+
     /// Number of retries allowed after a failed download attempt.
     #[arg(long, default_value_t = 0)]
     max_download_retries: u64,
@@ -126,6 +134,9 @@ struct DeployArguments {
 struct DeployMonitorRequest {
     /// Kernel process name expected for the launched executable.
     executable_name: String,
+
+    /// Host directory receiving transferred files.
+    output_directory: PathBuf,
 }
 
 #[derive(Debug)]
@@ -157,6 +168,7 @@ impl DeployArguments {
             show_window,
             monitor,
             max_download_retries,
+            output_directory,
         } = self;
 
         let policy = DeployPolicy::default().max_download_retries(max_download_retries);
@@ -175,7 +187,10 @@ impl DeployArguments {
                 .expect("monitor executable path has no basename")
                 .to_owned();
 
-            Some(DeployMonitorRequest { executable_name })
+            Some(DeployMonitorRequest {
+                executable_name,
+                output_directory,
+            })
         }
         else {
             None
@@ -353,6 +368,7 @@ fn run_deploy(
             monitor_terminate_flag,
             monitor.executable_name,
             process_id,
+            monitor.output_directory,
         )
     })?;
     let outcome = resolve_monitor_outcome(
@@ -426,7 +442,6 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser as _;
 
     use super::*;
     use crate::recipe::encode_parameters;
@@ -454,6 +469,7 @@ mod tests {
 
         assert_eq!(arguments.process, "explorer.exe");
         assert_eq!(arguments.max_download_retries, 0);
+        assert_eq!(arguments.output_directory, PathBuf::from("artifacts"));
         assert_eq!(arguments.url, None);
         assert_eq!(arguments.download_path, None);
         assert_eq!(arguments.extraction_directory, None);
