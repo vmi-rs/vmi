@@ -134,7 +134,7 @@ Add the following to your `Cargo.toml`, enabling the features you need
 
 ```toml
 [dependencies]
-vmi = { version = "0.6", features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
+vmi = { version = "0.8", features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
 ```
 
 Basic usage example:
@@ -593,10 +593,10 @@ This project is licensed under the MIT license.
 [`AddressContext`]: https://docs.rs/vmi/latest/vmi/struct.AddressContext.html
 [`Architecture`]: https://docs.rs/vmi/latest/vmi/trait.Architecture.html
 [`Gfn`]: https://docs.rs/vmi/latest/vmi/struct.Gfn.html
-[`Pa`]: https://docs.rs/vmi/latest/vmi/latest/vmi/struct.Pa.html
-[`Translation`]: https://docs.rs/vmi/0.1.1/vmi/enum.VmiError.html#variant.Translation
+[`Pa`]: https://docs.rs/vmi/latest/vmi/struct.Pa.html
+[`Translation`]: https://docs.rs/vmi/latest/vmi/enum.VmiError.html#variant.Translation
 [`TranslationMechanism`]: https://docs.rs/vmi/latest/vmi/enum.TranslationMechanism.html
-[`Va`]: https://docs.rs/vmi/latest/vmi/latest/vmi/struct.Va.html
+[`Va`]: https://docs.rs/vmi/latest/vmi/struct.Va.html
 [`VmiContext`]: https://docs.rs/vmi/latest/vmi/struct.VmiContext.html
 [`VmiCore`]: https://docs.rs/vmi/latest/vmi/struct.VmiCore.html
 [`VmiDriver`]: https://docs.rs/vmi/latest/vmi/trait.VmiDriver.html

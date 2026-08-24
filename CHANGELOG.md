@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Added
+
+### Removed
+
+### Fixed
+
+## [0.8.0] - 2026-08-24
+
+### Changed
+
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table
   hierarchy for a given virtual address. On AMD64 this writes `CR3`.
