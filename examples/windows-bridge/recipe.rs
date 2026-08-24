@@ -245,13 +245,6 @@ where
                 kernel32!CloseHandle(data![thread_handle])
             }
         },
-        {
-            if vmi!().registers().rax == 0 {
-                return Err(VmiError::Other("CloseHandle failed"));
-            }
-
-            Ok(RecipeControlFlow::Break)
-        },
     ]
 }
 
