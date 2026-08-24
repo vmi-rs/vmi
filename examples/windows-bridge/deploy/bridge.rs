@@ -126,9 +126,6 @@ pub struct DeployBridge {
 impl_bridge_contract!(DeployBridge);
 
 impl DeployBridge {
-    /// Deploy bridge request identifier.
-    pub const REQUEST: u16 = 0x0001;
-
     /// Download readiness and retry method.
     const METHOD_DOWNLOAD: u16 = 0x0001;
 
@@ -224,7 +221,7 @@ impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for DeployBrid
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
-    const REQUEST: u16 = Self::REQUEST;
+    const REQUEST: u16 = 0x0001;
 
     fn handle(
         &mut self,

@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
-    fs::{self, File, OpenOptions},
-    io::{self, Write as _},
+    fs::{File, OpenOptions},
+    io::{Error, ErrorKind, Write as _},
     path::PathBuf,
 };
 
@@ -9,7 +9,7 @@ use vmi::{
     Va, VmiContext,
     arch::amd64::Amd64,
     driver::VmiRead,
-    os::{ThreadObject, VmiOsThread as _, windows::WindowsOs},
+    os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
     trace::Hex,
     utils::{
         bridge::{BridgeHandler, BridgePacket, BridgeResponse},
@@ -18,15 +18,15 @@ use vmi::{
 };
 
 use crate::bridge::{
-    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalResult, TerminalStatus,
-    impl_bridge_contract, impl_bridge_stage,
+    METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalResult, impl_bridge_contract,
+    impl_bridge_stage,
 };
 
 /// Number of bytes shared with the guest for each transfer chunk.
 const CHUNK_SIZE: u64 = 64 * 1024;
 
-/// Nonzero transfer identifier encoded in the low 12 response bits.
-const TRANSFER_HANDLE: u64 = 1;
+/// Guest transfer handles occupy the low 12 bits of a begin response.
+const TRANSFER_HANDLE_BITS: u32 = 12;
 
 /// File-transfer operation stage encoded in a packed result.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -35,11 +35,22 @@ pub struct FileTransferStage(u8);
 impl_bridge_stage!(FileTransferStage);
 
 impl FileTransferStage {
+    /// No operation ran.
     pub const NONE: Self = Self(0x00);
+
+    /// File name query failed.
     pub const FILE_NAME: Self = Self(0x01);
+
+    /// File size query failed.
     pub const FILE_SIZE: Self = Self(0x02);
+
+    /// File mapping failed.
     pub const MAPPING: Self = Self(0x03);
+
+    /// Transfer buffer setup failed.
     pub const BUFFER: Self = Self(0x04);
+
+    /// File transfer failed or was interrupted.
     pub const TRANSFER: Self = Self(0x05);
 }
 
@@ -61,156 +72,139 @@ impl std::fmt::Debug for FileTransferStage {
 /// Decoded terminal status returned by the file-transfer shellcode.
 pub type FileTransferStatus = TerminalResult<FileTransferStage>;
 
-/// An incomplete host file removed unless it is committed successfully.
+/// Host output for one active transfer.
 struct HostFile {
-    file: Option<File>,
-    temporary_path: PathBuf,
+    file: File,
     final_path: PathBuf,
     expected_size: u64,
     received: u64,
     buffer: Option<Va>,
-    committed: bool,
 }
 
 impl HostFile {
-    fn create(final_path: PathBuf, expected_size: u64) -> io::Result<Self> {
+    fn create(final_path: PathBuf, expected_size: u64) -> Result<Self, Error> {
         if let Some(parent) = final_path.parent() {
-            fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent)?;
         }
 
-        let temporary_path = final_path.with_extension(match final_path.extension() {
-            Some(extension) => format!("{}.part", extension.to_string_lossy()),
-            None => String::from("part"),
-        });
         let file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
-            .open(&temporary_path)?;
+            .open(&final_path)?;
 
         Ok(Self {
-            file: Some(file),
-            temporary_path,
+            file,
             final_path,
             expected_size,
             received: 0,
             buffer: None,
-            committed: false,
         })
     }
 
-    fn set_buffer(&mut self, buffer: Va) -> bool {
-        if buffer.is_null() {
-            return false;
-        }
+    fn set_buffer(&mut self, buffer: Va) {
         self.buffer = Some(buffer);
-        true
     }
 
-    fn append(&mut self, bytes: &[u8]) -> io::Result<()> {
+    fn append(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let length = bytes.len() as u64;
         if length > CHUNK_SIZE || self.received.saturating_add(length) > self.expected_size {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+            return Err(Error::new(
+                ErrorKind::InvalidData,
                 "file-transfer chunk exceeds declared size",
             ));
         }
 
-        self.file
-            .as_mut()
-            .expect("uncommitted transfer has an open file")
-            .write_all(bytes)?;
+        self.file.write_all(bytes)?;
         self.received += length;
         Ok(())
     }
 
-    fn commit(&mut self) -> io::Result<()> {
+    fn commit(&mut self) -> Result<(), Error> {
         if self.received != self.expected_size {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
                 "file-transfer byte count does not match declared size",
             ));
         }
 
-        let mut file = self
-            .file
-            .take()
-            .expect("uncommitted transfer has an open file");
-        file.flush()?;
-        drop(file);
-        fs::rename(&self.temporary_path, &self.final_path)?;
-        self.committed = true;
-        Ok(())
+        self.file.flush()
     }
 }
 
-impl Drop for HostFile {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = self.file.take();
-            let _ = fs::remove_file(&self.temporary_path);
+/// Host session for one guest-issued transfer handle.
+struct TransferSession {
+    path: String,
+    host_file: HostFile,
+    chunk_buffer: Vec<u8>,
+}
+
+impl TransferSession {
+    fn new(path: String, host_file: HostFile) -> Self {
+        Self {
+            path,
+            host_file,
+            chunk_buffer: vec![0; CHUNK_SIZE as usize],
         }
     }
 }
 
-/// State for one guest file-transfer shellcode invocation.
-struct FileTransferSession {
-    expected_file_handle: u64,
-    tracked_path: String,
-    output_path: PathBuf,
-    host_file: Option<HostFile>,
-    chunk_buffer: Vec<u8>,
-    host_failed: bool,
-    status: Option<FileTransferStatus>,
+/// Handles file-transfer negotiation and output for the deploy monitor.
+pub struct FileTransferBridge {
+    output_directory: PathBuf,
+    next_transfer_handle: u32,
+    next_output_id: u64,
+    transfers: HashMap<u32, TransferSession>,
 }
 
-impl FileTransferSession {
+impl_bridge_contract!(FileTransferBridge);
+
+impl FileTransferBridge {
     const METHOD_BEGIN: u16 = 0x0001;
     const METHOD_SET_BUFFER: u16 = 0x0002;
     const METHOD_CHUNK: u16 = 0x0003;
     const METHOD_CLOSE: u16 = 0x0004;
     const METHOD_EXIT: u16 = METHOD_EXIT;
 
-    fn new(expected_file_handle: u64, tracked_path: String, output_path: PathBuf) -> Self {
+    /// Creates a persistent handler writing files beneath `output_directory`.
+    pub fn new(output_directory: PathBuf) -> Self {
         Self {
-            expected_file_handle,
-            tracked_path,
-            output_path,
-            host_file: None,
-            chunk_buffer: vec![0; CHUNK_SIZE as usize],
-            host_failed: false,
-            status: None,
+            output_directory,
+            next_transfer_handle: 1,
+            next_output_id: 0,
+            transfers: HashMap::new(),
         }
     }
 
-    fn packed_begin_response() -> u64 {
-        (CHUNK_SIZE << 12) | TRANSFER_HANDLE
+    fn allocate_transfer_handle(&mut self) -> u32 {
+        let handle = self.next_transfer_handle;
+        self.next_transfer_handle += 1;
+        handle
     }
 
-    fn read_filename<Driver>(
+    /// Produces the protocol response for one file-transfer packet.
+    fn handle_packet<Driver>(
+        &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
-        address: u64,
-        length: u64,
-    ) -> Result<String, String>
+        packet: BridgePacket,
+    ) -> Option<BridgeResponse<InjectorStatusCode>>
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
-        let length = usize::try_from(length).map_err(|_| "filename length does not fit usize")?;
-        if !length.is_multiple_of(2) || length > u16::MAX as usize {
-            return Err(String::from("invalid UTF-16 filename length"));
-        }
+        let method = packet.method();
 
-        let mut bytes = vec![0; length];
-        vmi.read(Va(address), &mut bytes)
-            .map_err(|err| format!("cannot read filename: {err}"))?;
-        let units = bytes
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
-        Ok(String::from_utf16_lossy(&units))
+        match method {
+            Self::METHOD_BEGIN => Some(self.handle_begin(vmi, packet)),
+            Self::METHOD_SET_BUFFER => Some(self.handle_set_buffer(vmi, packet)),
+            Self::METHOD_CHUNK => Some(self.handle_chunk(vmi, packet)),
+            Self::METHOD_CLOSE => Some(self.handle_close(vmi, packet)),
+            Self::METHOD_EXIT => Some(self.handle_exit(vmi, packet)),
+            _ => self.handle_unknown(vmi, packet),
+        }
     }
 
-    fn begin<Driver>(
+    /// Starts one transfer and returns its newly allocated guest handle.
+    fn handle_begin<Driver>(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
@@ -218,65 +212,88 @@ impl FileTransferSession {
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
-        if packet.value1() != self.expected_file_handle || self.host_file.is_some() {
-            tracing::error!(
-                expected = %Hex(self.expected_file_handle),
-                actual = %Hex(packet.value1()),
-                "rejected file-transfer begin"
-            );
-            return BridgeResponse::new(0);
-        }
+        let file_handle = packet.value1();
+        let file_size = packet.value2();
+        let file_name_buffer = packet.value3();
+        let file_name_length = packet.value4() as usize;
 
-        let guest_path = match Self::read_filename(vmi, packet.value3(), packet.value4()) {
+        let process_id = match vmi.os().current_process().and_then(|process| process.id()) {
+            Ok(process_id) => process_id,
+            Err(err) => {
+                tracing::error!(%err, "cannot resolve file-transfer process");
+                return BridgeResponse::new(0);
+            }
+        };
+        let path = match vmi.read_string_utf16_limited(Va(file_name_buffer), file_name_length) {
             Ok(path) => path,
             Err(err) => {
-                tracing::error!(%err, "rejected file-transfer filename");
+                tracing::error!(%err, "cannot read file-transfer filename");
                 return BridgeResponse::new(0);
             }
         };
-
-        let expected_size = match i64::try_from(packet.value2()) {
-            Ok(size) if size >= 0 => size as u64,
-            _ => {
-                tracing::error!(size = packet.value2(), "rejected file-transfer size");
+        let expected_size = match i64::try_from(file_size) {
+            Ok(expected_size) => expected_size,
+            Err(_) => {
+                tracing::error!(size = file_size, "rejected file-transfer size");
                 return BridgeResponse::new(0);
             }
         };
+        let transfer_handle = self.allocate_transfer_handle();
 
-        match HostFile::create(self.output_path.clone(), expected_size) {
-            Ok(host_file) => self.host_file = Some(host_file),
+        let output_id = self.next_output_id;
+        self.next_output_id += 1;
+        let output_path =
+            self.output_directory
+                .join(output_filename(process_id, file_handle, output_id, &path));
+        let host_file = match HostFile::create(output_path.clone(), expected_size as u64) {
+            Ok(host_file) => host_file,
             Err(err) => {
-                tracing::error!(%err, path = %self.output_path.display(), "cannot create host transfer file");
+                tracing::error!(%err, path = %output_path.display(), "cannot create host transfer file");
                 return BridgeResponse::new(0);
             }
-        }
+        };
+
+        let replaced = self.transfers.insert(
+            transfer_handle,
+            TransferSession::new(path.clone(), host_file),
+        );
+        debug_assert!(replaced.is_none(), "allocated transfer handle is unused");
 
         tracing::info!(
-            tracked_path = %self.tracked_path,
-            guest_path,
+            transfer_handle,
+            file_handle = %Hex(file_handle),
+            %path,
             size = expected_size,
-            output = %self.output_path.display(),
+            output = %output_path.display(),
             "file transfer started"
         );
-        BridgeResponse::new(Self::packed_begin_response())
+
+        BridgeResponse::new((CHUNK_SIZE << TRANSFER_HANDLE_BITS) | u64::from(transfer_handle))
     }
 
-    fn set_buffer(&mut self, packet: BridgePacket) -> BridgeResponse<InjectorStatusCode> {
-        let accepted = packet.value1() == TRANSFER_HANDLE
-            && self
-                .host_file
-                .as_mut()
-                .is_some_and(|host_file| host_file.set_buffer(Va(packet.value2())));
+    /// Registers the shared guest buffer for a transfer handle.
+    fn handle_set_buffer<Driver>(
+        &mut self,
+        _vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> BridgeResponse<InjectorStatusCode>
+    where
+        Driver: VmiRead<Architecture = Amd64>,
+    {
+        let transfer_handle = packet.value1() as u32;
+        let buffer = packet.value2();
 
-        BridgeResponse::new(if accepted {
-            RESPONSE_CONTINUE
-        }
-        else {
-            RESPONSE_ABORT
-        })
+        let transfer = match self.transfers.get_mut(&transfer_handle) {
+            Some(transfer) => transfer,
+            None => return BridgeResponse::new(RESPONSE_ABORT),
+        };
+        transfer.host_file.set_buffer(Va(buffer));
+
+        BridgeResponse::new(RESPONSE_CONTINUE)
     }
 
-    fn chunk<Driver>(
+    /// Copies one filled guest buffer into its host output file.
+    fn handle_chunk<Driver>(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
@@ -284,30 +301,32 @@ impl FileTransferSession {
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
-        let Some(host_file) = self.host_file.as_mut()
-        else {
-            return BridgeResponse::new(RESPONSE_ABORT);
+        let transfer_handle = packet.value1() as u32;
+        let length = packet.value2();
+
+        let transfer = match self.transfers.get_mut(&transfer_handle) {
+            Some(transfer) => transfer,
+            None => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        let Some(buffer) = host_file.buffer
-        else {
-            return BridgeResponse::new(RESPONSE_ABORT);
+        let host_file = &mut transfer.host_file;
+        let buffer = match host_file.buffer {
+            Some(buffer) => buffer,
+            None => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        let Ok(length) = usize::try_from(packet.value2())
-        else {
-            return BridgeResponse::new(RESPONSE_ABORT);
+        let length = match usize::try_from(length) {
+            Ok(length) => length,
+            Err(_) => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        if packet.value1() != TRANSFER_HANDLE || length as u64 > CHUNK_SIZE {
+        if length as u64 > CHUNK_SIZE {
             return BridgeResponse::new(RESPONSE_ABORT);
         }
 
-        let bytes = &mut self.chunk_buffer[..length];
+        let bytes = &mut transfer.chunk_buffer[..length];
         if let Err(err) = vmi.read(buffer, bytes) {
-            self.host_failed = true;
             tracing::error!(%err, "cannot read file-transfer chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
         if let Err(err) = host_file.append(bytes) {
-            self.host_failed = true;
             tracing::error!(%err, "cannot write file-transfer chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
@@ -315,24 +334,29 @@ impl FileTransferSession {
         BridgeResponse::new(RESPONSE_CONTINUE)
     }
 
-    fn close(&mut self, packet: BridgePacket) -> BridgeResponse<InjectorStatusCode> {
+    /// Closes a transfer handle and commits a successful host output.
+    fn handle_close<Driver>(
+        &mut self,
+        _vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> BridgeResponse<InjectorStatusCode>
+    where
+        Driver: VmiRead<Architecture = Amd64>,
+    {
+        let transfer_handle = packet.value1() as u32;
+        let transfer_status = packet.value2();
+
         const TRANSFER_SUCCESS: u64 = 0;
 
-        if packet.value1() != TRANSFER_HANDLE {
-            self.host_failed = true;
-            return BridgeResponse::new(RESPONSE_ABORT);
-        }
-
-        let Some(mut host_file) = self.host_file.take()
-        else {
-            self.host_failed = true;
-            return BridgeResponse::new(RESPONSE_ABORT);
+        let transfer = match self.transfers.remove(&transfer_handle) {
+            Some(transfer) => transfer,
+            None => return BridgeResponse::new(RESPONSE_ABORT),
         };
+        let mut host_file = transfer.host_file;
 
-        if packet.value2() == TRANSFER_SUCCESS {
+        if transfer_status == TRANSFER_SUCCESS {
             if let Err(err) = host_file.commit() {
-                self.host_failed = true;
-                tracing::error!(%err, "cannot commit host transfer file");
+                tracing::error!(%err, path = %transfer.path, "cannot commit host transfer file");
                 return BridgeResponse::new(RESPONSE_ABORT);
             }
 
@@ -346,29 +370,41 @@ impl FileTransferSession {
         BridgeResponse::new(RESPONSE_CONTINUE)
     }
 
-    fn exit(&mut self, packet: BridgePacket) -> BridgeResponse<InjectorStatusCode> {
-        let guest_status = FileTransferStatus::decode(packet.value1());
-        let status = if self.host_failed {
-            FileTransferStatus::new(FileTransferStage::TRANSFER, TerminalStatus::ABORTED)
-        }
-        else {
-            guest_status
-        };
-        self.status = Some(status);
+    /// Completes one shellcode invocation.
+    fn handle_exit<Driver>(
+        &mut self,
+        _vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> BridgeResponse<InjectorStatusCode>
+    where
+        Driver: VmiRead<Architecture = Amd64>,
+    {
+        let packed_status = packet.value1();
+        let native_code = packet.value2();
+
+        let status = FileTransferStatus::decode(packed_status);
         tracing::debug!(
             stage = ?status.stage(),
             status = ?status.status(),
             code = status.code(),
-            native_code = packet.value2(),
-            ?guest_status,
-            host_failed = self.host_failed,
+            native_code,
             "file-transfer shellcode completed"
         );
+
         BridgeResponse::default().with_result(status.encode())
     }
 
-    fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<InjectorStatusCode>> {
+    /// Logs and rejects one unknown file-transfer method.
+    fn handle_unknown<Driver>(
+        &self,
+        _vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> Option<BridgeResponse<InjectorStatusCode>>
+    where
+        Driver: VmiRead<Architecture = Amd64>,
+    {
         tracing::error!(
+            request = %Hex(packet.request()),
             method = %Hex(packet.method()),
             value1 = %Hex(packet.value1()),
             value2 = %Hex(packet.value2()),
@@ -376,107 +412,52 @@ impl FileTransferSession {
             value4 = %Hex(packet.value4()),
             "unknown file-transfer bridge method"
         );
+
         None
     }
-
-    fn handle<Driver>(
-        &mut self,
-        vmi: &VmiContext<'_, WindowsOs<Driver>>,
-        packet: BridgePacket,
-    ) -> Option<BridgeResponse<InjectorStatusCode>>
-    where
-        Driver: VmiRead<Architecture = Amd64>,
-    {
-        match packet.method() {
-            Self::METHOD_BEGIN => Some(self.begin(vmi, packet)),
-            Self::METHOD_SET_BUFFER => Some(self.set_buffer(packet)),
-            Self::METHOD_CHUNK => Some(self.chunk(vmi, packet)),
-            Self::METHOD_CLOSE => Some(self.close(packet)),
-            Self::METHOD_EXIT => Some(self.exit(packet)),
-            _ => self.handle_unknown(packet),
-        }
-    }
 }
 
-/// Active file-transfer invocations keyed by their executing thread.
-#[derive(Default)]
-pub struct FileTransferBridgeState {
-    transfers: HashMap<ThreadObject, FileTransferSession>,
-}
-
-impl FileTransferBridgeState {
-    /// Registers a file-transfer invocation on its executing thread.
-    pub fn start(
-        &mut self,
-        thread_object: ThreadObject,
-        expected_file_handle: u64,
-        tracked_path: String,
-        output_path: PathBuf,
-    ) {
-        let entry = self.transfers.entry(thread_object);
-        let std::collections::hash_map::Entry::Vacant(entry) = entry
-        else {
-            panic!("file transfer already active on {thread_object}");
-        };
-        entry.insert(FileTransferSession::new(
-            expected_file_handle,
-            tracked_path,
-            output_path,
-        ));
-    }
-
-    /// Removes a completed invocation and returns its terminal status.
-    pub fn finish(&mut self, thread_object: ThreadObject) -> Option<FileTransferStatus> {
-        self.transfers
-            .remove(&thread_object)
-            .unwrap_or_else(|| panic!("no file transfer active on {thread_object}"))
-            .status
-    }
-}
-
-/// Routes file-transfer packets through the active invocation state.
-pub struct FileTransferBridge<'a> {
-    state: &'a mut FileTransferBridgeState,
-}
-
-impl_bridge_contract!(FileTransferBridge<'_>);
-
-impl<'a> FileTransferBridge<'a> {
-    /// File-transfer bridge request identifier.
-    pub const REQUEST: u16 = 0x0003;
-
-    /// Creates a handler over the active file-transfer state.
-    pub fn new(state: &'a mut FileTransferBridgeState) -> Self {
-        Self { state }
-    }
-}
-
-impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for FileTransferBridge<'_>
+impl<Driver> BridgeHandler<WindowsOs<Driver>, InjectorStatusCode> for FileTransferBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
-    const REQUEST: u16 = Self::REQUEST;
+    const REQUEST: u16 = 0x0003;
 
     fn handle(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
     ) -> Option<BridgeResponse<InjectorStatusCode>> {
-        let thread_object = match vmi.os().current_thread().and_then(|thread| thread.object()) {
-            Ok(thread_object) => thread_object,
-            Err(err) => {
-                tracing::error!(%err, "cannot resolve file-transfer thread");
-                return None;
-            }
-        };
-        let Some(transfer) = self.state.transfers.get_mut(&thread_object)
-        else {
-            tracing::error!(%thread_object, "file-transfer packet without active invocation");
-            return None;
-        };
-        transfer.handle(vmi, packet)
+        self.handle_packet(vmi, packet)
     }
 }
+
+fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &str) -> String {
+    let basename = path
+        .rsplit(['\\', '/'])
+        .find(|component| !component.is_empty())
+        .unwrap_or("file");
+    let basename = basename
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
+                character
+            }
+            else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let basename = if basename.is_empty() {
+        "file"
+    }
+    else {
+        &basename
+    };
+
+    format!("{process_id}-{handle:016x}-{output_id:016x}-{basename}")
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -494,42 +475,20 @@ mod tests {
     }
 
     #[test]
-    fn begin_response_packs_chunk_size_and_nonzero_handle() {
-        let response = FileTransferSession::packed_begin_response();
+    fn transfer_handles_increment_from_one() {
+        let mut bridge = FileTransferBridge::new(PathBuf::new());
 
-        assert_eq!(response & 0xfff, TRANSFER_HANDLE);
-        assert_eq!(response >> 12, CHUNK_SIZE);
+        assert_eq!(bridge.allocate_transfer_handle(), 1);
+        assert_eq!(bridge.allocate_transfer_handle(), 2);
     }
 
     #[test]
-    fn bridge_state_isolates_concurrent_thread_invocations() {
-        let first_thread = ThreadObject(Va(0x1000));
-        let second_thread = ThreadObject(Va(0x2000));
-        let first_status =
-            FileTransferStatus::new(FileTransferStage::TRANSFER, TerminalStatus::SUCCESS);
-        let mut state = FileTransferBridgeState::default();
+    fn output_names_are_flat_sanitized_and_unique() {
+        let first = output_filename(ProcessId(7), 0x10, 1, r"\dir\a:b.txt");
+        let second = output_filename(ProcessId(7), 0x10, 2, r"\dir\a:b.txt");
 
-        state.start(
-            first_thread,
-            0x10,
-            String::from(r"\first"),
-            PathBuf::from("first"),
-        );
-        state.start(
-            second_thread,
-            0x20,
-            String::from(r"\second"),
-            PathBuf::from("second"),
-        );
-        state
-            .transfers
-            .get_mut(&first_thread)
-            .expect("first transfer is registered")
-            .status = Some(first_status);
-
-        assert_eq!(state.finish(first_thread), Some(first_status));
-        assert!(state.transfers.contains_key(&second_thread));
-        assert_eq!(state.finish(second_thread), None);
+        assert_eq!(first, "7-0000000000000010-0000000000000001-a_b.txt");
+        assert_ne!(first, second);
     }
 
     #[test]
@@ -540,24 +499,23 @@ mod tests {
         host_file.append(b"abc").unwrap();
         host_file.commit().unwrap();
 
-        assert_eq!(fs::read(&output).unwrap(), b"abc");
-        fs::remove_file(output).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"abc");
+        std::fs::remove_file(output).unwrap();
     }
 
     #[test]
-    fn host_file_rejects_incomplete_transfer_and_removes_partial_file() {
+    fn host_file_rejects_incomplete_transfer() {
         let output = temporary_output("incomplete");
-        let temporary = output.with_extension("part");
-        {
-            let mut host_file = HostFile::create(output.clone(), 4).unwrap();
-            host_file.append(b"abc").unwrap();
-            assert_eq!(
-                host_file.commit().unwrap_err().kind(),
-                io::ErrorKind::UnexpectedEof
-            );
-        }
+        let mut host_file = HostFile::create(output.clone(), 4).unwrap();
 
-        assert!(!output.exists());
-        assert!(!temporary.exists());
+        host_file.append(b"abc").unwrap();
+        assert_eq!(
+            host_file.commit().unwrap_err().kind(),
+            ErrorKind::UnexpectedEof
+        );
+        drop(host_file);
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"abc");
+        std::fs::remove_file(output).unwrap();
     }
 }

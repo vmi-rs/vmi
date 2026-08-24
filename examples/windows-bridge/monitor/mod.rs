@@ -14,7 +14,7 @@ use vmi::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
     VmiHandler, VmiSession, VmiVa as _,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
-    driver::VmiFullDriver,
+    driver::{VmiFullDriver, VmiRead},
     os::{
         ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
@@ -22,7 +22,7 @@ use vmi::{
     trace::Hex,
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
-        bridge::{Bridge, BridgePacket},
+        bridge::{Bridge, BridgeHandler, BridgePacket, BridgeResponse},
         injector::InjectorStatusCode,
         ptm::PageTableMonitor,
     },
@@ -32,7 +32,7 @@ use self::tracker::ProcessTracker;
 use crate::{
     bridge::TerminalStatus,
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
-    file_transfer::{FileTransfer, FileTransferBridge, FileTransferBridgeState},
+    file_transfer::{FileTransfer, FileTransferBridge, FileTransferStatus},
 };
 
 /// Shortest observed `_EPROCESS.ImageFileName` truncation.
@@ -64,6 +64,86 @@ where
 /// Returns a terminal deploy status only when it represents failure.
 fn deploy_failure(status: DeployStatus) -> Option<DeployStatus> {
     (status.status() != TerminalStatus::SUCCESS).then_some(status)
+}
+
+/// Typed terminal output from a deploy-monitor bridge handler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeployMonitorBridgeOutput {
+    /// Deploy shellcode completion.
+    Deploy(DeployStatus),
+
+    /// File-transfer shellcode completion.
+    FileTransfer(FileTransferStatus),
+}
+
+fn map_bridge_response(
+    response: BridgeResponse<InjectorStatusCode>,
+    map: impl FnOnce(InjectorStatusCode) -> DeployMonitorBridgeOutput,
+) -> BridgeResponse<DeployMonitorBridgeOutput> {
+    let result = response.result().copied().map(map);
+    let mut mapped = BridgeResponse::default();
+
+    if let Some(value) = response.value1() {
+        mapped = mapped.with_value1(value);
+    }
+    if let Some(value) = response.value2() {
+        mapped = mapped.with_value2(value);
+    }
+    if let Some(value) = response.value3() {
+        mapped = mapped.with_value3(value);
+    }
+    if let Some(value) = response.value4() {
+        mapped = mapped.with_value4(value);
+    }
+    if let Some(result) = result {
+        mapped = mapped.with_result(result);
+    }
+
+    mapped
+}
+
+impl<Driver> BridgeHandler<WindowsOs<Driver>, DeployMonitorBridgeOutput> for DeployBridge
+where
+    Driver: VmiRead<Architecture = Amd64>,
+{
+    const REQUEST: u16 =
+        <DeployBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST;
+
+    fn handle(
+        &mut self,
+        vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> Option<BridgeResponse<DeployMonitorBridgeOutput>> {
+        let response =
+            <DeployBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::handle(
+                self, vmi, packet,
+            )?;
+        Some(map_bridge_response(response, |result| {
+            DeployMonitorBridgeOutput::Deploy(DeployStatus::decode(result))
+        }))
+    }
+}
+
+impl<Driver> BridgeHandler<WindowsOs<Driver>, DeployMonitorBridgeOutput> for FileTransferBridge
+where
+    Driver: VmiRead<Architecture = Amd64>,
+{
+    const REQUEST: u16 =
+        <FileTransferBridge as BridgeHandler<WindowsOs<Driver>, InjectorStatusCode>>::REQUEST;
+
+    fn handle(
+        &mut self,
+        vmi: &VmiContext<'_, WindowsOs<Driver>>,
+        packet: BridgePacket,
+    ) -> Option<BridgeResponse<DeployMonitorBridgeOutput>> {
+        let response = <FileTransferBridge as BridgeHandler<
+            WindowsOs<Driver>,
+            InjectorStatusCode,
+        >>::handle(self, vmi, packet)?;
+        Some(map_bridge_response(response, |result| {
+            DeployMonitorBridgeOutput::FileTransfer(FileTransferStatus::decode(result))
+        }))
+    }
 }
 
 /// Process metadata and process-local handles marked for transfer.
@@ -149,11 +229,11 @@ where
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
-    file_transfer_bridge: FileTransferBridgeState,
+    bridge:
+        Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge), DeployMonitorBridgeOutput>,
     processes: ProcessTracker<Process<Driver>, Thread<Driver>>,
     expected_name: String,
     expected_ppid: ProcessId,
-    output_directory: PathBuf,
     target_process: Option<ProcessObject>,
     completion: Option<DeployMonitorOutput>,
 }
@@ -215,11 +295,13 @@ where
             view,
             bpm,
             ptm,
-            file_transfer_bridge: FileTransferBridgeState::default(),
+            bridge: Bridge::new((
+                DeployBridge::new(DeployPolicy::default().allow_execute()),
+                FileTransferBridge::new(output_directory),
+            )),
             processes: ProcessTracker::default(),
             expected_name,
             expected_ppid,
-            output_directory,
             target_process: None,
             completion: None,
         })
@@ -283,6 +365,23 @@ where
         Ok(VmiEventResponse::default().with_view(self.view))
     }
 
+    fn handle_bridge_output(&mut self, output: DeployMonitorBridgeOutput) {
+        match output {
+            DeployMonitorBridgeOutput::Deploy(status) => {
+                tracing::info!(?status, "deploy shellcode completed during monitoring");
+                if let Some(status) = deploy_failure(status) {
+                    self.completion = Some(Err(status));
+                }
+            }
+            DeployMonitorBridgeOutput::FileTransfer(status) => {
+                tracing::debug!(
+                    ?status,
+                    "file-transfer shellcode completed during monitoring"
+                );
+            }
+        }
+    }
+
     /// Dispatches deploy and file-transfer hypercalls through the composed bridge.
     fn hypercall(
         &mut self,
@@ -292,31 +391,13 @@ where
         let mut registers = vmi.registers().gp_registers();
         registers.rip += hypercall.instruction_length as u64;
 
-        let packet = BridgePacket::from(vmi);
-        let request = packet.request();
-        let result = {
-            let mut bridge = Bridge::<WindowsOs<Driver>, _, InjectorStatusCode>::new((
-                DeployBridge::new(DeployPolicy::default().allow_execute()),
-                FileTransferBridge::new(&mut self.file_transfer_bridge),
-            ));
-            bridge.dispatch(vmi)
-        };
-        let Some(result) = result
-        else {
-            tracing::warn!(%request, "unhandled bridge request during deploy monitoring");
-            return Ok(VmiEventResponse::default().with_registers(registers));
-        };
-        let response =
-            result.unwrap_or_else(|packet| panic!("unhandled bridge packet: {packet:?}"));
-        response.write_to(&mut registers);
+        if let Some(result) = self.bridge.dispatch(vmi) {
+            let response =
+                result.unwrap_or_else(|packet| panic!("unhandled bridge packet: {packet:?}"));
+            response.write_to(&mut registers);
 
-        if request == DeployBridge::REQUEST
-            && let Some(packed) = response.into_result()
-        {
-            let status = DeployStatus::decode(packed);
-            tracing::info!(?status, "deploy shellcode completed during monitoring");
-            if let Some(status) = deploy_failure(status) {
-                self.completion = Some(Err(status));
+            if let Some(output) = response.into_result() {
+                self.handle_bridge_output(output);
             }
         }
 
@@ -434,15 +515,17 @@ where
 
         let thread_object = ThreadObject(Va(vmi.os().function_argument(0)?));
         let process_object = self.processes.process_of(thread_object);
-        let Some(thread) = self.processes.get_thread_mut(thread_object)
-        else {
-            tracing::info!(
-                hook = "KeTerminateThread",
-                thread = %thread_object,
-                tracked = false,
-                "kernel function called"
-            );
-            return Ok(());
+        let thread = match self.processes.get_thread_mut(thread_object) {
+            Some(thread) => thread,
+            None => {
+                tracing::info!(
+                    hook = "KeTerminateThread",
+                    thread = %thread_object,
+                    tracked = false,
+                    "kernel function called"
+                );
+                return Ok(());
+            }
         };
 
         thread.mark_terminated();
@@ -478,15 +561,17 @@ where
                 .expect("process thread index is consistent")
                 .mark_terminated();
         }
-        let Some(process) = self.processes.get_process_mut(Process)
-        else {
-            tracing::info!(
-                hook = "MmCleanProcessAddressSpace",
-                process = %Process,
-                tracked = false,
-                "kernel function called"
-            );
-            return Ok(());
+        let process = match self.processes.get_process_mut(Process) {
+            Some(process) => process,
+            None => {
+                tracing::info!(
+                    hook = "MmCleanProcessAddressSpace",
+                    process = %Process,
+                    tracked = false,
+                    "kernel function called"
+                );
+                return Ok(());
+            }
         };
 
         process.mark_terminated();
@@ -541,11 +626,12 @@ where
             return Ok(());
         }
 
-        let Some(file_object) =
-            current_process.lookup_object::<WindowsFileObject<_>>(FileHandle)?
-        else {
-            tracing::warn!(handle = %Hex(FileHandle), "cannot resolve file handle");
-            return Ok(());
+        let file_object = match current_process.lookup_object::<WindowsFileObject<_>>(FileHandle)? {
+            Some(file_object) => file_object,
+            None => {
+                tracing::warn!(handle = %Hex(FileHandle), "cannot resolve file handle");
+                return Ok(());
+            }
         };
         let path = file_object.full_path()?;
         let process_id = self
@@ -553,13 +639,7 @@ where
             .get_process(process_object)
             .expect("target process is tracked")
             .pid;
-        let transfer = FileTransfer::new(
-            process_id,
-            FileHandle,
-            file_object.va(),
-            path.clone(),
-            &self.output_directory,
-        );
+        let transfer = FileTransfer::new(FileHandle, file_object.va(), path.clone());
         self.processes
             .get_process_mut(process_object)
             .expect("target process is tracked")
@@ -612,13 +692,14 @@ where
             return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
-        let Some(mut transfer) = self
+        let mut transfer = match self
             .processes
             .get_process_mut(process_object)
             .expect("target process is tracked")
             .take_file(Handle)
-        else {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        {
+            Some(transfer) => transfer,
+            None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
         };
 
         let resolved = current_process.lookup_object::<WindowsFileObject<_>>(Handle)?;
@@ -631,7 +712,7 @@ where
             return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
-        transfer.start(thread_object, &mut self.file_transfer_bridge);
+        transfer.start();
         self.processes
             .get_thread_mut(thread_object)
             .expect("target thread checked above")
@@ -652,9 +733,9 @@ where
             .file_transfer
             .as_mut()
             .expect("active transfer thread has a transfer");
-        let Some(registers) = transfer.execute(vmi)?
-        else {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        let registers = match transfer.execute(vmi)? {
+            Some(registers) => registers,
+            None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
         };
 
         if !transfer.done() {
@@ -665,22 +746,12 @@ where
             .file_transfer
             .take()
             .expect("completed transfer remains attached to thread");
-        let status = self.file_transfer_bridge.finish(thread_object);
-        match status {
-            Some(status) => tracing::info!(
-                thread = %thread_object,
-                tid = %thread.tid,
-                path = transfer.path(),
-                ?status,
-                "file-transfer injection completed"
-            ),
-            None => tracing::warn!(
-                thread = %thread_object,
-                tid = %thread.tid,
-                path = transfer.path(),
-                "file-transfer injection completed without terminal status"
-            ),
-        }
+        tracing::info!(
+            thread = %thread_object,
+            tid = %thread.tid,
+            path = transfer.path(),
+            "file-transfer injection completed"
+        );
 
         Ok(VmiEventResponse::fast_singlestep(vmi.default_view())
             .with_registers(registers.gp_registers()))
@@ -812,6 +883,24 @@ mod tests {
             ProcessId(42),
             &process("dynasample-ful", ProcessId(42)),
         ));
+    }
+
+    #[test]
+    fn bridge_response_maps_typed_completion_without_losing_values() {
+        let status = DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::SUCCESS);
+        let response = BridgeResponse::new(0x11)
+            .with_value2(0x22)
+            .with_result(status.encode());
+        let mapped = map_bridge_response(response, |result| {
+            DeployMonitorBridgeOutput::Deploy(DeployStatus::decode(result))
+        });
+
+        assert_eq!(mapped.value1(), Some(0x11));
+        assert_eq!(mapped.value2(), Some(0x22));
+        assert_eq!(
+            mapped.into_result(),
+            Some(DeployMonitorBridgeOutput::Deploy(status))
+        );
     }
 
     #[test]
