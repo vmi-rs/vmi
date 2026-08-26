@@ -128,7 +128,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! vmi = { version = "0.8", features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
+//! vmi = { version = "0.9", features = ["arch-amd64", "driver-xen", "os-windows", "utils"] }
 //! ```
 //!
 //! Basic usage example:

@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.0] - 2026-08-27
+
+### Changed
+
+- **Breaking:** `libxen` dependency updated to 0.6.
+
+### Added
+
+### Removed
+
+### Fixed
+
 ## [0.8.0] - 2026-08-24
 
 ### Changed
