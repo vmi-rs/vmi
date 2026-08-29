@@ -30,9 +30,10 @@ typedef struct _MM_COPY_ADDRESS {
         PVOID VirtualAddress;
         PHYSICAL_ADDRESS PhysicalAddress;
     };
-} MM_COPY_ADDRESS, *PMM_COPY_ADDRESS;
+} MM_COPY_ADDRESS, *PMMCOPY_ADDRESS;
 
-#define MM_COPY_MEMORY_VIRTUAL 0x1
+#define MM_COPY_MEMORY_PHYSICAL             0x1
+#define MM_COPY_MEMORY_VIRTUAL              0x2
 
 NTKERNELAPI
 PVOID
