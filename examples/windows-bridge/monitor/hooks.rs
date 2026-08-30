@@ -59,14 +59,8 @@ where
         "kernel function called"
     );
 
-    state.processes.insert_process(NewProcess, process);
-
     if is_target {
         state.target_process = Some(NewProcess);
-        let process = state
-            .processes
-            .get_process(NewProcess)
-            .expect("inserted process");
         tracing::info!(
             process = %NewProcess,
             pid = %process.pid,
@@ -74,6 +68,8 @@ where
             "deployed process started"
         );
     }
+
+    state.processes.insert_process(NewProcess, process);
 
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
@@ -96,11 +92,9 @@ where
     let Process = ProcessObject(Va(vmi.os().function_argument(0)?));
     let thread_objects = state.processes.threads_of(Process).collect::<Vec<_>>();
     for thread_object in thread_objects {
-        state
-            .processes
-            .get_thread_mut(thread_object)
-            .expect("process thread index is consistent")
-            .mark_terminated();
+        if let Some(thread) = state.processes.get_thread_mut(thread_object) {
+            thread.mark_terminated();
+        }
     }
     let process = match state.processes.get_process_mut(Process) {
         Some(process) => process,
@@ -279,17 +273,16 @@ where
         }
     };
     let path = file_object.full_path()?;
-    let process_id = state
-        .processes
-        .get_process(process_object)
-        .expect("target process is tracked")
-        .pid;
     let transfer = FileTransfer::new(FileHandle, file_object.va(), path.clone());
-    state
-        .processes
-        .get_process_mut(process_object)
-        .expect("target process is tracked")
-        .mark_file(transfer);
+    let process = match state.processes.get_process_mut(process_object) {
+        Some(process) => process,
+        None => {
+            tracing::warn!(%process_object, "target process not tracked");
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+    };
+    let process_id = process.pid;
+    process.mark_file(transfer);
 
     tracing::info!(
         hook = "NtWriteFile",
@@ -345,8 +338,7 @@ where
     let mut transfer = match state
         .processes
         .get_process_mut(process_object)
-        .expect("target process is tracked")
-        .take_file(Handle)
+        .and_then(|process| process.take_file(Handle))
     {
         Some(transfer) => transfer,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
@@ -363,11 +355,9 @@ where
     }
 
     transfer.start();
-    state
-        .processes
-        .get_thread_mut(thread_object)
-        .expect("target thread checked above")
-        .file_transfer = Some(transfer);
+    if let Some(thread) = state.processes.get_thread_mut(thread_object) {
+        thread.file_transfer = Some(transfer);
+    }
     advance_file_transfer(vmi, state, thread_object)
 }
 
@@ -380,14 +370,14 @@ fn advance_file_transfer<Driver>(
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    let thread = state
-        .processes
-        .get_thread_mut(thread_object)
-        .expect("active transfer thread is tracked");
-    let transfer = thread
-        .file_transfer
-        .as_mut()
-        .expect("active transfer thread has a transfer");
+    let thread = match state.processes.get_thread_mut(thread_object) {
+        Some(thread) => thread,
+        None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
+    };
+    let transfer = match thread.file_transfer.as_mut() {
+        Some(transfer) => transfer,
+        None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
+    };
     let registers = match transfer.execute(vmi)? {
         Some(registers) => registers,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
@@ -397,10 +387,10 @@ where
         return Ok(VmiEventResponse::default().with_registers(registers.gp_registers()));
     }
 
-    let transfer = thread
-        .file_transfer
-        .take()
-        .expect("completed transfer remains attached to thread");
+    let transfer = match thread.file_transfer.take() {
+        Some(transfer) => transfer,
+        None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
+    };
     tracing::info!(
         thread = %thread_object,
         tid = %thread.tid,

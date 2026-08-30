@@ -353,7 +353,11 @@ where
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
-        self.dispatch(&vmi).expect("deploy monitor dispatch")
+
+        match self.dispatch(&vmi) {
+            Ok(response) => response,
+            Err(err) => panic!("deploy monitor dispatch failed: {err:?}"),
+        }
     }
 
     fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
