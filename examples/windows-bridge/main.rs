@@ -194,7 +194,7 @@ impl DeployArguments {
         let monitor_request = if monitor {
             let executable = execute
                 .as_deref()
-                .expect("execute required by clap when monitor is enabled");
+                .context("--execute required by clap when --monitor is enabled")?;
             let executable_name = windows_executable_basename(executable)
                 .with_context(|| format!("`--execute {executable}` has no basename"))?
                 .to_owned();
@@ -216,20 +216,30 @@ impl DeployArguments {
                 .maybe_working_directory(working_directory)
                 .maybe_show_window(show_window)
                 .build(),
-            (Some(url), None) => DeployParameters::builder()
-                .download(url)
-                .download_path(download_path.expect("download path required by clap"))
-                .maybe_extraction_directory(extraction_directory)
-                .build(),
-            (Some(url), Some(executable)) => DeployParameters::builder()
-                .download(url)
-                .download_path(download_path.expect("download path required by clap"))
-                .maybe_extraction_directory(extraction_directory)
-                .execute(executable)
-                .maybe_arguments(arguments)
-                .maybe_working_directory(working_directory)
-                .maybe_show_window(show_window)
-                .build(),
+            (Some(url), None) => {
+                let download_path =
+                    download_path.context("--download-path required by clap when --url is set")?;
+
+                DeployParameters::builder()
+                    .download(url)
+                    .download_path(download_path)
+                    .maybe_extraction_directory(extraction_directory)
+                    .build()
+            }
+            (Some(url), Some(executable)) => {
+                let download_path =
+                    download_path.context("--download-path required by clap when --url is set")?;
+
+                DeployParameters::builder()
+                    .download(url)
+                    .download_path(download_path)
+                    .maybe_extraction_directory(extraction_directory)
+                    .execute(executable)
+                    .maybe_arguments(arguments)
+                    .maybe_working_directory(working_directory)
+                    .maybe_show_window(show_window)
+                    .build()
+            }
         };
 
         Ok(DeployRequest {

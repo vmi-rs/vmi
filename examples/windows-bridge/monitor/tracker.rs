@@ -68,18 +68,11 @@ impl<P, T> ProcessTracker<P, T> {
             entry.threads.remove(&object);
         }
 
-        self.processes
-            .get_mut(&process)
-            .expect("owning process checked above")
-            .threads
-            .insert(object);
+        if let Some(entry) = self.processes.get_mut(&process) {
+            entry.threads.insert(object);
+        }
 
         Ok(previous.map(|entry| entry.value))
-    }
-
-    /// Returns a process payload.
-    pub fn get_process(&self, object: ProcessObject) -> Option<&P> {
-        self.processes.get(&object).map(|entry| &entry.value)
     }
 
     /// Returns a mutable process payload.
