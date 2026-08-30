@@ -211,6 +211,7 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
         self.maybe_extraction_directory(Some(extraction_directory.into()))
     }
 
+    // REVIEW: Option<impl Into<String>>?
     /// Supplies an optional extraction directory.
     pub fn maybe_extraction_directory(self, extraction_directory: Option<String>) -> Self {
         Self {
