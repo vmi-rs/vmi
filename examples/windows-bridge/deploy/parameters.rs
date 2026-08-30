@@ -208,15 +208,17 @@ impl DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
 impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables extraction into the supplied guest directory.
     pub fn extraction_directory(self, extraction_directory: impl Into<String>) -> Self {
-        self.maybe_extraction_directory(Some(extraction_directory.into()))
+        self.maybe_extraction_directory(Some(extraction_directory))
     }
 
-    // REVIEW: Option<impl Into<String>>?
     /// Supplies an optional extraction directory.
-    pub fn maybe_extraction_directory(self, extraction_directory: Option<String>) -> Self {
+    pub fn maybe_extraction_directory(
+        self,
+        extraction_directory: Option<impl Into<String>>,
+    ) -> Self {
         Self {
             download: DownloadEnabled {
-                extraction_directory,
+                extraction_directory: extraction_directory.map(Into::into),
                 ..self.download
             },
             execution: self.execution,
@@ -263,15 +265,15 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     /// Supplies a present argument slot. An empty string remains meaningful.
     pub fn arguments(self, arguments: impl Into<String>) -> Self {
-        self.maybe_arguments(Some(arguments.into()))
+        self.maybe_arguments(Some(arguments))
     }
 
     /// Supplies an optional argument slot. A present empty string remains meaningful.
-    pub fn maybe_arguments(self, arguments: Option<String>) -> Self {
+    pub fn maybe_arguments(self, arguments: Option<impl Into<String>>) -> Self {
         Self {
             download: self.download,
             execution: ExecutionEnabled {
-                arguments,
+                arguments: arguments.map(Into::into),
                 ..self.execution
             },
         }
@@ -279,15 +281,15 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
 
     /// Supplies a present guest working directory.
     pub fn working_directory(self, working_directory: impl Into<String>) -> Self {
-        self.maybe_working_directory(Some(working_directory.into()))
+        self.maybe_working_directory(Some(working_directory))
     }
 
     /// Supplies an optional guest working directory.
-    pub fn maybe_working_directory(self, working_directory: Option<String>) -> Self {
+    pub fn maybe_working_directory(self, working_directory: Option<impl Into<String>>) -> Self {
         Self {
             download: self.download,
             execution: ExecutionEnabled {
-                working_directory,
+                working_directory: working_directory.map(Into::into),
                 ..self.execution
             },
         }
@@ -392,10 +394,10 @@ mod tests {
         let parameters = DeployParameters::builder()
             .download("u")
             .download_path("d")
-            .maybe_extraction_directory(Some("x".to_owned()))
+            .maybe_extraction_directory(Some("x"))
             .execute("e")
-            .maybe_arguments(None)
-            .maybe_working_directory(Some("w".to_owned()))
+            .maybe_arguments(None::<&str>)
+            .maybe_working_directory(Some("w"))
             .maybe_show_window(None)
             .build();
         let bytes = encode_parameters(&parameters);
