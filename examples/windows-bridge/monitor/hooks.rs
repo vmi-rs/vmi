@@ -90,6 +90,7 @@ where
     //
 
     let Process = ProcessObject(Va(vmi.os().function_argument(0)?));
+
     let thread_objects = state.processes.threads_of(Process).collect::<Vec<_>>();
     for thread_object in thread_objects {
         if let Some(thread) = state.processes.get_thread_mut(thread_object) {
@@ -151,6 +152,7 @@ where
 
     let thread_object = ThreadObject(Va(vmi.os().function_argument(0)?));
     let process_object = ProcessObject(Va(vmi.os().function_argument(1)?));
+
     let thread = Thread {
         tid: vmi.os().thread(thread_object)?.id()?,
         terminated: false,
@@ -201,6 +203,7 @@ where
     //
 
     let thread_object = ThreadObject(Va(vmi.os().function_argument(0)?));
+
     let process_object = state.processes.process_of(thread_object);
     let thread = match state.processes.get_thread_mut(thread_object) {
         Some(thread) => thread,

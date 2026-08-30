@@ -31,14 +31,14 @@ pub struct DownloadDisabled;
 /// Holds a download URL until its required destination path is supplied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadNeedsPath {
-    /// URL passed unchanged to `URLDownloadToFileW`.
+    /// URL passed to `URLDownloadToFileW`.
     url: String,
 }
 
 /// Holds a complete download operation and its optional extraction stage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadEnabled {
-    /// URL passed unchanged to `URLDownloadToFileW`.
+    /// URL passed to `URLDownloadToFileW`.
     url: String,
 
     /// Guest destination path, including optional environment variables.

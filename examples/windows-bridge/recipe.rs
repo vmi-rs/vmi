@@ -181,10 +181,10 @@ where
 
             inject! {
                 kernel32!VirtualAlloc(
-                    0u64,
-                    data![payload].len(),
-                    MEM_COMMIT | MEM_RESERVE,
-                    PAGE_EXECUTE_READWRITE
+                    0,                          // lpAddress
+                    data![payload].len(),       // dwSize
+                    MEM_COMMIT | MEM_RESERVE,   // flAllocationType
+                    PAGE_EXECUTE_READWRITE      // flProtect
                 )
             }
         },
@@ -202,9 +202,9 @@ where
 
             inject! {
                 kernel32!RtlFillMemory(
-                    data![guest_address],
-                    data![payload].len(),
-                    0u8
+                    data![guest_address],       // Destination
+                    data![payload].len(),       // Length
+                    0                           // Fill
                 )
             }
         },
@@ -221,12 +221,12 @@ where
 
             inject! {
                 kernel32!CreateThread(
-                    0u64,
-                    0u64,
-                    data![guest_address],
-                    parameter_address,
-                    0u64,
-                    0u64
+                    0,                          // lpThreadAttributes
+                    0,                          // dwStackSize
+                    data![guest_address],       // lpStartAddress
+                    parameter_address,          // lpParameter
+                    0,                          // dwCreationFlags
+                    0                           // lpThreadId
                 )
             }
         },
