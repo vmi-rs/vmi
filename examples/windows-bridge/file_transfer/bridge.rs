@@ -24,6 +24,7 @@ const CHUNK_SIZE: u64 = 64 * 1024;
 
 /// Guest transfer handles occupy the low 12 bits of a begin response.
 const TRANSFER_HANDLE_BITS: u32 = 12;
+const TRANSFER_HANDLE_MAX: u32 = (1 << TRANSFER_HANDLE_BITS) - 1;
 
 /// File-transfer operation stage encoded in a packed result.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -72,15 +73,15 @@ pub type FileTransferStatus = TerminalResult<FileTransferStage>;
 /// Host output for one active transfer.
 struct HostFile {
     file: File,
-    final_path: PathBuf,
+    path: PathBuf,
     expected_size: u64,
     received: u64,
     buffer: Option<Va>,
 }
 
 impl HostFile {
-    fn create(final_path: PathBuf, expected_size: u64) -> Result<Self, Error> {
-        if let Some(parent) = final_path.parent() {
+    fn create(path: PathBuf, expected_size: u64) -> Result<Self, Error> {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
@@ -88,11 +89,11 @@ impl HostFile {
             .create(true)
             .truncate(true)
             .write(true)
-            .open(&final_path)?;
+            .open(&path)?;
 
         Ok(Self {
             file,
-            final_path,
+            path,
             expected_size,
             received: 0,
             buffer: None,
@@ -105,7 +106,7 @@ impl HostFile {
 
     fn append(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let length = bytes.len() as u64;
-        if length > CHUNK_SIZE || self.received.saturating_add(length) > self.expected_size {
+        if length > CHUNK_SIZE || self.received + length > self.expected_size {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "file-transfer chunk exceeds declared size",
@@ -173,10 +174,14 @@ impl FileTransferBridge {
         }
     }
 
-    fn allocate_transfer_handle(&mut self) -> u32 {
+    fn allocate_transfer_handle(&mut self) -> Option<u32> {
+        if self.next_transfer_handle > TRANSFER_HANDLE_MAX {
+            return None;
+        }
+
         let handle = self.next_transfer_handle;
         self.next_transfer_handle += 1;
-        handle
+        Some(handle)
     }
 
     /// Produces the protocol response for one file-transfer packet.
@@ -214,6 +219,7 @@ impl FileTransferBridge {
         let file_name_buffer = packet.value3();
         let file_name_length = packet.value4() as usize;
 
+        // REVIEW: if let Some && if let Some?
         let process_id = match vmi.os().current_process().and_then(|process| process.id()) {
             Ok(process_id) => process_id,
             Err(err) => {
@@ -221,6 +227,7 @@ impl FileTransferBridge {
                 return BridgeResponse::new(0);
             }
         };
+
         let path = match vmi.read_string_utf16_limited(Va(file_name_buffer), file_name_length) {
             Ok(path) => path,
             Err(err) => {
@@ -228,6 +235,7 @@ impl FileTransferBridge {
                 return BridgeResponse::new(0);
             }
         };
+
         let expected_size = match i64::try_from(file_size) {
             Ok(expected_size) => expected_size,
             Err(_) => {
@@ -235,10 +243,19 @@ impl FileTransferBridge {
                 return BridgeResponse::new(0);
             }
         };
-        let transfer_handle = self.allocate_transfer_handle();
+
+        let transfer_handle = match self.allocate_transfer_handle() {
+            Some(transfer_handle) => transfer_handle,
+            None => {
+                tracing::error!("file-transfer handles exhausted");
+                return BridgeResponse::new(0);
+            }
+        };
 
         let output_id = self.next_output_id;
         self.next_output_id += 1;
+
+        // REVIEW: avoid clone()
         let output_path =
             self.output_directory
                 .join(output_filename(process_id, file_handle, output_id, &path));
@@ -250,11 +267,10 @@ impl FileTransferBridge {
             }
         };
 
-        let replaced = self.transfers.insert(
+        self.transfers.insert(
             transfer_handle,
             TransferSession::new(path.clone(), host_file),
         );
-        debug_assert!(replaced.is_none(), "allocated transfer handle is unused");
 
         tracing::info!(
             transfer_handle,
@@ -284,6 +300,7 @@ impl FileTransferBridge {
             Some(transfer) => transfer,
             None => return BridgeResponse::new(RESPONSE_ABORT),
         };
+
         transfer.host_file.set_buffer(Va(buffer));
 
         BridgeResponse::new(RESPONSE_CONTINUE)
@@ -299,22 +316,19 @@ impl FileTransferBridge {
         Driver: VmiRead<Architecture = Amd64>,
     {
         let transfer_handle = packet.value1() as u32;
-        let length = packet.value2();
+        let length = packet.value2() as usize;
 
         let transfer = match self.transfers.get_mut(&transfer_handle) {
             Some(transfer) => transfer,
             None => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        let host_file = &mut transfer.host_file;
-        let buffer = match host_file.buffer {
+
+        let buffer = match transfer.host_file.buffer {
             Some(buffer) => buffer,
             None => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        let length = match usize::try_from(length) {
-            Ok(length) => length,
-            Err(_) => return BridgeResponse::new(RESPONSE_ABORT),
-        };
-        if length as u64 > CHUNK_SIZE {
+
+        if length > CHUNK_SIZE as usize {
             return BridgeResponse::new(RESPONSE_ABORT);
         }
 
@@ -323,7 +337,8 @@ impl FileTransferBridge {
             tracing::error!(%err, "cannot read file-transfer chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
-        if let Err(err) = host_file.append(bytes) {
+
+        if let Err(err) = transfer.host_file.append(bytes) {
             tracing::error!(%err, "cannot write file-transfer chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
@@ -345,21 +360,20 @@ impl FileTransferBridge {
 
         const TRANSFER_SUCCESS: u64 = 0;
 
-        let transfer = match self.transfers.remove(&transfer_handle) {
+        let mut transfer = match self.transfers.remove(&transfer_handle) {
             Some(transfer) => transfer,
             None => return BridgeResponse::new(RESPONSE_ABORT),
         };
-        let mut host_file = transfer.host_file;
 
         if transfer_status == TRANSFER_SUCCESS {
-            if let Err(err) = host_file.commit() {
+            if let Err(err) = transfer.host_file.commit() {
                 tracing::error!(%err, path = %transfer.path, "cannot commit host transfer file");
                 return BridgeResponse::new(RESPONSE_ABORT);
             }
 
             tracing::info!(
-                path = %host_file.final_path.display(),
-                size = host_file.received,
+                path = %transfer.host_file.path.display(),
+                size = transfer.host_file.received,
                 "file transfer completed"
             );
         }
@@ -434,6 +448,7 @@ fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &st
         .rsplit(['\\', '/'])
         .find(|component| !component.is_empty())
         .unwrap_or("file");
+
     let basename = basename
         .chars()
         .map(|character| {
@@ -445,6 +460,7 @@ fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &st
             }
         })
         .collect::<String>();
+
     let basename = if basename.is_empty() {
         "file"
     }
@@ -472,11 +488,14 @@ mod tests {
     }
 
     #[test]
-    fn transfer_handles_increment_from_one() {
+    fn transfer_handles_increment_until_exhausted() {
         let mut bridge = FileTransferBridge::new(PathBuf::new());
 
-        assert_eq!(bridge.allocate_transfer_handle(), 1);
-        assert_eq!(bridge.allocate_transfer_handle(), 2);
+        assert_eq!(bridge.allocate_transfer_handle(), Some(1));
+
+        bridge.next_transfer_handle = TRANSFER_HANDLE_MAX;
+        assert_eq!(bridge.allocate_transfer_handle(), Some(TRANSFER_HANDLE_MAX));
+        assert_eq!(bridge.allocate_transfer_handle(), None);
     }
 
     #[test]

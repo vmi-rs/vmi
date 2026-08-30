@@ -18,6 +18,7 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     Pending,
+    // REVIEW: Executing(RecipeExecutor<WindowsOs<Driver>, FileTransferRecipeData>)
     Executing {
         executor: RecipeExecutor<WindowsOs<Driver>, FileTransferRecipeData>,
     },
