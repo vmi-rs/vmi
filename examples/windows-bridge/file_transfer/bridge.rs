@@ -1,3 +1,5 @@
+//! Guest-driven file-transfer protocol handler for the deploy monitor bridge.
+
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
@@ -24,6 +26,8 @@ const CHUNK_SIZE: u64 = 64 * 1024;
 
 /// Guest transfer handles occupy the low 12 bits of a begin response.
 const TRANSFER_HANDLE_BITS: u32 = 12;
+
+/// Upper bound on a guest transfer handle before the space is exhausted.
 const TRANSFER_HANDLE_MAX: u32 = (1 << TRANSFER_HANDLE_BITS) - 1;
 
 /// File-transfer operation stage encoded in a packed result.
@@ -80,6 +84,7 @@ struct HostFile {
 }
 
 impl HostFile {
+    /// Creates the host output file, truncating any existing content.
     fn create(path: PathBuf, expected_size: u64) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -100,10 +105,12 @@ impl HostFile {
         })
     }
 
+    /// Records the guest buffer address shared for this transfer.
     fn set_buffer(&mut self, buffer: Va) {
         self.buffer = Some(buffer);
     }
 
+    /// Appends one validated chunk to the host output file.
     fn append(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let length = bytes.len() as u64;
         if length > CHUNK_SIZE || self.received + length > self.expected_size {
@@ -118,6 +125,7 @@ impl HostFile {
         Ok(())
     }
 
+    /// Flushes the host output file once its full size has arrived.
     fn commit(&mut self) -> Result<(), Error> {
         if self.received != self.expected_size {
             return Err(Error::new(
@@ -138,6 +146,7 @@ struct TransferSession {
 }
 
 impl TransferSession {
+    /// Creates a session with an empty chunk buffer sized to one chunk.
     fn new(path: String, host_file: HostFile) -> Self {
         Self {
             path,
@@ -158,10 +167,19 @@ pub struct FileTransferBridge {
 impl_bridge_contract!(FileTransferBridge);
 
 impl FileTransferBridge {
+    /// Begins a new transfer and allocates its guest handle.
     const METHOD_BEGIN: u16 = 0x0001;
+
+    /// Registers the shared guest buffer for a transfer handle.
     const METHOD_SET_BUFFER: u16 = 0x0002;
+
+    /// Copies one filled guest buffer into the host output file.
     const METHOD_CHUNK: u16 = 0x0003;
+
+    /// Closes a transfer handle and commits the host output.
     const METHOD_CLOSE: u16 = 0x0004;
+
+    /// Terminal result method.
     const METHOD_EXIT: u16 = METHOD_EXIT;
 
     /// Creates a persistent handler writing files beneath `output_directory`.
@@ -174,6 +192,7 @@ impl FileTransferBridge {
         }
     }
 
+    /// Allocates the next guest transfer handle, if the handle space is not exhausted.
     fn allocate_transfer_handle(&mut self) -> Option<u32> {
         if self.next_transfer_handle > TRANSFER_HANDLE_MAX {
             return None;
@@ -443,6 +462,7 @@ where
     }
 }
 
+/// Builds a flat, filesystem-safe host output name for one transferred file.
 fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &str) -> String {
     let basename = path
         .rsplit(['\\', '/'])
@@ -481,7 +501,8 @@ mod tests {
         static NEXT: AtomicU64 = AtomicU64::new(0);
 
         std::env::temp_dir().join(format!(
-            "windows-bridge-{name}-{}-{}",
+            "windows-bridge-{}-{}-{}",
+            name,
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))

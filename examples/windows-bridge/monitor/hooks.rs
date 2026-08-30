@@ -1,3 +1,5 @@
+//! Kernel breakpoint handlers installed by `Monitor::new`, one per hooked function.
+
 #![expect(non_snake_case)]
 
 use vmi::{
@@ -14,6 +16,7 @@ use vmi::{
 use super::{MonitorState, Process, Thread, process_matches_target};
 use crate::file_transfer::FileTransfer;
 
+/// Hooks process creation to record the new process and its parent.
 pub fn PspInsertProcess<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -75,6 +78,7 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
+/// Hooks address-space cleanup to finalize a terminated process.
 pub fn MmCleanProcessAddressSpace<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -134,6 +138,7 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
+/// Hooks thread creation to record the new thread's owning process.
 pub fn PspInsertThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -186,6 +191,7 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
+/// Hooks thread termination to finalize a terminated thread.
 pub fn KeTerminateThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -229,6 +235,7 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
+/// Hooks a synchronous `NtWriteFile` to mark its target file for transfer.
 pub fn NtWriteFile<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -295,6 +302,7 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
+/// Hooks `NtClose` to start a marked file's transfer before its handle closes.
 pub fn NtClose<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
@@ -363,6 +371,7 @@ where
     advance_file_transfer(vmi, state, thread_object)
 }
 
+/// Advances a thread's in-progress file transfer by one recipe step.
 fn advance_file_transfer<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
     state: &mut MonitorState<Driver>,
