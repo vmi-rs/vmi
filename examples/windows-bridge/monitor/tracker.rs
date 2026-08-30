@@ -1,4 +1,6 @@
-use std::collections::{HashMap, HashSet};
+//! Generic process/thread identity tracker decoupled from payload interpretation.
+
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use vmi::os::{ProcessObject, ThreadObject};
 
@@ -33,10 +35,10 @@ impl<P, T> ProcessTracker<P, T> {
     /// Inserts a process payload while retaining any threads already associated with it.
     pub fn insert_process(&mut self, object: ProcessObject, value: P) -> Option<P> {
         match self.processes.entry(object) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
+            Entry::Occupied(mut entry) => {
                 Some(std::mem::replace(&mut entry.get_mut().value, value))
             }
-            std::collections::hash_map::Entry::Vacant(entry) => {
+            Entry::Vacant(entry) => {
                 entry.insert(ProcessEntry {
                     value,
                     threads: HashSet::new(),

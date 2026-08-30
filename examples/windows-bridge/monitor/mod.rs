@@ -1,3 +1,5 @@
+//! Deploy monitor that installs kernel breakpoints and drains marked file transfers.
+
 mod hooks;
 mod tracker;
 
@@ -49,6 +51,7 @@ fn process_name_matches(expected: &str, observed: &str) -> bool {
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case(observed))
 }
 
+/// Matches a tracked process against the expected name and parent process id.
 fn process_matches_target<Driver>(
     expected_name: &str,
     expected_ppid: ProcessId,
@@ -76,14 +79,17 @@ impl<Driver> Process<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    /// Marks the process as terminated.
     fn mark_terminated(&mut self) {
         self.terminated = true;
     }
 
+    /// Records a file transfer keyed by its handle.
     fn mark_file(&mut self, transfer: FileTransfer<Driver>) {
         self.file_transfers.insert(transfer.handle(), transfer);
     }
 
+    /// Removes and returns the file transfer for a handle.
     fn take_file(&mut self, handle: u64) -> Option<FileTransfer<Driver>> {
         self.file_transfers.remove(&handle)
     }
@@ -103,6 +109,7 @@ impl<Driver> Thread<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    /// Marks the thread as terminated.
     fn mark_terminated(&mut self) {
         self.terminated = true;
     }
@@ -123,11 +130,13 @@ symbols! {
 /// Terminal outcome produced by deploy monitoring.
 pub type MonitorOutput = Result<Option<ProcessId>, DeployStatus>;
 
+/// Kernel breakpoint handler installed at a hooked function's entry.
 type Hook<Driver> = fn(
     &VmiContext<WindowsOs<Driver>>,
     &mut MonitorState<Driver>,
 ) -> Result<VmiEventResponse<Amd64>, VmiError>;
 
+/// Mutable monitor state threaded through kernel hook dispatch.
 struct MonitorState<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,

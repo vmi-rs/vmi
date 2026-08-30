@@ -1,3 +1,5 @@
+//! Per-process file transfer lifecycle driven by `NtWriteFile`/`NtClose` hooks.
+
 mod bridge;
 mod recipe;
 
@@ -49,14 +51,17 @@ where
         }
     }
 
+    /// Returns the guest transfer handle.
     pub fn handle(&self) -> u64 {
         self.handle
     }
 
+    /// Returns the guest `_FILE_OBJECT` address.
     pub fn file_object(&self) -> Va {
         self.file_object
     }
 
+    /// Returns the file's guest path.
     pub fn path(&self) -> &str {
         &self.path
     }
@@ -86,6 +91,7 @@ where
         executor.execute(vmi)
     }
 
+    /// Returns whether the transfer has finished executing.
     pub fn done(&self) -> bool {
         match &self.state {
             FileTransferState::Pending => false,
