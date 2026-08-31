@@ -58,6 +58,7 @@ impl FileTransferRecipeData {
 ///
 /// The shellcode receives the kernel image base in `argument1` for SCFW import
 /// resolution and the process-local file handle in `argument2`.
+#[tracing::instrument(name = "file_transfer", skip_all)]
 pub fn file_transfer_recipe<Driver>(
     file_handle: u64,
 ) -> Recipe<WindowsOs<Driver>, FileTransferRecipeData>
@@ -70,11 +71,7 @@ where
             let attempt = data![begin_attempt(registers!())];
             let number_of_bytes = Amd64::va_align_up(Va(FILE_TRANSFER_SHELLCODE.len() as u64)).0;
 
-            tracing::debug!(
-                attempt,
-                number_of_bytes,
-                "allocating file-transfer shellcode"
-            );
+            tracing::debug!(attempt, number_of_bytes, "allocating shellcode");
 
             #[expect(non_upper_case_globals)]
             const NonPagedPoolExecute: u64 = 0;

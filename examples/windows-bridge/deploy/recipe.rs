@@ -10,7 +10,7 @@ const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
 ));
 
 /// Builds the deploy shellcode injection recipe.
-#[tracing::instrument(name = "deploy_recipe", skip_all)]
+#[tracing::instrument(name = "deploy", skip_all)]
 pub fn deploy_recipe<Driver>(
     parameters: &DeployParameters,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>

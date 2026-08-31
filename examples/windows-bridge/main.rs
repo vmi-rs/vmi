@@ -415,7 +415,7 @@ fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
     let filter = EnvFilter::default()
-        .add_directive(tracing::Level::DEBUG.into())
+        .add_directive(tracing::Level::TRACE.into())
         .add_directive("reqwest=warn".parse()?)
         .add_directive("rustls=warn".parse()?);
 

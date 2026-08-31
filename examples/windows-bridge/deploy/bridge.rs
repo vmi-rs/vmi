@@ -159,7 +159,7 @@ impl DeployBridge {
             RESPONSE_ABORT
         };
 
-        tracing::debug!(attempt, native_code, response, "deploy download gate");
+        tracing::debug!(attempt, native_code, response, "download gate");
 
         Some(BridgeResponse::new(response))
     }
@@ -176,7 +176,7 @@ impl DeployBridge {
 
         tracing::debug!(
             response = ?self.policy.execute_response,
-            "deploy execute gate"
+            "execute gate"
         );
 
         Some(response)
@@ -192,7 +192,7 @@ impl DeployBridge {
             status = ?result.status(),
             code = result.code(),
             native_code,
-            "deploy shellcode completed"
+            "shellcode completed"
         );
 
         Some(BridgeResponse::default().with_result(packet.value1()))
@@ -207,7 +207,7 @@ impl DeployBridge {
             value2 = %Hex(packet.value2()),
             value3 = %Hex(packet.value3()),
             value4 = %Hex(packet.value4()),
-            "unknown deploy bridge method"
+            "unknown bridge method"
         );
 
         None
@@ -220,6 +220,7 @@ where
 {
     const REQUEST: u16 = 0x0001;
 
+    #[tracing::instrument(name = "deploy", skip_all)]
     fn handle(
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,

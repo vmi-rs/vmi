@@ -30,7 +30,8 @@ impl MsgboxBridge {
     /// Completes the injector from a terminal message box packet.
     fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let result = packet.value1();
-        tracing::debug!(result, "msgbox shellcode completed");
+
+        tracing::debug!(result, "shellcode completed");
 
         Some(BridgeResponse::default().with_result(packet.value1()))
     }
@@ -44,7 +45,7 @@ impl MsgboxBridge {
             value2 = %Hex(packet.value2()),
             value3 = %Hex(packet.value3()),
             value4 = %Hex(packet.value4()),
-            "unknown msgbox bridge method"
+            "unknown bridge method"
         );
 
         None
@@ -58,6 +59,7 @@ where
     /// Msgbox bridge request identifier.
     const REQUEST: u16 = 0x0002;
 
+    #[tracing::instrument(name = "msgbox", skip_all)]
     fn handle(
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,

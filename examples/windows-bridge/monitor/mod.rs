@@ -14,8 +14,8 @@ use std::{
 
 use isr::{Profile, macros::symbols};
 use vmi::{
-    MemoryAccess, Registers as _, VcpuId, View, VmiContext, VmiError, VmiEventResponse, VmiHandler,
-    VmiSession,
+    MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
+    VmiHandler, VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::VmiFullDriver,
     os::{
@@ -85,8 +85,12 @@ where
     }
 
     /// Records a file transfer keyed by its handle.
-    fn mark_file(&mut self, transfer: FileTransfer<Driver>) {
-        self.file_transfers.insert(transfer.handle(), transfer);
+    ///
+    /// Returns `true` if the handle was not already present.
+    fn mark_file(&mut self, transfer: FileTransfer<Driver>) -> bool {
+        self.file_transfers
+            .insert(transfer.handle(), transfer)
+            .is_none()
     }
 
     /// Removes and returns the file transfer for a handle.
@@ -182,9 +186,9 @@ where
         expected_ppid: ProcessId,
         output_directory: PathBuf,
     ) -> Result<Self, VmiError> {
-        let registers = session.registers(VcpuId(0))?;
-        let vmi = session.with_registers(&registers);
-        let _pause_guard = vmi.pause_guard()?;
+        let paused = session.pause_guard()?;
+        let vmi = paused.state();
+
         let kernel_image_base = vmi.os().kernel_image_base()?;
         let root = vmi.os().system_process()?.translation_root()?;
         let symbols = Symbols::new(profile)?;
@@ -200,12 +204,13 @@ where
 
         let mut bpm = BreakpointManager::new();
         let mut ptm = PageTableMonitor::new();
+
         macro_rules! install {
             ($($name:ident),+ $(,)?) => {
                 $(
                     let va = kernel_image_base + symbols.$name;
                     let context = (va, root);
-                    let hook: Hook<Driver> = hooks::$name::<Driver>;
+                    let hook = hooks::$name::<Driver> as Hook<Driver>;
                     let breakpoint = Breakpoint::new(context, view).global().with_tag(hook);
                     bpm.insert(&vmi, breakpoint)?;
                     ptm.monitor(&vmi, context, view, hook)?;
@@ -246,6 +251,7 @@ where
         })
     }
 
+    #[tracing::instrument(skip_all)]
     fn memory_access(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -265,6 +271,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn interrupt(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -285,6 +292,7 @@ where
         hook(vmi, &mut self.state)
     }
 
+    #[tracing::instrument(skip_all)]
     fn singlestep(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -295,6 +303,7 @@ where
     }
 
     /// Dispatches deploy and file-transfer hypercalls through the composed bridge.
+    #[tracing::instrument(skip_all)]
     fn hypercall(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
@@ -318,6 +327,14 @@ where
         Ok(VmiEventResponse::default().with_registers(registers))
     }
 
+    #[tracing::instrument(
+        name = "monitor",
+        skip_all,
+        fields(
+            pid = vmi::trace::current_process_id(vmi),
+            tid = vmi::trace::current_thread_id(vmi),
+        )
+    )]
     fn dispatch(
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,

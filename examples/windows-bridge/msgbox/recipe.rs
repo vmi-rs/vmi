@@ -10,7 +10,7 @@ const MSGBOX_SHELLCODE: &[u8] = include_bytes!(concat!(
 ));
 
 /// Builds the msgbox shellcode injection recipe.
-#[tracing::instrument(name = "msgbox_recipe", skip_all)]
+#[tracing::instrument(name = "msgbox", skip_all)]
 pub fn msgbox_recipe<Driver>(
     parameters: &MsgboxParameters,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
