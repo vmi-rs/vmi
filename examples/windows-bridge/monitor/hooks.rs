@@ -59,7 +59,7 @@ where
         state.target_process = Some(NewProcess);
 
         tracing::info!(
-            name = %process.name,
+            name = process.name,
             pid = %process.pid,
             process = %NewProcess,
             "deployed process started"
@@ -67,7 +67,7 @@ where
     }
     else {
         tracing::debug!(
-            name = %process.name,
+            name = process.name,
             pid = %process.pid,
             ppid = %process.ppid,
             process = %NewProcess,
@@ -119,7 +119,7 @@ where
         state.completion = Some(Ok(Some(process.pid)));
 
         tracing::info!(
-            name = %process.name,
+            name = process.name,
             pid = %process.pid,
             process = %Process,
             "deployed process terminated"
@@ -127,7 +127,7 @@ where
     }
     else {
         tracing::debug!(
-            name = %process.name,
+            name = process.name,
             pid = %process.pid,
             process = %Process,
         );
@@ -369,8 +369,9 @@ where
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };
 
-    let resolved = current_process.lookup_object::<WindowsFileObject<_>>(Handle)?;
-    if !resolved.is_some_and(|file_object| file_object.va() == transfer.file_object()) {
+    if let Some(file_object) = current_process.lookup_object::<WindowsFileObject<_>>(Handle)?
+        && file_object.va() != transfer.file_object()
+    {
         tracing::warn!(
             handle = %Hex(Handle),
             path = transfer.path(),

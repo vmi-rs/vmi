@@ -315,7 +315,7 @@ fn find_process_id(
     let process_id = process.id()?;
 
     tracing::info!(
-        process = %process_name,
+        process = process_name,
         pid = %process_id,
         "found target process"
     );
@@ -415,7 +415,7 @@ fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
     let filter = EnvFilter::default()
-        .add_directive(tracing::Level::TRACE.into())
+        .add_directive(tracing::Level::DEBUG.into())
         .add_directive("reqwest=warn".parse()?)
         .add_directive("rustls=warn".parse()?);
 

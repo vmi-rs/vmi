@@ -122,6 +122,7 @@ impl HostFile {
 
         self.file.write_all(bytes)?;
         self.received += length;
+
         Ok(())
     }
 
@@ -269,10 +270,11 @@ impl FileTransferBridge {
         let output_path = self
             .output_directory
             .join(output_filename(output_id, &path));
+
         let host_file = match HostFile::create(output_path.clone(), expected_size as u64) {
             Ok(host_file) => host_file,
             Err(err) => {
-                tracing::error!(%err, path = %output_path.display(), "cannot create file");
+                tracing::error!(%err, path = ?output_path.display(), "cannot create file");
                 return BridgeResponse::new(0);
             }
         };
@@ -285,9 +287,9 @@ impl FileTransferBridge {
         tracing::info!(
             transfer_handle,
             file_handle = %Hex(file_handle),
-            %path,
+            path,
             size = expected_size,
-            output = %output_path.display(),
+            output = ?output_path.display(),
             "started"
         );
 
@@ -377,14 +379,14 @@ impl FileTransferBridge {
 
         if transfer_status == TRANSFER_SUCCESS {
             if let Err(err) = transfer.host_file.commit() {
-                tracing::error!(%err, path = %transfer.path, "cannot commit file");
+                tracing::error!(%err, path = transfer.path, "cannot commit file");
                 return BridgeResponse::new(RESPONSE_ABORT);
             }
 
             tracing::info!(
-                path = %transfer.host_file.path.display(),
+                path = ?transfer.host_file.path.display(),
                 size = transfer.host_file.received,
-                "completed"
+                "closed"
             );
         }
 
@@ -404,6 +406,7 @@ impl FileTransferBridge {
         let native_code = packet.value2();
 
         let status = FileTransferStatus::decode(packed_status);
+
         tracing::debug!(
             stage = ?status.stage(),
             status = ?status.status(),
