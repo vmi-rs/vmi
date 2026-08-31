@@ -1,8 +1,9 @@
 use vmi::{
-    VmiError,
+    Registers as _, VmiError,
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
+    trace::Hex,
     utils::injector::{Recipe, RecipeControlFlow, recipe},
 };
 
@@ -189,13 +190,13 @@ where
             }
         },
         {
-            data![guest_address] = vmi!().registers().rax;
+            data![guest_address] = vmi!().registers().result();
             if data![guest_address] == 0 {
                 return Err(VmiError::Other("VirtualAlloc failed"));
             }
 
             tracing::debug!(
-                guest_address = data![guest_address],
+                guest_address = %Hex(data![guest_address]),
                 size = data![payload].len(),
                 "materializing shellcode memory"
             );
@@ -214,8 +215,8 @@ where
             let parameter_address = data![guest_address] + data![parameter_offset];
 
             tracing::debug!(
-                start_address = data![guest_address],
-                parameter_address,
+                start_address = %Hex(data![guest_address]),
+                parameter_address = %Hex(parameter_address),
                 "launching shellcode thread"
             );
 
@@ -237,7 +238,7 @@ where
             }
 
             tracing::debug!(
-                thread_handle = data![thread_handle],
+                thread_handle = %Hex(data![thread_handle]),
                 "closing shellcode thread handle"
             );
 
