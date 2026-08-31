@@ -160,7 +160,7 @@ impl ShellcodeRecipeData {
 }
 
 /// Builds the shared `VirtualAlloc` to `CreateThread` shellcode recipe.
-#[tracing::instrument(name = "shellcode_recipe", skip_all)]
+#[tracing::instrument(name = "recipe", skip_all)]
 pub fn shellcode_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameters: &impl ShellcodeParameters,

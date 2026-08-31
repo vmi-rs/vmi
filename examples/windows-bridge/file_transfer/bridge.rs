@@ -11,7 +11,7 @@ use vmi::{
     Va, VmiContext,
     arch::amd64::Amd64,
     driver::VmiRead,
-    os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
+    os::windows::WindowsOs,
     trace::Hex,
     utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
@@ -238,19 +238,10 @@ impl FileTransferBridge {
         let file_name_buffer = packet.value3();
         let file_name_length = packet.value4() as usize;
 
-        // REVIEW: if let Some && if let Some?
-        let process_id = match vmi.os().current_process().and_then(|process| process.id()) {
-            Ok(process_id) => process_id,
-            Err(err) => {
-                tracing::error!(%err, "cannot resolve file-transfer process");
-                return BridgeResponse::new(0);
-            }
-        };
-
         let path = match vmi.read_string_utf16_limited(Va(file_name_buffer), file_name_length) {
             Ok(path) => path,
             Err(err) => {
-                tracing::error!(%err, "cannot read file-transfer filename");
+                tracing::error!(%err, "cannot read filename");
                 return BridgeResponse::new(0);
             }
         };
@@ -258,7 +249,7 @@ impl FileTransferBridge {
         let expected_size = match i64::try_from(file_size) {
             Ok(expected_size) => expected_size,
             Err(_) => {
-                tracing::error!(size = file_size, "rejected file-transfer size");
+                tracing::error!(size = file_size, "rejected size");
                 return BridgeResponse::new(0);
             }
         };
@@ -266,7 +257,7 @@ impl FileTransferBridge {
         let transfer_handle = match self.allocate_transfer_handle() {
             Some(transfer_handle) => transfer_handle,
             None => {
-                tracing::error!("file-transfer handles exhausted");
+                tracing::error!("handles exhausted");
                 return BridgeResponse::new(0);
             }
         };
@@ -275,13 +266,13 @@ impl FileTransferBridge {
         self.next_output_id += 1;
 
         // REVIEW: avoid clone()
-        let output_path =
-            self.output_directory
-                .join(output_filename(process_id, file_handle, output_id, &path));
+        let output_path = self
+            .output_directory
+            .join(output_filename(output_id, &path));
         let host_file = match HostFile::create(output_path.clone(), expected_size as u64) {
             Ok(host_file) => host_file,
             Err(err) => {
-                tracing::error!(%err, path = %output_path.display(), "cannot create host transfer file");
+                tracing::error!(%err, path = %output_path.display(), "cannot create file");
                 return BridgeResponse::new(0);
             }
         };
@@ -297,7 +288,7 @@ impl FileTransferBridge {
             %path,
             size = expected_size,
             output = %output_path.display(),
-            "file transfer started"
+            "started"
         );
 
         BridgeResponse::new((CHUNK_SIZE << TRANSFER_HANDLE_BITS) | u64::from(transfer_handle))
@@ -353,12 +344,12 @@ impl FileTransferBridge {
 
         let bytes = &mut transfer.chunk_buffer[..length];
         if let Err(err) = vmi.read(buffer, bytes) {
-            tracing::error!(%err, "cannot read file-transfer chunk");
+            tracing::error!(%err, "cannot read chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
 
         if let Err(err) = transfer.host_file.append(bytes) {
-            tracing::error!(%err, "cannot write file-transfer chunk");
+            tracing::error!(%err, "cannot write chunk");
             return BridgeResponse::new(RESPONSE_ABORT);
         }
 
@@ -386,14 +377,14 @@ impl FileTransferBridge {
 
         if transfer_status == TRANSFER_SUCCESS {
             if let Err(err) = transfer.host_file.commit() {
-                tracing::error!(%err, path = %transfer.path, "cannot commit host transfer file");
+                tracing::error!(%err, path = %transfer.path, "cannot commit file");
                 return BridgeResponse::new(RESPONSE_ABORT);
             }
 
             tracing::info!(
                 path = %transfer.host_file.path.display(),
                 size = transfer.host_file.received,
-                "file transfer completed"
+                "completed"
             );
         }
 
@@ -418,7 +409,7 @@ impl FileTransferBridge {
             status = ?status.status(),
             code = status.code(),
             native_code,
-            "file-transfer shellcode completed"
+            "shellcode completed"
         );
 
         BridgeResponse::default()
@@ -440,7 +431,7 @@ impl FileTransferBridge {
             value2 = %Hex(packet.value2()),
             value3 = %Hex(packet.value3()),
             value4 = %Hex(packet.value4()),
-            "unknown file-transfer bridge method"
+            "unknown bridge method"
         );
 
         None
@@ -453,17 +444,23 @@ where
 {
     const REQUEST: u16 = 0x0003;
 
+    #[tracing::instrument(name = "file_transfer", skip_all)]
     fn handle(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
         packet: BridgePacket,
     ) -> Option<BridgeResponse<BridgeStatusCode>> {
+        debug_assert_eq!(
+            packet.request(),
+            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
+        );
+
         self.handle_packet(vmi, packet)
     }
 }
 
 /// Builds a flat, filesystem-safe host output name for one transferred file.
-fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &str) -> String {
+fn output_filename(output_id: u64, path: &str) -> String {
     let basename = path
         .rsplit(['\\', '/'])
         .find(|component| !component.is_empty())
@@ -472,23 +469,14 @@ fn output_filename(process_id: ProcessId, handle: u64, output_id: u64, path: &st
     let basename = basename
         .chars()
         .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
-                character
-            }
-            else {
-                '_'
-            }
+            character
+                .is_ascii_alphanumeric()
+                .then(|| character)
+                .unwrap_or('_')
         })
         .collect::<String>();
 
-    let basename = if basename.is_empty() {
-        "file"
-    }
-    else {
-        &basename
-    };
-
-    format!("{process_id}-{handle:016x}-{output_id:016x}-{basename}")
+    format!("{output_id:04}-{basename}")
 }
 
 #[cfg(test)]
@@ -521,10 +509,10 @@ mod tests {
 
     #[test]
     fn output_names_are_flat_sanitized_and_unique() {
-        let first = output_filename(ProcessId(7), 0x10, 1, r"\dir\a:b.txt");
-        let second = output_filename(ProcessId(7), 0x10, 2, r"\dir\a:b.txt");
+        let first = output_filename(1, r"\dir\a:b.txt");
+        let second = output_filename(2, r"\dir\a:b.txt");
 
-        assert_eq!(first, "7-0000000000000010-0000000000000001-a_b.txt");
+        assert_eq!(first, "0001-a_b.txt");
         assert_ne!(first, second);
     }
 
