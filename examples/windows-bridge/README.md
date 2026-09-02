@@ -105,6 +105,8 @@ shellcode_recipe
 └─ CloseHandle(created thread handle)
 ```
 
+`shellcode_recipe` accepts either an encoded `ShellcodeParameters` block by reference or a `ShellcodeParameterValue`. An encoded block is appended to the payload and its guest address becomes `lpParameter`; a `ShellcodeParameterValue` appends no data and is passed through unchanged. The single parameter-source argument makes these modes mutually exclusive.
+
 After the recipe restores the carrier thread's original registers, the injector tears down its private view and enables hypercall monitoring. The newly created guest thread runs independently.
 
 ### 4. Bridge exchange: route one register packet

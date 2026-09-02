@@ -99,6 +99,54 @@ pub trait ShellcodeParameters {
     fn encode(&self, writer: &mut ParameterWriter);
 }
 
+/// Resolved value passed through `CreateThread::lpParameter`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellcodeParameter {
+    /// Offset relative to the guest shellcode allocation.
+    Offset(u64),
+
+    /// Exact value passed to `CreateThread`.
+    Value(u64),
+}
+
+/// Exact value to pass through `CreateThread::lpParameter`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShellcodeParameterValue(pub u64);
+
+/// Resolves a shellcode parameter from appended data or an exact value.
+pub trait ShellcodeParameterSource {
+    /// Optionally appends parameter data and returns the resolved parameter.
+    fn resolve(self, payload: &mut Vec<u8>) -> ShellcodeParameter;
+}
+
+impl<Parameters> ShellcodeParameterSource for &Parameters
+where
+    Parameters: ShellcodeParameters + ?Sized,
+{
+    fn resolve(self, payload: &mut Vec<u8>) -> ShellcodeParameter {
+        debug_assert!(
+            Parameters::ALIGNMENT.is_power_of_two(),
+            "shellcode parameter alignment must be a nonzero power of two"
+        );
+
+        // Align the parameter block within the shellcode payload.
+        let parameter_offset = align_up(payload.len(), Parameters::ALIGNMENT);
+        payload.resize(parameter_offset, 0);
+
+        // Append the encoded parameters at the aligned offset.
+        let mut writer = ParameterWriter::new(payload);
+        self.encode(&mut writer);
+
+        ShellcodeParameter::Offset(parameter_offset as u64)
+    }
+}
+
+impl ShellcodeParameterSource for ShellcodeParameterValue {
+    fn resolve(self, _payload: &mut Vec<u8>) -> ShellcodeParameter {
+        ShellcodeParameter::Value(self.0)
+    }
+}
+
 /// Encodes a standalone parameter block for test assertions.
 #[cfg(test)]
 pub fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
@@ -113,8 +161,8 @@ pub struct ShellcodeRecipeData {
     /// Complete host-side image copied into guest memory.
     payload: Vec<u8>,
 
-    /// Offset from the guest allocation base to the parameter block.
-    parameter_offset: u64,
+    /// Value used to populate `CreateThread::lpParameter`.
+    parameter: ShellcodeParameter,
 
     /// Guest allocation returned by `VirtualAlloc`.
     guest_address: u64,
@@ -124,26 +172,12 @@ pub struct ShellcodeRecipeData {
 }
 
 impl ShellcodeRecipeData {
-    /// Builds the page-aligned shellcode and parameter payload.
-    fn new<Parameters>(shellcode: impl AsRef<[u8]>, parameters: &Parameters) -> Self
-    where
-        Parameters: ShellcodeParameters,
-    {
-        debug_assert!(
-            Parameters::ALIGNMENT.is_power_of_two(),
-            "shellcode parameter alignment must be a nonzero power of two"
-        );
-
+    /// Builds the page-aligned shellcode payload and resolves its parameter.
+    fn new(shellcode: impl AsRef<[u8]>, parameter: impl ShellcodeParameterSource) -> Self {
         let mut payload = Vec::new();
         payload.extend_from_slice(shellcode.as_ref());
 
-        // Align the parameter block within the shellcode payload.
-        let parameter_offset = align_up(payload.len(), Parameters::ALIGNMENT);
-        payload.resize(parameter_offset, 0);
-
-        // Append the encoded parameters at the aligned offset.
-        let mut writer = ParameterWriter::new(&mut payload);
-        parameters.encode(&mut writer);
+        let parameter = parameter.resolve(&mut payload);
 
         // Pad the complete payload to the page size.
         let payload_size = align_up(payload.len(), PAGE_SIZE);
@@ -153,7 +187,7 @@ impl ShellcodeRecipeData {
 
         Self {
             payload,
-            parameter_offset: parameter_offset as u64,
+            parameter,
             guest_address: 0,
             thread_handle: 0,
         }
@@ -164,12 +198,12 @@ impl ShellcodeRecipeData {
 #[tracing::instrument(name = "recipe", skip_all)]
 pub fn shellcode_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
-    parameters: &impl ShellcodeParameters,
+    parameter: impl ShellcodeParameterSource,
 ) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    let data = ShellcodeRecipeData::new(shellcode, parameters);
+    let data = ShellcodeRecipeData::new(shellcode, parameter);
 
     recipe![
         Recipe::<WindowsOs<Driver>>::new(data),
@@ -212,11 +246,14 @@ where
         {
             vmi!().write(data![guest_address].into(), &data![payload])?;
 
-            let parameter_address = data![guest_address] + data![parameter_offset];
+            let parameter = match data![parameter] {
+                ShellcodeParameter::Offset(offset) => data![guest_address] + offset,
+                ShellcodeParameter::Value(value) => value,
+            };
 
             tracing::debug!(
                 start_address = %Hex(data![guest_address]),
-                parameter_address = %Hex(parameter_address),
+                parameter = %Hex(parameter),
                 "launching shellcode thread"
             );
 
@@ -225,7 +262,7 @@ where
                     0,                          // lpThreadAttributes
                     0,                          // dwStackSize
                     data![guest_address],       // lpStartAddress
-                    parameter_address,          // lpParameter
+                    parameter,                  // lpParameter
                     0,                          // dwCreationFlags
                     0                           // lpThreadId
                 )
@@ -296,9 +333,8 @@ mod tests {
     #[test]
     fn payload_aligns_parameters_and_preserves_bytes() {
         let data = ShellcodeRecipeData::new(SHELLCODE, &FourByteParameters);
-        let parameter_offset = data.parameter_offset as usize;
-
-        assert_eq!(parameter_offset, 4);
+        assert_eq!(data.parameter, ShellcodeParameter::Offset(4));
+        let parameter_offset = 4;
         assert_eq!(&data.payload[..SHELLCODE.len()], SHELLCODE);
         assert_eq!(data.payload[SHELLCODE.len()], 0);
         assert_eq!(
@@ -312,7 +348,23 @@ mod tests {
     fn already_aligned_parameter_offset_is_unchanged() {
         let data = ShellcodeRecipeData::new(&[0xaa, 0xbb, 0xcc, 0xdd], &FourByteParameters);
 
-        assert_eq!(data.parameter_offset, 4);
+        assert_eq!(data.parameter, ShellcodeParameter::Offset(4));
+    }
+
+    #[test]
+    fn direct_parameter_value_is_preserved_without_appending_data() {
+        const PARAMETER: u64 = 0x1122_3344_5566_7788;
+
+        let data = ShellcodeRecipeData::new(SHELLCODE, ShellcodeParameterValue(PARAMETER));
+
+        assert_eq!(data.parameter, ShellcodeParameter::Value(PARAMETER));
+        assert_eq!(&data.payload[..SHELLCODE.len()], SHELLCODE);
+        assert!(
+            data.payload[SHELLCODE.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+        assert_eq!(data.payload.len(), PAGE_SIZE);
     }
 
     struct ZeroAlignedParameters;
