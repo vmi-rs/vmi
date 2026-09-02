@@ -207,6 +207,7 @@ impl DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
 
 impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
     /// Enables extraction into the supplied guest directory.
+    #[expect(unused)]
     pub fn extraction_directory(self, extraction_directory: impl Into<String>) -> Self {
         self.maybe_extraction_directory(Some(extraction_directory))
     }
@@ -264,6 +265,7 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 
 impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     /// Supplies a present argument slot. An empty string remains meaningful.
+    #[expect(unused)]
     pub fn arguments(self, arguments: impl Into<String>) -> Self {
         self.maybe_arguments(Some(arguments))
     }
@@ -280,6 +282,7 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     }
 
     /// Supplies a present guest working directory.
+    #[expect(unused)]
     pub fn working_directory(self, working_directory: impl Into<String>) -> Self {
         self.maybe_working_directory(Some(working_directory))
     }
@@ -296,6 +299,7 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
     }
 
     /// Supplies an explicit Windows `SW_*` display value.
+    #[expect(unused)]
     pub fn show_window(self, show_window: i32) -> Self {
         self.maybe_show_window(Some(show_window))
     }

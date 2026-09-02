@@ -11,6 +11,7 @@ use vmi::{
     utils::injector::RecipeExecutor,
 };
 
+#[expect(unused_imports)]
 pub use self::bridge::{FileTransferBridge, FileTransferStatus};
 use self::recipe::{FileTransferRecipeData, file_transfer_recipe};
 

@@ -14,14 +14,11 @@ use std::{
 
 use isr::{Profile, macros::symbols};
 use vmi::{
-    MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
-    VmiHandler, VmiSession,
+    MemoryAccess, Registers as _, View, VmiContext, VmiError, VmiEventResponse, VmiHandler,
+    VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::VmiFullDriver,
-    os::{
-        ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _,
-        windows::{WindowsOs, WindowsOsExt as _},
-    },
+    os::{ProcessId, ProcessObject, ThreadId, VmiOsProcess as _, windows::WindowsOs},
     utils::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
         bridge::Bridge,
@@ -104,6 +101,7 @@ struct Thread<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    #[expect(unused)]
     tid: ThreadId,
     terminated: bool,
     file_transfer: Option<FileTransfer<Driver>>,
