@@ -93,6 +93,7 @@ impl<P, T> ProcessTracker<P, T> {
     }
 
     /// Returns the process that owns a tracked thread.
+    #[expect(unused)]
     pub fn process_of(&self, object: ThreadObject) -> Option<ProcessObject> {
         self.threads.get(&object).map(|entry| entry.process)
     }

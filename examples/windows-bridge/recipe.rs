@@ -4,7 +4,7 @@ use vmi::{
     driver::VmiMemory,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::injector::{Recipe, RecipeControlFlow, recipe},
+    utils::injector::{Recipe, recipe},
 };
 
 /// Windows allocation granularity used for committed shellcode memory.
@@ -232,7 +232,7 @@ where
             }
         },
         {
-            data![thread_handle] = vmi!().registers().rax;
+            data![thread_handle] = vmi!().registers().result();
             if data![thread_handle] == 0 {
                 return Err(VmiError::Other("CreateThread failed"));
             }

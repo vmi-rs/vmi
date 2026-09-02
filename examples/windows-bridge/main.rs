@@ -24,7 +24,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
     os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
-    utils::injector::{InjectorHandler, UserMode},
+    utils::injector::UserInjectorHandler,
 };
 
 use crate::{
@@ -298,12 +298,9 @@ fn resolve_monitor_outcome(
     }
 }
 
-/// VMI session type used throughout this example, bound to the Xen driver.
-type WindowsVmiSession<'a> = VmiSession<'a, WindowsOs<VmiXenDriver<Amd64>>>;
-
 /// Finds the configured target process while the guest is paused.
 fn find_process_id(
-    session: &WindowsVmiSession<'_>,
+    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
     process_name: &str,
 ) -> Result<ProcessId, Error> {
     let paused = session.pause_guard()?;
@@ -324,23 +321,25 @@ fn find_process_id(
 }
 
 /// Runs a message box injection.
-fn run_msgbox(session: &WindowsVmiSession<'_>, arguments: MsgboxArguments) -> Result<(), Error> {
+fn run_msgbox(
+    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
+    arguments: MsgboxArguments,
+) -> Result<(), Error> {
     let MsgboxRequest {
         process,
         parameters,
     } = arguments.into_request();
+
     let process_id = find_process_id(session, &process)?;
+
     let result = session
         .handle(|session| {
-            InjectorHandler::<_, UserMode, _, MsgboxBridge>::with_bridge(
-                session,
-                MsgboxBridge,
-                msgbox_recipe(&parameters),
-            )?
-            .with_pid(process_id)
+            UserInjectorHandler::with_bridge(session, MsgboxBridge, msgbox_recipe(&parameters))?
+                .with_pid(process_id)
         })?
         .context("msgbox injection interrupted")?
         .map_err(|packet| anyhow::anyhow!("unhandled msgbox bridge packet: {packet:?}"))?;
+
     let result = validate_msgbox_result(result)?;
 
     tracing::info!(result, "message box closed");
@@ -349,7 +348,7 @@ fn run_msgbox(session: &WindowsVmiSession<'_>, arguments: MsgboxArguments) -> Re
 
 /// Runs a deploy injection.
 fn run_deploy(
-    session: &WindowsVmiSession<'_>,
+    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
     profile: &Profile,
     terminate_flag: Arc<AtomicBool>,
     arguments: DeployArguments,
@@ -360,10 +359,12 @@ fn run_deploy(
         policy,
         monitor,
     } = arguments.into_request()?;
+
     let process_id = find_process_id(session, &process)?;
+
     let result = session
         .handle(|session| {
-            InjectorHandler::<_, UserMode, _, DeployBridge>::with_bridge(
+            UserInjectorHandler::with_bridge(
                 session,
                 DeployBridge::new(policy),
                 deploy_recipe(&parameters),
@@ -396,6 +397,7 @@ fn run_deploy(
             monitor.output_directory,
         )
     })?;
+
     let outcome = resolve_monitor_outcome(outcome, terminate_flag.load(Ordering::Relaxed))?;
 
     match outcome {

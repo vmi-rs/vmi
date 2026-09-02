@@ -231,10 +231,10 @@ where
 ///
 /// For injection with a custom [`BridgeDispatch`], use
 /// [`InjectorHandler<Os, KernelMode, T, Bridge>`] directly.
-pub type KernelInjectorHandler<Os, T> = InjectorHandler<Os, KernelMode, T>;
+pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
 /// User-mode injector handler without a bridge.
 ///
 /// For injection with a custom [`BridgeDispatch`], use
 /// [`InjectorHandler<Os, UserMode, T, Bridge>`] directly.
-pub type UserInjectorHandler<Os, T> = InjectorHandler<Os, UserMode, T>;
+pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;
