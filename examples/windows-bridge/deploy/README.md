@@ -34,7 +34,7 @@ Disabled stages are skipped; the arrows show ordering, not mandatory work.
 |---|---|---|
 | `DeployArguments::into_request` | Host | Converts CLI options into typed parameters, host policy, and optional monitor configuration. |
 | `DeployParameters` | Host | Encodes the exact sequential buffer consumed by the payload. |
-| `deploy_recipe` / `shellcode_recipe` | Host controlling guest | Allocates guest memory, copies payload plus parameters, and starts a guest thread. |
+| `deploy_recipe` / `user_shellcode_recipe` | Host controlling guest | Allocates guest memory, copies payload plus parameters, and starts a guest thread. |
 | SCFW deploy payload | Guest user mode | Parses parameters, resolves imports, expands paths, and calls download/extract/execute APIs. |
 | `DeployBridge` | Host | Answers download and execute gates and decodes terminal results. |
 | `Monitor` | Host | For monitored execution, installs kernel hooks, allows the parked execute gate, tracks the child, and runs file transfer. |
@@ -286,7 +286,7 @@ run_deploy
 ├─ VmiSession::handle
 │  └─ InjectorHandler<UserMode, DeployBridge>
 │     ├─ deploy_recipe
-│     │  └─ shellcode_recipe
+│     │  └─ user_shellcode_recipe
 │     └─ DeployBridge::handle
 └─ if --monitor
    └─ VmiSession::handle

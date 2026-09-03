@@ -1,4 +1,4 @@
-use crate::recipe::{ParameterWriter, ShellcodeParameters};
+use crate::bridge::{ParameterWriter, ShellcodeParameters};
 
 bitflags::bitflags! {
     /// Operation and optional-field flags consumed by the deploy shellcode.
@@ -347,7 +347,7 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::encode_parameters;
+    use crate::bridge::encode_parameters;
 
     #[test]
     fn parameter_block_is_u32_aligned() {

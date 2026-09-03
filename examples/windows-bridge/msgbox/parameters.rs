@@ -1,4 +1,4 @@
-use crate::recipe::{ParameterWriter, ShellcodeParameters};
+use crate::bridge::{ParameterWriter, ShellcodeParameters};
 
 /// Host representation of the msgbox shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl ShellcodeParameters for MsgboxParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::encode_parameters;
+    use crate::bridge::encode_parameters;
 
     #[test]
     fn parameter_block_is_byte_aligned() {

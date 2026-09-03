@@ -64,8 +64,7 @@ where
             process = %NewProcess,
             "deployed process started"
         );
-    }
-    else {
+    } else {
         tracing::debug!(
             name = process.name,
             pid = %process.pid,
@@ -124,8 +123,7 @@ where
             process = %Process,
             "deployed process terminated"
         );
-    }
-    else {
+    } else {
         tracing::debug!(
             name = process.name,
             pid = %process.pid,

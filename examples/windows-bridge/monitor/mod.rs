@@ -260,11 +260,9 @@ where
             self.ptm
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
             Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
-        }
-        else if memory_access.access.contains(MemoryAccess::R) {
+        } else if memory_access.access.contains(MemoryAccess::R) {
             Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
-        }
-        else {
+        } else {
             panic!("unhandled memory access: {memory_access:?}");
         }
     }

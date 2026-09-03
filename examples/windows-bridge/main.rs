@@ -5,7 +5,6 @@ mod deploy;
 mod file_transfer;
 mod monitor;
 mod msgbox;
-mod recipe;
 
 use std::{
     path::PathBuf,
@@ -468,7 +467,7 @@ fn main() -> Result<(), Error> {
 mod tests {
 
     use super::*;
-    use crate::recipe::encode_parameters;
+    use crate::bridge::encode_parameters;
 
     #[test]
     fn msgbox_command_uses_defaults() {
