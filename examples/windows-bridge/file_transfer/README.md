@@ -84,14 +84,17 @@ The recipe preserves the original `NtClose` registers and performs:
 
 ```text
 file_transfer_recipe(handle)
-├─ ExAllocatePool(NonPagedPoolExecute, page-aligned payload size)
-├─ VMI write(embedded file-transfer shellcode)
-└─ shellcode_entry(kernel_image_base, process-local handle)
+└─ kernel_shellcode_recipe
+   ├─ ExAllocatePool(NonPagedPoolExecute, page-aligned payload size)
+   ├─ retry if allocation fails
+   ├─ VMI write(embedded file-transfer shellcode)
+   ├─ on write failure: ExFreePool + retry
+   └─ shellcode_entry(kernel_image_base, process-local handle)
 ```
 
 The kernel image base lets SCFW resolve imported kernel routines. Allocation or VMI-write failure jumps back to the first step after restoring the original registers, so the attempt is retried from a clean call frame.
 
-When the payload returns, `RecipeExecutor` restores the exact registers captured at the original `NtClose`. The hook then releases the thread-owned `FileTransfer`, and Windows executes the close normally.
+When the self-cleaning payload returns after releasing its pool allocation, `RecipeExecutor` restores the exact registers captured at the original `NtClose`. The hook then releases the thread-owned `FileTransfer`, and Windows executes the close normally.
 
 ## Guest-to-host protocol
 

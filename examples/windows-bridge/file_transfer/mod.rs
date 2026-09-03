@@ -13,7 +13,8 @@ use vmi::{
 
 #[expect(unused_imports)]
 pub use self::bridge::{FileTransferBridge, FileTransferStatus};
-use self::recipe::{FileTransferRecipeData, file_transfer_recipe};
+use self::recipe::file_transfer_recipe;
+use crate::bridge::KernelShellcodeRecipeData;
 
 /// Lifecycle of one file marked by `NtWriteFile` and transferred at `NtClose`.
 enum FileTransferState<Driver>
@@ -21,9 +22,9 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     Pending,
-    // REVIEW: Executing(RecipeExecutor<WindowsOs<Driver>, FileTransferRecipeData>)
+    // REVIEW: Executing(RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData>)
     Executing {
-        executor: RecipeExecutor<WindowsOs<Driver>, FileTransferRecipeData>,
+        executor: RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData>,
     },
 }
 

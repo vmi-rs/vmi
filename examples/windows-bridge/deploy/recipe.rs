@@ -1,7 +1,7 @@
 use vmi::{arch::amd64::Amd64, driver::VmiMemory, os::windows::WindowsOs, utils::injector::Recipe};
 
 use super::parameters::DeployParameters;
-use crate::recipe::{ShellcodeRecipeData, shellcode_recipe};
+use crate::bridge::{UserShellcodeRecipeData, user_shellcode_recipe};
 
 /// Deploy shellcode embedded from the selected SCFW build artifact.
 const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
@@ -13,9 +13,9 @@ const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
 #[tracing::instrument(name = "deploy", skip_all)]
 pub fn deploy_recipe<Driver>(
     parameters: &DeployParameters,
-) -> Recipe<WindowsOs<Driver>, ShellcodeRecipeData>
+) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    shellcode_recipe(DEPLOY_SHELLCODE, parameters)
+    user_shellcode_recipe(DEPLOY_SHELLCODE, parameters)
 }
