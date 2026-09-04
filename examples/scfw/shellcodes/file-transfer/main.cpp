@@ -126,14 +126,14 @@ enum class transfer_status : uint8_t {
 };
 
 struct bridge: bridge_client {
-    static constexpr uint16_t method_begin = 0x0001;
-    static constexpr uint16_t method_set_buffer = 0x0002;
-    static constexpr uint16_t method_chunk = 0x0003;
-    static constexpr uint16_t method_close = 0x0004;
-    static constexpr uint16_t method_exit = 0xffff;
+    static constexpr uint16_t  method_begin         = 0x0001;
+    static constexpr uint16_t  method_set_buffer    = 0x0002;
+    static constexpr uint16_t  method_chunk         = 0x0003;
+    static constexpr uint16_t  method_close         = 0x0004;
+    static constexpr uint16_t  method_exit          = 0xffff;
 
-    static constexpr uintptr_t response_continue = 0x00000000;
-    static constexpr uintptr_t response_abort = 0xffffffff;
+    static constexpr uintptr_t response_continue    = 0x00000000;
+    static constexpr uintptr_t response_abort       = 0xffffffff;
 
     _Success_(return != 0)
     static
