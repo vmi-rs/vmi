@@ -89,28 +89,6 @@ namespace sc {
 
 #define SHELLCODE_MEMORY_TAG 'tfcs'
 
-constexpr uint32_t bridge_magic = 0x42494d56;                 // "VMIB"
-constexpr uint16_t file_transfer_request = 0x0003;
-constexpr uintptr_t bridge_verify_value3 = 0x213353522d494d56; // "VMI-RS3!"
-constexpr uintptr_t bridge_verify_value4 = 0x213453522d494d56; // "VMI-RS4!"
-
-constexpr uint16_t method_begin = 0x0001;
-constexpr uint16_t method_set_buffer = 0x0002;
-constexpr uint16_t method_chunk = 0x0003;
-constexpr uint16_t method_close = 0x0004;
-constexpr uint16_t method_exit = 0xffff;
-
-constexpr uint32_t response_continue = 0x00000000;
-constexpr uint32_t response_abort = 0xffffffff;
-
-using bridge_client = proto::bridge::client<
-    &proto::bridge::bridge_xen_vmcall,
-    bridge_magic,
-    file_transfer_request,
-    bridge_verify_value3,
-    bridge_verify_value4
-    >;
-
 enum class stage : uint8_t {
     none = 0x00,
     file_name = 0x01,
@@ -136,12 +114,27 @@ struct proto::is_error_code<error> : std::true_type {};
 using failure = proto::failure<error>;
 using result = proto::result<stage>;
 
+struct bridge_traits: proto::bridge::default_client_traits {
+    static constexpr uint16_t request = 0x0003;
+};
+
+using bridge_client = proto::bridge::client<bridge_traits>;
+
 enum class transfer_status : uint8_t {
     success = 0x00,
     error = 0xff,
 };
 
 struct bridge: bridge_client {
+    static constexpr uint16_t method_begin = 0x0001;
+    static constexpr uint16_t method_set_buffer = 0x0002;
+    static constexpr uint16_t method_chunk = 0x0003;
+    static constexpr uint16_t method_close = 0x0004;
+    static constexpr uint16_t method_exit = 0xffff;
+
+    static constexpr uintptr_t response_continue = 0x00000000;
+    static constexpr uintptr_t response_abort = 0xffffffff;
+
     _Success_(return != 0)
     static
     ULONG
@@ -171,7 +164,7 @@ struct bridge: bridge_client {
     }
 
     static
-    uint32_t
+    uintptr_t
     set_buffer(
         _In_ ULONG TransferHandle,
         _In_ PVOID Buffer
@@ -184,12 +177,12 @@ struct bridge: bridge_client {
             );
 
         return response
-            ? static_cast<uint32_t>(response->value1)
+            ? response->value1
             : response_abort;
     }
 
     static
-    uint32_t
+    uintptr_t
     chunk(
         _In_ ULONG TransferHandle,
         _In_ ULONG Length
@@ -202,7 +195,7 @@ struct bridge: bridge_client {
             );
 
         return response
-            ? static_cast<uint32_t>(response->value1)
+            ? response->value1
             : response_abort;
     }
 
@@ -468,7 +461,8 @@ TransferFile(
     // Publish the buffer and transfer the file one chunk at a time.
     //
 
-    if (bridge::set_buffer(TransferHandle, TransferBuffer) != response_continue)
+    if (bridge::set_buffer(TransferHandle, TransferBuffer)
+        != bridge::response_continue)
     {
         result = result::aborted(stage::buffer);
         bridge::close(TransferHandle, transfer_status::error);
@@ -501,7 +495,8 @@ TransferFile(
             goto CleanupTransferBuffer;
         }
 
-        if (bridge::chunk(TransferHandle, Length) != response_continue)
+        if (bridge::chunk(TransferHandle, Length)
+            != bridge::response_continue)
         {
             result = result::aborted(stage::transfer);
             bridge::close(TransferHandle, transfer_status::error);

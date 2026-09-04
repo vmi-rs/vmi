@@ -28,21 +28,15 @@ IMPORT_END();
 
 namespace sc {
 
-constexpr uint32_t bridge_magic = 0x42494d56;                 // "VMIB"
-constexpr uint16_t msgbox_request = 0x0002;
-constexpr uintptr_t bridge_verify_value3 = 0x213353522d494d56; // "VMI-RS3!"
-constexpr uintptr_t bridge_verify_value4 = 0x213453522d494d56; // "VMI-RS4!"
-constexpr uint16_t method_exit = 0xffff;
+struct bridge_traits: proto::bridge::default_client_traits {
+    static constexpr uint16_t request = 0x0002;
+};
 
-using bridge_client = proto::bridge::client<
-    &proto::bridge::bridge_xen_vmcall,
-    bridge_magic,
-    msgbox_request,
-    bridge_verify_value3,
-    bridge_verify_value4
-    >;
+using bridge_client = proto::bridge::client<bridge_traits>;
 
 struct bridge: bridge_client {
+    static constexpr uint16_t method_exit = 0xffff;
+
     static
     void
     exit(

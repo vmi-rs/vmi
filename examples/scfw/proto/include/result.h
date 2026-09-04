@@ -101,8 +101,8 @@ enum class status : uint8_t {
 template <typename Stage>
 struct result {
     [[nodiscard]]
-    static
-    constexpr result
+    static constexpr
+    result
     success(
         Stage stage
         ) noexcept
@@ -112,8 +112,8 @@ struct result {
 
     template <error_code Code>
     [[nodiscard]]
-    static
-    constexpr result
+    static constexpr
+    result
     invalid_parameters(
         Stage stage,
         failure<Code> error
@@ -129,8 +129,8 @@ struct result {
 
     template <error_code Code>
     [[nodiscard]]
-    static
-    constexpr result
+    static constexpr
+    result
     operation_failed(
         Stage stage,
         failure<Code> error
@@ -145,8 +145,8 @@ struct result {
     }
 
     [[nodiscard]]
-    static
-    constexpr result
+    static constexpr
+    result
     aborted(
         Stage stage
         ) noexcept
@@ -155,7 +155,8 @@ struct result {
     }
 
     [[nodiscard]]
-    constexpr uintptr_t
+    constexpr
+    uintptr_t
     packed_status() const noexcept
     {
         return static_cast<uintptr_t>(stage_)
@@ -164,7 +165,8 @@ struct result {
     }
 
     [[nodiscard]]
-    constexpr uintptr_t
+    constexpr
+    uintptr_t
     native_code() const noexcept
     {
         return native_code_;
