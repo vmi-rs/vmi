@@ -31,24 +31,49 @@ impl UserShellcodeRecipeData {
 
 /// Builds an asynchronous user-mode shellcode recipe.
 ///
-/// The parameter source either appends an encoded block to the payload and
-/// passes its guest address through `CreateThread::lpParameter`, or supplies the
-/// exact `lpParameter` value. Once `CreateThread` succeeds, the shellcode owns
-/// the allocation and must release it with `VirtualFree` before completing.
+/// Once `CreateThread` succeeds, the shellcode owns the allocation and must
+/// release it with `VirtualFree` before completing.
 ///
 /// Recoverable failures before thread creation restore the hijacked registers
-/// and retry from the allocation step:
+/// and retry from the allocation step.
 ///
-/// ```text
-/// begin attempt
-/// ├─ VirtualAlloc(page-aligned payload size)
-/// ├─ retry if allocation failed
-/// ├─ RtlFillMemory(payload bytes)          # materialize demand-zero pages
-/// ├─ VMI write(shellcode + parameters)
-/// ├─ on write failure: VirtualFree + retry
-/// ├─ CreateThread(shellcode, parameter)
-/// ├─ on creation failure: VirtualFree + retry
-/// └─ CloseHandle(created thread handle)    # shellcode owns allocation
+/// # Equivalent C pseudo-code
+///
+/// `VmiWrite` represents the host-side write into guest memory.
+///
+/// ```c
+/// for (;;) {
+///     PVOID Shellcode = VirtualAlloc(NULL,
+///                                    PayloadSize,
+///                                    MEM_COMMIT | MEM_RESERVE,
+///                                    PAGE_EXECUTE_READWRITE);
+///
+///     if (!Shellcode) {
+///         continue;
+///     }
+///
+///     RtlFillMemory(Shellcode, PayloadSize, 0);
+///
+///     if (!VmiWrite(Shellcode, PayloadBytes, PayloadSize)) {
+///         VirtualFree(Shellcode, 0, MEM_RELEASE);
+///         continue;
+///     }
+///
+///     HANDLE hThread = CreateThread(NULL,
+///                                   0,
+///                                   Shellcode,
+///                                   Parameter,
+///                                   0,
+///                                   NULL);
+///
+///     if (!hThread) {
+///         VirtualFree(Shellcode, 0, MEM_RELEASE);
+///         continue;
+///     }
+///
+///     CloseHandle(hThread);
+///     break;
+/// }
 /// ```
 #[tracing::instrument(name = "user_shellcode", skip_all)]
 pub fn user_shellcode_recipe<Driver>(
@@ -62,29 +87,40 @@ where
 
     recipe![
         Recipe::<WindowsOs<Driver>>::new(data),
+        //
+        // Step 1:
+        // - Restore the original registers when retrying.
+        // - Allocate executable memory for the payload.
+        //
         {
             const MEM_COMMIT: u64 = 0x1000;
             const MEM_RESERVE: u64 = 0x2000;
             const PAGE_EXECUTE_READWRITE: u64 = 0x40;
 
             let attempt = data![retry].begin_attempt(registers!());
-            let allocation_size = data![payload].allocation_size;
+            let payload_size = data![payload].bytes.len();
 
             tracing::debug!(
                 attempt,
-                size = allocation_size,
+                size = payload_size,
                 "allocating user shellcode memory"
             );
 
             inject! {
                 kernel32!VirtualAlloc(
                     0,                              // lpAddress
-                    allocation_size,                // dwSize
+                    payload_size,                   // dwSize
                     MEM_COMMIT | MEM_RESERVE,       // flAllocationType
                     PAGE_EXECUTE_READWRITE          // flProtect
                 )
             }
         },
+        //
+        // Step 2:
+        // - Verify the allocation.
+        //   - If the allocation fails, retry.
+        // - Materialize its demand-zero pages from guest context.
+        //
         {
             let vmi = vmi!();
 
@@ -114,6 +150,12 @@ where
                 )
             }
         },
+        //
+        // Step 3:
+        // - Write the payload into the memory.
+        //   - If the write fails, free the allocation and retry.
+        // - Resolve the parameter and create the shellcode thread.
+        //
         {
             const MEM_RELEASE: u64 = 0x8000;
 
@@ -162,6 +204,12 @@ where
                 )
             }
         },
+        //
+        // Step 4:
+        // - Verify thread creation.
+        //   - If creation fails, free the allocation and retry.
+        // - Close the thread handle.
+        //
         {
             const MEM_RELEASE: u64 = 0x8000;
 

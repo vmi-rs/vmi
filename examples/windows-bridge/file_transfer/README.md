@@ -85,7 +85,7 @@ The recipe preserves the original `NtClose` registers and performs:
 ```text
 file_transfer_recipe(handle)
 └─ kernel_shellcode_recipe
-   ├─ ExAllocatePool(NonPagedPoolExecute, page-aligned payload size)
+   ├─ ExAllocatePool(NonPagedPoolExecute, payload size)
    ├─ retry if allocation fails
    ├─ VMI write(embedded file-transfer shellcode)
    ├─ on write failure: ExFreePool + retry

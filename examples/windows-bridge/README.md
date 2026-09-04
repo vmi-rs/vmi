@@ -98,7 +98,7 @@ For deploy, `InjectorHandler<UserMode>` watches the target process until it find
 
 ```text
 user_shellcode_recipe
-├─ VirtualAlloc(RWX, page-aligned payload size)
+├─ VirtualAlloc(RWX, payload size)
 ├─ retry if allocation fails
 ├─ RtlFillMemory(payload bytes)    # materialize demand-zero pages
 ├─ VMI write(shellcode + parameters)

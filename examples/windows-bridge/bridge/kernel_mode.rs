@@ -31,22 +31,32 @@ impl KernelShellcodeRecipeData {
 
 /// Builds a synchronous kernel-mode shellcode recipe.
 ///
-/// The SCFW kernel bootstrap receives the kernel image base in `argument1`. The
-/// parameter source either appends an encoded block to the payload and passes
-/// its guest address in `argument2`, or supplies the exact `argument2` value.
 /// Once the shellcode call begins, the shellcode owns the allocation and must
 /// release it with `ExFreePool` before returning.
 ///
 /// Recoverable failures before the shellcode call restore the hijacked
-/// registers and retry from the allocation step:
+/// registers and retry from the allocation step.
 ///
-/// ```text
-/// begin attempt
-/// ├─ ExAllocatePool(page-aligned payload size)
-/// ├─ retry if allocation failed
-/// ├─ VMI write(shellcode + parameters)
-/// ├─ on write failure: ExFreePool + retry
-/// └─ shellcode(kernel image base, parameter)  # shellcode owns allocation
+/// # Equivalent C pseudo-code
+///
+/// `VmiWrite` represents the host-side write into guest memory.
+///
+/// ```c
+/// for (;;) {
+///     PVOID Shellcode = ExAllocatePool(NonPagedPoolExecute, PayloadSize);
+///
+///     if (!Shellcode) {
+///         continue;
+///     }
+///
+///     if (!VmiWrite(Shellcode, PayloadBytes, PayloadSize)) {
+///         ExFreePool(Shellcode);
+///         continue;
+///     }
+///
+///     (Shellcode)(KernelImageBase, Parameter);
+///     break;
+/// }
 /// ```
 #[tracing::instrument(name = "kernel_shellcode", skip_all)]
 pub fn kernel_shellcode_recipe<Driver>(
@@ -60,6 +70,12 @@ where
 
     recipe![
         Recipe::<WindowsOs<Driver>>::new(data),
+        //
+        // Step 1:
+        // - Restore the original registers when retrying.
+        // - Resolve the kernel image base.
+        // - Allocate executable nonpaged memory for the payload.
+        //
         {
             #[expect(non_upper_case_globals)]
             const NonPagedPoolExecute: u64 = 0;
@@ -67,23 +83,31 @@ where
             let vmi = vmi!();
 
             let attempt = data![retry].begin_attempt(registers!());
-            let allocation_size = data![payload].allocation_size;
+            let payload_size = data![payload].bytes.len();
 
             data![kernel_image_base] = vmi.os().kernel_image_base()?;
 
             tracing::debug!(
                 attempt,
-                size = allocation_size,
+                size = payload_size,
                 "allocating kernel shellcode memory"
             );
 
             inject! {
                 nt!ExAllocatePool(
                     NonPagedPoolExecute,            // PoolType
-                    allocation_size                 // NumberOfBytes
+                    payload_size                    // NumberOfBytes
                 )
             }
         },
+        //
+        // Step 2:
+        // - Verify the allocation.
+        //   - If the allocation fails, retry.
+        // - Write the payload into the memory.
+        //   - If the write fails, free the allocation and retry.
+        // - Resolve the parameter and call the shellcode.
+        //
         {
             let vmi = vmi!();
 

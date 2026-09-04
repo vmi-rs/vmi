@@ -8,9 +8,6 @@ pub use self::{
     user_mode::{UserShellcodeRecipeData, user_shellcode_recipe},
 };
 
-/// Windows page size used for shellcode allocations.
-const PAGE_SIZE: usize = 0x1000;
-
 /// Packed status value carried by terminal bridge responses.
 pub type BridgeStatusCode = u64;
 
@@ -253,9 +250,11 @@ where
             "shellcode parameter alignment must be a nonzero power of two"
         );
 
-        let parameter_offset = align_up(payload.len(), Parameters::ALIGNMENT);
+        // Align the parameter block within the shellcode payload.
+        let parameter_offset = payload.len().next_multiple_of(Parameters::ALIGNMENT);
         payload.resize(parameter_offset, 0);
 
+        // Append the encoded parameters at the aligned offset.
         let mut writer = ParameterWriter::new(payload);
         self.encode(&mut writer);
 
@@ -281,23 +280,15 @@ pub fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
 #[derive(Debug)]
 struct ShellcodePayload {
     bytes: Vec<u8>,
-    allocation_size: usize,
     parameter: ShellcodeParameter,
 }
 
 impl ShellcodePayload {
     fn new(shellcode: impl AsRef<[u8]>, parameter: impl ShellcodeParameterSource) -> Self {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(shellcode.as_ref());
-
+        let mut bytes = shellcode.as_ref().to_vec();
         let parameter = parameter.resolve(&mut bytes);
-        let allocation_size = align_up(bytes.len(), PAGE_SIZE);
 
-        Self {
-            bytes,
-            allocation_size,
-            parameter,
-        }
+        Self { bytes, parameter }
     }
 
     fn parameter_value(&self, allocation_base: u64) -> u64 {
@@ -325,13 +316,6 @@ impl ShellcodeRetryState {
         self.attempt += 1;
         self.attempt
     }
-}
-
-/// Rounds a byte count up to a power-of-two alignment.
-fn align_up(mut value: usize, alignment: usize) -> usize {
-    debug_assert!(alignment.is_power_of_two());
-    value += alignment - 1;
-    value & !(alignment - 1)
 }
 
 /// Implements the shared shellcode bridge contract for a handler.
@@ -446,7 +430,6 @@ mod tests {
         assert_eq!(payload.bytes[SHELLCODE.len()], 0);
         assert_eq!(&payload.bytes[4..], &[0x11, 0x22]);
         assert_eq!(payload.bytes.len(), 6);
-        assert_eq!(payload.allocation_size, PAGE_SIZE);
     }
 
     #[test]
@@ -465,7 +448,6 @@ mod tests {
 
         assert_eq!(payload.parameter, ShellcodeParameter::Value(PARAMETER));
         assert_eq!(payload.bytes, SHELLCODE);
-        assert_eq!(payload.allocation_size, PAGE_SIZE);
         assert_eq!(payload.parameter_value(0x1000), PARAMETER);
     }
 
