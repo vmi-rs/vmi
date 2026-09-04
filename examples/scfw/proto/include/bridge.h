@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 namespace sc {
 namespace proto {
@@ -52,13 +53,23 @@ bridge_xen_vmcall(
     _Out_opt_ response* response
     );
 
-template <
-    transport_fn Send,
-    uint32_t Magic,
-    uint16_t Request,
-    uintptr_t VerifyValue3,
-    uintptr_t VerifyValue4
->
+struct default_client_traits {
+    static constexpr transport_fn transport = &bridge_xen_vmcall;
+    static constexpr uint32_t magic = 0x42494d56;                  // "VMIB"
+    static constexpr uintptr_t verify_value3 = 0x213353522d494d56; // "VMI-RS3!"
+    static constexpr uintptr_t verify_value4 = 0x213453522d494d56; // "VMI-RS4!"
+};
+
+template <typename Traits>
+concept client_traits = requires {
+    typename std::integral_constant<transport_fn, Traits::transport>;
+    typename std::integral_constant<uint32_t, Traits::magic>;
+    typename std::integral_constant<uint16_t, Traits::request>;
+    typename std::integral_constant<uintptr_t, Traits::verify_value3>;
+    typename std::integral_constant<uintptr_t, Traits::verify_value4>;
+};
+
+template <client_traits Traits>
 struct client {
     //
     // Returns no response when the host does not stamp both verification values.
@@ -74,8 +85,8 @@ struct client {
         )
     {
         const packet packet{
-            .magic = Magic,
-            .request = Request,
+            .magic = Traits::magic,
+            .request = Traits::request,
             .method = method,
             .value1 = value1,
             .value2 = value2,
@@ -84,9 +95,10 @@ struct client {
         };
 
         response response{};
-        Send(&packet, &response);
+        Traits::transport(&packet, &response);
 
-        if (response.value3 != VerifyValue3 || response.value4 != VerifyValue4)
+        if (response.value3 != Traits::verify_value3
+            || response.value4 != Traits::verify_value4)
         {
             return std::nullopt;
         }

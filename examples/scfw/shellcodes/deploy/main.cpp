@@ -158,19 +158,6 @@ DEFINE_GUID(CLSID_Shell, 0x13709620, 0xC279, 0x11CE, 0xA4, 0x9E, 0x44, 0x45, 0x5
 // {D8F015C0-C278-11CE-A49E-444553540000}
 DEFINE_GUID(IID_IShellDispatch, 0xD8F015C0, 0xC278, 0x11CE, 0xA4, 0x9E, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00);
 
-// Bridge protocol signatures encoded as little-endian ASCII.
-constexpr uint32_t  BRIDGE_MAGIC = 0x42494d56;             // "VMIB"
-constexpr uint16_t  DEPLOY_REQUEST = 0x0001;
-constexpr uintptr_t BRIDGE_VERIFY_VALUE3 = 0x213353522d494d56; // "VMI-RS3!"
-constexpr uintptr_t BRIDGE_VERIFY_VALUE4 = 0x213453522d494d56; // "VMI-RS4!"
-
-constexpr uint16_t method_download = 0x0001;
-constexpr uint16_t method_execute = 0x0002;
-constexpr uint16_t method_exit = 0xffff;
-
-constexpr uint32_t response_continue = 0x00000000;
-constexpr uint32_t response_abort = 0xffffffff;
-
 constexpr DWORD bridge_wait_milliseconds = 250;
 constexpr DWORD extraction_poll_milliseconds = 100;
 constexpr uint32_t extraction_poll_limit = 600;
@@ -212,28 +199,29 @@ enum class stage : uint8_t {
     execute = 0x05,
 };
 
-using bridge_client = proto::bridge::client<
-    &proto::bridge::bridge_xen_vmcall,
-    BRIDGE_MAGIC,
-    DEPLOY_REQUEST,
-    BRIDGE_VERIFY_VALUE3,
-    BRIDGE_VERIFY_VALUE4
-    >;
-
 using proto::failure;
-
 using result = proto::result<stage>;
 
+struct bridge_traits: proto::bridge::default_client_traits {
+    static constexpr uint16_t request = 0x0001;
+};
+
+using bridge_client = proto::bridge::client<bridge_traits>;
+
 struct bridge: bridge_client {
+    static constexpr uint16_t method_download = 0x0001;
+    static constexpr uint16_t method_execute = 0x0002;
+    static constexpr uint16_t method_exit = 0xffff;
+
+    static constexpr uintptr_t response_continue = 0x00000000;
+    static constexpr uintptr_t response_wait = 0x00000001;
+    static constexpr uintptr_t response_abort = 0xffffffff;
+
     static
-    void
-    exit(_In_ result value)
+    bool
+    wait_for_host()
     {
-        (void)bridge_client::send(
-            method_exit,
-            value.packed_status(),
-            value.native_code()
-            );
+        return wait_for_download(0);
     }
 
     static
@@ -254,10 +242,16 @@ struct bridge: bridge_client {
     }
 
     static
-    bool
-    wait_for_host()
+    void
+    exit(
+        _In_ result result
+        )
     {
-        return wait_for_download(0);
+        (void)bridge_client::send(
+            method_exit,
+            result.packed_status(),
+            result.native_code()
+            );
     }
 
 private:
