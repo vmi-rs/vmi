@@ -87,11 +87,7 @@ where
 
             data![kernel_image_base] = vmi.os().kernel_image_base()?;
 
-            tracing::debug!(
-                attempt,
-                size = payload_size,
-                "allocating kernel shellcode memory"
-            );
+            tracing::debug!(attempt, size = payload_size, "allocating shellcode memory");
 
             inject! {
                 nt!ExAllocatePool(
@@ -118,7 +114,7 @@ where
             let payload = &data![payload];
 
             if guest_address.is_null() {
-                tracing::warn!(attempt, "kernel shellcode allocation failed, retrying");
+                tracing::warn!(attempt, "shellcode allocation failed, retrying");
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
@@ -126,7 +122,7 @@ where
                 attempt,
                 %guest_address,
                 size = payload.bytes.len(),
-                "writing kernel shellcode memory"
+                "writing shellcode"
             );
 
             if let Err(err) = vmi.write(guest_address, &payload.bytes) {
@@ -134,7 +130,7 @@ where
                     %err,
                     attempt,
                     %guest_address,
-                    "kernel shellcode write failed, freeing allocation and retrying"
+                    "shellcode write failed, retrying"
                 );
 
                 inject! {
@@ -150,7 +146,7 @@ where
                 attempt,
                 %guest_address,
                 parameter = %Hex(parameter),
-                "calling kernel shellcode"
+                "invoking shellcode"
             );
 
             inject! {

@@ -100,11 +100,7 @@ where
             let attempt = data![retry].begin_attempt(registers!());
             let payload_size = data![payload].bytes.len();
 
-            tracing::debug!(
-                attempt,
-                size = payload_size,
-                "allocating user shellcode memory"
-            );
+            tracing::debug!(attempt, size = payload_size, "allocating shellcode memory");
 
             inject! {
                 kernel32!VirtualAlloc(
@@ -131,7 +127,7 @@ where
             let payload_size = data![payload].bytes.len();
 
             if guest_address.is_null() {
-                tracing::warn!(attempt, "user shellcode allocation failed, retrying");
+                tracing::warn!(attempt, "shellcode allocation failed, retrying");
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
@@ -139,7 +135,7 @@ where
                 attempt,
                 %guest_address,
                 size = payload_size,
-                "materializing user shellcode memory"
+                "materializing memory"
             );
 
             inject! {
@@ -170,7 +166,7 @@ where
                     %err,
                     attempt,
                     %guest_address,
-                    "user shellcode write failed, freeing allocation and retrying"
+                    "shellcode write failed, retrying"
                 );
 
                 inject! {
@@ -190,7 +186,7 @@ where
                 attempt,
                 start_address = %guest_address,
                 parameter = %Hex(parameter),
-                "launching user shellcode thread"
+                "launching shellcode thread"
             );
 
             inject! {
@@ -226,7 +222,7 @@ where
                 tracing::warn!(
                     attempt,
                     %guest_address,
-                    "user shellcode thread creation failed, freeing allocation and retrying"
+                    "shellcode thread creation failed, retrying"
                 );
 
                 inject! {
@@ -242,7 +238,7 @@ where
 
             tracing::debug!(
                 thread_handle = %Hex(thread_handle),
-                "closing user shellcode thread handle"
+                "closing shellcode thread handle"
             );
 
             inject! {
