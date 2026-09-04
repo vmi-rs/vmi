@@ -158,14 +158,9 @@ DEFINE_GUID(CLSID_Shell, 0x13709620, 0xC279, 0x11CE, 0xA4, 0x9E, 0x44, 0x45, 0x5
 // {D8F015C0-C278-11CE-A49E-444553540000}
 DEFINE_GUID(IID_IShellDispatch, 0xD8F015C0, 0xC278, 0x11CE, 0xA4, 0x9E, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00);
 
-constexpr DWORD bridge_wait_milliseconds = 250;
-constexpr DWORD extraction_poll_milliseconds = 100;
-constexpr uint32_t extraction_poll_limit = 600;
-constexpr LONG extract_copy_options =
-    FOF_SILENT
-    | FOF_NOCONFIRMATION
-    | FOF_NOCONFIRMMKDIR
-    | FOF_NOERRORUI;
+constexpr DWORD bridge_wait_ms = 250;        // Delay between bridge retries.
+constexpr DWORD extraction_poll_ms = 100;    // Delay between extraction checks.
+constexpr DWORD extraction_poll_limit = 600; // Maximum extraction checks.
 
 enum class parameter_flags : uint32_t {
     none                    = 0x00000000,
@@ -209,13 +204,13 @@ struct bridge_traits: proto::bridge::default_client_traits {
 using bridge_client = proto::bridge::client<bridge_traits>;
 
 struct bridge: bridge_client {
-    static constexpr uint16_t method_download = 0x0001;
-    static constexpr uint16_t method_execute = 0x0002;
-    static constexpr uint16_t method_exit = 0xffff;
+    static constexpr uint16_t  method_download      = 0x0001;
+    static constexpr uint16_t  method_execute       = 0x0002;
+    static constexpr uint16_t  method_exit          = 0xffff;
 
-    static constexpr uintptr_t response_continue = 0x00000000;
-    static constexpr uintptr_t response_wait = 0x00000001;
-    static constexpr uintptr_t response_abort = 0xffffffff;
+    static constexpr uintptr_t response_continue    = 0x00000000;
+    static constexpr uintptr_t response_wait        = 0x00000001;
+    static constexpr uintptr_t response_abort       = 0xffffffff;
 
     static
     bool
@@ -285,7 +280,7 @@ private:
                 return false;
             }
 
-            Sleep(bridge_wait_milliseconds);
+            Sleep(bridge_wait_ms);
         }
     }
 };
@@ -717,9 +712,19 @@ ExtractInternal(
             );
     }
 
+    //
+    // Suppress UI and confirmation prompts during extraction.
+    //
+
+    constexpr LONG ExtractCopyOptions =
+          FOF_SILENT
+        | FOF_NOCONFIRMATION
+        | FOF_NOCONFIRMMKDIR
+        | FOF_NOERRORUI;
+
     hr = pOutputFolder->CopyHere(
         Variant{ &*pArchiveItems },
-        Variant{ extract_copy_options }
+        Variant{ ExtractCopyOptions }
         );
 
     if (FAILED(hr))
@@ -739,9 +744,9 @@ ExtractInternal(
     // until it has the same number of items as the archive.
     //
 
-    for (uint32_t attempt = 0; attempt < extraction_poll_limit; ++attempt)
+    for (DWORD attempt = 0; attempt < extraction_poll_limit; ++attempt)
     {
-        Sleep(extraction_poll_milliseconds);
+        Sleep(extraction_poll_ms);
 
         ComPtr<FolderItems> pOutputItems;
         hr = pOutputFolder->Items(pOutputItems.Put());
