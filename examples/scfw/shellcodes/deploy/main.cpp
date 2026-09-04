@@ -716,15 +716,9 @@ ExtractInternal(
     // Suppress UI and confirmation prompts during extraction.
     //
 
-    constexpr LONG ExtractCopyOptions =
-          FOF_SILENT
-        | FOF_NOCONFIRMATION
-        | FOF_NOCONFIRMMKDIR
-        | FOF_NOERRORUI;
-
     hr = pOutputFolder->CopyHere(
         Variant{ &*pArchiveItems },
-        Variant{ ExtractCopyOptions }
+        Variant{ FOF_NO_UI }
         );
 
     if (FAILED(hr))
