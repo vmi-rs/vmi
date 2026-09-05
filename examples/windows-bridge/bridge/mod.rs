@@ -281,7 +281,7 @@ impl ShellcodePayload {
 
     fn parameter_value(&self, allocation_base: Va) -> u64 {
         match self.parameter {
-            ShellcodeParameter::Offset(offset) => (allocation_base + offset).0,
+            ShellcodeParameter::Offset(offset) => allocation_base.0 + offset,
             ShellcodeParameter::Value(value) => value,
         }
     }
