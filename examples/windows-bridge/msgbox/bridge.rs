@@ -7,7 +7,7 @@ use vmi::{
     utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
-use crate::bridge::{BridgeStatusCode, METHOD_EXIT, impl_bridge_contract};
+use crate::bridge::{BridgeStatusCode, impl_bridge_contract};
 
 /// Handles the result returned by `MessageBoxA`.
 #[derive(Debug, Default)]
@@ -17,7 +17,7 @@ impl_bridge_contract!(MsgboxBridge);
 
 impl MsgboxBridge {
     /// Terminal result method.
-    const METHOD_EXIT: u16 = METHOD_EXIT;
+    const METHOD_EXIT: u16 = 0xffff;
 
     /// Handles one msgbox bridge packet.
     fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn exit_completes_with_message_box_result() {
         let response = MsgboxBridge
-            .handle_packet(packet(METHOD_EXIT).with_value1(1))
+            .handle_packet(packet(MsgboxBridge::METHOD_EXIT).with_value1(1))
             .expect("exit packet should be handled");
 
         assert_eq!(response.into_result(), Some(1));

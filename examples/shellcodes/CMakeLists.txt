@@ -30,5 +30,10 @@ set(SCFW_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(SCFW_OPT_CLEANUP ON CACHE BOOL "" FORCE)
 
 add_subdirectory("${scfw_SOURCE_DIR}" "${scfw_BINARY_DIR}")
-add_subdirectory(proto)
-add_subdirectory(shellcodes)
+add_subdirectory(
+    "${CMAKE_CURRENT_LIST_DIR}/../../crates/vmi-utils/shellcode"
+    "${CMAKE_CURRENT_BINARY_DIR}/vmi-utils-shellcode"
+)
+add_subdirectory(deploy)
+add_subdirectory(file-transfer)
+add_subdirectory(msgbox)

@@ -3,15 +3,15 @@
 #include <cstdint>
 
 namespace sc {
-namespace proto {
+namespace vmi {
 
-class reader {
+class cursor {
 public:
     explicit
-    reader(
-        void* cursor
+    cursor(
+        void* data
         )
-        : cursor_(static_cast<uint8_t*>(cursor))
+        : position_(static_cast<uint8_t*>(data))
     {
     }
 
@@ -27,7 +27,7 @@ public:
     char*
     next_string()
     {
-        auto* value = reinterpret_cast<char*>(cursor_);
+        auto* value = reinterpret_cast<char*>(position_);
         auto* end = value;
 
         while (*end != '\0')
@@ -35,14 +35,14 @@ public:
             ++end;
         }
 
-        cursor_ = reinterpret_cast<uint8_t*>(end + 1);
+        position_ = reinterpret_cast<uint8_t*>(end + 1);
         return value;
     }
 
     wchar_t*
     next_wstring()
     {
-        auto* value = reinterpret_cast<wchar_t*>(cursor_);
+        auto* value = reinterpret_cast<wchar_t*>(position_);
         auto* end = value;
 
         while (*end != L'\0')
@@ -50,7 +50,7 @@ public:
             ++end;
         }
 
-        cursor_ = reinterpret_cast<uint8_t*>(end + 1);
+        position_ = reinterpret_cast<uint8_t*>(end + 1);
         return value;
     }
 
@@ -59,13 +59,13 @@ private:
     T
     next()
     {
-        const auto value = *reinterpret_cast<T*>(cursor_);
-        cursor_ += sizeof(T);
+        const auto value = *reinterpret_cast<T*>(position_);
+        position_ += sizeof(T);
         return value;
     }
 
-    uint8_t* cursor_;
+    uint8_t* position_;
 };
 
-} // namespace proto
+} // namespace vmi
 } // namespace sc

@@ -1,8 +1,8 @@
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/kernelmode.h>
 
-#include "bridge.h"
-#include "result.h"
+#include <vmi/bridge.hpp>
+#include <vmi/result.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -109,23 +109,21 @@ enum class error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<error> : std::true_type {};
+struct vmi::is_error_code<error> : std::true_type {};
 
-using failure = proto::failure<error>;
-using result = proto::result<stage>;
+using failure = vmi::failure<error>;
+using result = vmi::result<stage>;
 
-struct bridge_traits: proto::bridge::default_client_traits {
+struct bridge_traits : vmi::default_bridge_traits {
     static constexpr uint16_t request = 0x0003;
 };
-
-using bridge_client = proto::bridge::client<bridge_traits>;
 
 enum class transfer_status : uint8_t {
     success = 0x00,
     error = 0xff,
 };
 
-struct bridge: bridge_client {
+struct bridge : vmi::bridge<bridge_traits> {
     static constexpr uint16_t  method_begin         = 0x0001;
     static constexpr uint16_t  method_set_buffer    = 0x0002;
     static constexpr uint16_t  method_chunk         = 0x0003;
@@ -146,7 +144,7 @@ struct bridge: bridge_client {
         )
     {
         const auto response =
-            bridge_client::send(
+            send(
                 method_begin,
                 reinterpret_cast<uintptr_t>(FileHandle),
                 static_cast<uintptr_t>(FileSize),
@@ -170,7 +168,7 @@ struct bridge: bridge_client {
         _In_ PVOID Buffer
         )
     {
-        const auto response = bridge_client::send(
+        const auto response = send(
             method_set_buffer,
             TransferHandle,
             reinterpret_cast<uintptr_t>(Buffer)
@@ -188,7 +186,7 @@ struct bridge: bridge_client {
         _In_ ULONG Length
         )
     {
-        const auto response = bridge_client::send(
+        const auto response = send(
             method_chunk,
             TransferHandle,
             static_cast<uintptr_t>(Length)
@@ -206,7 +204,7 @@ struct bridge: bridge_client {
         _In_ transfer_status Status
         )
     {
-        (void)bridge_client::send(
+        (void)send(
             method_close,
             TransferHandle,
             static_cast<uintptr_t>(Status)
@@ -219,7 +217,7 @@ struct bridge: bridge_client {
         _In_ result result
         )
     {
-        (void)bridge_client::send(
+        (void)send(
             method_exit,
             result.packed_status(),
             result.native_code()

@@ -8,8 +8,7 @@ use vmi::{
 };
 
 use crate::bridge::{
-    BridgeStatusCode, METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, RESPONSE_WAIT,
-    TerminalResult, TerminalStatus, impl_bridge_contract, impl_bridge_stage,
+    BridgeStatusCode, TerminalResult, TerminalStatus, impl_bridge_contract, impl_bridge_stage,
 };
 
 /// Deploy operation stage encoded in a packed result.
@@ -129,7 +128,16 @@ impl DeployBridge {
     const METHOD_EXECUTE: u16 = 0x0002;
 
     /// Terminal result method.
-    const METHOD_EXIT: u16 = METHOD_EXIT;
+    const METHOD_EXIT: u16 = 0xffff;
+
+    /// Allows the shellcode to continue its current stage.
+    const RESPONSE_CONTINUE: u64 = 0x0000_0000;
+
+    /// Leaves the shellcode waiting at its current stage.
+    const RESPONSE_WAIT: u64 = 0x0000_0001;
+
+    /// Aborts the shellcode's current stage.
+    const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
     /// Creates a deploy bridge with the supplied host policy.
     pub fn new(policy: DeployPolicy) -> Self {
@@ -152,9 +160,9 @@ impl DeployBridge {
         let native_code = packet.value2();
 
         let response = if attempt == 0 || attempt <= self.policy.max_download_retries {
-            RESPONSE_CONTINUE
+            Self::RESPONSE_CONTINUE
         } else {
-            RESPONSE_ABORT
+            Self::RESPONSE_ABORT
         };
 
         tracing::debug!(attempt, native_code, response, "download gate");
@@ -165,9 +173,9 @@ impl DeployBridge {
     /// Applies the configured response to an execution gate.
     fn handle_execute(&self, _packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let response = match self.policy.execute_response {
-            ExecuteResponse::Continue => BridgeResponse::new(RESPONSE_CONTINUE),
-            ExecuteResponse::Abort => BridgeResponse::new(RESPONSE_ABORT),
-            ExecuteResponse::Wait => BridgeResponse::new(RESPONSE_WAIT).with_result(
+            ExecuteResponse::Continue => BridgeResponse::new(Self::RESPONSE_CONTINUE),
+            ExecuteResponse::Abort => BridgeResponse::new(Self::RESPONSE_ABORT),
+            ExecuteResponse::Wait => BridgeResponse::new(Self::RESPONSE_WAIT).with_result(
                 DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING).encode(),
             ),
         };
@@ -274,21 +282,29 @@ mod tests {
             let response = bridge
                 .handle_packet(packet(DeployBridge::METHOD_DOWNLOAD).with_value1(attempt))
                 .expect("valid download packet");
-            assert_eq!(response.value1(), Some(RESPONSE_CONTINUE));
+            assert_eq!(response.value1(), Some(DeployBridge::RESPONSE_CONTINUE));
         }
 
         let response = bridge
             .handle_packet(packet(DeployBridge::METHOD_DOWNLOAD).with_value1(3))
             .expect("valid download packet");
-        assert_eq!(response.value1(), Some(RESPONSE_ABORT));
+        assert_eq!(response.value1(), Some(DeployBridge::RESPONSE_ABORT));
     }
 
     #[test]
     fn execute_gate_applies_configured_response() {
         for (policy_response, wire_response, handler_result) in [
-            (ExecuteResponse::Continue, RESPONSE_CONTINUE, None),
-            (ExecuteResponse::Abort, RESPONSE_ABORT, None),
-            (ExecuteResponse::Wait, RESPONSE_WAIT, Some(0x0000_0105)),
+            (
+                ExecuteResponse::Continue,
+                DeployBridge::RESPONSE_CONTINUE,
+                None,
+            ),
+            (ExecuteResponse::Abort, DeployBridge::RESPONSE_ABORT, None),
+            (
+                ExecuteResponse::Wait,
+                DeployBridge::RESPONSE_WAIT,
+                Some(0x0000_0105),
+            ),
         ] {
             let bridge =
                 DeployBridge::new(DeployPolicy::default().execute_response(policy_response));
@@ -304,14 +320,17 @@ mod tests {
     #[test]
     fn execute_permission_helpers_map_to_response() {
         for (policy, expected) in [
-            (DeployPolicy::default().allow_execute(), RESPONSE_CONTINUE),
+            (
+                DeployPolicy::default().allow_execute(),
+                DeployBridge::RESPONSE_CONTINUE,
+            ),
             (
                 DeployPolicy::default().maybe_allow_execute(true),
-                RESPONSE_CONTINUE,
+                DeployBridge::RESPONSE_CONTINUE,
             ),
             (
                 DeployPolicy::default().maybe_allow_execute(false),
-                RESPONSE_ABORT,
+                DeployBridge::RESPONSE_ABORT,
             ),
         ] {
             let response = DeployBridge::new(policy)
@@ -345,7 +364,7 @@ mod tests {
         let packed = 0x0002_fe03;
         let response = bridge
             .handle_packet(
-                packet(METHOD_EXIT)
+                packet(DeployBridge::METHOD_EXIT)
                     .with_value1(packed)
                     .with_value2(0x8000_4005),
             )
@@ -370,7 +389,7 @@ mod tests {
         assert_eq!(format!("{:?}", result.status()), "124");
 
         let response = bridge
-            .handle_packet(packet(METHOD_EXIT).with_value1(packed))
+            .handle_packet(packet(DeployBridge::METHOD_EXIT).with_value1(packed))
             .expect("corrupt terminal values must produce a response");
         assert_eq!(response.into_result(), Some(packed));
     }

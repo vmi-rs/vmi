@@ -6,7 +6,7 @@ use crate::bridge::{UserShellcodeRecipeData, user_shellcode_recipe};
 /// Deploy shellcode embedded from the selected SCFW build artifact.
 const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/scfw/build-x64/shellcodes/deploy/deploy.bin"
+    "/examples/shellcodes/build-x64/deploy/deploy.bin"
 ));
 
 /// Builds the deploy shellcode injection recipe.
