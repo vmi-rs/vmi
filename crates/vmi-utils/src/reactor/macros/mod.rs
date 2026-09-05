@@ -148,7 +148,8 @@ pub mod __private {
         fields(
             module = %meta.module
                           .map(|module| format!("{module:?}"))
-                          .unwrap_or_else(|| String::from("kernel")),
+                          .as_deref()
+                          .unwrap_or("kernel"),
             name = %meta.name
         )
     )]
