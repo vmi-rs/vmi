@@ -5,7 +5,7 @@
 #include <type_traits>
 
 namespace sc {
-namespace proto {
+namespace vmi {
 
 //
 // Marks types that may be used as protocol error codes.
@@ -53,7 +53,8 @@ namespace detail {
 
     template <native_error_code Code>
     [[nodiscard]]
-    constexpr uintptr_t
+    constexpr
+    uintptr_t
     normalize_native_code(Code code) noexcept
     {
         using unsigned_type =
@@ -101,7 +102,8 @@ enum class status : uint8_t {
 template <typename Stage>
 struct result {
     [[nodiscard]]
-    static constexpr
+    static
+    constexpr
     result
     success(
         Stage stage
@@ -112,7 +114,8 @@ struct result {
 
     template <error_code Code>
     [[nodiscard]]
-    static constexpr
+    static
+    constexpr
     result
     invalid_parameters(
         Stage stage,
@@ -129,7 +132,8 @@ struct result {
 
     template <error_code Code>
     [[nodiscard]]
-    static constexpr
+    static
+    constexpr
     result
     operation_failed(
         Stage stage,
@@ -145,7 +149,8 @@ struct result {
     }
 
     [[nodiscard]]
-    static constexpr
+    static
+    constexpr
     result
     aborted(
         Stage stage
@@ -193,5 +198,5 @@ private:
     uintptr_t native_code_;
 };
 
-} // namespace proto
+} // namespace vmi
 } // namespace sc

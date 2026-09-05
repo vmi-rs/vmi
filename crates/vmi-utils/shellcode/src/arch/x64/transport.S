@@ -28,8 +28,8 @@
 # uintptr_t
 # __fastcall
 # bridge_cpuid (
-#    _In_ const packet* packet,
-#    _Out_opt_ response* response
+#    _In_ const bridge_packet* packet,
+#    _Out_opt_ bridge_response* response
 #    )
 #
 # Routine Description:
@@ -113,8 +113,8 @@ bridge_cpuid:
 # uintptr_t
 # __fastcall
 # bridge_xen_vmcall (
-#    _In_ const packet* packet,
-#    _Out_opt_ response* response
+#    _In_ const bridge_packet* packet,
+#    _Out_opt_ bridge_response* response
 #    )
 #
 # Routine Description:

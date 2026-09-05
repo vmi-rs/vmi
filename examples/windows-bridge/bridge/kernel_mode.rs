@@ -15,7 +15,7 @@ pub struct KernelShellcodeRecipeData {
     payload: ShellcodePayload,
     retry: ShellcodeRetryState,
     kernel_image_base: Va,
-    guest_address: u64,
+    guest_address: Va,
 }
 
 impl KernelShellcodeRecipeData {
@@ -23,8 +23,8 @@ impl KernelShellcodeRecipeData {
         Self {
             payload: ShellcodePayload::new(shellcode, parameter),
             retry: ShellcodeRetryState::default(),
-            kernel_image_base: Va(0),
-            guest_address: 0,
+            kernel_image_base: Va::null(),
+            guest_address: Va::null(),
         }
     }
 }
@@ -108,7 +108,7 @@ where
             let vmi = vmi!();
 
             let guest_address = Va(vmi.registers().result());
-            data![guest_address] = guest_address.0;
+            data![guest_address] = guest_address;
 
             let attempt = data![retry].attempt;
             let payload = &data![payload];
@@ -140,7 +140,7 @@ where
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
-            let parameter = payload.parameter_value(guest_address.0);
+            let parameter = payload.parameter_value(guest_address);
 
             tracing::debug!(
                 attempt,

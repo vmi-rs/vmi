@@ -6,7 +6,7 @@ use crate::bridge::{UserShellcodeRecipeData, user_shellcode_recipe};
 /// Msgbox shellcode embedded from the selected SCFW build artifact.
 const MSGBOX_SHELLCODE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/scfw/build-x64/shellcodes/msgbox/msgbox.bin"
+    "/examples/shellcodes/build-x64/msgbox/msgbox.bin"
 ));
 
 /// Builds the msgbox shellcode injection recipe.

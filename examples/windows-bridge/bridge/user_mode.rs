@@ -14,7 +14,7 @@ use super::{ShellcodeParameterSource, ShellcodePayload, ShellcodeRetryState};
 pub struct UserShellcodeRecipeData {
     payload: ShellcodePayload,
     retry: ShellcodeRetryState,
-    guest_address: u64,
+    guest_address: Va,
     thread_handle: u64,
 }
 
@@ -23,7 +23,7 @@ impl UserShellcodeRecipeData {
         Self {
             payload: ShellcodePayload::new(shellcode, parameter),
             retry: ShellcodeRetryState::default(),
-            guest_address: 0,
+            guest_address: Va::null(),
             thread_handle: 0,
         }
     }
@@ -121,7 +121,7 @@ where
             let vmi = vmi!();
 
             let guest_address = Va(vmi.registers().result());
-            data![guest_address] = guest_address.0;
+            data![guest_address] = guest_address;
 
             let attempt = data![retry].attempt;
             let payload_size = data![payload].bytes.len();
@@ -157,7 +157,7 @@ where
 
             let vmi = vmi!();
 
-            let guest_address = Va(data![guest_address]);
+            let guest_address = data![guest_address];
             let attempt = data![retry].attempt;
             let payload = &data![payload];
 
@@ -180,7 +180,7 @@ where
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
-            let parameter = payload.parameter_value(guest_address.0);
+            let parameter = payload.parameter_value(guest_address);
 
             tracing::debug!(
                 attempt,
@@ -217,7 +217,7 @@ where
             let attempt = data![retry].attempt;
 
             if thread_handle == 0 {
-                let guest_address = Va(data![guest_address]);
+                let guest_address = data![guest_address];
 
                 tracing::warn!(
                     attempt,

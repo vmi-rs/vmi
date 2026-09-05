@@ -16,10 +16,7 @@ use vmi::{
     utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
-use crate::bridge::{
-    BridgeStatusCode, METHOD_EXIT, RESPONSE_ABORT, RESPONSE_CONTINUE, TerminalResult,
-    impl_bridge_contract, impl_bridge_stage,
-};
+use crate::bridge::{BridgeStatusCode, TerminalResult, impl_bridge_contract, impl_bridge_stage};
 
 /// Number of bytes shared with the guest for each transfer chunk.
 const CHUNK_SIZE: u64 = 64 * 1024;
@@ -181,7 +178,13 @@ impl FileTransferBridge {
     const METHOD_CLOSE: u16 = 0x0004;
 
     /// Terminal result method.
-    const METHOD_EXIT: u16 = METHOD_EXIT;
+    const METHOD_EXIT: u16 = 0xffff;
+
+    /// Allows the shellcode to continue its current stage.
+    const RESPONSE_CONTINUE: u64 = 0x0000_0000;
+
+    /// Aborts the shellcode's current stage.
+    const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
     /// Creates a persistent handler writing files beneath `output_directory`.
     pub fn new(output_directory: PathBuf) -> Self {
@@ -310,12 +313,12 @@ impl FileTransferBridge {
 
         let transfer = match self.transfers.get_mut(&transfer_handle) {
             Some(transfer) => transfer,
-            None => return BridgeResponse::new(RESPONSE_ABORT),
+            None => return BridgeResponse::new(Self::RESPONSE_ABORT),
         };
 
         transfer.host_file.set_buffer(Va(buffer));
 
-        BridgeResponse::new(RESPONSE_CONTINUE)
+        BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
     /// Copies one filled guest buffer into its host output file.
@@ -332,30 +335,30 @@ impl FileTransferBridge {
 
         let transfer = match self.transfers.get_mut(&transfer_handle) {
             Some(transfer) => transfer,
-            None => return BridgeResponse::new(RESPONSE_ABORT),
+            None => return BridgeResponse::new(Self::RESPONSE_ABORT),
         };
 
         let buffer = match transfer.host_file.buffer {
             Some(buffer) => buffer,
-            None => return BridgeResponse::new(RESPONSE_ABORT),
+            None => return BridgeResponse::new(Self::RESPONSE_ABORT),
         };
 
         if length > CHUNK_SIZE as usize {
-            return BridgeResponse::new(RESPONSE_ABORT);
+            return BridgeResponse::new(Self::RESPONSE_ABORT);
         }
 
         let bytes = &mut transfer.chunk_buffer[..length];
         if let Err(err) = vmi.read(buffer, bytes) {
             tracing::error!(%err, "cannot read chunk");
-            return BridgeResponse::new(RESPONSE_ABORT);
+            return BridgeResponse::new(Self::RESPONSE_ABORT);
         }
 
         if let Err(err) = transfer.host_file.append(bytes) {
             tracing::error!(%err, "cannot write chunk");
-            return BridgeResponse::new(RESPONSE_ABORT);
+            return BridgeResponse::new(Self::RESPONSE_ABORT);
         }
 
-        BridgeResponse::new(RESPONSE_CONTINUE)
+        BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
     /// Closes a transfer handle and commits a successful host output.
@@ -374,13 +377,13 @@ impl FileTransferBridge {
 
         let mut transfer = match self.transfers.remove(&transfer_handle) {
             Some(transfer) => transfer,
-            None => return BridgeResponse::new(RESPONSE_ABORT),
+            None => return BridgeResponse::new(Self::RESPONSE_ABORT),
         };
 
         if transfer_status == TRANSFER_SUCCESS {
             if let Err(err) = transfer.host_file.commit() {
                 tracing::error!(%err, path = transfer.path, "cannot commit file");
-                return BridgeResponse::new(RESPONSE_ABORT);
+                return BridgeResponse::new(Self::RESPONSE_ABORT);
             }
 
             tracing::info!(
@@ -390,7 +393,7 @@ impl FileTransferBridge {
             );
         }
 
-        BridgeResponse::new(RESPONSE_CONTINUE)
+        BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
     /// Completes one shellcode invocation.

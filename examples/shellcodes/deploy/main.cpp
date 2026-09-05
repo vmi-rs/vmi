@@ -107,10 +107,10 @@
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/usermode.h>
 
-#include "bridge.h"
-#include "enum_flags.h"
-#include "reader.h"
-#include "result.h"
+#include <vmi/bridge.hpp>
+#include <vmi/enum_flags.hpp>
+#include <vmi/cursor.hpp>
+#include <vmi/result.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -162,7 +162,7 @@ constexpr DWORD bridge_wait_ms = 250;        // Delay between bridge retries.
 constexpr DWORD extraction_poll_ms = 100;    // Delay between extraction checks.
 constexpr DWORD extraction_poll_limit = 600; // Maximum extraction checks.
 
-enum class parameter_flags : uint32_t {
+enum class parameter_flags: uint32_t {
     none                    = 0x00000000,
     extract                 = 0x00000001,
     execute                 = 0x00000002,
@@ -194,16 +194,14 @@ enum class stage : uint8_t {
     execute = 0x05,
 };
 
-using proto::failure;
-using result = proto::result<stage>;
+using vmi::failure;
+using result = vmi::result<stage>;
 
-struct bridge_traits: proto::bridge::default_client_traits {
+struct bridge_traits : vmi::default_bridge_traits {
     static constexpr uint16_t request = 0x0001;
 };
 
-using bridge_client = proto::bridge::client<bridge_traits>;
-
-struct bridge: bridge_client {
+struct bridge : vmi::bridge<bridge_traits> {
     static constexpr uint16_t  method_download      = 0x0001;
     static constexpr uint16_t  method_execute       = 0x0002;
     static constexpr uint16_t  method_exit          = 0xffff;
@@ -242,7 +240,7 @@ struct bridge: bridge_client {
         _In_ result result
         )
     {
-        (void)bridge_client::send(
+        (void)send(
             method_exit,
             result.packed_status(),
             result.native_code()
@@ -262,7 +260,7 @@ private:
     {
         for (;;)
         {
-            const auto response = bridge_client::send(
+            const auto response = send(
                 method,
                 value1,
                 value2,
@@ -294,7 +292,7 @@ enum class parameter_error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<parameter_error> : std::true_type {};
+struct vmi::is_error_code<parameter_error> : std::true_type {};
 
 struct parameters {
     parameter_flags flags;
@@ -313,10 +311,10 @@ parse_parameters(
     ) -> std::expected<parameters, parameter_error>
 {
     parameters parameters{};
-    proto::reader reader(data);
+    vmi::cursor cursor(data);
 
     parameters.flags =
-        static_cast<parameter_flags>(reader.next_uint32());
+        static_cast<parameter_flags>(cursor.next_uint32());
 
     if (has_any(parameters.flags, ~valid_flags)
         || (has_any(parameters.flags, execute_flags)
@@ -329,23 +327,23 @@ parse_parameters(
 
     if (has_any(parameters.flags, parameter_flags::download))
     {
-        parameters.url = reader.next_wstring();
+        parameters.url = cursor.next_wstring();
 
-        parameters.download_path = reader.next_wstring();
+        parameters.download_path = cursor.next_wstring();
     }
 
     if (has_any(parameters.flags, parameter_flags::extract))
     {
-        parameters.extraction_directory = reader.next_wstring();
+        parameters.extraction_directory = cursor.next_wstring();
     }
 
     if (has_any(parameters.flags, parameter_flags::execute))
     {
-        parameters.executable_path = reader.next_wstring();
+        parameters.executable_path = cursor.next_wstring();
 
         if (has_any(parameters.flags, parameter_flags::arguments))
         {
-            parameters.arguments = reader.next_wstring();
+            parameters.arguments = cursor.next_wstring();
         }
 
         if (has_any(
@@ -353,12 +351,12 @@ parse_parameters(
             parameter_flags::working_directory
             ))
         {
-            parameters.working_directory = reader.next_wstring();
+            parameters.working_directory = cursor.next_wstring();
         }
 
         if (has_any(parameters.flags, parameter_flags::show_window))
         {
-            parameters.show_window = reader.next_int32();
+            parameters.show_window = cursor.next_int32();
         }
     }
 
@@ -546,7 +544,7 @@ enum class download_error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<download_error> : std::true_type {};
+struct vmi::is_error_code<download_error> : std::true_type {};
 
 auto
 DownloadInternal(
@@ -620,7 +618,7 @@ enum class extract_error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<extract_error> : std::true_type {};
+struct vmi::is_error_code<extract_error> : std::true_type {};
 
 auto
 ExtractInternal(
@@ -810,7 +808,7 @@ enum class execute_error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<execute_error> : std::true_type {};
+struct vmi::is_error_code<execute_error> : std::true_type {};
 
 auto
 Execute(
@@ -931,7 +929,7 @@ enum class initialization_error : uint8_t {
 };
 
 template <>
-struct proto::is_error_code<initialization_error> : std::true_type {};
+struct vmi::is_error_code<initialization_error> : std::true_type {};
 
 auto
 __fastcall

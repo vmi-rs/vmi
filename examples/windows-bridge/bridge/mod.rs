@@ -1,36 +1,24 @@
 mod kernel_mode;
 mod user_mode;
 
-use vmi::arch::amd64::Registers;
+use vmi::{Va, arch::amd64::Registers};
 
 pub use self::{
     kernel_mode::{KernelShellcodeRecipeData, kernel_shellcode_recipe},
     user_mode::{UserShellcodeRecipeData, user_shellcode_recipe},
 };
 
-/// Packed status value carried by terminal bridge responses.
-pub type BridgeStatusCode = u64;
-
 /// Little-endian ASCII `VMIB` bridge signature.
 pub const BRIDGE_MAGIC: u32 = 0x4249_4d56;
 
 /// Little-endian ASCII `VMI-RS3!` response signature.
-pub const VERIFY_VALUE3: u64 = 0x2133_5352_2d49_4d56;
+pub const BRIDGE_VERIFY_VALUE3: u64 = 0x2133_5352_2d49_4d56;
 
 /// Little-endian ASCII `VMI-RS4!` response signature.
-pub const VERIFY_VALUE4: u64 = 0x2134_5352_2d49_4d56;
+pub const BRIDGE_VERIFY_VALUE4: u64 = 0x2134_5352_2d49_4d56;
 
-/// Terminal result method.
-pub const METHOD_EXIT: u16 = 0xffff;
-
-/// Allows the shellcode to continue its current stage.
-pub const RESPONSE_CONTINUE: u64 = 0x0000_0000;
-
-/// Leaves the shellcode waiting at its current stage.
-pub const RESPONSE_WAIT: u64 = 0x0000_0001;
-
-/// Aborts the shellcode's current stage.
-pub const RESPONSE_ABORT: u64 = 0xffff_ffff;
+/// Packed status value carried by terminal bridge responses.
+pub type BridgeStatusCode = u64;
 
 /// Project stage encoded as one byte in a terminal result.
 pub trait BridgeStage: Copy {
@@ -291,9 +279,9 @@ impl ShellcodePayload {
         Self { bytes, parameter }
     }
 
-    fn parameter_value(&self, allocation_base: u64) -> u64 {
+    fn parameter_value(&self, allocation_base: Va) -> u64 {
         match self.parameter {
-            ShellcodeParameter::Offset(offset) => allocation_base + offset,
+            ShellcodeParameter::Offset(offset) => (allocation_base + offset).0,
             ShellcodeParameter::Value(value) => value,
         }
     }
@@ -323,8 +311,8 @@ macro_rules! impl_bridge_contract {
     ($bridge:ty) => {
         impl vmi::utils::bridge::BridgeContract for $bridge {
             const MAGIC: Option<u32> = Some($crate::bridge::BRIDGE_MAGIC);
-            const VERIFY_VALUE3: Option<u64> = Some($crate::bridge::VERIFY_VALUE3);
-            const VERIFY_VALUE4: Option<u64> = Some($crate::bridge::VERIFY_VALUE4);
+            const VERIFY_VALUE3: Option<u64> = Some($crate::bridge::BRIDGE_VERIFY_VALUE3);
+            const VERIFY_VALUE4: Option<u64> = Some($crate::bridge::BRIDGE_VERIFY_VALUE4);
         }
     };
 }
@@ -448,15 +436,15 @@ mod tests {
 
         assert_eq!(payload.parameter, ShellcodeParameter::Value(PARAMETER));
         assert_eq!(payload.bytes, SHELLCODE);
-        assert_eq!(payload.parameter_value(0x1000), PARAMETER);
+        assert_eq!(payload.parameter_value(Va(0x1000)), PARAMETER);
     }
 
     #[test]
     fn payload_offset_resolves_against_each_allocation() {
         let payload = ShellcodePayload::new(&[0xaa, 0xbb, 0xcc], &FourByteParameters);
 
-        assert_eq!(payload.parameter_value(0x1000), 0x1004);
-        assert_eq!(payload.parameter_value(0x2000), 0x2004);
+        assert_eq!(payload.parameter_value(Va(0x1000)), 0x1004);
+        assert_eq!(payload.parameter_value(Va(0x2000)), 0x2004);
     }
 
     #[test]

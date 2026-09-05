@@ -15,8 +15,8 @@
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/usermode.h>
 
-#include "bridge.h"
-#include "reader.h"
+#include <vmi/bridge.hpp>
+#include <vmi/cursor.hpp>
 
 #include <cstdint>
 #include <windows.h>
@@ -28,13 +28,11 @@ IMPORT_END();
 
 namespace sc {
 
-struct bridge_traits: proto::bridge::default_client_traits {
+struct bridge_traits : vmi::default_bridge_traits {
     static constexpr uint16_t request = 0x0002;
 };
 
-using bridge_client = proto::bridge::client<bridge_traits>;
-
-struct bridge: bridge_client {
+struct bridge : vmi::bridge<bridge_traits> {
     static constexpr uint16_t method_exit = 0xffff;
 
     static
@@ -43,7 +41,7 @@ struct bridge: bridge_client {
         _In_ int result
         )
     {
-        (void)bridge_client::send(
+        (void)send(
             method_exit,
             static_cast<uintptr_t>(result)
             );
@@ -60,7 +58,7 @@ entry(
 {
     (void)argument2;
 
-    proto::reader parameters{ argument1 };
+    vmi::cursor parameters{ argument1 };
     const auto title = parameters.next_string();
     const auto text = parameters.next_string();
     const auto result = MessageBoxA(
