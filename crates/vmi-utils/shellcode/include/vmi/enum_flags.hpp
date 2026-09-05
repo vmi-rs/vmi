@@ -16,7 +16,8 @@
         );                                                                    \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr Enum                                                            \
+    constexpr                                                                 \
+    Enum                                                                      \
     operator|(Enum lhs, Enum rhs) noexcept                                    \
     {                                                                         \
         using underlying_type = std::underlying_type_t<Enum>;                 \
@@ -26,14 +27,16 @@
             );                                                                \
     }                                                                         \
                                                                               \
-    constexpr Enum&                                                           \
+    constexpr                                                                 \
+    Enum&                                                                     \
     operator|=(Enum& lhs, Enum rhs) noexcept                                  \
     {                                                                         \
         return lhs = lhs | rhs;                                               \
     }                                                                         \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr Enum                                                            \
+    constexpr                                                                 \
+    Enum                                                                      \
     operator&(Enum lhs, Enum rhs) noexcept                                    \
     {                                                                         \
         using underlying_type = std::underlying_type_t<Enum>;                 \
@@ -43,14 +46,16 @@
             );                                                                \
     }                                                                         \
                                                                               \
-    constexpr Enum&                                                           \
+    constexpr                                                                 \
+    Enum&                                                                     \
     operator&=(Enum& lhs, Enum rhs) noexcept                                  \
     {                                                                         \
         return lhs = lhs & rhs;                                               \
     }                                                                         \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr Enum                                                            \
+    constexpr                                                                 \
+    Enum                                                                      \
     operator^(Enum lhs, Enum rhs) noexcept                                    \
     {                                                                         \
         using underlying_type = std::underlying_type_t<Enum>;                 \
@@ -60,14 +65,16 @@
             );                                                                \
     }                                                                         \
                                                                               \
-    constexpr Enum&                                                           \
+    constexpr                                                                 \
+    Enum&                                                                     \
     operator^=(Enum& lhs, Enum rhs) noexcept                                  \
     {                                                                         \
         return lhs = lhs ^ rhs;                                               \
     }                                                                         \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr Enum                                                            \
+    constexpr                                                                 \
+    Enum                                                                      \
     operator~(Enum value) noexcept                                            \
     {                                                                         \
         using underlying_type = std::underlying_type_t<Enum>;                 \
@@ -77,14 +84,16 @@
     }                                                                         \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr bool                                                            \
+    constexpr                                                                 \
+    bool                                                                      \
     has_any(Enum value, Enum mask) noexcept                                   \
     {                                                                         \
         return (value & mask) != static_cast<Enum>(0);                        \
     }                                                                         \
                                                                               \
     [[nodiscard]]                                                             \
-    constexpr bool                                                            \
+    constexpr                                                                 \
+    bool                                                                      \
     has_all(Enum value, Enum mask) noexcept                                   \
     {                                                                         \
         return (value & mask) == mask;                                        \
