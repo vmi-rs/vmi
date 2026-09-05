@@ -107,10 +107,7 @@
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/usermode.h>
 
-#include <vmi/bridge.hpp>
-#include <vmi/enum_flags.hpp>
-#include <vmi/cursor.hpp>
-#include <vmi/result.hpp>
+#include <vmi/shellcode.hpp>
 
 #include <concepts>
 #include <cstdint>

@@ -1,8 +1,7 @@
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/kernelmode.h>
 
-#include <vmi/bridge.hpp>
-#include <vmi/result.hpp>
+#include <vmi/shellcode.hpp>
 
 #include <cstdint>
 #include <optional>
