@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiHandler::poll` now takes `&mut self`.
+- **Breaking:** `BridgeHandler` and `BridgeDispatch` now expose their response
+  type through an associated `Output` type instead of a generic parameter.
+
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table
   hierarchy for a given virtual address. On AMD64 this writes `CR3`.

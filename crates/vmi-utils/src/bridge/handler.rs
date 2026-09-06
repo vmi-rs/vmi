@@ -62,10 +62,13 @@ pub trait BridgeContract {
 ///   back to guest registers.
 /// - `None` - request code matched but no response was produced (e.g.,
 ///   an unrecognized method). The dispatcher treats this as an error.
-pub trait BridgeHandler<Os, T = ()>: BridgeContract
+pub trait BridgeHandler<Os>: BridgeContract
 where
     Os: VmiOs,
 {
+    /// The response output type.
+    type Output;
+
     /// The request code that this handler responds to.
     const REQUEST: u16;
 
@@ -77,5 +80,5 @@ where
         &mut self,
         vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
-    ) -> Option<BridgeResponse<T>>;
+    ) -> Option<BridgeResponse<Self::Output>>;
 }

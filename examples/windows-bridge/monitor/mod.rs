@@ -405,7 +405,7 @@ where
         }
     }
 
-    fn poll(&self) -> Option<Self::Output> {
+    fn poll(&mut self) -> Option<Self::Output> {
         monitor_poll(
             self.state.completion,
             self.terminate_flag.load(Ordering::Relaxed),

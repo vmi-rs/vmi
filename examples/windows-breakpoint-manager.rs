@@ -512,7 +512,7 @@ where
         self.dispatch(&vmi).expect("dispatch")
     }
 
-    fn poll(&self) -> Option<Self::Output> {
+    fn poll(&mut self) -> Option<Self::Output> {
         self.terminate_flag.load(Ordering::Relaxed).then_some(())
     }
 }

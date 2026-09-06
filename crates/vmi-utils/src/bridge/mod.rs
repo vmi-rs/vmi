@@ -30,7 +30,8 @@
 //!     const MAGIC: Option<u32> = Some(0x4b454b57);
 //! }
 //!
-//! impl BridgeHandler<MyOs, MyResult> for HelloBridge {
+//! impl BridgeHandler<MyOs> for HelloBridge {
+//!     type Output = MyResult;
 //!     const REQUEST: u16 = 0x0000;
 //!
 //!     fn handle(
@@ -108,19 +109,19 @@ pub use self::{
 /// // Or use a no-op bridge when no guest communication is needed:
 /// let bridge = Bridge::<MyOs, ()>::default();
 /// ```
-pub struct Bridge<Os, Dispatch, T = ()>
+pub struct Bridge<Os, Dispatch>
 where
     Os: VmiOs,
-    Dispatch: BridgeDispatch<Os, T>,
+    Dispatch: BridgeDispatch<Os>,
 {
     handlers: Dispatch,
-    _phantom: std::marker::PhantomData<(Os, T)>,
+    _phantom: std::marker::PhantomData<Os>,
 }
 
-impl<Os, Dispatch, T> Bridge<Os, Dispatch, T>
+impl<Os, Dispatch> Bridge<Os, Dispatch>
 where
     Os: VmiOs,
-    Dispatch: BridgeDispatch<Os, T>,
+    Dispatch: BridgeDispatch<Os>,
 {
     /// Creates a new bridge with the given handlers.
     pub fn new(handlers: Dispatch) -> Self {
@@ -141,7 +142,7 @@ where
     pub fn dispatch(
         &mut self,
         vmi: &VmiContext<'_, Os>,
-    ) -> Option<Result<BridgeResponse<T>, BridgePacket>>
+    ) -> Option<Result<BridgeResponse<Dispatch::Output>, BridgePacket>>
     where
         Os::Architecture: ArchAdapter,
     {
@@ -149,10 +150,10 @@ where
     }
 }
 
-impl<Os, Dispatch, T> Default for Bridge<Os, Dispatch, T>
+impl<Os, Dispatch> Default for Bridge<Os, Dispatch>
 where
     Os: VmiOs,
-    Dispatch: BridgeDispatch<Os, T> + Default,
+    Dispatch: BridgeDispatch<Os> + Default,
 {
     fn default() -> Self {
         Self::new(Dispatch::default())
