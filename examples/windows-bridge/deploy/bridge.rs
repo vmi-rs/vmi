@@ -220,10 +220,12 @@ impl DeployBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for DeployBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>> for DeployBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
+    type Output = BridgeStatusCode;
+
     const REQUEST: u16 = 0x0001;
 
     #[tracing::instrument(name = "deploy", skip_all)]
@@ -234,7 +236,7 @@ where
     ) -> Option<BridgeResponse<BridgeStatusCode>> {
         debug_assert_eq!(
             packet.request(),
-            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
+            <Self as BridgeHandler<WindowsOs<Driver>>>::REQUEST
         );
 
         self.handle_packet(packet)

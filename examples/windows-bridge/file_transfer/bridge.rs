@@ -444,10 +444,12 @@ impl FileTransferBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for FileTransferBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>> for FileTransferBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
+    type Output = BridgeStatusCode;
+
     const REQUEST: u16 = 0x0003;
 
     #[tracing::instrument(name = "file_transfer", skip_all)]
@@ -458,7 +460,7 @@ where
     ) -> Option<BridgeResponse<BridgeStatusCode>> {
         debug_assert_eq!(
             packet.request(),
-            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
+            <Self as BridgeHandler<WindowsOs<Driver>>>::REQUEST
         );
 
         self.handle_packet(vmi, packet)

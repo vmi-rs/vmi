@@ -52,10 +52,12 @@ impl MsgboxBridge {
     }
 }
 
-impl<Driver> BridgeHandler<WindowsOs<Driver>, BridgeStatusCode> for MsgboxBridge
+impl<Driver> BridgeHandler<WindowsOs<Driver>> for MsgboxBridge
 where
     Driver: VmiRead<Architecture = Amd64>,
 {
+    type Output = BridgeStatusCode;
+
     /// Msgbox bridge request identifier.
     const REQUEST: u16 = 0x0002;
 
@@ -67,7 +69,7 @@ where
     ) -> Option<BridgeResponse<BridgeStatusCode>> {
         debug_assert_eq!(
             packet.request(),
-            <Self as BridgeHandler<WindowsOs<Driver>, BridgeStatusCode>>::REQUEST
+            <Self as BridgeHandler<WindowsOs<Driver>>>::REQUEST
         );
 
         self.handle_packet(packet)
