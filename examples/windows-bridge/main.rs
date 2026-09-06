@@ -337,6 +337,7 @@ fn run_msgbox(
                 .with_pid(process_id)
         })?
         .context("msgbox injection interrupted")?
+        .context("msgbox bridge completed without a result")?
         .map_err(|packet| anyhow::anyhow!("unhandled msgbox bridge packet: {packet:?}"))?;
 
     let result = validate_msgbox_result(result)?;
@@ -371,6 +372,7 @@ fn run_deploy(
             .with_pid(process_id)
         })?
         .context("deploy injection interrupted")?
+        .context("deploy bridge completed without a result")?
         .map_err(|packet| anyhow::anyhow!("unhandled deploy bridge packet: {packet:?}"))?;
 
     let monitor = match monitor {

@@ -28,7 +28,6 @@ use vmi::{
 
 use self::tracker::ProcessTracker;
 use crate::{
-    bridge::BridgeStatusCode,
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
     file_transfer::{FileTransfer, FileTransferBridge},
 };
@@ -167,7 +166,7 @@ where
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>, (), Hook<Driver>>,
     ptm: PageTableMonitor<Driver, Hook<Driver>>,
-    bridge: Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge), BridgeStatusCode>,
+    bridge: Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge)>,
     state: MonitorState<Driver>,
 }
 
