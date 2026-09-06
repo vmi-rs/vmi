@@ -1,0 +1,3 @@
+- revisit sc::vmi namespace name. suggest other names?
+- class cursor: suggest better name?
+- enum class status, struct result... unify with rust counterpart naming

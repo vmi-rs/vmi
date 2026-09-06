@@ -854,7 +854,10 @@ Entry(
 
     if (wszDownloadPath != NULL)
     {
-        if (const auto download = Download(wszUrl, wszDownloadPath); !download)
+        if (const auto download = Download(
+            wszUrl,
+            wszDownloadPath
+            ); !download)
         {
             return result::operation_failed(
                 stage::download,
