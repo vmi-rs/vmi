@@ -11,7 +11,10 @@ use vmi_core::{
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
-use super::super::super::{InjectorHandlerAdapter, KernelMode, Recipe, RecipeExecutor};
+use super::super::super::{
+    InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, KernelMode, Recipe,
+    RecipeExecutor,
+};
 use crate::{
     bpm::{Breakpoint, BreakpointController, BreakpointManager},
     bridge::{BridgeDispatch, BridgePacket},
@@ -82,8 +85,8 @@ where
     state: InjectorState<Driver, Bridge>,
 }
 
-impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, KernelMode, T, Bridge>
-    for KernelInjectorHandler<Driver, T, Bridge>
+impl<Driver, T> InjectorHandlerFactory<WindowsOs<Driver>, KernelMode, T>
+    for KernelInjectorHandler<Driver, T, ()>
 where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
@@ -94,13 +97,11 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
     /// Creates a new injector handler.
     #[expect(non_snake_case)]
-    fn with_bridge(
+    fn new(
         vmi: &VmiSession<WindowsOs<Driver>>,
-        bridge: Bridge,
         recipe: Recipe<WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
@@ -139,11 +140,45 @@ where
             bpm,
             ptm,
             recipe: RecipeExecutor::new(recipe),
-            bridge,
+            bridge: (),
             state: InjectorState::PreHijack,
         })
     }
 
+    fn with_bridge<Bridge>(
+        self,
+        bridge: Bridge,
+    ) -> <WindowsOs<Driver> as InjectorExecutionAdapter<KernelMode, T, Bridge>>::Handler
+    where
+        Bridge: BridgeDispatch<WindowsOs<Driver>>,
+    {
+        KernelInjectorHandler {
+            pid: self.pid,
+            tid: self.tid,
+            view: self.view,
+            bpm: self.bpm,
+            ptm: self.ptm,
+            recipe: self.recipe,
+            bridge,
+            state: InjectorState::PreHijack,
+        }
+    }
+}
+
+impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, KernelMode, T, Bridge>
+    for KernelInjectorHandler<Driver, T, Bridge>
+where
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiQueryProtection
+        + VmiSetProtection
+        + VmiQueryRegisters
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
+{
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
         Ok(Self {
             pid: Some(pid),

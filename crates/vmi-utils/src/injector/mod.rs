@@ -130,23 +130,35 @@ where
     type Handler: InjectorHandlerAdapter<Self, Mode, T, Bridge>;
 }
 
+/// Constructs and configures an injector handler without a bridge.
+pub trait InjectorHandlerFactory<Os, Mode, T>: InjectorHandlerAdapter<Os, Mode, T, ()>
+where
+    Os: InjectorExecutionAdapter<Mode, T, ()>,
+    Mode: ExecutionMode,
+{
+    /// Creates a new handler without a guest-host bridge.
+    fn new(vmi: &VmiSession<Os>, recipe: Recipe<Os, T>) -> Result<Self, VmiError>;
+
+    /// Attaches a bridge for guest-host communication.
+    fn with_bridge<Bridge>(
+        self,
+        bridge: Bridge,
+    ) -> <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler
+    where
+        Bridge: BridgeDispatch<Os>,
+        Os: InjectorExecutionAdapter<Mode, T, Bridge>;
+}
+
 /// Interface that mode-specific injector handlers must implement.
 ///
-/// Provides construction and configuration methods for the concrete
-/// handler selected by [`InjectorExecutionAdapter`].
+/// Provides configuration methods for the concrete handler selected by
+/// [`InjectorExecutionAdapter`].
 pub trait InjectorHandlerAdapter<Os, Mode, T, Bridge>: VmiHandler<Os> + Sized
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
     Bridge: BridgeDispatch<Os>,
 {
-    /// Creates a new handler with a bridge for guest-host communication.
-    fn with_bridge(
-        vmi: &VmiSession<Os>,
-        bridge: Bridge,
-        recipe: Recipe<Os, T>,
-    ) -> Result<Self, VmiError>;
-
     /// Restricts injection to a specific process.
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError>;
 }
@@ -155,9 +167,8 @@ where
 /// implementation.
 ///
 /// Prefer the [`KernelInjectorHandler`] and [`UserInjectorHandler`] type
-/// aliases for the common case without a bridge. When a custom
-/// [`BridgeDispatch`] is needed, use this type directly with an explicit
-/// `Bridge` parameter.
+/// aliases. Start with [`InjectorHandler::new`], then attach a custom
+/// [`BridgeDispatch`] using [`InjectorHandler::with_bridge`] when needed.
 pub struct InjectorHandler<Os, Mode, T, Bridge = ()>
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
@@ -171,11 +182,27 @@ where
 impl<Os, Mode, T> InjectorHandler<Os, Mode, T, ()>
 where
     Os: InjectorExecutionAdapter<Mode, T, ()>,
+    <Os as InjectorExecutionAdapter<Mode, T, ()>>::Handler: InjectorHandlerFactory<Os, Mode, T>,
     Mode: ExecutionMode,
 {
     /// Creates a new injector handler without a guest-host bridge.
     pub fn new(vmi: &VmiSession<Os>, recipe: Recipe<Os, T>) -> Result<Self, VmiError> {
-        Self::with_bridge(vmi, (), recipe)
+        Ok(Self {
+            inner: <Os as InjectorExecutionAdapter<Mode, T, ()>>::Handler::new(vmi, recipe)?,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
+    /// Attaches a custom bridge for guest-host communication.
+    pub fn with_bridge<Bridge>(self, bridge: Bridge) -> InjectorHandler<Os, Mode, T, Bridge>
+    where
+        Bridge: BridgeDispatch<Os>,
+        Os: InjectorExecutionAdapter<Mode, T, Bridge>,
+    {
+        InjectorHandler {
+            inner: self.inner.with_bridge(bridge),
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -185,22 +212,6 @@ where
     Mode: ExecutionMode,
     Bridge: BridgeDispatch<Os>,
 {
-
-    /// Creates a new injector handler with a custom bridge for
-    /// guest-host communication.
-    pub fn with_bridge(
-        vmi: &VmiSession<Os>,
-        bridge: Bridge,
-        recipe: Recipe<Os, T>,
-    ) -> Result<Self, VmiError> {
-        Ok(Self {
-            inner: <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler::with_bridge(
-                vmi, bridge, recipe,
-            )?,
-            _marker: std::marker::PhantomData,
-        })
-    }
-
     /// Restricts injection to a specific process.
     pub fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
         Ok(Self {
@@ -228,14 +239,12 @@ where
     }
 }
 
-/// Kernel-mode injector handler without a bridge.
+/// Kernel-mode injector handler.
 ///
-/// For injection with a custom [`BridgeDispatch`], use
-/// [`InjectorHandler<Os, KernelMode, T, Bridge>`] directly.
+/// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
-/// User-mode injector handler without a bridge.
+/// User-mode injector handler.
 ///
-/// For injection with a custom [`BridgeDispatch`], use
-/// [`InjectorHandler<Os, UserMode, T, Bridge>`] directly.
+/// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;
