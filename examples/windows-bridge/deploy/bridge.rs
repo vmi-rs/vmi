@@ -105,7 +105,8 @@ impl DeployPolicy {
     pub fn maybe_allow_execute(self, allow_execute: bool) -> Self {
         self.execute_response(if allow_execute {
             ExecuteResponse::Continue
-        } else {
+        }
+        else {
             ExecuteResponse::Abort
         })
     }
@@ -161,7 +162,8 @@ impl DeployBridge {
 
         let response = if attempt == 0 || attempt <= self.policy.max_download_retries {
             Self::RESPONSE_CONTINUE
-        } else {
+        }
+        else {
             Self::RESPONSE_ABORT
         };
 
