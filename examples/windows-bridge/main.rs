@@ -333,7 +333,8 @@ fn run_msgbox(
 
     let result = session
         .handle(|session| {
-            UserInjectorHandler::with_bridge(session, MsgboxBridge, msgbox_recipe(&parameters))?
+            UserInjectorHandler::new(session, msgbox_recipe(&parameters))?
+                .with_bridge(MsgboxBridge)
                 .with_pid(process_id)
         })?
         .context("msgbox injection interrupted")?
@@ -364,12 +365,9 @@ fn run_deploy(
 
     let result = session
         .handle(|session| {
-            UserInjectorHandler::with_bridge(
-                session,
-                DeployBridge::new(policy),
-                deploy_recipe(&parameters),
-            )?
-            .with_pid(process_id)
+            UserInjectorHandler::new(session, deploy_recipe(&parameters))?
+                .with_bridge(DeployBridge::new(policy))
+                .with_pid(process_id)
         })?
         .context("deploy injection interrupted")?
         .context("deploy bridge completed without a result")?
