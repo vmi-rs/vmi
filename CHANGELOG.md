@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `VmiHandler::poll` now takes `&mut self`.
 - **Breaking:** `BridgeHandler` and `BridgeDispatch` now expose their response
   type through an associated `Output` type instead of a generic parameter.
+- **Breaking:** Injector handlers with guest-host bridges are now created by
+  calling `InjectorHandler::new` + `with_bridge` method.
 
 - **Breaking:** `Registers` trait now requires a `set_translation_root` method,
   which sets the physical address of the root of the current page-table

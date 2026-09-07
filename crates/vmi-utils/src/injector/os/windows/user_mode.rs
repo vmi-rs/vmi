@@ -11,7 +11,10 @@ use vmi_core::{
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
-use super::super::super::{InjectorHandlerAdapter, Recipe, RecipeExecutor, UserMode};
+use super::super::super::{
+    InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, Recipe,
+    RecipeExecutor, UserMode,
+};
 use crate::bridge::{BridgeDispatch, BridgePacket};
 
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
@@ -77,8 +80,8 @@ where
     state: InjectorState<Driver, Bridge>,
 }
 
-impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, UserMode, T, Bridge>
-    for UserInjectorHandler<Driver, T, Bridge>
+impl<Driver, T> InjectorHandlerFactory<WindowsOs<Driver>, UserMode, T>
+    for UserInjectorHandler<Driver, T, ()>
 where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
@@ -87,11 +90,9 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
-    fn with_bridge(
+    fn new(
         vmi: &VmiSession<WindowsOs<Driver>>,
-        bridge: Bridge,
         recipe: Recipe<WindowsOs<Driver>, T>,
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
@@ -106,11 +107,43 @@ where
             ip_va: None,
             ip_pa: None,
             recipe: RecipeExecutor::new(recipe),
-            bridge,
+            bridge: (),
             state: InjectorState::PreHijack,
         })
     }
 
+    fn with_bridge<Bridge>(
+        self,
+        bridge: Bridge,
+    ) -> <WindowsOs<Driver> as InjectorExecutionAdapter<UserMode, T, Bridge>>::Handler
+    where
+        Bridge: BridgeDispatch<WindowsOs<Driver>>,
+    {
+        UserInjectorHandler {
+            pid: self.pid,
+            tid: self.tid,
+            view: self.view,
+            ip_va: self.ip_va,
+            ip_pa: self.ip_pa,
+            recipe: self.recipe,
+            bridge,
+            state: InjectorState::PreHijack,
+        }
+    }
+}
+
+impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, UserMode, T, Bridge>
+    for UserInjectorHandler<Driver, T, Bridge>
+where
+    Driver: VmiDriver<Architecture = Amd64>
+        + VmiRead
+        + VmiWrite
+        + VmiSetProtection
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
+{
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
         Ok(Self {
             pid: Some(pid),
