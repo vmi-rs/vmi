@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiHandler::poll` now takes `&mut self`.
+- **Breaking:** `BridgeHandler` and `BridgeDispatch` now expose their response
+  type through an associated `Output` type instead of a generic parameter.
+
 ### Added
 
 ### Removed
