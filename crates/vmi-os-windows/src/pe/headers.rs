@@ -8,29 +8,35 @@
 use object::ReadRef as _;
 pub use object::{
     pe::{
-        IMAGE_DEBUG_TYPE_CODEVIEW, IMAGE_DIRECTORY_ENTRY_ARCHITECTURE,
-        IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT,
-        IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR, IMAGE_DIRECTORY_ENTRY_DEBUG,
-        IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT, IMAGE_DIRECTORY_ENTRY_EXCEPTION,
-        IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_GLOBALPTR, IMAGE_DIRECTORY_ENTRY_IAT,
-        IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
-        IMAGE_DIRECTORY_ENTRY_RESOURCE, IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS,
-        IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC,
-        IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES, IMAGE_SIZEOF_SHORT_NAME,
+        IMAGE_DIRECTORY_ENTRY_ARCHITECTURE, IMAGE_DIRECTORY_ENTRY_BASERELOC,
+        IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR,
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        IMAGE_DIRECTORY_ENTRY_GLOBALPTR, IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, IMAGE_DIRECTORY_ENTRY_RESOURCE,
+        IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DOS_SIGNATURE,
+        IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE,
+        IMAGE_NUMBEROF_DIRECTORY_ENTRIES, IMAGE_SIZEOF_SHORT_NAME,
     },
     // Intentional re-export: `Export`, `ExportTable` and `ExportTarget` are good as they are.
     read::pe::{Export, ExportTable, ExportTarget},
 };
+
+/// CodeView debug directory type.
+pub const IMAGE_DEBUG_TYPE_CODEVIEW: u32 = ::object::pe::IMAGE_DEBUG_TYPE_CODEVIEW.0;
 
 use super::error::PeError;
 
 /// Reads an `object`-crate struct field as a native scalar.
 ///
 /// `impl_struct!` calls `to_endian(LE)` on every source field. The trait
-/// covers both `object`'s endian wrappers (`U16<E>`, `U32<E>`, `U64<E>`,
+/// covers both `object`'s endian wrappers (`U16<E, T>`, `U32<E, T>`, `U64<E, T>`,
 /// and arrays of those) and the raw types `object` stores natively because
 /// no `U8<E>` wrapper exists (`u8` and byte arrays).
-trait ToEndian<E: ::object::Endian> {
+trait ToEndian<E>
+where
+    E: ::object::Endian,
+{
     /// Native counterpart of `Self`.
     type Output;
 
@@ -38,27 +44,39 @@ trait ToEndian<E: ::object::Endian> {
     fn to_endian(&self, endian: E) -> Self::Output;
 }
 
-impl<E: ::object::Endian> ToEndian<E> for ::object::U16<E> {
+impl<E, T> ToEndian<E> for ::object::U16<E, T>
+where
+    E: ::object::Endian,
+    T: ::object::Wrap<Inner = u16> + Copy,
+{
     type Output = u16;
 
     fn to_endian(&self, endian: E) -> Self::Output {
-        self.get(endian)
+        (*self).get(endian).into_inner()
     }
 }
 
-impl<E: ::object::Endian> ToEndian<E> for ::object::U32<E> {
+impl<E, T> ToEndian<E> for ::object::U32<E, T>
+where
+    E: ::object::Endian,
+    T: ::object::Wrap<Inner = u32> + Copy,
+{
     type Output = u32;
 
     fn to_endian(&self, endian: E) -> Self::Output {
-        self.get(endian)
+        (*self).get(endian).into_inner()
     }
 }
 
-impl<E: ::object::Endian> ToEndian<E> for ::object::U64<E> {
+impl<E, T> ToEndian<E> for ::object::U64<E, T>
+where
+    E: ::object::Endian,
+    T: ::object::Wrap<Inner = u64> + Copy,
+{
     type Output = u64;
 
     fn to_endian(&self, endian: E) -> Self::Output {
-        self.get(endian)
+        (*self).get(endian).into_inner()
     }
 }
 

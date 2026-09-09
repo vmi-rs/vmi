@@ -832,7 +832,7 @@ checksum = "9cc3e030b1d8ca19826f4c8db77e01f527c970d75a013abe33b849cb34e48ac8"
 dependencies = [
  "bon",
  "isr-dl",
- "object",
+ "object 0.39.1",
  "reqwest",
  "thiserror",
  "tracing",
@@ -1158,7 +1158,18 @@ checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
 dependencies = [
  "flate2",
  "memchr",
- "ruzstd",
+ "ruzstd 0.8.3",
+]
+
+[[package]]
+name = "object"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
+dependencies = [
+ "flate2",
+ "memchr",
+ "ruzstd 0.9.0",
 ]
 
 [[package]]
@@ -1590,6 +1601,15 @@ name = "ruzstd"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
+name = "ruzstd"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a252f5e20f038fe7b4ea53e073e65398d652c864cc162fc77c56c2f13717b888"
 dependencies = [
  "twox-hash",
 ]
@@ -2250,7 +2270,7 @@ dependencies = [
  "isr-core",
  "isr-dl-windows",
  "isr-macros",
- "object",
+ "object 0.40.0",
  "once_cell",
  "thiserror",
  "tracing",
