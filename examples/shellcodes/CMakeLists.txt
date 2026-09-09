@@ -40,7 +40,7 @@ set(SCFW_OPT_CLEANUP ON CACHE BOOL "" FORCE)
 add_subdirectory("${scfw_SOURCE_DIR}" "${scfw_BINARY_DIR}")
 
 # Once vmi-utils publishes shellcode/, uncomment this block and remove the local
-# add_subdirectory below; pin URL_HASH to the checksum in the crates.io index.
+# add_subdirectory below. Pin URL_HASH to the checksum in the crates.io index.
 # FetchContent_Declare(
 #     vmi_utils
 #     URL https://static.crates.io/crates/vmi-utils/vmi-utils-0.11.0.crate
