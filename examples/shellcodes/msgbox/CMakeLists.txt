@@ -1,4 +1,4 @@
 add_executable(msgbox main.cpp)
-target_link_libraries(msgbox PRIVATE scfw bridge)
+target_link_libraries(msgbox PRIVATE scfw vmi::shellcode)
 set_target_properties(msgbox PROPERTIES SCFW_OPT_LTO ON)
 scfw_extract_shellcode(msgbox)
