@@ -773,9 +773,9 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "isr"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "194e873306cffd133a5f93b58a9e33d5aafd33ee175d159be607e4c347d9896a"
+checksum = "53ca6ecd23f1384808dfbdfdb78f2eeb97685ed5f4f0948af25ce04565cf2dfc"
 dependencies = [
  "isr-cache",
  "isr-core",
@@ -787,9 +787,9 @@ dependencies = [
 
 [[package]]
 name = "isr-cache"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33494fb3c94c56127e648835d1d086bb18055644c67b0876a63f583946674e0c"
+checksum = "dcc75b150bf9a9ed35da5e243bbcc3e88f6f1219e4d0cb2804f1e987d0ad3031"
 dependencies = [
  "isr-core",
  "isr-dl",
@@ -805,9 +805,9 @@ dependencies = [
 
 [[package]]
 name = "isr-core"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50135c2d66a94e642631908c5cbd51921c3a6be4b606ca6f948bef969523ce71"
+checksum = "05a774f3d7bd0f4a01667165a1dac26617a0c938f71af563469adcb539105c07"
 dependencies = [
  "indexmap",
  "rkyv",
@@ -816,9 +816,9 @@ dependencies = [
 
 [[package]]
 name = "isr-dl"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0e33f109a0bc5c7c0b2ac3f2f809105158514cd2b3e83301c10366f021ce9fd"
+checksum = "a2049bbbddc4f8bda72e776be3bd2b8156cbf2e31e8b188fd6e10012a57fa4dd"
 dependencies = [
  "thiserror",
  "url",
@@ -826,13 +826,13 @@ dependencies = [
 
 [[package]]
 name = "isr-dl-windows"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cc3e030b1d8ca19826f4c8db77e01f527c970d75a013abe33b849cb34e48ac8"
+checksum = "3dc79d347317c647e0777fbe683b3781a19b9c04555d37fa35885564d5ccf850"
 dependencies = [
  "bon",
  "isr-dl",
- "object 0.39.1",
+ "object",
  "reqwest",
  "thiserror",
  "tracing",
@@ -841,9 +841,9 @@ dependencies = [
 
 [[package]]
 name = "isr-macros"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15868cb3aad789afd2eda53d5b25ea6ece5b173107f68759974d856e2ea6dc3c"
+checksum = "a08bc4cc7c644417abe8e609b03e471ce91317fcb011fd77b86a5098de559e75"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -853,9 +853,9 @@ dependencies = [
 
 [[package]]
 name = "isr-pdb"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0988f958156b868ce9e34a4f745f8e5fabe3b2a1d24e7127193cce54c1e6bca3"
+checksum = "a0770655a54c4c141161321602139aa7bec05431398ef7a52b9df4a27e634ca8"
 dependencies = [
  "indexmap",
  "isr-core",
@@ -1152,24 +1152,13 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.39.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
-dependencies = [
- "flate2",
- "memchr",
- "ruzstd 0.8.3",
-]
-
-[[package]]
-name = "object"
 version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
 dependencies = [
  "flate2",
  "memchr",
- "ruzstd 0.9.0",
+ "ruzstd",
 ]
 
 [[package]]
@@ -1595,15 +1584,6 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "ruzstd"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
-dependencies = [
- "twox-hash",
-]
 
 [[package]]
 name = "ruzstd"
@@ -2270,7 +2250,7 @@ dependencies = [
  "isr-core",
  "isr-dl-windows",
  "isr-macros",
- "object 0.40.0",
+ "object",
  "once_cell",
  "thiserror",
  "tracing",
