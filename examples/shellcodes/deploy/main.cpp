@@ -22,7 +22,7 @@
 //      optional       optional       optional
 //          |
 //          v
-//   report the terminal result to the bridge host
+//   report the terminal status to the bridge host
 //
 // Extraction consumes the downloaded file, so extract requires download.
 // Execution may follow download and extraction, or run independently.
@@ -192,7 +192,7 @@ enum class stage : uint8_t {
 };
 
 using vmi::failure;
-using result = vmi::result<stage>;
+using status = vmi::status<stage>;
 
 struct bridge_traits : vmi::default_bridge_traits {
     static constexpr uint16_t request = 0x0001;
@@ -234,13 +234,13 @@ struct bridge : vmi::bridge<bridge_traits> {
     static
     void
     exit(
-        _In_ result result
+        _In_ status status
         )
     {
         (void)send(
             method_exit,
-            result.packed_status(),
-            result.native_code()
+            status.packed_status(),
+            status.native_code()
             );
     }
 
@@ -846,7 +846,7 @@ Entry(
     _In_opt_ LPCWSTR wszArguments,
     _In_opt_ LPCWSTR wszWorkingDirectory,
     _In_ INT nShow
-    ) -> result
+    ) -> status
 {
     //
     // Download stage.
@@ -859,7 +859,7 @@ Entry(
             wszDownloadPath
             ); !download)
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::download,
                 download.error()
                 );
@@ -877,7 +877,7 @@ Entry(
             wszExtractionPath
             ); !extraction)
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::extract,
                 extraction.error()
                 );
@@ -888,7 +888,7 @@ Entry(
     {
         if (!bridge::wait_for_execute())
         {
-            return result::aborted(stage::execute);
+            return status::aborted(stage::execute);
         }
 
         if (const auto execution = Execute(
@@ -898,26 +898,26 @@ Entry(
             nShow
             ); !execution)
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::execute,
                 execution.error()
                 );
         }
 
-        return result::success(stage::execute);
+        return status::success(stage::execute);
     }
 
     if (wszExtractionPath != NULL)
     {
-        return result::success(stage::extract);
+        return status::success(stage::extract);
     }
 
     if (wszDownloadPath != NULL)
     {
-        return result::success(stage::download);
+        return status::success(stage::download);
     }
 
-    return result::success(stage::none);
+    return status::success(stage::none);
 }
 
 enum class initialization_error : uint8_t {
@@ -935,7 +935,7 @@ auto
 __fastcall
 DeployInternal(
     _In_ const parameters& parameters
-    ) -> result
+    ) -> status
 {
     //
     // Expand DownloadPath.
@@ -948,7 +948,7 @@ DeployInternal(
     {
         if (!ExpandPath(parameters.download_path, wszDownloadPath, MAX_PATH))
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::initialization,
                 failure{ initialization_error::expand_download_path }
                 );
@@ -972,7 +972,7 @@ DeployInternal(
             MAX_PATH
             ))
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::initialization,
                 failure{ initialization_error::expand_extraction_path }
                 );
@@ -1002,7 +1002,7 @@ DeployInternal(
             MAX_PATH
             ))
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::initialization,
                 failure{ initialization_error::expand_executable_path }
                 );
@@ -1022,7 +1022,7 @@ DeployInternal(
                 MAX_PATH
                 ))
             {
-                return result::operation_failed(
+                return status::operation_failed(
                     stage::initialization,
                     failure{ initialization_error::expand_working_directory }
                     );
@@ -1049,7 +1049,7 @@ DeployInternal(
 
     if (FAILED(hr))
     {
-        return result::operation_failed(
+        return status::operation_failed(
             stage::initialization,
             failure{ initialization_error::initialize_com, hr }
             );
@@ -1059,7 +1059,7 @@ DeployInternal(
     // Run the requested stages.
     //
 
-    auto result = Entry(
+    auto status = Entry(
         parameters.url,
         pwszDownloadPath,
         pwszExtractionPath,
@@ -1075,18 +1075,18 @@ DeployInternal(
 
     CoUninitialize();
 
-    return result;
+    return status;
 }
 
 auto
 __fastcall
 Deploy(
     _In_ void* data
-    ) -> result
+    ) -> status
 {
     if (!bridge::wait_for_host())
     {
-        return result::aborted(stage::download);
+        return status::aborted(stage::download);
     }
 
     if (const auto parameters = parse_parameters(data); parameters)
@@ -1095,7 +1095,7 @@ Deploy(
     }
     else
     {
-        return result::invalid_parameters(
+        return status::invalid_parameters(
             stage::parameters,
             failure{ parameters.error(), 0 }
             );

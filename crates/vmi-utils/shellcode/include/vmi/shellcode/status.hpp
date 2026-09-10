@@ -87,44 +87,43 @@ struct failure {
     uintptr_t native_code;
 };
 
-enum class status : uint8_t {
-    success                 = 0x00,
-    waiting                 = 0x01,
-    invalid_parameters      = 0xfd,
-    operation_failed        = 0xfe,
-    aborted                 = 0xff,
-};
-
 //
-// Represents the terminal result reported to the bridge host.
+// Represents the terminal status reported to the bridge host.
 //
 
 template <typename Stage>
-struct result {
+struct status {
+    enum class kind : uint8_t {
+        success                 = 0x00,
+        waiting                 = 0x01,
+        invalid_parameters      = 0xfd,
+        operation_failed        = 0xfe,
+        aborted                 = 0xff,
+    };
     [[nodiscard]]
     static
     constexpr
-    result
+    status
     success(
         Stage stage
         ) noexcept
     {
-        return result(stage, status::success, 0, 0);
+        return status(stage, kind::success, 0, 0);
     }
 
     template <error_code Code>
     [[nodiscard]]
     static
     constexpr
-    result
+    status
     invalid_parameters(
         Stage stage,
         failure<Code> error
         ) noexcept
     {
-        return result(
+        return status(
             stage,
-            status::invalid_parameters,
+            kind::invalid_parameters,
             static_cast<uint8_t>(error.code),
             error.native_code
             );
@@ -134,15 +133,15 @@ struct result {
     [[nodiscard]]
     static
     constexpr
-    result
+    status
     operation_failed(
         Stage stage,
         failure<Code> error
         ) noexcept
     {
-        return result(
+        return status(
             stage,
-            status::operation_failed,
+            kind::operation_failed,
             static_cast<uint8_t>(error.code),
             error.native_code
             );
@@ -151,12 +150,12 @@ struct result {
     [[nodiscard]]
     static
     constexpr
-    result
+    status
     aborted(
         Stage stage
         ) noexcept
     {
-        return result(stage, status::aborted, 0, 0);
+        return status(stage, kind::aborted, 0, 0);
     }
 
     [[nodiscard]]
@@ -165,7 +164,7 @@ struct result {
     packed_status() const noexcept
     {
         return static_cast<uintptr_t>(stage_)
-            | static_cast<uintptr_t>(status_) << 8
+            | static_cast<uintptr_t>(kind_) << 8
             | static_cast<uintptr_t>(code_) << 16;
     }
 
@@ -179,21 +178,21 @@ struct result {
 
 private:
     constexpr
-    result(
+    status(
         Stage stage,
-        status status,
+        kind kind,
         uint8_t code,
         uintptr_t native_code
         ) noexcept
         : stage_{ stage }
-        , status_{ status }
+        , kind_{ kind }
         , code_{ code }
         , native_code_{ native_code }
     {
     }
 
     Stage stage_;
-    status status_;
+    kind kind_;
     uint8_t code_;
     uintptr_t native_code_;
 };

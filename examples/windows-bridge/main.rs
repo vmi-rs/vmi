@@ -27,7 +27,7 @@ use vmi::{
 };
 
 use crate::{
-    bridge::TerminalStatus,
+    bridge::StatusKind,
     deploy::{
         DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
         deploy_recipe,
@@ -264,21 +264,21 @@ fn validate_msgbox_result(result: u64) -> Result<u64, Error> {
 }
 
 /// Decodes and validates a terminal deploy status.
-fn validate_deploy_result(result: u64) -> Result<DeployStatus, Error> {
-    let status = DeployStatus::decode(result);
+fn validate_deploy_status(packed_status: u64) -> Result<DeployStatus, Error> {
+    let status = DeployStatus::decode(packed_status);
     anyhow::ensure!(
-        status.status() == TerminalStatus::SUCCESS,
+        status.kind() == StatusKind::SUCCESS,
         "deploy failed: {status:?}"
     );
     Ok(status)
 }
 
 /// Validates the injector handoff used before deploy monitoring begins.
-fn validate_deploy_waiting_result(result: u64) -> Result<DeployStatus, Error> {
-    let status = DeployStatus::decode(result);
+fn validate_deploy_waiting_status(packed_status: u64) -> Result<DeployStatus, Error> {
+    let status = DeployStatus::decode(packed_status);
     anyhow::ensure!(
         status.stage() == DeployStage::EXECUTE
-            && status.status() == TerminalStatus::WAITING
+            && status.kind() == StatusKind::WAITING
             && status.code() == 0,
         "deploy monitor handoff failed: {status:?}"
     );
@@ -376,13 +376,13 @@ fn run_deploy(
     let monitor = match monitor {
         Some(monitor) => monitor,
         None => {
-            let status = validate_deploy_result(result)?;
+            let status = validate_deploy_status(result)?;
             tracing::info!(?status, "deploy completed");
             return Ok(());
         }
     };
 
-    let status = validate_deploy_waiting_result(result)?;
+    let status = validate_deploy_waiting_status(result)?;
     tracing::info!(?status, "deploy injector parked at execute gate");
 
     let monitor_terminate_flag = terminate_flag.clone();
@@ -751,19 +751,19 @@ mod tests {
     }
 
     #[test]
-    fn deploy_result_distinguishes_success_from_failure() {
-        assert!(validate_deploy_result(0x0000_0005).is_ok());
+    fn deploy_status_distinguishes_success_from_failure() {
+        assert!(validate_deploy_status(0x0000_0005).is_ok());
 
-        let error = validate_deploy_result(0x0001_fe03).unwrap_err();
+        let error = validate_deploy_status(0x0001_fe03).unwrap_err();
         assert!(error.to_string().contains("OperationFailed"));
     }
 
     #[test]
-    fn monitor_requires_execute_waiting_result() {
-        assert!(validate_deploy_waiting_result(0x0000_0105).is_ok());
-        assert!(validate_deploy_waiting_result(0x0000_0104).is_err());
-        assert!(validate_deploy_waiting_result(0x0000_0005).is_err());
-        assert!(validate_deploy_waiting_result(0x0001_0105).is_err());
+    fn monitor_requires_execute_waiting_status() {
+        assert!(validate_deploy_waiting_status(0x0000_0105).is_ok());
+        assert!(validate_deploy_waiting_status(0x0000_0104).is_err());
+        assert!(validate_deploy_waiting_status(0x0000_0005).is_err());
+        assert!(validate_deploy_waiting_status(0x0001_0105).is_err());
     }
 
     #[test]

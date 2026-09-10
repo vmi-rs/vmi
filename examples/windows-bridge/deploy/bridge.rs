@@ -8,10 +8,10 @@ use vmi::{
 };
 
 use crate::bridge::{
-    BridgeStatusCode, TerminalResult, TerminalStatus, impl_bridge_contract, impl_bridge_stage,
+    BridgeStatusCode, Status, StatusKind, impl_bridge_contract, impl_bridge_stage,
 };
 
-/// Deploy operation stage encoded in a packed result.
+/// Deploy operation stage encoded in a packed status.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct DeployStage(u8);
 
@@ -53,7 +53,7 @@ impl std::fmt::Debug for DeployStage {
 }
 
 /// Decoded status returned by the injector handler.
-pub type DeployStatus = TerminalResult<DeployStage>;
+pub type DeployStatus = Status<DeployStage>;
 
 /// Host response when the shellcode reaches the execution gate.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +112,7 @@ impl DeployPolicy {
     }
 }
 
-/// Handles download and execute gates plus the terminal shellcode result.
+/// Handles download and execute gates plus the terminal shellcode status.
 #[derive(Debug)]
 pub struct DeployBridge {
     /// Policy applied to shellcode requests.
@@ -128,7 +128,7 @@ impl DeployBridge {
     /// Execution policy gate method.
     const METHOD_EXECUTE: u16 = 0x0002;
 
-    /// Terminal result method.
+    /// Terminal status method.
     const METHOD_EXIT: u16 = 0xffff;
 
     /// Allows the shellcode to continue its current stage.
@@ -177,9 +177,8 @@ impl DeployBridge {
         let response = match self.policy.execute_response {
             ExecuteResponse::Continue => BridgeResponse::new(Self::RESPONSE_CONTINUE),
             ExecuteResponse::Abort => BridgeResponse::new(Self::RESPONSE_ABORT),
-            ExecuteResponse::Wait => BridgeResponse::new(Self::RESPONSE_WAIT).with_result(
-                DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING).encode(),
-            ),
+            ExecuteResponse::Wait => BridgeResponse::new(Self::RESPONSE_WAIT)
+                .with_result(DeployStatus::new(DeployStage::EXECUTE, StatusKind::WAITING).encode()),
         };
 
         tracing::debug!(
@@ -190,15 +189,15 @@ impl DeployBridge {
         Some(response)
     }
 
-    /// Completes the injector from a terminal result packet.
+    /// Completes the injector from a terminal status packet.
     fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
-        let result = DeployStatus::decode(packet.value1());
+        let status = DeployStatus::decode(packet.value1());
         let native_code = packet.value2();
 
         tracing::debug!(
-            stage = ?result.stage(),
-            status = ?result.status(),
-            code = result.code(),
+            stage = ?status.stage(),
+            kind = ?status.kind(),
+            code = status.code(),
             native_code,
             "shellcode completed"
         );
@@ -346,10 +345,9 @@ mod tests {
 
     #[test]
     fn status_api_keeps_const_construction_and_accessors() {
-        const STATUS: DeployStatus =
-            DeployStatus::new(DeployStage::EXECUTE, TerminalStatus::WAITING);
+        const STATUS: DeployStatus = DeployStatus::new(DeployStage::EXECUTE, StatusKind::WAITING);
         const STAGE: DeployStage = STATUS.stage();
-        const TERMINAL_STATUS: TerminalStatus = STATUS.status();
+        const KIND: StatusKind = STATUS.kind();
         const CODE: u8 = STATUS.code();
 
         let packed = STATUS.encode();
@@ -358,7 +356,7 @@ mod tests {
         assert_eq!(packed, 0x0000_0105);
         assert_eq!(decoded, STATUS);
         assert_eq!(STAGE, DeployStage::EXECUTE);
-        assert_eq!(TERMINAL_STATUS, TerminalStatus::WAITING);
+        assert_eq!(KIND, StatusKind::WAITING);
         assert_eq!(CODE, 0);
     }
 
@@ -375,22 +373,22 @@ mod tests {
             .expect("valid exit packet");
 
         assert_eq!(response.into_result(), Some(packed));
-        let result = DeployStatus::decode(packed);
-        assert_eq!(result.stage(), DeployStage::DOWNLOAD);
-        assert_eq!(result.status(), TerminalStatus::OPERATION_FAILED);
-        assert_eq!(result.code(), 2);
+        let status = DeployStatus::decode(packed);
+        assert_eq!(status.stage(), DeployStage::DOWNLOAD);
+        assert_eq!(status.kind(), StatusKind::OPERATION_FAILED);
+        assert_eq!(status.code(), 2);
     }
     #[test]
     fn corrupt_terminal_values_are_preserved() {
         let bridge = DeployBridge::new(DeployPolicy::default());
         let packed = 0xab5d_7ce6;
 
-        let result = DeployStatus::decode(packed);
-        assert_eq!(result.stage(), DeployStage(0xe6));
-        assert_eq!(result.status(), TerminalStatus(0x7c));
-        assert_eq!(result.code(), 0x5d);
-        assert_eq!(format!("{:?}", result.stage()), "230");
-        assert_eq!(format!("{:?}", result.status()), "124");
+        let status = DeployStatus::decode(packed);
+        assert_eq!(status.stage(), DeployStage(0xe6));
+        assert_eq!(status.kind(), StatusKind(0x7c));
+        assert_eq!(status.code(), 0x5d);
+        assert_eq!(format!("{:?}", status.stage()), "230");
+        assert_eq!(format!("{:?}", status.kind()), "124");
 
         let response = bridge
             .handle_packet(packet(DeployBridge::METHOD_EXIT).with_value1(packed))

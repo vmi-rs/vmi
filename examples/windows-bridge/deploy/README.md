@@ -36,7 +36,7 @@ Disabled stages are skipped; the arrows show ordering, not mandatory work.
 | `DeployParameters` | Host | Encodes the exact sequential buffer consumed by the payload. |
 | `deploy_recipe` / `user_shellcode_recipe` | Host controlling guest | Allocates guest memory, copies payload plus parameters, and starts a guest thread. |
 | SCFW deploy payload | Guest user mode | Parses parameters, resolves imports, expands paths, and calls download/extract/execute APIs. |
-| `DeployBridge` | Host | Answers download and execute gates and decodes terminal results. |
+| `DeployBridge` | Host | Answers download and execute gates and decodes terminal statuses. |
 | `Monitor` | Host | For monitored execution, installs kernel hooks, allows the parked execute gate, tracks the child, and runs file transfer. |
 
 ## End-to-end workflow
@@ -150,7 +150,7 @@ Therefore `--max-download-retries 0` aborts after the first failure, while `2` p
 |---|---|---|
 | `CONTINUE` | Call `ShellExecuteExW`. | Keep waiting for terminal `EXIT`. |
 | `ABORT` | Return terminal `Aborted(Execute)`. | Complete when `EXIT` arrives. |
-| `WAIT` | Sleep 250 ms and repeat the same gate. | Return a synthetic `Waiting(Execute)` result immediately, allowing the host to replace the injector with `Monitor`. |
+| `WAIT` | Sleep 250 ms and repeat the same gate. | Return a synthetic `Waiting(Execute)` status immediately, allowing the host to replace the injector with `Monitor`. |
 
 ### 6. Return terminal status
 

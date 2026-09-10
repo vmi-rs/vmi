@@ -111,7 +111,7 @@ template <>
 struct vmi::is_error_code<error> : std::true_type {};
 
 using failure = vmi::failure<error>;
-using result = vmi::result<stage>;
+using status = vmi::status<stage>;
 
 struct bridge_traits : vmi::default_bridge_traits {
     static constexpr uint16_t request = 0x0003;
@@ -213,13 +213,13 @@ struct bridge : vmi::bridge<bridge_traits> {
     static
     void
     exit(
-        _In_ result result
+        _In_ status status
         )
     {
         (void)send(
             method_exit,
-            result.packed_status(),
-            result.native_code()
+            status.packed_status(),
+            status.native_code()
             );
     }
 };
@@ -227,7 +227,7 @@ struct bridge : vmi::bridge<bridge_traits> {
 auto
 TransferFile(
     _In_ HANDLE FileHandle
-    ) -> result
+    ) -> status
 {
     NTSTATUS Status;
 
@@ -245,7 +245,7 @@ TransferFile(
 
     if (Status != STATUS_BUFFER_OVERFLOW && !NT_SUCCESS(Status))
     {
-        return result::operation_failed(
+        return status::operation_failed(
             stage::file_name,
             failure{ error::zw_query_information_file, Status }
             );
@@ -270,7 +270,7 @@ TransferFile(
 
         if (!FileNameInformation)
         {
-            return result::operation_failed(
+            return status::operation_failed(
                 stage::file_name,
                 failure{
                     error::ex_allocate_pool_with_tag,
@@ -303,7 +303,7 @@ TransferFile(
     {
         ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
-        return result::operation_failed(
+        return status::operation_failed(
             stage::file_name,
             failure{ error::zw_query_information_file, Status }
             );
@@ -329,7 +329,7 @@ TransferFile(
     {
         ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
-        return result::operation_failed(
+        return status::operation_failed(
             stage::file_size,
             failure{ error::zw_query_information_file, Status }
             );
@@ -363,7 +363,7 @@ TransferFile(
     {
         ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
-        return result::operation_failed(
+        return status::operation_failed(
             stage::mapping,
             failure{ error::zw_create_section, Status }
             );
@@ -392,7 +392,7 @@ TransferFile(
     {
         ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
-        return result::operation_failed(
+        return status::operation_failed(
             stage::mapping,
             failure{ error::zw_map_view_of_section, Status }
             );
@@ -402,7 +402,7 @@ TransferFile(
     // Open the host transfer with the file metadata.
     //
 
-    result result = result::success(stage::none);
+    auto status = status::success(stage::none);
 
     PVOID TransferBuffer;
     ULONG ChunkSize;
@@ -410,7 +410,7 @@ TransferFile(
 
     if (!TransferHandle)
     {
-        result = result::operation_failed(
+        status = status::operation_failed(
             stage::transfer,
             failure{ error::bridge_begin }
             );
@@ -420,7 +420,7 @@ TransferFile(
 
     if (!ChunkSize)
     {
-        result = result::operation_failed(
+        status = status::operation_failed(
             stage::buffer,
             failure{
                 error::invalid_chunk_size,
@@ -442,7 +442,7 @@ TransferFile(
 
     if (!TransferBuffer)
     {
-        result = result::operation_failed(
+        status = status::operation_failed(
             stage::buffer,
             failure{
                 error::ex_allocate_pool_with_tag,
@@ -461,7 +461,7 @@ TransferFile(
     if (bridge::set_buffer(TransferHandle, TransferBuffer)
         != bridge::response_continue)
     {
-        result = result::aborted(stage::buffer);
+        status = status::aborted(stage::buffer);
         bridge::close(TransferHandle, transfer_status::error);
         goto CleanupTransferBuffer;
     }
@@ -483,7 +483,7 @@ TransferFile(
 
         if (!NT_SUCCESS(Status))
         {
-            result = result::operation_failed(
+            status = status::operation_failed(
                 stage::transfer,
                 failure{ error::mm_copy_memory, Status }
                 );
@@ -495,14 +495,14 @@ TransferFile(
         if (bridge::chunk(TransferHandle, Length)
             != bridge::response_continue)
         {
-            result = result::aborted(stage::transfer);
+            status = status::aborted(stage::transfer);
             bridge::close(TransferHandle, transfer_status::error);
             goto CleanupTransferBuffer;
         }
     }
 
     bridge::close(TransferHandle, transfer_status::success);
-    result = result::success(stage::transfer);
+    status = status::success(stage::transfer);
 
     //
     // Release acquired resources in reverse order.
@@ -518,11 +518,11 @@ CleanupFileName:
     ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
     //
-    // Return the terminal result.
+    // Return the terminal status.
     //
 
 Exit:
-    return result;
+    return status;
 }
 
 extern "C"

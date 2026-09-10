@@ -16,7 +16,7 @@ use vmi::{
     utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
 };
 
-use crate::bridge::{BridgeStatusCode, TerminalResult, impl_bridge_contract, impl_bridge_stage};
+use crate::bridge::{BridgeStatusCode, Status, impl_bridge_contract, impl_bridge_stage};
 
 /// Number of bytes shared with the guest for each transfer chunk.
 const CHUNK_SIZE: u64 = 64 * 1024;
@@ -27,7 +27,7 @@ const TRANSFER_HANDLE_BITS: u32 = 12;
 /// Upper bound on a guest transfer handle before the space is exhausted.
 const TRANSFER_HANDLE_MAX: u32 = (1 << TRANSFER_HANDLE_BITS) - 1;
 
-/// File-transfer operation stage encoded in a packed result.
+/// File-transfer operation stage encoded in a packed status.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct FileTransferStage(u8);
 
@@ -69,7 +69,7 @@ impl std::fmt::Debug for FileTransferStage {
 }
 
 /// Decoded terminal status returned by the file-transfer shellcode.
-pub type FileTransferStatus = TerminalResult<FileTransferStage>;
+pub type FileTransferStatus = Status<FileTransferStage>;
 
 /// Host output for one active transfer.
 struct HostFile {
@@ -177,7 +177,7 @@ impl FileTransferBridge {
     /// Closes a transfer handle and commits the host output.
     const METHOD_CLOSE: u16 = 0x0004;
 
-    /// Terminal result method.
+    /// Terminal status method.
     const METHOD_EXIT: u16 = 0xffff;
 
     /// Allows the shellcode to continue its current stage.
@@ -412,7 +412,7 @@ impl FileTransferBridge {
 
         tracing::debug!(
             stage = ?status.stage(),
-            status = ?status.status(),
+            kind = ?status.kind(),
             code = status.code(),
             native_code,
             "shellcode completed"

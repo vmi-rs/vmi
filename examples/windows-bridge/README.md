@@ -138,8 +138,8 @@ The SCFW client accepts a response only when both verification stamps match. A m
 
 | Request | Handler | Methods |
 |---:|---|---|
-| `0x0001` | `DeployBridge` | download gate, execute gate, terminal result |
-| `0x0003` | `FileTransferBridge` | begin, set buffer, chunk, close, terminal result |
+| `0x0001` | `DeployBridge` | download gate, execute gate, terminal status |
+| `0x0003` | `FileTransferBridge` | begin, set buffer, chunk, close, terminal status |
 
 Handlers may return a typed completion result in addition to register values. The injector uses that result to end its event loop. The deploy monitor deliberately keeps running: it writes bridge responses but completes only when the tracked process is cleaned up or monitoring is cancelled.
 
@@ -174,7 +174,7 @@ sequenceDiagram
     G->>I: execute gate
     I-->>G: WAIT + injector completion
     Note over G: Payload sleeps and repeats the gate
-    I-->>H: Waiting(Execute) result
+    I-->>H: Waiting(Execute) status
     H->>M: create monitor
     M->>W: install process/thread/file hooks
     G->>M: execute gate again
@@ -188,7 +188,7 @@ sequenceDiagram
     M-->>H: monitoring complete
 ```
 
-Without `--monitor`, the first `DeployBridge` answers the execute gate directly and waits for the payload's terminal result. With `--monitor`, it returns `WAIT`; a new `DeployBridge` inside `Monitor` answers the repeated gate with `CONTINUE`.
+Without `--monitor`, the first `DeployBridge` answers the execute gate directly and waits for the payload's terminal status. With `--monitor`, it returns `WAIT`; a new `DeployBridge` inside `Monitor` answers the repeated gate with `CONTINUE`.
 
 ## Call graph
 

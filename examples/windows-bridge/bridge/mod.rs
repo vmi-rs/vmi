@@ -20,7 +20,7 @@ pub const BRIDGE_VERIFY_VALUE4: u64 = 0x2134_5352_2d49_4d56;
 /// Packed status value carried by terminal bridge responses.
 pub type BridgeStatusCode = u64;
 
-/// Project stage encoded as one byte in a terminal result.
+/// Project stage encoded as one byte in a terminal status.
 pub trait BridgeStage: Copy {
     /// Creates a stage from its raw bridge representation.
     fn from_raw(value: u8) -> Self;
@@ -31,9 +31,9 @@ pub trait BridgeStage: Copy {
 
 /// Stable terminal status encoded by the shellcode or host bridge.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct TerminalStatus(pub u8);
+pub struct StatusKind(pub u8);
 
-impl TerminalStatus {
+impl StatusKind {
     /// The requested stages completed successfully.
     pub const SUCCESS: Self = Self(0x00);
 
@@ -50,7 +50,7 @@ impl TerminalStatus {
     pub const ABORTED: Self = Self(0xff);
 }
 
-impl std::fmt::Debug for TerminalStatus {
+impl std::fmt::Debug for StatusKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let name = match *self {
             Self::SUCCESS => "Success",
@@ -64,25 +64,25 @@ impl std::fmt::Debug for TerminalStatus {
     }
 }
 
-/// Terminal result decoded from the shared shellcode bridge format.
+/// Terminal status decoded from the shared shellcode bridge format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TerminalResult<Stage: BridgeStage> {
-    /// Project stage that produced the result.
+pub struct Status<Stage: BridgeStage> {
+    /// Project stage that produced the status.
     stage: Stage,
 
-    /// Stable result status.
-    status: TerminalStatus,
+    /// Stable status kind.
+    kind: StatusKind,
 
     /// Stage-specific compact error code.
     code: u8,
 }
 
-impl<Stage: BridgeStage> TerminalResult<Stage> {
-    /// Creates a result without a stage-specific error code.
-    pub const fn new(stage: Stage, status: TerminalStatus) -> Self {
+impl<Stage: BridgeStage> Status<Stage> {
+    /// Creates a status without a stage-specific error code.
+    pub const fn new(stage: Stage, kind: StatusKind) -> Self {
         Self {
             stage,
-            status,
+            kind,
             code: 0,
         }
     }
@@ -92,9 +92,9 @@ impl<Stage: BridgeStage> TerminalResult<Stage> {
         self.stage
     }
 
-    /// Returns the stable result status.
-    pub const fn status(self) -> TerminalStatus {
-        self.status
+    /// Returns the stable status kind.
+    pub const fn kind(self) -> StatusKind {
+        self.kind
     }
 
     /// Returns the stage-specific error code.
@@ -102,18 +102,18 @@ impl<Stage: BridgeStage> TerminalResult<Stage> {
         self.code
     }
 
-    /// Encodes the result as a bridge status code.
+    /// Encodes the status as a bridge status code.
     pub fn encode(self) -> BridgeStatusCode {
         let stage = self.stage.into_raw();
 
-        stage as u64 | (self.status.0 as u64) << 8 | (self.code as u64) << 16
+        stage as u64 | (self.kind.0 as u64) << 8 | (self.code as u64) << 16
     }
 
-    /// Decodes the packed result returned by the injector.
+    /// Decodes the packed status returned by the injector.
     pub fn decode(value: BridgeStatusCode) -> Self {
         Self {
             stage: Stage::from_raw(value as u8),
-            status: TerminalStatus((value >> 8) as u8),
+            kind: StatusKind((value >> 8) as u8),
             code: (value >> 16) as u8,
         }
     }
@@ -353,27 +353,26 @@ mod tests {
     }
 
     #[test]
-    fn terminal_result_encodes_protocol_bytes() {
-        const RESULT: TerminalResult<TestStage> =
-            TerminalResult::new(TestStage(0x05), TerminalStatus::WAITING);
-        const STAGE: TestStage = RESULT.stage();
-        const STATUS: TerminalStatus = RESULT.status();
-        const CODE: u8 = RESULT.code();
+    fn terminal_status_encodes_protocol_bytes() {
+        const STATUS: Status<TestStage> = Status::new(TestStage(0x05), StatusKind::WAITING);
+        const STAGE: TestStage = STATUS.stage();
+        const KIND: StatusKind = STATUS.kind();
+        const CODE: u8 = STATUS.code();
 
-        assert_eq!(RESULT.encode(), 0x0000_0105);
+        assert_eq!(STATUS.encode(), 0x0000_0105);
         assert_eq!(STAGE, TestStage(0x05));
-        assert_eq!(STATUS, TerminalStatus::WAITING);
+        assert_eq!(KIND, StatusKind::WAITING);
         assert_eq!(CODE, 0);
     }
 
     #[test]
-    fn terminal_result_decodes_unknown_wire_values() {
-        let result = TerminalResult::<TestStage>::decode(0xffff_ffff_ab5d_7ce6);
+    fn terminal_status_decodes_unknown_wire_values() {
+        let status = Status::<TestStage>::decode(0xffff_ffff_ab5d_7ce6);
 
-        assert_eq!(result.stage(), TestStage(0xe6));
-        assert_eq!(result.status(), TerminalStatus(0x7c));
-        assert_eq!(result.code(), 0x5d);
-        assert_eq!(result.encode(), 0x005d_7ce6);
+        assert_eq!(status.stage(), TestStage(0xe6));
+        assert_eq!(status.kind(), StatusKind(0x7c));
+        assert_eq!(status.code(), 0x5d);
+        assert_eq!(status.encode(), 0x005d_7ce6);
     }
 
     #[test]

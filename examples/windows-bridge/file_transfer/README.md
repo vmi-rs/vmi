@@ -192,7 +192,7 @@ entry(kernel_image_base, file_handle)
    │  └─ bridge.chunk
    ├─ bridge.close
    ├─ free buffer / unmap view / free filename
-   └─ bridge.exit(terminal result)
+   └─ bridge.exit(terminal status)
 ```
 
 ## Host call graph
