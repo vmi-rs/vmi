@@ -8,7 +8,10 @@ pub struct ShellcodeRetryState<Arch>
 where
     Arch: Architecture,
 {
+    /// Number of attempts started from this checkpoint.
     pub attempt: u64,
+
+    /// Registers captured before the first attempt.
     pub original_registers: Option<Arch::Registers>,
 }
 
@@ -16,6 +19,10 @@ impl<Arch> ShellcodeRetryState<Arch>
 where
     Arch: Architecture,
 {
+    /// Prepares the registers for an attempt and returns its one-based number.
+    ///
+    /// The first attempt captures the registers. Later attempts restore the
+    /// captured registers before proceeding.
     pub fn begin_attempt(&mut self, registers: &mut Arch::Registers) -> u64 {
         match self.original_registers {
             Some(original_registers) => *registers = original_registers,
