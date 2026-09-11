@@ -1,3 +1,11 @@
+//! Opinionated shellcode injection and guest-host communication primitives.
+//!
+//! Recipes are intended for short sequences of API calls. Longer recipes are
+//! increasingly error-prone, and failures become harder to recover from.
+//!
+//! More complex operations are better implemented in shellcode, leaving the
+//! recipe responsible only for loading and starting the payload.
+
 mod kernel_mode;
 mod user_mode;
 
