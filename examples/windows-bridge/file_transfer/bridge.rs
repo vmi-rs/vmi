@@ -13,10 +13,11 @@ use vmi::{
     driver::VmiRead,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
+    utils::{
+        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
+        shellcode::{BridgeStatusCode, Status, impl_bridge_contract, impl_bridge_stage},
+    },
 };
-
-use crate::bridge::{BridgeStatusCode, Status, impl_bridge_contract, impl_bridge_stage};
 
 /// Number of bytes shared with the guest for each transfer chunk.
 const CHUNK_SIZE: u64 = 64 * 1024;

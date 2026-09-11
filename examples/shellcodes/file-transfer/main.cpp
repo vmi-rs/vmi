@@ -533,7 +533,7 @@ entry(
     _In_ void* argument2
     )
 {
-    (void)argument1; // Consumed by the SCFW kernel-mode bootstrap.
+    (void)argument1; // Consumed by the scfw kernel-mode bootstrap.
 
     bridge::exit(TransferFile(reinterpret_cast<HANDLE>(argument2)));
 }

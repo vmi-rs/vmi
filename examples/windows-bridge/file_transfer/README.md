@@ -9,7 +9,7 @@ It is not a standalone upload/download command. It is a subsystem of `deploy --m
 1. kernel hooks notice a target-process file write;
 2. the file is only marked at that point;
 3. the target thread's later `NtClose` is paused;
-4. a kernel-mode SCFW payload reads the completed file;
+4. a kernel-mode `scfw` payload reads the completed file;
 5. `FileTransferBridge` pulls 64 KiB chunks from guest memory into a host file;
 6. the original `NtClose` resumes.
 
@@ -33,7 +33,7 @@ flowchart LR
 | **Deploy monitor (host)** | Tracks processes and threads; hooks `NtWriteFile` and `NtClose`; decides which guest file handles belong to the target process. |
 | **`FileTransfer` (host)** | Holds one marked handle/path/`_FILE_OBJECT`; owns the recipe executor after the transfer moves onto a closing thread. |
 | **File-transfer recipe (host)** | Saves registers, allocates executable nonpaged guest memory, writes the embedded payload, and calls it with the kernel base and file handle. |
-| **SCFW payload (guest kernel mode)** | Queries file metadata, maps the file, fills a shared chunk buffer, and drives the bridge methods. |
+| **`scfw` payload (guest kernel mode)** | Queries file metadata, maps the file, fills a shared chunk buffer, and drives the bridge methods. |
 | **`FileTransferBridge` (host)** | Creates output files, allocates protocol handles, reads guest buffers through VMI, validates byte counts, and commits complete outputs. |
 
 ## Lifecycle: process-owned, then thread-owned
@@ -92,7 +92,7 @@ file_transfer_recipe(handle)
    └─ shellcode_entry(kernel_image_base, process-local handle)
 ```
 
-The kernel image base lets SCFW resolve imported kernel routines. Allocation or VMI-write failure jumps back to the first step after restoring the original registers, so the attempt is retried from a clean call frame.
+The kernel image base lets `scfw` resolve imported kernel routines. Allocation or VMI-write failure jumps back to the first step after restoring the original registers, so the attempt is retried from a clean call frame.
 
 When the self-cleaning payload returns after releasing its pool allocation, `RecipeExecutor` restores the exact registers captured at the original `NtClose`. The hook then releases the thread-owned `FileTransfer`, and Windows executes the close normally.
 

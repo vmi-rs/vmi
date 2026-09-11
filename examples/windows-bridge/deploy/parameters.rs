@@ -1,4 +1,4 @@
-use crate::bridge::{ParameterWriter, ShellcodeParameters};
+use vmi::utils::shellcode::{ParameterWriter, ShellcodeParameters};
 
 bitflags::bitflags! {
     /// Operation and optional-field flags consumed by the deploy shellcode.

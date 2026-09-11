@@ -4,11 +4,12 @@ use vmi::{
     driver::VmiRead,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
-};
-
-use crate::bridge::{
-    BridgeStatusCode, Status, StatusKind, impl_bridge_contract, impl_bridge_stage,
+    utils::{
+        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
+        shellcode::{
+            BridgeStatusCode, Status, StatusKind, impl_bridge_contract, impl_bridge_stage,
+        },
+    },
 };
 
 /// Deploy operation stage encoded in a packed status.

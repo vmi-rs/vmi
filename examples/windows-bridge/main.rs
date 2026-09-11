@@ -1,6 +1,5 @@
 //! CLI that drives the msgbox and deploy shellcode recipes into a Windows guest over VMI.
 
-mod bridge;
 mod deploy;
 mod file_transfer;
 mod monitor;
@@ -23,11 +22,10 @@ use vmi::{
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
     os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
-    utils::injector::UserInjectorHandler,
+    utils::{injector::UserInjectorHandler, shellcode::StatusKind},
 };
 
 use crate::{
-    bridge::StatusKind,
     deploy::{
         DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
         deploy_recipe,

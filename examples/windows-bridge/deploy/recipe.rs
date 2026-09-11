@@ -1,12 +1,19 @@
-use vmi::{arch::amd64::Amd64, driver::VmiMemory, os::windows::WindowsOs, utils::injector::Recipe};
+use vmi::{
+    arch::amd64::Amd64,
+    driver::VmiMemory,
+    os::windows::WindowsOs,
+    utils::{
+        injector::Recipe,
+        shellcode::{UserShellcodeRecipeData, user_shellcode_recipe},
+    },
+};
 
 use super::parameters::DeployParameters;
-use crate::bridge::{UserShellcodeRecipeData, user_shellcode_recipe};
 
-/// Deploy shellcode embedded from the selected SCFW build artifact.
+/// Deploy shellcode embedded from the selected `scfw` build artifact.
 const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/shellcodes/build-x64/deploy/deploy.bin"
+    "/examples/shellcodes/bin/x64/deploy.bin"
 ));
 
 /// Builds the deploy shellcode injection recipe.

@@ -1,7 +1,8 @@
 mod kernel_mode;
 mod user_mode;
 
-use vmi::{Va, arch::amd64::Registers};
+use vmi_core::Va;
+use vmi_arch_amd64::Registers;
 
 pub use self::{
     kernel_mode::{KernelShellcodeRecipeData, kernel_shellcode_recipe},
@@ -139,7 +140,6 @@ impl<'a> ParameterWriter<'a> {
     }
 
     /// Writes a little-endian signed 8-bit integer.
-    #[expect(unused)]
     pub fn write_i8(&mut self, value: i8) {
         self.write_bytes(&value.to_le_bytes());
     }
@@ -150,7 +150,6 @@ impl<'a> ParameterWriter<'a> {
     }
 
     /// Writes a little-endian signed 16-bit integer.
-    #[expect(unused)]
     pub fn write_i16(&mut self, value: i16) {
         self.write_bytes(&value.to_le_bytes());
     }
@@ -171,13 +170,11 @@ impl<'a> ParameterWriter<'a> {
     }
 
     /// Writes a little-endian signed 64-bit integer.
-    #[expect(unused)]
     pub fn write_i64(&mut self, value: i64) {
         self.write_bytes(&value.to_le_bytes());
     }
 
     /// Writes a little-endian unsigned 64-bit integer.
-    #[expect(unused)]
     pub fn write_u64(&mut self, value: u64) {
         self.write_bytes(&value.to_le_bytes());
     }
@@ -307,20 +304,24 @@ impl ShellcodeRetryState {
 }
 
 /// Implements the shared shellcode bridge contract for a handler.
-macro_rules! impl_bridge_contract {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! _private_impl_bridge_contract {
     ($bridge:ty) => {
-        impl vmi::utils::bridge::BridgeContract for $bridge {
-            const MAGIC: Option<u32> = Some($crate::bridge::BRIDGE_MAGIC);
-            const VERIFY_VALUE3: Option<u64> = Some($crate::bridge::BRIDGE_VERIFY_VALUE3);
-            const VERIFY_VALUE4: Option<u64> = Some($crate::bridge::BRIDGE_VERIFY_VALUE4);
+        impl $crate::bridge::BridgeContract for $bridge {
+            const MAGIC: Option<u32> = Some($crate::shellcode::BRIDGE_MAGIC);
+            const VERIFY_VALUE3: Option<u64> = Some($crate::shellcode::BRIDGE_VERIFY_VALUE3);
+            const VERIFY_VALUE4: Option<u64> = Some($crate::shellcode::BRIDGE_VERIFY_VALUE4);
         }
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
 /// Implements `BridgeStage` for a one-field `u8` tuple newtype.
-macro_rules! impl_bridge_stage {
+macro_rules! _private_impl_bridge_stage {
     ($stage:ty) => {
-        impl $crate::bridge::BridgeStage for $stage {
+        impl $crate::shellcode::BridgeStage for $stage {
             fn from_raw(value: u8) -> Self {
                 Self(value)
             }
@@ -332,8 +333,8 @@ macro_rules! impl_bridge_stage {
     };
 }
 
-pub(crate) use impl_bridge_contract;
-pub(crate) use impl_bridge_stage;
+pub use _private_impl_bridge_contract as impl_bridge_contract;
+pub use _private_impl_bridge_stage as impl_bridge_stage;
 
 #[cfg(test)]
 mod tests {

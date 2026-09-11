@@ -1,4 +1,4 @@
-use crate::bridge::{ParameterWriter, ShellcodeParameters};
+use vmi::utils::shellcode::{ParameterWriter, ShellcodeParameters};
 
 /// Host representation of the msgbox shellcode's sequential parameter block.
 #[derive(Debug, Clone, PartialEq, Eq)]

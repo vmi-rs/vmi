@@ -4,10 +4,11 @@ use vmi::{
     driver::VmiRead,
     os::windows::WindowsOs,
     trace::Hex,
-    utils::bridge::{BridgeHandler, BridgePacket, BridgeResponse},
+    utils::{
+        bridge::{BridgeHandler, BridgePacket, BridgeResponse},
+        shellcode::{BridgeStatusCode, impl_bridge_contract},
+    },
 };
-
-use crate::bridge::{BridgeStatusCode, impl_bridge_contract};
 
 /// Handles the result returned by `MessageBoxA`.
 #[derive(Debug, Default)]

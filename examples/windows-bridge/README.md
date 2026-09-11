@@ -2,7 +2,7 @@
 
 ## The short version
 
-`windows-bridge` lets a Rust program on the **host** run a small SCFW payload inside a Windows **guest** without installing a guest agent.
+`windows-bridge` lets a Rust program on the **host** run a small `scfw` payload inside a Windows **guest** without installing a guest agent.
 
 The host temporarily hijacks a guest thread to allocate and start the payload. The payload performs Windows work, then uses `VMCALL` as a synchronous request/response boundary. Xen turns that instruction into a VM event; the Rust bridge decodes the guest registers, runs the matching host handler, writes a response into the registers, and resumes the guest.
 

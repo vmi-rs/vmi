@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.22)
 
 include(FetchContent)
 
-# CMakePresets.json points at SCFW's initially missing toolchain,
+# CMakePresets.json points at scfw's initially missing toolchain,
 # loaded only by project(). Populating here makes that path valid.
-# SOURCE_SUBDIR defers SCFW's own configuration.
+# SOURCE_SUBDIR defers scfw's own configuration.
 FetchContent_Declare(
     scfw
     GIT_REPOSITORY https://github.com/vmi-rs/scfw.git
@@ -14,7 +14,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(scfw)
 
-# Language detection now runs through SCFW's Windows cross-compilation toolchain.
+# Language detection now runs through scfw's Windows cross-compilation toolchain.
 project(windows_bridge_shellcode C CXX ASM)
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -36,7 +36,7 @@ set(SCFW_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 # Injected payloads must free their memory.
 set(SCFW_OPT_CLEANUP ON CACHE BOOL "" FORCE)
 
-# Include and configure SCFW now that its options are fixed.
+# Include and configure scfw now that its options are fixed.
 add_subdirectory("${scfw_SOURCE_DIR}" "${scfw_BINARY_DIR}")
 
 # Once vmi-utils publishes shellcode/, uncomment this block and remove the local
@@ -56,6 +56,8 @@ add_subdirectory(
 )
 
 # Finally, add the shellcode subdirectories.
+set(SHELLCODE_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/bin/${SCFW_TARGET}")
+
 add_subdirectory(deploy)
 add_subdirectory(file-transfer)
 add_subdirectory(msgbox)
