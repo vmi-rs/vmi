@@ -9,9 +9,8 @@
 mod os;
 mod payload;
 mod protocol;
+mod recipe;
 
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
-use self::payload::ShellcodePayload;
 #[cfg(test)]
 pub use self::payload::encode_parameters;
 pub use self::{
