@@ -2,10 +2,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::{
-        injector::Recipe,
-        shellcode::{UserShellcodeRecipeData, user_shellcode_recipe},
-    },
+    utils::shellcode::{UserShellcodeRecipe, user_shellcode_recipe},
 };
 
 use super::parameters::MsgboxParameters;
@@ -20,7 +17,7 @@ const MSGBOX_SHELLCODE: &[u8] = include_bytes!(concat!(
 #[tracing::instrument(name = "msgbox", skip_all)]
 pub fn msgbox_recipe<Driver>(
     parameters: &MsgboxParameters,
-) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
+) -> UserShellcodeRecipe<WindowsOs<Driver>>
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {

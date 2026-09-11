@@ -2,10 +2,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::{
-        injector::Recipe,
-        shellcode::{UserShellcodeRecipeData, user_shellcode_recipe},
-    },
+    utils::shellcode::{UserShellcodeRecipe, user_shellcode_recipe},
 };
 
 use super::parameters::DeployParameters;
@@ -20,7 +17,7 @@ const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
 #[tracing::instrument(name = "deploy", skip_all)]
 pub fn deploy_recipe<Driver>(
     parameters: &DeployParameters,
-) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
+) -> UserShellcodeRecipe<WindowsOs<Driver>>
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {

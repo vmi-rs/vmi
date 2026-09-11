@@ -21,9 +21,12 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     Pending,
-    // REVIEW: Executing(RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData>)
+    // REVIEW: Executing(RecipeExecutor<
+    //     WindowsOs<Driver>,
+    //     KernelShellcodeRecipeData<WindowsOs<Driver>>,
+    // >),
     Executing {
-        executor: RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData>,
+        executor: RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData<WindowsOs<Driver>>>,
     },
 }
 

@@ -1,8 +1,11 @@
-use vmi_core::{Registers as _, Va, driver::VmiMemory, trace::Hex};
 use vmi_arch_amd64::Amd64;
+use vmi_core::{Registers as _, Va, driver::VmiMemory, trace::Hex};
 use vmi_os_windows::WindowsOs;
 
-use super::{ShellcodeParameterSource, ShellcodePayload, ShellcodeRetryState};
+use super::{
+    super::super::{ShellcodeParameterSource, ShellcodePayload},
+    ShellcodeRetryState,
+};
 use crate::injector::{Recipe, RecipeControlFlow, recipe};
 
 /// Data retained while the user-mode shellcode recipe executes.
