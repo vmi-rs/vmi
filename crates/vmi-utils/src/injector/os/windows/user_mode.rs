@@ -23,11 +23,7 @@ const INVALID_VIEW: View = View(0xffff);
 // const INVALID_PID: ProcessId = ProcessId(0xffff_ffff);
 
 /// Lifecycle state of the user-mode injector.
-enum InjectorState<Driver, Bridge>
-where
-    Driver: VmiDriver<Architecture = Amd64> + VmiRead,
-    Bridge: BridgeDispatch<WindowsOs<Driver>>,
-{
+enum InjectorState {
     /// Waiting for target process MSR write; scanning trap frames for
     /// a viable user-mode instruction pointer to hijack.
     PreHijack,
@@ -47,7 +43,7 @@ where
     Bridge,
 
     /// Injection complete; result is available.
-    Complete(Option<Result<Bridge::Output, BridgePacket>>),
+    Complete,
 }
 
 pub struct UserInjectorHandler<Driver, T, Bridge>
@@ -77,7 +73,10 @@ where
     bridge: Bridge,
 
     /// Current lifecycle state of the injector.
-    state: InjectorState<Driver, Bridge>,
+    state: InjectorState,
+
+    /// Output produced by the bridge.
+    output: Option<Result<Bridge::Output, BridgePacket>>,
 }
 
 impl<Driver, T> InjectorHandlerFactory<WindowsOs<Driver>, UserMode, T>
@@ -109,6 +108,7 @@ where
             recipe: RecipeExecutor::new(recipe),
             bridge: (),
             state: InjectorState::PreHijack,
+            output: None,
         })
     }
 
@@ -128,6 +128,7 @@ where
             recipe: self.recipe,
             bridge,
             state: InjectorState::PreHijack,
+            output: None,
         }
     }
 }
@@ -399,6 +400,12 @@ where
                 "thread hijacked"
             );
 
+            if !Bridge::EMPTY {
+                vmi.monitor_enable(EventMonitor::Hypercall {
+                    allow_userspace: true,
+                })?;
+            }
+
             self.state = InjectorState::Executing;
             vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
         }
@@ -467,15 +474,11 @@ where
         vmi.switch_to_view(vmi.default_view())?;
         vmi.destroy_view(self.view)?;
 
-        // If the bridge was not enabled, we're done.
-        if Bridge::EMPTY {
-            self.state = InjectorState::Complete(None);
+        if self.output.is_some() || Bridge::EMPTY {
+            self.state = InjectorState::Complete;
         }
         else {
             self.state = InjectorState::Bridge;
-            vmi.monitor_enable(EventMonitor::Hypercall {
-                allow_userspace: true,
-            })?;
         }
 
         Ok(VmiEventResponse::default())
@@ -514,10 +517,12 @@ where
             };
 
             if let Some(complete) = complete {
-                self.state = InjectorState::Complete(Some(complete));
-                vmi.monitor_disable(EventMonitor::Hypercall {
-                    allow_userspace: true,
-                })?;
+                self.output = Some(complete);
+
+                // If the recipe has already been torn down, we're done.
+                if matches!(self.state, InjectorState::Bridge) {
+                    self.state = InjectorState::Complete;
+                }
             }
         }
 
@@ -560,7 +565,7 @@ where
         let mut destroy_view = false;
         // Disabled when transitioning from `PreHijack` to `Executing`.
         let mut disable_write_msr = false;
-        // Disabled when transitioning from `Bridge` to `Complete`.
+        // Disabled when transitioning from `Teardown` or `Bridge` to `Complete`.
         let mut disable_hypercall = false;
 
         match self.state {
@@ -572,14 +577,15 @@ where
             InjectorState::Executing => {
                 restore_memory_access = true;
                 destroy_view = true;
+                disable_hypercall = !Bridge::EMPTY;
             }
             InjectorState::Teardown(_) => {
                 destroy_view = true;
+                disable_hypercall = !Bridge::EMPTY;
             }
-            InjectorState::Bridge => {
-                disable_hypercall = true;
+            InjectorState::Bridge | InjectorState::Complete => {
+                disable_hypercall = !Bridge::EMPTY;
             }
-            _ => {}
         }
 
         if restore_memory_access && let Some(ip_pa) = self.ip_pa {
@@ -613,8 +619,8 @@ where
     }
 
     fn poll(&mut self) -> Option<Self::Output> {
-        match &mut self.state {
-            InjectorState::Complete(result) => Some(result.take()),
+        match self.state {
+            InjectorState::Complete => Some(self.output.take()),
             _ => None,
         }
     }
