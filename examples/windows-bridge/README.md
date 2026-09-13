@@ -97,7 +97,7 @@ The kernel profile is also required later by the monitor to place kernel breakpo
 For deploy, `InjectorHandler<UserMode>` watches the target process until it finds a viable user-mode return point. It removes execute permission in a private Xen view so that the returning thread traps. At that trap, the recipe owns the thread registers long enough to run this call chain:
 
 ```text
-user_shellcode_recipe
+user_shellcode_spawn_recipe
 ├─ VirtualAlloc(RWX, payload size)
 ├─ retry if allocation fails
 ├─ RtlFillMemory(payload bytes)    # materialize demand-zero pages
@@ -108,9 +108,9 @@ user_shellcode_recipe
 └─ CloseHandle(created thread handle)
 ```
 
-`user_shellcode_recipe` accepts either an encoded `ShellcodeParameters` block by reference or a `ShellcodeParameterValue`. An encoded block is appended to the payload and its guest address becomes `lpParameter`; a `ShellcodeParameterValue` appends no data and is passed through unchanged. The single parameter-source argument makes these modes mutually exclusive. After `CreateThread` succeeds, the self-cleaning shellcode owns and releases its allocation.
+`user_shellcode_spawn_recipe` accepts either an encoded `ShellcodeParameters` block by reference or a `ShellcodeParameterValue`. An encoded block is appended to the payload and its guest address becomes `lpParameter`; a `ShellcodeParameterValue` appends no data and is passed through unchanged. The single parameter-source argument makes these modes mutually exclusive. After `CreateThread` succeeds, the self-cleaning shellcode owns and releases its allocation.
 
-After the recipe restores the carrier thread's original registers, the injector tears down its private view and enables hypercall monitoring. The newly created guest thread runs independently.
+Before the recipe starts, an injector with a nonempty bridge enables user-mode hypercall monitoring. After the recipe restores the carrier thread's original registers, the injector tears down its private view. The newly created guest thread runs independently while bridge monitoring remains active.
 
 ### 4. Bridge exchange: route one register packet
 
@@ -201,7 +201,7 @@ main
    ├─ find_process_id
    ├─ VmiSession::handle(User InjectorHandler)
    │  ├─ deploy_recipe
-   │  │  └─ user_shellcode_recipe
+   │  │  └─ user_shellcode_spawn_recipe
    │  └─ DeployBridge::handle
    └─ if monitored: VmiSession::handle(Monitor)
       ├─ kernel hook dispatch

@@ -14,14 +14,38 @@ pub trait OsAdapter: VmiOs + Sized {
     /// Data retained by a user-mode shellcode recipe.
     type UserRecipeData;
 
-    /// Builds a kernel-mode shellcode recipe.
-    fn kernel_shellcode_recipe(
+    /// Builds a kernel-mode shellcode recipe that calls the payload on the
+    /// hijacked thread.
+    ///
+    /// The recipe completes when the payload returns.
+    fn kernel_shellcode_call_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ShellcodeParameterSource,
     ) -> Recipe<Self, Self::KernelRecipeData>;
 
-    /// Builds a user-mode shellcode recipe.
-    fn user_shellcode_recipe(
+    /// Builds a kernel-mode shellcode recipe that spawns a system thread for
+    /// the payload.
+    ///
+    /// The recipe completes when the thread has been created.
+    fn kernel_shellcode_spawn_recipe(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ShellcodeParameterSource,
+    ) -> Recipe<Self, Self::KernelRecipeData>;
+
+    /// Builds a user-mode shellcode recipe that calls the payload on the
+    /// hijacked thread.
+    ///
+    /// The recipe completes when the payload returns.
+    fn user_shellcode_call_recipe(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ShellcodeParameterSource,
+    ) -> Recipe<Self, Self::UserRecipeData>;
+
+    /// Builds a user-mode shellcode recipe that spawns a guest thread for
+    /// the payload.
+    ///
+    /// The recipe completes when the thread has been created.
+    fn user_shellcode_spawn_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ShellcodeParameterSource,
     ) -> Recipe<Self, Self::UserRecipeData>;

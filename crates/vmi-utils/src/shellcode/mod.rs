@@ -38,24 +38,58 @@ pub type KernelShellcodeRecipe<Os> = Recipe<Os, KernelShellcodeRecipeData<Os>>;
 /// A user-mode shellcode recipe for `Os`.
 pub type UserShellcodeRecipe<Os> = Recipe<Os, UserShellcodeRecipeData<Os>>;
 
-/// Builds a kernel-mode shellcode recipe for `Os`.
-pub fn kernel_shellcode_recipe<Os>(
+/// Builds a kernel-mode shellcode recipe that calls the payload on the
+/// hijacked thread.
+///
+/// The recipe completes when the payload returns.
+pub fn kernel_shellcode_call_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ShellcodeParameterSource,
 ) -> KernelShellcodeRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::kernel_shellcode_recipe(shellcode, parameter)
+    Os::kernel_shellcode_call_recipe(shellcode, parameter)
 }
 
-/// Builds a user-mode shellcode recipe for `Os`.
-pub fn user_shellcode_recipe<Os>(
+/// Builds a kernel-mode shellcode recipe that spawns a system thread for
+/// the payload.
+///
+/// The recipe completes when the thread has been created.
+pub fn kernel_shellcode_spawn_recipe<Os>(
+    shellcode: impl AsRef<[u8]>,
+    parameter: impl ShellcodeParameterSource,
+) -> KernelShellcodeRecipe<Os>
+where
+    Os: OsAdapter,
+{
+    Os::kernel_shellcode_spawn_recipe(shellcode, parameter)
+}
+
+/// Builds a user-mode shellcode recipe that calls the payload on the
+/// hijacked thread.
+///
+/// The recipe completes when the payload returns.
+pub fn user_shellcode_call_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ShellcodeParameterSource,
 ) -> UserShellcodeRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::user_shellcode_recipe(shellcode, parameter)
+    Os::user_shellcode_call_recipe(shellcode, parameter)
+}
+
+/// Builds a user-mode shellcode recipe that spawns a guest thread for
+/// the payload.
+///
+/// The recipe completes when the thread has been created.
+pub fn user_shellcode_spawn_recipe<Os>(
+    shellcode: impl AsRef<[u8]>,
+    parameter: impl ShellcodeParameterSource,
+) -> UserShellcodeRecipe<Os>
+where
+    Os: OsAdapter,
+{
+    Os::user_shellcode_spawn_recipe(shellcode, parameter)
 }

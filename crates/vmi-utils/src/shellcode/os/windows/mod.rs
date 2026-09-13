@@ -15,17 +15,31 @@ where
     type KernelRecipeData = kernel_mode::KernelShellcodeRecipeData;
     type UserRecipeData = user_mode::UserShellcodeRecipeData;
 
-    fn kernel_shellcode_recipe(
+    fn kernel_shellcode_call_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ShellcodeParameterSource,
     ) -> Recipe<Self, Self::KernelRecipeData> {
-        kernel_mode::kernel_shellcode_recipe(shellcode, parameter)
+        kernel_mode::kernel_shellcode_call_recipe(shellcode, parameter)
     }
 
-    fn user_shellcode_recipe(
+    fn kernel_shellcode_spawn_recipe(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ShellcodeParameterSource,
+    ) -> Recipe<Self, Self::KernelRecipeData> {
+        kernel_mode::kernel_shellcode_spawn_recipe(shellcode, parameter)
+    }
+
+    fn user_shellcode_call_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ShellcodeParameterSource,
     ) -> Recipe<Self, Self::UserRecipeData> {
-        user_mode::user_shellcode_recipe(shellcode, parameter)
+        user_mode::user_shellcode_call_recipe(shellcode, parameter)
+    }
+
+    fn user_shellcode_spawn_recipe(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ShellcodeParameterSource,
+    ) -> Recipe<Self, Self::UserRecipeData> {
+        user_mode::user_shellcode_spawn_recipe(shellcode, parameter)
     }
 }

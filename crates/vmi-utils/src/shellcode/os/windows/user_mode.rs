@@ -27,54 +27,7 @@ impl UserShellcodeRecipeData {
     }
 }
 
-/// Builds an asynchronous user-mode shellcode recipe.
-///
-/// Once `CreateThread` succeeds, the shellcode owns the allocation and must
-/// release it with `VirtualFree` before completing.
-///
-/// Recoverable failures before thread creation restore the hijacked registers
-/// and retry from the allocation step.
-///
-/// # Equivalent C pseudo-code
-///
-/// `VmiWrite` represents the host-side write into guest memory.
-///
-/// ```c
-/// for (;;) {
-///     PVOID Shellcode = VirtualAlloc(NULL,
-///                                    PayloadSize,
-///                                    MEM_COMMIT | MEM_RESERVE,
-///                                    PAGE_EXECUTE_READWRITE);
-///
-///     if (!Shellcode) {
-///         continue;
-///     }
-///
-///     RtlFillMemory(Shellcode, PayloadSize, 0);
-///
-///     if (!VmiWrite(Shellcode, PayloadBytes, PayloadSize)) {
-///         VirtualFree(Shellcode, 0, MEM_RELEASE);
-///         continue;
-///     }
-///
-///     HANDLE hThread = CreateThread(NULL,
-///                                   0,
-///                                   Shellcode,
-///                                   Parameter,
-///                                   0,
-///                                   NULL);
-///
-///     if (!hThread) {
-///         VirtualFree(Shellcode, 0, MEM_RELEASE);
-///         continue;
-///     }
-///
-///     CloseHandle(hThread);
-///     break;
-/// }
-/// ```
-#[tracing::instrument(name = "user_shellcode", skip_all)]
-pub fn user_shellcode_recipe<Driver>(
+fn prepare_user_shellcode_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ShellcodeParameterSource,
 ) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
@@ -148,7 +101,6 @@ where
         // Step 3:
         // - Write the payload into the memory.
         //   - If the write fails, free the allocation and retry.
-        // - Resolve the parameter and create the shellcode thread.
         //
         {
             const MEM_RELEASE: u64 = 0x8000;
@@ -158,6 +110,13 @@ where
             let guest_address = data![guest_address];
             let attempt = data![retry].attempt;
             let payload = &data![payload];
+
+            tracing::debug!(
+                attempt,
+                %guest_address,
+                size = payload.bytes.len(),
+                "writing shellcode"
+            );
 
             if let Err(err) = vmi.write(guest_address, &payload.bytes) {
                 tracing::warn!(
@@ -178,7 +137,145 @@ where
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
-            let parameter = payload.parameter_value(guest_address);
+            Ok(RecipeControlFlow::Continue)
+        },
+    ]
+}
+
+/// Builds a user-mode shellcode recipe that calls the payload on the hijacked thread.
+///
+/// Once the shellcode call begins, the shellcode owns the allocation and must
+/// release it with `VirtualFree` before returning.
+///
+/// Recoverable failures before the shellcode call restore the hijacked
+/// registers and retry from the allocation step.
+///
+/// # Equivalent C pseudo-code
+///
+/// `VmiWrite` represents the host-side write into guest memory.
+///
+/// ```c
+/// for (;;) {
+///     PVOID Shellcode = VirtualAlloc(NULL,
+///                                    PayloadSize,
+///                                    MEM_COMMIT | MEM_RESERVE,
+///                                    PAGE_EXECUTE_READWRITE);
+///
+///     if (!Shellcode) {
+///         continue;
+///     }
+///
+///     RtlFillMemory(Shellcode, PayloadSize, 0);
+///
+///     if (!VmiWrite(Shellcode, PayloadBytes, PayloadSize)) {
+///         VirtualFree(Shellcode, 0, MEM_RELEASE);
+///         continue;
+///     }
+///
+///     ((void (*)(PVOID, PVOID))Shellcode)(Parameter, NULL);
+///     break;
+/// }
+/// ```
+#[tracing::instrument(name = "user_shellcode_call", skip_all)]
+pub fn user_shellcode_call_recipe<Driver>(
+    shellcode: impl AsRef<[u8]>,
+    parameter: impl ShellcodeParameterSource,
+) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
+where
+    Driver: VmiMemory<Architecture = Amd64>,
+{
+    recipe![
+        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter),
+        //
+        // Step 4:
+        // - Resolve the parameter and call the shellcode.
+        //
+        {
+            let guest_address = data![guest_address];
+            let attempt = data![retry].attempt;
+            let parameter = data![payload].parameter_value(guest_address);
+
+            tracing::debug!(
+                attempt,
+                %guest_address,
+                parameter = %Hex(parameter),
+                "invoking shellcode"
+            );
+
+            inject! {
+                guest_address(
+                    parameter,                     // argument1
+                    0                              // argument2
+                )
+            }
+        },
+    ]
+}
+
+/// Builds a user-mode shellcode recipe that spawns a new payload thread.
+///
+/// Once `CreateThread` succeeds, the shellcode owns the allocation and must
+/// release it with `VirtualFree` before completing.
+///
+/// Recoverable failures before thread creation restore the hijacked registers
+/// and retry from the allocation step.
+///
+/// # Equivalent C pseudo-code
+///
+/// `VmiWrite` represents the host-side write into guest memory.
+///
+/// ```c
+/// for (;;) {
+///     PVOID Shellcode = VirtualAlloc(NULL,
+///                                    PayloadSize,
+///                                    MEM_COMMIT | MEM_RESERVE,
+///                                    PAGE_EXECUTE_READWRITE);
+///
+///     if (!Shellcode) {
+///         continue;
+///     }
+///
+///     RtlFillMemory(Shellcode, PayloadSize, 0);
+///
+///     if (!VmiWrite(Shellcode, PayloadBytes, PayloadSize)) {
+///         VirtualFree(Shellcode, 0, MEM_RELEASE);
+///         continue;
+///     }
+///
+///     HANDLE hThread = CreateThread(NULL,
+///                                   0,
+///                                   Shellcode,
+///                                   Parameter,
+///                                   0,
+///                                   NULL);
+///
+///     if (!hThread) {
+///         VirtualFree(Shellcode, 0, MEM_RELEASE);
+///         continue;
+///     }
+///
+///     CloseHandle(hThread);
+///     break;
+/// }
+/// ```
+#[tracing::instrument(name = "user_shellcode_spawn", skip_all)]
+pub fn user_shellcode_spawn_recipe<Driver>(
+    shellcode: impl AsRef<[u8]>,
+    parameter: impl ShellcodeParameterSource,
+) -> Recipe<WindowsOs<Driver>, UserShellcodeRecipeData>
+where
+    Driver: VmiMemory<Architecture = Amd64>,
+{
+    recipe![
+        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter),
+        //
+        // Step 4:
+        // - Resolve the parameter and create the shellcode thread.
+        //
+        {
+            let guest_address = data![guest_address];
+            let attempt = data![retry].attempt;
+            let parameter = data![payload].parameter_value(guest_address);
 
             tracing::debug!(
                 attempt,
@@ -199,7 +296,7 @@ where
             }
         },
         //
-        // Step 4:
+        // Step 5:
         // - Verify thread creation.
         //   - If creation fails, free the allocation and retry.
         // - Close the thread handle.
