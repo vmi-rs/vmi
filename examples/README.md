@@ -36,6 +36,10 @@ capabilities, from basic operations to more complex scenarios.
   A more complex example showing how to write to a file in chunks and
   handle potential errors during injection.
 
+- **[`windows-shellcode`]**
+
+  Demonstrates how to inject shellcode into the guest VM.
+
 
 [`BreakpointManager`]: https://docs.rs/vmi/latest/vmi/utils/bpm/struct.BreakpointManager.html
 [`PageTableMonitor`]: https://docs.rs/vmi/latest/vmi/utils/ptm/struct.PageTableMonitor.html
@@ -47,3 +51,4 @@ capabilities, from basic operations to more complex scenarios.
 [`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs
 [`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
+[`windows-shellcode`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode

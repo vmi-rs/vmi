@@ -13,8 +13,11 @@ use tracing_subscriber::EnvFilter;
 use vmi::{
     VcpuId, VmiCore, VmiSession,
     arch::amd64::Amd64,
-    driver::xen::VmiXenDriver,
-    os::windows::{WindowsKernelInformation, WindowsOs},
+    driver::{VmiFullDriver, xen::VmiXenDriver},
+    os::{
+        ProcessId, VmiOsProcess as _,
+        windows::{WindowsKernelInformation, WindowsOs},
+    },
 };
 
 /// A VMI setup that attaches the driver on creation and detaches it on drop.
@@ -120,4 +123,30 @@ impl VmiSetup {
     pub fn terminate_flag(&self) -> Arc<AtomicBool> {
         self.terminate_flag.clone()
     }
+}
+
+/// Finds a process by its name.
+pub fn find_process_id<Driver>(
+    session: &VmiSession<'_, WindowsOs<Driver>>,
+    process_name: &str,
+) -> Result<ProcessId, Error>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    let paused = session.pause_guard()?;
+    let vmi = paused.state();
+    let process = vmi
+        .os()
+        .find_process(process_name)?
+        .with_context(|| format!("process `{process_name}` not found"))?;
+
+    let process_id = process.id()?;
+
+    tracing::info!(
+        process = process_name,
+        pid = %process_id,
+        "found target process"
+    );
+
+    Ok(process_id)
 }
