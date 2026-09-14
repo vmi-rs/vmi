@@ -228,7 +228,7 @@ where
 {
     type Output = BridgeStatusCode;
 
-    const REQUEST: u16 = 0x0001;
+    const REQUEST: u16 = 0x0011;
 
     #[tracing::instrument(name = "deploy", skip_all)]
     fn handle(
@@ -254,7 +254,7 @@ mod tests {
 
     /// Creates a packet routed to the deploy handler.
     fn packet(method: u16) -> BridgePacket {
-        BridgePacket::new(BRIDGE_MAGIC, 0x0001, method)
+        BridgePacket::new(BRIDGE_MAGIC, 0x0011, method)
     }
 
     #[test]

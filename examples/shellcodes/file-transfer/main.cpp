@@ -114,7 +114,7 @@ using failure = vmi::failure<error>;
 using status = vmi::status<stage>;
 
 struct bridge_traits : vmi::default_bridge_traits {
-    static constexpr uint16_t request = 0x0003;
+    static constexpr uint16_t request = 0x0012;
 };
 
 enum class transfer_status : uint8_t {

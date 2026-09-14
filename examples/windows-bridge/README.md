@@ -138,8 +138,10 @@ The SCFW client accepts a response only when both verification stamps match. A m
 
 | Request | Handler | Methods |
 |---:|---|---|
-| `0x0001` | `DeployBridge` | download gate, execute gate, terminal status |
-| `0x0003` | `FileTransferBridge` | begin, set buffer, chunk, close, terminal status |
+| `0x0001` | `MsgboxBridge` | terminal message box result |
+| `0x0002` | `KernelFileBridge` | terminal kernel-file status |
+| `0x0011` | `DeployBridge` | download gate, execute gate, terminal status |
+| `0x0012` | `FileTransferBridge` | begin, set buffer, chunk, close, terminal status |
 
 Handlers may return a typed completion result in addition to register values. The injector uses that result to end its event loop. The deploy monitor deliberately keeps running: it writes bridge responses but completes only when the tracked process is cleaned up or monitoring is cancelled.
 

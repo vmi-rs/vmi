@@ -60,7 +60,7 @@ where
     type Output = BridgeStatusCode;
 
     /// Msgbox bridge request identifier.
-    const REQUEST: u16 = 0x0002;
+    const REQUEST: u16 = 0x0001;
 
     #[tracing::instrument(name = "msgbox", skip_all)]
     fn handle(
@@ -86,7 +86,7 @@ mod tests {
 
     /// Creates one msgbox bridge packet.
     fn packet(method: u16) -> BridgePacket {
-        BridgePacket::new(BRIDGE_MAGIC, 0x0002, method)
+        BridgePacket::new(BRIDGE_MAGIC, 0x0001, method)
     }
 
     #[test]

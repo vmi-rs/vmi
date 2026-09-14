@@ -28,7 +28,7 @@ IMPORT_END();
 namespace sc {
 
 struct bridge_traits : vmi::default_bridge_traits {
-    static constexpr uint16_t request = 0x0002;
+    static constexpr uint16_t request = 0x0001;
 };
 
 struct bridge : vmi::bridge<bridge_traits> {

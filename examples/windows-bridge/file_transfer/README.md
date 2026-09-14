@@ -98,7 +98,7 @@ When the self-cleaning payload returns after releasing its pool allocation, `Rec
 
 ## Guest-to-host protocol
 
-The payload uses bridge request `0x0003`. Every request carries `"VMIB"`; every accepted response contains the two verification stamps.
+The payload uses bridge request `0x0012`. Every request carries `"VMIB"`; every accepted response contains the two verification stamps.
 
 ```mermaid
 sequenceDiagram
@@ -111,7 +111,7 @@ sequenceDiagram
     T->>S: entry(kernel base, guest file handle)
     S->>S: query name and size, then map file read-only
     S->>X: BEGIN(handle, size, name VA, name bytes)
-    X->>B: request 0x0003 / method 0x0001
+    X->>B: request 0x0012 / method 0x0001
     B->>F: create and truncate output
     B-->>S: transfer handle + 64 KiB chunk size
     S->>S: allocate nonpaged chunk buffer

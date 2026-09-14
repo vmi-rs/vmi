@@ -451,7 +451,7 @@ where
 {
     type Output = BridgeStatusCode;
 
-    const REQUEST: u16 = 0x0003;
+    const REQUEST: u16 = 0x0012;
 
     #[tracing::instrument(name = "file_transfer", skip_all)]
     fn handle(

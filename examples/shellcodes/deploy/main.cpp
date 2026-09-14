@@ -195,7 +195,7 @@ using vmi::failure;
 using status = vmi::status<stage>;
 
 struct bridge_traits : vmi::default_bridge_traits {
-    static constexpr uint16_t request = 0x0001;
+    static constexpr uint16_t request = 0x0011;
 };
 
 struct bridge : vmi::bridge<bridge_traits> {

@@ -60,4 +60,5 @@ set(SHELLCODE_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/bin/${SCFW_TARGET}")
 
 add_subdirectory(deploy)
 add_subdirectory(file-transfer)
+add_subdirectory(kernel-file)
 add_subdirectory(msgbox)

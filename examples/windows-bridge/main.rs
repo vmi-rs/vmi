@@ -1,7 +1,9 @@
-//! CLI that drives the msgbox and deploy shellcode recipes into a Windows guest over VMI.
+//! CLI that drives the msgbox, kernel-file and deploy shellcode recipes into
+//! a Windows guest over VMI.
 
 mod deploy;
 mod file_transfer;
+mod kernel_file;
 mod monitor;
 mod msgbox;
 
@@ -11,6 +13,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context as _, Error};
@@ -22,13 +25,20 @@ use vmi::{
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
     os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
-    utils::{injector::UserInjectorHandler, shellcode::StatusKind},
+    utils::{
+        injector::{KernelInjectorHandler, UserInjectorHandler},
+        shellcode::StatusKind,
+    },
 };
 
 use crate::{
     deploy::{
         DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
         deploy_recipe,
+    },
+    kernel_file::{
+        KernelFileBridge, KernelFileParameters, KernelFileStatus, kernel_file_call_recipe,
+        kernel_file_spawn_recipe,
     },
     monitor::{Monitor, MonitorOutput},
     msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
@@ -51,6 +61,12 @@ enum Command {
 
     /// Downloads, extracts, or executes content in a Windows process.
     Deploy(DeployArguments),
+
+    /// Creates a guest file from kernel mode on the hijacked thread.
+    KernelFileCall(KernelFileArguments),
+
+    /// Creates a guest file from a spawned kernel-mode system thread.
+    KernelFileSpawn(KernelFileArguments),
 }
 
 /// Command-line arguments for the msgbox subcommand.
@@ -87,6 +103,45 @@ impl MsgboxArguments {
             parameters: MsgboxParameters::new(self.title, self.text),
         }
     }
+}
+
+/// Command-line arguments shared by both kernel-file subcommands.
+#[derive(Debug, Args)]
+struct KernelFileArguments {
+    /// Guest path of the created file.
+    ///
+    /// Defaults to a timestamped file on the `John` user's desktop. A path
+    /// starting with a backslash is passed through as an NT path.
+    #[arg(long)]
+    path: Option<String>,
+}
+
+/// Resolved kernel-file request ready for injection.
+#[derive(Debug)]
+struct KernelFileRequest {
+    /// Parameters consumed by the kernel-file shellcode.
+    parameters: KernelFileParameters,
+}
+
+impl KernelFileArguments {
+    /// Converts CLI arguments into a kernel-file request.
+    fn into_request(self) -> KernelFileRequest {
+        KernelFileRequest {
+            parameters: KernelFileParameters::new(
+                self.path.unwrap_or_else(default_kernel_file_path),
+            ),
+        }
+    }
+}
+
+/// Kernel-mode shellcode recipe exercised by a kernel-file run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KernelFileExecution {
+    /// Calls the payload on the hijacked thread.
+    Call,
+
+    /// Spawns a system thread for the payload.
+    Spawn,
 }
 
 /// Command-line arguments for the deploy subcommand.
@@ -255,10 +310,30 @@ fn windows_executable_basename(path: &str) -> Option<&str> {
         .filter(|name| !name.is_empty())
 }
 
+/// Returns the default kernel-file path, made unique by the current time.
+fn default_kernel_file_path() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+
+    format!(r"C:\Users\John\Desktop\test-{timestamp}.txt")
+}
+
 /// Validates the result returned by `MessageBoxA`.
 fn validate_msgbox_result(result: u64) -> Result<u64, Error> {
     anyhow::ensure!(result != 0, "MessageBoxA failed");
     Ok(result)
+}
+
+/// Decodes and validates a terminal kernel-file status.
+fn validate_kernel_file_status(packed_status: u64) -> Result<KernelFileStatus, Error> {
+    let status = KernelFileStatus::decode(packed_status);
+    anyhow::ensure!(
+        status.kind() == StatusKind::SUCCESS,
+        "kernel-file shellcode failed: {status:?}"
+    );
+    Ok(status)
 }
 
 /// Decodes and validates a terminal deploy status.
@@ -342,6 +417,40 @@ fn run_msgbox(
     let result = validate_msgbox_result(result)?;
 
     tracing::info!(result, "message box closed");
+    Ok(())
+}
+
+/// Runs a kernel-file injection.
+fn run_kernel_file(
+    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
+    arguments: KernelFileArguments,
+    execution: KernelFileExecution,
+) -> Result<(), Error> {
+    let KernelFileRequest { parameters } = arguments.into_request();
+
+    tracing::info!(
+        path = parameters.nt_path(),
+        ?execution,
+        "injecting kernel-file shellcode"
+    );
+
+    let packed_status = session
+        .handle(|session| {
+            let recipe = match execution {
+                KernelFileExecution::Call => kernel_file_call_recipe(&parameters),
+                KernelFileExecution::Spawn => kernel_file_spawn_recipe(&parameters),
+            };
+
+            KernelInjectorHandler::new(session, recipe)
+                .map(|handler| handler.with_bridge(KernelFileBridge))
+        })?
+        .context("kernel-file injection interrupted")?
+        .context("kernel-file bridge completed without a result")?
+        .map_err(|packet| anyhow::anyhow!("unhandled kernel-file bridge packet: {packet:?}"))?;
+
+    let status = validate_kernel_file_status(packed_status)?;
+
+    tracing::info!(?status, path = parameters.nt_path(), "file written");
     Ok(())
 }
 
@@ -458,6 +567,12 @@ fn main() -> Result<(), Error> {
     match cli.command {
         Command::Msgbox(arguments) => run_msgbox(&session, arguments),
         Command::Deploy(arguments) => run_deploy(&session, &profile, terminate_flag, arguments),
+        Command::KernelFileCall(arguments) => {
+            run_kernel_file(&session, arguments, KernelFileExecution::Call)
+        }
+        Command::KernelFileSpawn(arguments) => {
+            run_kernel_file(&session, arguments, KernelFileExecution::Spawn)
+        }
     }
 }
 
