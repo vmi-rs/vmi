@@ -222,7 +222,7 @@ macro_rules! _private_recipe {
             $crate::_private_recipe! { @expand
                 ($d:tt) => {
                     /// Access the `vmi` field of the `RecipeContext`.
-                    #[expect(unused_macros)]
+                    #[allow(unused_macros)]
                     macro_rules! vmi {
                         () => {
                             ctx.vmi
@@ -230,7 +230,7 @@ macro_rules! _private_recipe {
                     }
 
                     /// Access the `registers` field of the `RecipeContext`.
-                    #[expect(unused_macros)]
+                    #[allow(unused_macros)]
                     macro_rules! registers {
                         () => {
                             ctx.registers
@@ -238,7 +238,7 @@ macro_rules! _private_recipe {
                     }
 
                     /// Access the `data` field of the `RecipeContext`.
-                    #[expect(unused_macros)]
+                    #[allow(unused_macros)]
                     macro_rules! data {
                         ($d($d name:tt)*) => {
                             ctx.data.$d($d name)*
@@ -272,7 +272,7 @@ macro_rules! _private_recipe {
                     ///     )
                     /// }
                     /// ```
-                    #[expect(unused_macros)]
+                    #[allow(unused_macros)]
                     macro_rules! inject {
                         ($image:ident!$function:ident($d($d arg:expr),*)) => {
                             $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
@@ -306,7 +306,7 @@ macro_rules! _private_recipe {
                     ///     )
                     /// }
                     /// ```
-                    #[expect(unused_macros)]
+                    #[allow(unused_macros)]
                     macro_rules! copy_to_stack {
                         ($d($d name:tt)*) => {{
                             use $crate::injector::{
@@ -434,10 +434,7 @@ macro_rules! _private_recipe {
 
     (@inject $ctx:expr, $function:ident($($arg:expr),*)) => {
         'm: {
-            use $crate::injector::{
-                CallBuilder, OsAdapter as _, RecipeControlFlow,
-                macros::__private::{self, vmi_core::VmiError}
-            };
+            use $crate::injector::{CallBuilder, OsAdapter as _, RecipeControlFlow};
 
             let call = CallBuilder::new($function)
                 $(.with_argument(&$arg))*;
