@@ -93,3 +93,45 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser as _;
+
+    use super::*;
+    use crate::{Cli, Command, kernel_file::bridge::KernelFileStage};
+
+    #[test]
+    fn kernel_commands_default_to_a_timestamped_desktop_path() {
+        let cli = Cli::try_parse_from(["windows-shellcode", "kernel-spawn"]).unwrap();
+        let Command::KernelSpawn(arguments) = cli.command
+        else {
+            panic!("expected kernel-spawn command");
+        };
+
+        let parameters = arguments.into_parameters();
+        let nt_path = parameters.nt_path();
+
+        assert!(
+            nt_path.starts_with(r"\??\C:\Users\John\Desktop\test-"),
+            "unexpected default path: {nt_path}"
+        );
+        assert!(
+            nt_path.ends_with(".txt"),
+            "unexpected default path: {nt_path}"
+        );
+    }
+
+    #[test]
+    fn kernel_status_distinguishes_success_from_failure() {
+        // Stage `Write`, status kind `Success`, no error code.
+        assert_eq!(
+            validate_status(0x0000_0002).unwrap().stage(),
+            KernelFileStage::WRITE
+        );
+
+        // Stage `Create`, status kind `OperationFailed`, error `zw_create_file`.
+        let error = validate_status(0x0002_fe01).unwrap_err();
+        assert!(error.to_string().contains("OperationFailed"));
+    }
+}
