@@ -24,5 +24,8 @@ pub mod resolver;
 #[cfg(feature = "shellcode")]
 pub mod shellcode;
 
+#[cfg(feature = "tracker")]
+pub mod tracker;
+
 mod hexdump;
 pub use self::hexdump::{Representation, hexdump};

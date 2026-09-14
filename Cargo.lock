@@ -2386,6 +2386,7 @@ dependencies = [
 name = "vmi-utils"
 version = "0.10.0"
 dependencies = [
+ "foldhash",
  "isr-cache",
  "isr-core",
  "isr-dl-windows",

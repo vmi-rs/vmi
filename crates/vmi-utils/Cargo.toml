@@ -18,6 +18,7 @@ keywords = [
 workspace = true
 
 [dependencies]
+foldhash = { workspace = true, optional = true }
 memmap2 = { workspace = true }
 tracing = { workspace = true }
 zerocopy = { workspace = true }
@@ -50,3 +51,4 @@ ptm = []
 reactor = ["arch-amd64", "bpm", "os-windows", "resolver"]
 resolver = []
 shellcode = ["injector"]
+tracker = ["dep:foldhash"]
