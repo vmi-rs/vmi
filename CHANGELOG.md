@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vmi_utils::shellcode` (feature `shellcode`) - loads a `scfw` payload into
+  the guest and either calls it on the hijacked thread or spawns a thread for
+  it, in kernel mode or user mode. Ships the guest-side C++ headers and the
+  `ShellcodeParameters` encoder used to pass a parameter block to the payload.
+
 ### Removed
 
 ### Fixed
