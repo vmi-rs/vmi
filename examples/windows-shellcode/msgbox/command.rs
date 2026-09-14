@@ -94,3 +94,14 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_message_box_result_is_an_error() {
+        assert!(validate_result(0).is_err());
+        assert_eq!(validate_result(1).unwrap(), 1);
+    }
+}

@@ -96,3 +96,21 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel_file::bridge::KernelFileStage;
+
+    #[test]
+    fn kernel_status_distinguishes_success_from_failure() {
+        // Stage `Write`, status kind `Success`, no error code.
+        assert_eq!(
+            validate_status(0x0000_0002).unwrap().stage(),
+            KernelFileStage::WRITE
+        );
+
+        // Stage `Create`, status kind `OperationFailed`, error `zw_create_file`.
+        assert!(validate_status(0x0002_fe01).is_err());
+    }
+}

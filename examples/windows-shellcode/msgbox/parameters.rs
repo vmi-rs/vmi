@@ -30,3 +30,30 @@ impl Parameters for MsgboxParameters {
         writer.write_string(&self.text);
     }
 }
+
+/// Encodes msgbox parameters for test assertions.
+#[cfg(test)]
+fn encode_parameters(parameters: &impl Parameters) -> Vec<u8> {
+    let mut output = Vec::new();
+    parameters.encode(&mut ParameterWriter::new(&mut output));
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_title_before_text() {
+        let parameters = MsgboxParameters::new("VMI", "Hello");
+
+        assert_eq!(encode_parameters(&parameters), b"VMI\0Hello\0");
+    }
+
+    #[test]
+    fn preserves_empty_fields() {
+        let parameters = MsgboxParameters::new("", "");
+
+        assert_eq!(encode_parameters(&parameters), b"\0\0");
+    }
+}

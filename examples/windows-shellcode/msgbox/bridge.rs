@@ -81,3 +81,21 @@ where
         self.handle_packet(packet)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vmi::utils::shellcode::BRIDGE_MAGIC;
+
+    use super::*;
+
+    /// Creates a msgbox bridge packet.
+    fn packet(method: u16) -> BridgePacket {
+        BridgePacket::new(BRIDGE_MAGIC, 0x0001, method)
+    }
+
+    #[test]
+    fn unknown_method_is_not_handled() {
+        assert!(MsgboxBridge.handle_unknown(packet(0x1234)).is_none());
+        assert!(MsgboxBridge.handle_packet(packet(0x1234)).is_none());
+    }
+}
