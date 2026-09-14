@@ -104,6 +104,9 @@ pub use self::recipe::{
     ImageSymbolCache, Recipe, RecipeContext, RecipeControlFlow, RecipeExecutor,
 };
 
+#[cfg(test)]
+mod tests;
+
 /// Marker trait for the privilege level of injected code.
 ///
 /// See [`KernelMode`] and [`UserMode`].
