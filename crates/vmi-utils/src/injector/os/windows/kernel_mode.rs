@@ -315,7 +315,6 @@ where
 
         if self.tid.is_none() {
             self.tid = Some(current_tid);
-            self.state = InjectorState::Executing;
             tracing::debug!(
                 session_id = current_process
                     .session()
@@ -331,6 +330,14 @@ where
                     .unwrap_or("<unknown>"),
                 "thread hijacked"
             );
+
+            if !Bridge::EMPTY {
+                vmi.monitor_enable(EventMonitor::Hypercall {
+                    allow_userspace: false,
+                })?;
+            }
+
+            self.state = InjectorState::Executing;
         }
         else if Some(current_tid) != self.tid {
             return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
@@ -342,9 +349,7 @@ where
 
         let new_registers = match self.recipe.execute(vmi)? {
             Some(registers) => registers,
-            None => {
-                return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-            }
+            None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
         };
 
         if !self.recipe.done() {
@@ -398,15 +403,11 @@ where
 
             vmi.destroy_view(self.view)?;
 
-            // If the bridge was not enabled, we're done.
-            if Bridge::EMPTY {
+            if Bridge::EMPTY || self.output.is_some() {
                 self.state = InjectorState::Complete;
             }
             else {
                 self.state = InjectorState::Bridge;
-                vmi.monitor_enable(EventMonitor::Hypercall {
-                    allow_userspace: false,
-                })?;
             }
 
             return Ok(VmiEventResponse::default());
@@ -455,10 +456,11 @@ where
 
             if let Some(complete) = complete {
                 self.output = Some(complete);
-                self.state = InjectorState::Complete;
-                vmi.monitor_disable(EventMonitor::Hypercall {
-                    allow_userspace: false,
-                })?;
+
+                // If the recipe has already been torn down, we're done.
+                if matches!(self.state, InjectorState::Bridge) {
+                    self.state = InjectorState::Complete;
+                }
             }
         }
 
@@ -499,17 +501,20 @@ where
     fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
         // Disabled when transitioning from `Teardown` to `Bridge` or `Complete`.
         let mut disable_interrupt = false;
-        // Disabled when transitioning from `Bridge` to `Complete`.
+        // Disabled when transitioning from `Teardown` or `Bridge` to `Complete`.
         let mut disable_hypercall = false;
 
         match self.state {
-            InjectorState::PreHijack | InjectorState::Executing | InjectorState::Teardown(_) => {
+            InjectorState::PreHijack => {
                 disable_interrupt = true;
             }
-            InjectorState::Bridge => {
-                disable_hypercall = true;
+            InjectorState::Executing | InjectorState::Teardown(_) => {
+                disable_interrupt = true;
+                disable_hypercall = !Bridge::EMPTY;
             }
-            _ => {}
+            InjectorState::Bridge | InjectorState::Complete => {
+                disable_hypercall = !Bridge::EMPTY;
+            }
         }
 
         // In `PreHijack`, `Executing`, or `Teardown` states, we are guaranteed to
@@ -532,8 +537,8 @@ where
             }
         }
 
-        // In `Bridge` state, we are guaranteed to have enabled the hypercall
-        // monitor, so we must disable it.
+        // After leaving `PreHijack` with a nonempty bridge, we are guaranteed to
+        // have enabled the hypercall monitor, so we must disable it.
         if disable_hypercall
             && let Err(err) = vmi.monitor_disable(EventMonitor::Hypercall {
                 allow_userspace: false,

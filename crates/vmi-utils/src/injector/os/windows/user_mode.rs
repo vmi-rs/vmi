@@ -403,6 +403,12 @@ where
                 "thread hijacked"
             );
 
+            if !Bridge::EMPTY {
+                vmi.monitor_enable(EventMonitor::Hypercall {
+                    allow_userspace: true,
+                })?;
+            }
+
             self.state = InjectorState::Executing;
             vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
         }
@@ -413,9 +419,7 @@ where
 
         let new_registers = match self.recipe.execute(vmi)? {
             Some(registers) => registers,
-            None => {
-                return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-            }
+            None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
         };
 
         if !self.recipe.done() {
@@ -473,15 +477,11 @@ where
         vmi.switch_to_view(vmi.default_view())?;
         vmi.destroy_view(self.view)?;
 
-        // If the bridge was not enabled, we're done.
-        if Bridge::EMPTY {
+        if Bridge::EMPTY || self.output.is_some() {
             self.state = InjectorState::Complete;
         }
         else {
             self.state = InjectorState::Bridge;
-            vmi.monitor_enable(EventMonitor::Hypercall {
-                allow_userspace: true,
-            })?;
         }
 
         Ok(VmiEventResponse::default())
@@ -521,10 +521,11 @@ where
 
             if let Some(complete) = complete {
                 self.output = Some(complete);
-                self.state = InjectorState::Complete;
-                vmi.monitor_disable(EventMonitor::Hypercall {
-                    allow_userspace: true,
-                })?;
+
+                // If the recipe has already been torn down, we're done.
+                if matches!(self.state, InjectorState::Bridge) {
+                    self.state = InjectorState::Complete;
+                }
             }
         }
 
@@ -567,7 +568,7 @@ where
         let mut destroy_view = false;
         // Disabled when transitioning from `PreHijack` to `Executing`.
         let mut disable_write_msr = false;
-        // Disabled when transitioning from `Bridge` to `Complete`.
+        // Disabled when transitioning from `Teardown` or `Bridge` to `Complete`.
         let mut disable_hypercall = false;
 
         match self.state {
@@ -579,14 +580,15 @@ where
             InjectorState::Executing => {
                 restore_memory_access = true;
                 destroy_view = true;
+                disable_hypercall = !Bridge::EMPTY;
             }
             InjectorState::Teardown(_) => {
                 destroy_view = true;
+                disable_hypercall = !Bridge::EMPTY;
             }
-            InjectorState::Bridge => {
-                disable_hypercall = true;
+            InjectorState::Bridge | InjectorState::Complete => {
+                disable_hypercall = !Bridge::EMPTY;
             }
-            _ => {}
         }
 
         if restore_memory_access && let Some(ip_pa) = self.ip_pa {
