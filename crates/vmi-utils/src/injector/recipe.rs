@@ -147,18 +147,23 @@ where
             return Ok(None);
         }
 
-        let index = match &mut self.index {
-            Some(index) => index,
-            None => {
-                self.original_registers = Some(*vmi.registers());
-                self.index.insert(0)
-            }
-        };
+        let mut registers = *vmi.registers();
 
-        if let Some(step) = self.recipe.steps.get(*index) {
+        loop {
+            let index = match &mut self.index {
+                Some(index) => index,
+                None => {
+                    self.original_registers = Some(registers);
+                    self.index.insert(0)
+                }
+            };
+
+            let step = match self.recipe.steps.get(*index) {
+                Some(step) => step,
+                None => break,
+            };
+
             tracing::debug!(index, "step");
-
-            let mut registers = *vmi.registers();
 
             let next = step(&mut RecipeContext {
                 vmi,
@@ -173,9 +178,20 @@ where
             match next {
                 RecipeControlFlow::Continue => {
                     *index += 1;
+
+                    // If the step did not change the instruction pointer or
+                    // stack pointer, it means no function call was injected.
+                    // In such case, we can save one VM-exit by continuing
+                    // execution without resuming the guest.
+                    if registers.instruction_pointer() == vmi.registers().instruction_pointer()
+                        && registers.stack_pointer() == vmi.registers().stack_pointer()
+                    {
+                        continue;
+                    }
+
                     return Ok(Some(registers));
                 }
-                RecipeControlFlow::Break => {}
+                RecipeControlFlow::Break => break,
                 RecipeControlFlow::Repeat => {
                     return Ok(Some(registers));
                 }
