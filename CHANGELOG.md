@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the guest and either calls it on the hijacked thread or spawns a thread for
   it, in kernel mode or user mode. Ships the guest-side C++ headers and the
   `Parameters` encoder used to pass a parameter block to the payload.
+- `vmi_utils::tracker::Tracker` (feature `tracker`) - tracks caller-owned
+  process and thread state, including ownership and lifecycle transitions.
 
 ### Removed
 
