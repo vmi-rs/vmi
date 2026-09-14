@@ -94,3 +94,54 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser as _;
+
+    use super::*;
+    use crate::{Cli, Command};
+
+    #[test]
+    fn user_commands_use_defaults() {
+        let cli = Cli::try_parse_from(["windows-shellcode", "user-spawn"]).unwrap();
+        let Command::UserSpawn(arguments) = cli.command
+        else {
+            panic!("expected user-spawn command");
+        };
+
+        assert_eq!(arguments.process, "explorer.exe");
+        assert_eq!(arguments.title, "Hello from VMI");
+        assert_eq!(arguments.text, "Injected by windows-shellcode");
+    }
+
+    #[test]
+    fn user_commands_accept_overrides() {
+        let cli = Cli::try_parse_from([
+            "windows-shellcode",
+            "user-call",
+            "--process",
+            "notepad.exe",
+            "--title",
+            "Title",
+            "--text",
+            "Text",
+        ])
+        .unwrap();
+        let Command::UserCall(arguments) = cli.command
+        else {
+            panic!("expected user-call command");
+        };
+
+        let request = arguments.into_request();
+
+        assert_eq!(request.process, "notepad.exe");
+        assert_eq!(request.parameters, MsgboxParameters::new("Title", "Text"));
+    }
+
+    #[test]
+    fn zero_message_box_result_is_an_error() {
+        assert!(validate_result(0).is_err());
+        assert_eq!(validate_result(1).unwrap(), 1);
+    }
+}

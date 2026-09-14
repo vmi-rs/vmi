@@ -80,3 +80,43 @@ where
         self.handle_packet(packet)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vmi::utils::{bridge::BridgeContract, shellcode::BRIDGE_MAGIC};
+
+    use super::*;
+
+    /// Creates a msgbox bridge packet.
+    fn packet(method: u16) -> BridgePacket {
+        BridgePacket::new(BRIDGE_MAGIC, 0x0001, method)
+    }
+
+    #[test]
+    fn contract_matches_guest_constants() {
+        assert_eq!(<MsgboxBridge as BridgeContract>::MAGIC, Some(0x4249_4d56));
+        assert_eq!(
+            <MsgboxBridge as BridgeContract>::VERIFY_VALUE3,
+            Some(0x2133_5352_2d49_4d56)
+        );
+        assert_eq!(
+            <MsgboxBridge as BridgeContract>::VERIFY_VALUE4,
+            Some(0x2134_5352_2d49_4d56)
+        );
+    }
+
+    #[test]
+    fn unknown_method_is_not_handled() {
+        assert!(MsgboxBridge.handle_unknown(packet(0x1234)).is_none());
+        assert!(MsgboxBridge.handle_packet(packet(0x1234)).is_none());
+    }
+
+    #[test]
+    fn exit_completes_with_message_box_result() {
+        let response = MsgboxBridge
+            .handle_packet(packet(MsgboxBridge::METHOD_EXIT).with_value1(1))
+            .expect("exit packet should be handled");
+
+        assert_eq!(response.into_result(), Some(1));
+    }
+}
