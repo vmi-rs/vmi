@@ -36,6 +36,11 @@ capabilities, from basic operations to more complex scenarios.
   A more complex example showing how to write to a file in chunks and
   handle potential errors during injection.
 
+- **[`windows-bridge`]**
+
+  Demonstrates how to use the _bridge_ for communication between the guest
+  and the host.
+
 - **[`windows-shellcode`]**
 
   Demonstrates how to inject shellcode into the guest VM.
@@ -52,3 +57,4 @@ capabilities, from basic operations to more complex scenarios.
 [`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
 [`windows-shellcode`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode
+[`windows-bridge`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-bridge
