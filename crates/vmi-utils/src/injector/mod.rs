@@ -104,9 +104,6 @@ pub use self::recipe::{
     ImageSymbolCache, Recipe, RecipeContext, RecipeControlFlow, RecipeExecutor,
 };
 
-/// Status code for the injector.
-pub type InjectorStatusCode = u64;
-
 /// Marker trait for the privilege level of injected code.
 ///
 /// See [`KernelMode`] and [`UserMode`].
@@ -127,7 +124,7 @@ impl ExecutionMode for UserMode {}
 pub trait InjectorExecutionAdapter<Mode, T, Bridge>: OsAdapter
 where
     Mode: ExecutionMode,
-    Bridge: BridgeDispatch<Self, InjectorStatusCode>,
+    Bridge: BridgeDispatch<Self>,
 {
     /// The concrete handler type for this OS and execution mode.
     type Handler: InjectorHandlerAdapter<Self, Mode, T, Bridge>;
@@ -141,7 +138,7 @@ pub trait InjectorHandlerAdapter<Os, Mode, T, Bridge>: VmiHandler<Os> + Sized
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeDispatch<Os, InjectorStatusCode>,
+    Bridge: BridgeDispatch<Os>,
 {
     /// Creates a new handler with a bridge for guest-host communication.
     fn with_bridge(
@@ -165,7 +162,7 @@ pub struct InjectorHandler<Os, Mode, T, Bridge = ()>
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeDispatch<Os, InjectorStatusCode>,
+    Bridge: BridgeDispatch<Os>,
 {
     inner: <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler,
     _marker: std::marker::PhantomData<(Os, Mode, T, Bridge)>,
@@ -175,7 +172,7 @@ impl<Os, Mode, T, Bridge> InjectorHandler<Os, Mode, T, Bridge>
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeDispatch<Os, InjectorStatusCode>,
+    Bridge: BridgeDispatch<Os>,
 {
     /// Creates a new injector handler with a default (no-op) bridge.
     pub fn new(vmi: &VmiSession<Os>, recipe: Recipe<Os, T>) -> Result<Self, VmiError>
@@ -213,7 +210,7 @@ impl<Os, Mode, T, Bridge> VmiHandler<Os> for InjectorHandler<Os, Mode, T, Bridge
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     Mode: ExecutionMode,
-    Bridge: BridgeDispatch<Os, InjectorStatusCode>,
+    Bridge: BridgeDispatch<Os>,
 {
     type Output =
         <<Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler as VmiHandler<Os>>::Output;

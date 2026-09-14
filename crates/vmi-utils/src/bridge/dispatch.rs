@@ -5,7 +5,7 @@ use super::{ArchAdapter, Bridge, BridgeHandler, BridgePacket, BridgeResponse};
 /// A bridge dispatcher.
 ///
 /// Dispatches request to the appropriate handler based on the request code.
-pub trait BridgeDispatch<Os, T = ()>
+pub trait BridgeDispatch<Os>
 where
     Os: VmiOs,
 {
@@ -14,58 +14,69 @@ where
     /// Set to `true` in the implementation for the `()` type.
     const EMPTY: bool = false;
 
+    /// The response output type.
+    ///
+    /// Every handler in a tuple dispatcher must use the same output type.
+    type Output;
+
     /// Dispatch the request.
     fn dispatch(
         &mut self,
         vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
-    ) -> Option<Result<BridgeResponse<T>, BridgePacket>>;
+    ) -> Option<Result<BridgeResponse<Self::Output>, BridgePacket>>;
 }
 
 /// No-op dispatcher that never handles any packet.
-impl<Os, T> BridgeDispatch<Os, T> for ()
+impl<Os> BridgeDispatch<Os> for ()
 where
     Os: VmiOs,
 {
     const EMPTY: bool = true;
 
+    type Output = ();
+
     fn dispatch(
         &mut self,
         _vmi: &VmiContext<'_, Os>,
         _packet: BridgePacket,
-    ) -> Option<Result<BridgeResponse<T>, BridgePacket>> {
+    ) -> Option<Result<BridgeResponse<Self::Output>, BridgePacket>> {
         None
     }
 }
 
 /// Blanket impl that lets any single [`BridgeHandler`] be used as a dispatcher.
-impl<Os, T, Handler> BridgeDispatch<Os, T> for Handler
+impl<Os, Handler> BridgeDispatch<Os> for Handler
 where
     Os: VmiOs,
     Os::Architecture: ArchAdapter,
-    Handler: BridgeHandler<Os, T>,
+    Handler: BridgeHandler<Os>,
 {
+    type Output = Handler::Output;
+
     fn dispatch(
         &mut self,
         vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
-    ) -> Option<Result<BridgeResponse<T>, BridgePacket>> {
+    ) -> Option<Result<BridgeResponse<Self::Output>, BridgePacket>> {
         try_dispatch(vmi, packet, self)
     }
 }
 
 /// Forwards dispatch to the wrapped handlers.
-impl<Os, Dispatch, T> BridgeDispatch<Os, T> for Bridge<Os, Dispatch, T>
+impl<Os, Dispatch> BridgeDispatch<Os> for Bridge<Os, Dispatch>
 where
     Os: VmiOs,
     Os::Architecture: ArchAdapter,
-    Dispatch: BridgeDispatch<Os, T>,
+    Dispatch: BridgeDispatch<Os>,
 {
+    type Output = Dispatch::Output;
+
     fn dispatch(
         &mut self,
         vmi: &VmiContext<'_, Os>,
         packet: BridgePacket,
-    ) -> Option<Result<BridgeResponse<T>, BridgePacket>> {
+    ) -> Option<Result<BridgeResponse<Self::Output>, BridgePacket>> {
         self.handlers.dispatch(vmi, packet)
     }
 }
@@ -75,15 +86,15 @@ where
 /// Returns `None` if the handler's magic or request code does not match.
 /// Returns `Some(Ok(response))` if the handler produced a response.
 /// Returns `Some(Err(packet))` if the handler matched but returned `None`.
-fn try_dispatch<Os, T, Handler>(
+fn try_dispatch<Os, Handler>(
     vmi: &VmiContext<'_, Os>,
     packet: BridgePacket,
     handler: &mut Handler,
-) -> Option<Result<BridgeResponse<T>, BridgePacket>>
+) -> Option<Result<BridgeResponse<Handler::Output>, BridgePacket>>
 where
     Os: VmiOs,
     Os::Architecture: ArchAdapter,
-    Handler: BridgeHandler<Os, T>,
+    Handler: BridgeHandler<Os>,
 {
     // Skip if the handler requires a specific magic and it doesn't match.
     if let Some(magic) = Handler::MAGIC
@@ -127,17 +138,19 @@ where
 macro_rules! impl_bridge_dispatch {
     ($($ty:ident),*) => {
         #[allow(non_snake_case)]
-        impl<Os, T, $($ty),*> BridgeDispatch<Os, T> for ($($ty),+,)
+        impl<Os, Output, $($ty),*> BridgeDispatch<Os> for ($($ty),+,)
         where
             Os: VmiOs,
             Os::Architecture: ArchAdapter,
-            $($ty: BridgeHandler<Os, T>,)+
+            $($ty: BridgeHandler<Os, Output = Output>,)+
         {
+            type Output = Output;
+
             fn dispatch(
                 &mut self,
                 vmi: &VmiContext<'_, Os>,
                 packet: BridgePacket
-            ) -> Option<Result<BridgeResponse<T>, BridgePacket>> {
+            ) -> Option<Result<BridgeResponse<Self::Output>, BridgePacket>> {
                 let ($($ty,)+) = self;
 
                 $(

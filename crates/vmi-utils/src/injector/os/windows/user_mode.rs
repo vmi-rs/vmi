@@ -11,10 +11,9 @@ use vmi_core::{
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
-use super::super::super::{
-    InjectorHandlerAdapter, InjectorStatusCode, Recipe, RecipeExecutor, UserMode,
-};
+use super::super::super::{InjectorHandlerAdapter, Recipe, RecipeExecutor, UserMode};
 use crate::bridge::{BridgeDispatch, BridgePacket};
+
 // const INVALID_VA: Va = Va(0xffff_ffff_ffff_ffff);
 const INVALID_VIEW: View = View(0xffff);
 // const INVALID_TID: ThreadId = ThreadId(0xffff_ffff);
@@ -25,8 +24,10 @@ enum InjectorState {
     /// Waiting for target process MSR write; scanning trap frames for
     /// a viable user-mode instruction pointer to hijack.
     PreHijack,
+
     /// Thread hijacked; executing the injection recipe.
     Executing,
+
     /// Recipe finished; singlestepping to safely tear down monitoring.
     ///
     /// The [`VcpuId`] identifies the vCPU that completed the recipe. Only a
@@ -34,16 +35,18 @@ enum InjectorState {
     /// past the memory access context, making it safe to tear down monitors
     /// and views.
     Teardown(VcpuId),
+
     /// Monitoring torn down; waiting for bridge communication.
     Bridge,
+
     /// Injection complete; result is available.
-    Complete(Result<InjectorStatusCode, BridgePacket>),
+    Complete,
 }
 
 pub struct UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64> + VmiRead,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
     /// Process ID being injected into.
     pid: Option<ProcessId>,
@@ -68,6 +71,9 @@ where
 
     /// Current lifecycle state of the injector.
     state: InjectorState,
+
+    /// Output produced by the bridge.
+    output: Option<Result<Bridge::Output, BridgePacket>>,
 }
 
 impl<Driver, T, Bridge> InjectorHandlerAdapter<WindowsOs<Driver>, UserMode, T, Bridge>
@@ -80,7 +86,7 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
     fn with_bridge(
         vmi: &VmiSession<WindowsOs<Driver>>,
@@ -101,6 +107,7 @@ where
             recipe: RecipeExecutor::new(recipe),
             bridge,
             state: InjectorState::PreHijack,
+            output: None,
         })
     }
 
@@ -119,7 +126,7 @@ where
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
     #[tracing::instrument(
         name = "injector",
@@ -431,7 +438,7 @@ where
 
         // If the bridge was not enabled, we're done.
         if Bridge::EMPTY {
-            self.state = InjectorState::Complete(Ok(0));
+            self.state = InjectorState::Complete;
         }
         else {
             self.state = InjectorState::Bridge;
@@ -476,7 +483,8 @@ where
             };
 
             if let Some(complete) = complete {
-                self.state = InjectorState::Complete(complete);
+                self.output = Some(complete);
+                self.state = InjectorState::Complete;
                 vmi.monitor_disable(EventMonitor::Hypercall {
                     allow_userspace: true,
                 })?;
@@ -495,9 +503,9 @@ where
         + VmiEventControl
         + VmiViewControl
         + VmiVmControl,
-    Bridge: BridgeDispatch<WindowsOs<Driver>, InjectorStatusCode>,
+    Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
-    type Output = Result<InjectorStatusCode, BridgePacket>;
+    type Output = Option<Result<Bridge::Output, BridgePacket>>;
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
@@ -576,7 +584,7 @@ where
 
     fn poll(&mut self) -> Option<Self::Output> {
         match self.state {
-            InjectorState::Complete(result) => Some(result),
+            InjectorState::Complete => Some(self.output.take()),
             _ => None,
         }
     }
