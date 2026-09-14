@@ -234,6 +234,12 @@ doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
 
 [[example]]
+name = "windows-shellcode"
+path = "examples/windows-shellcode/main.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-windows", "utils"]
+
+[[example]]
 name = "windows-reactor"
 path = "examples/windows-reactor/main.rs"
 doc-scrape-examples = true

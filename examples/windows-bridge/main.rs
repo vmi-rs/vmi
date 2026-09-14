@@ -1,11 +1,12 @@
-//! CLI that drives the msgbox, kernel-file and deploy shellcode recipes into
-//! a Windows guest over VMI.
+//! CLI that drives the deploy shellcode recipe, its host-side policy gates and
+//! the post-execution monitor into a Windows guest over VMI.
+
+#[path = "../common/mod.rs"]
+mod common;
 
 mod deploy;
 mod file_transfer;
-mod kernel_file;
 mod monitor;
-mod msgbox;
 
 use std::{
     path::PathBuf,
@@ -13,35 +14,20 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context as _, Error};
 use clap::{Args, Parser, Subcommand};
-use isr::{Profile, cache::IsrCache};
-use tracing_subscriber::EnvFilter;
-use vmi::{
-    VcpuId, VmiCore, VmiSession,
-    arch::amd64::Amd64,
-    driver::xen::VmiXenDriver,
-    os::{ProcessId, VmiOsProcess as _, windows::WindowsOs},
-    utils::{
-        injector::{KernelInjectorHandler, UserInjectorHandler},
-        shellcode::StatusKind,
-    },
-};
+use isr::Profile;
+use vmi::utils::{injector::UserInjectorHandler, shellcode::StatusKind};
 
 use crate::{
+    common::WindowsSession,
     deploy::{
         DeployBridge, DeployParameters, DeployPolicy, DeployStage, DeployStatus, ExecuteResponse,
         deploy_recipe,
     },
-    kernel_file::{
-        KernelFileBridge, KernelFileParameters, KernelFileStatus, kernel_file_call_recipe,
-        kernel_file_spawn_recipe,
-    },
     monitor::{Monitor, MonitorOutput},
-    msgbox::{MsgboxBridge, MsgboxParameters, msgbox_recipe},
 };
 
 /// Top-level command-line interface for the windows-bridge example.
@@ -56,92 +42,8 @@ struct Cli {
 /// Injection operation selected on the command line.
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Displays a message box in a Windows process.
-    Msgbox(MsgboxArguments),
-
     /// Downloads, extracts, or executes content in a Windows process.
     Deploy(DeployArguments),
-
-    /// Creates a guest file from kernel mode on the hijacked thread.
-    KernelFileCall(KernelFileArguments),
-
-    /// Creates a guest file from a spawned kernel-mode system thread.
-    KernelFileSpawn(KernelFileArguments),
-}
-
-/// Command-line arguments for the msgbox subcommand.
-#[derive(Debug, Args)]
-struct MsgboxArguments {
-    /// Name of the process that will display the message box.
-    #[arg(long, default_value = "explorer.exe")]
-    process: String,
-
-    /// Message box title.
-    #[arg(long, default_value = "Hello from VMI")]
-    title: String,
-
-    /// Message box text.
-    #[arg(long, default_value = "Injected by windows-bridge")]
-    text: String,
-}
-
-/// Resolved msgbox request ready for injection.
-#[derive(Debug)]
-struct MsgboxRequest {
-    /// Name of the process in which the msgbox shellcode runs.
-    process: String,
-
-    /// Parameters consumed by the msgbox shellcode.
-    parameters: MsgboxParameters,
-}
-
-impl MsgboxArguments {
-    /// Converts CLI arguments into a msgbox request.
-    fn into_request(self) -> MsgboxRequest {
-        MsgboxRequest {
-            process: self.process,
-            parameters: MsgboxParameters::new(self.title, self.text),
-        }
-    }
-}
-
-/// Command-line arguments shared by both kernel-file subcommands.
-#[derive(Debug, Args)]
-struct KernelFileArguments {
-    /// Guest path of the created file.
-    ///
-    /// Defaults to a timestamped file on the `John` user's desktop. A path
-    /// starting with a backslash is passed through as an NT path.
-    #[arg(long)]
-    path: Option<String>,
-}
-
-/// Resolved kernel-file request ready for injection.
-#[derive(Debug)]
-struct KernelFileRequest {
-    /// Parameters consumed by the kernel-file shellcode.
-    parameters: KernelFileParameters,
-}
-
-impl KernelFileArguments {
-    /// Converts CLI arguments into a kernel-file request.
-    fn into_request(self) -> KernelFileRequest {
-        KernelFileRequest {
-            parameters: KernelFileParameters::new(
-                self.path.unwrap_or_else(default_kernel_file_path),
-            ),
-        }
-    }
-}
-
-/// Kernel-mode shellcode recipe exercised by a kernel-file run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KernelFileExecution {
-    /// Calls the payload on the hijacked thread.
-    Call,
-
-    /// Spawns a system thread for the payload.
-    Spawn,
 }
 
 /// Command-line arguments for the deploy subcommand.
@@ -310,32 +212,6 @@ fn windows_executable_basename(path: &str) -> Option<&str> {
         .filter(|name| !name.is_empty())
 }
 
-/// Returns the default kernel-file path, made unique by the current time.
-fn default_kernel_file_path() -> String {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or(0);
-
-    format!(r"C:\Users\John\Desktop\test-{timestamp}.txt")
-}
-
-/// Validates the result returned by `MessageBoxA`.
-fn validate_msgbox_result(result: u64) -> Result<u64, Error> {
-    anyhow::ensure!(result != 0, "MessageBoxA failed");
-    Ok(result)
-}
-
-/// Decodes and validates a terminal kernel-file status.
-fn validate_kernel_file_status(packed_status: u64) -> Result<KernelFileStatus, Error> {
-    let status = KernelFileStatus::decode(packed_status);
-    anyhow::ensure!(
-        status.kind() == StatusKind::SUCCESS,
-        "kernel-file shellcode failed: {status:?}"
-    );
-    Ok(status)
-}
-
 /// Decodes and validates a terminal deploy status.
 fn validate_deploy_status(packed_status: u64) -> Result<DeployStatus, Error> {
     let status = DeployStatus::decode(packed_status);
@@ -370,93 +246,9 @@ fn resolve_monitor_outcome(
     }
 }
 
-/// Finds the configured target process while the guest is paused.
-fn find_process_id(
-    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
-    process_name: &str,
-) -> Result<ProcessId, Error> {
-    let paused = session.pause_guard()?;
-    let vmi = paused.state();
-    let process = vmi
-        .os()
-        .find_process(process_name)?
-        .with_context(|| format!("process `{process_name}` not found"))?;
-    let process_id = process.id()?;
-
-    tracing::info!(
-        process = process_name,
-        pid = %process_id,
-        "found target process"
-    );
-
-    Ok(process_id)
-}
-
-/// Runs a message box injection.
-fn run_msgbox(
-    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
-    arguments: MsgboxArguments,
-) -> Result<(), Error> {
-    let MsgboxRequest {
-        process,
-        parameters,
-    } = arguments.into_request();
-
-    let process_id = find_process_id(session, &process)?;
-
-    let result = session
-        .handle(|session| {
-            UserInjectorHandler::new(session, msgbox_recipe(&parameters))?
-                .with_bridge(MsgboxBridge)
-                .with_pid(process_id)
-        })?
-        .context("msgbox injection interrupted")?
-        .context("msgbox bridge completed without a result")?
-        .map_err(|packet| anyhow::anyhow!("unhandled msgbox bridge packet: {packet:?}"))?;
-
-    let result = validate_msgbox_result(result)?;
-
-    tracing::info!(result, "message box closed");
-    Ok(())
-}
-
-/// Runs a kernel-file injection.
-fn run_kernel_file(
-    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
-    arguments: KernelFileArguments,
-    execution: KernelFileExecution,
-) -> Result<(), Error> {
-    let KernelFileRequest { parameters } = arguments.into_request();
-
-    tracing::info!(
-        path = parameters.nt_path(),
-        ?execution,
-        "injecting kernel-file shellcode"
-    );
-
-    let packed_status = session
-        .handle(|session| {
-            let recipe = match execution {
-                KernelFileExecution::Call => kernel_file_call_recipe(&parameters),
-                KernelFileExecution::Spawn => kernel_file_spawn_recipe(&parameters),
-            };
-
-            KernelInjectorHandler::new(session, recipe)
-                .map(|handler| handler.with_bridge(KernelFileBridge))
-        })?
-        .context("kernel-file injection interrupted")?
-        .context("kernel-file bridge completed without a result")?
-        .map_err(|packet| anyhow::anyhow!("unhandled kernel-file bridge packet: {packet:?}"))?;
-
-    let status = validate_kernel_file_status(packed_status)?;
-
-    tracing::info!(?status, path = parameters.nt_path(), "file written");
-    Ok(())
-}
-
 /// Runs a deploy injection.
 fn run_deploy(
-    session: &VmiSession<'_, WindowsOs<VmiXenDriver<Amd64>>>,
+    session: &WindowsSession,
     profile: &Profile,
     terminate_flag: Arc<AtomicBool>,
     arguments: DeployArguments,
@@ -468,12 +260,12 @@ fn run_deploy(
         monitor,
     } = arguments.into_request()?;
 
-    let process_id = find_process_id(session, &process)?;
+    let process_id = common::find_process_id(session, &process)?;
 
     let result = session
         .handle(|session| {
             UserInjectorHandler::new(session, deploy_recipe(&parameters))?
-                .with_bridge(DeployBridge::new(policy))
+                .with_bridge(DeployBridge::new(policy))?
                 .with_pid(process_id)
         })?
         .context("deploy injection interrupted")?
@@ -522,57 +314,16 @@ fn run_deploy(
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
-    let filter = EnvFilter::default()
-        .add_directive(tracing::Level::DEBUG.into())
-        .add_directive("reqwest=warn".parse()?)
-        .add_directive("rustls=warn".parse()?);
+    let (session, profile) = common::create_vmi_session_with_profile()?;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .init();
-
-    // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::try_from_env()?
-        .context("invalid VMI_XEN_DOMAIN environment variable")?;
-    let core = VmiCore::new(driver)?;
-
-    // Try to find the kernel information.
-    // This is necessary in order to load the profile.
-    let kernel_info = {
-        let _pause_guard = core.pause_guard()?;
-        let registers = core.registers(VcpuId(0))?;
-
-        WindowsOs::find_kernel(&core, &registers)?.context("cannot find kernel information")?
-    };
-
-    // Load the kernel profile.
-    // The profile contains offsets to kernel functions and data structures.
-    tracing::info!(codeview = ?kernel_info.codeview, "loading kernel profile");
-    let isr = IsrCache::new("cache")?;
-    let entry = isr.entry_from_codeview(kernel_info.codeview)?;
-    let profile = entry.profile()?;
-
-    // Create the VMI session.
-    tracing::info!("creating VMI session");
     let terminate_flag = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGHUP, terminate_flag.clone())?;
     signal_hook::flag::register(signal_hook::consts::SIGINT, terminate_flag.clone())?;
     signal_hook::flag::register(signal_hook::consts::SIGALRM, terminate_flag.clone())?;
     signal_hook::flag::register(signal_hook::consts::SIGTERM, terminate_flag.clone())?;
 
-    let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-    let session = VmiSession::new(&core, &os);
-
     match cli.command {
-        Command::Msgbox(arguments) => run_msgbox(&session, arguments),
         Command::Deploy(arguments) => run_deploy(&session, &profile, terminate_flag, arguments),
-        Command::KernelFileCall(arguments) => {
-            run_kernel_file(&session, arguments, KernelFileExecution::Call)
-        }
-        Command::KernelFileSpawn(arguments) => {
-            run_kernel_file(&session, arguments, KernelFileExecution::Spawn)
-        }
     }
 }
 
@@ -580,28 +331,12 @@ fn main() -> Result<(), Error> {
 mod tests {
 
     use super::*;
-    use crate::bridge::encode_parameters;
-
-    #[test]
-    fn msgbox_command_uses_defaults() {
-        let cli = Cli::try_parse_from(["windows-bridge", "msgbox"]).unwrap();
-        let Command::Msgbox(arguments) = cli.command
-        else {
-            panic!("expected msgbox command");
-        };
-
-        assert_eq!(arguments.process, "explorer.exe");
-        assert_eq!(arguments.title, "Hello from VMI");
-        assert_eq!(arguments.text, "Injected by windows-bridge");
-    }
+    use crate::common::encode_parameters;
 
     #[test]
     fn deploy_command_uses_defaults() {
         let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         assert_eq!(arguments.process, "explorer.exe");
         assert_eq!(arguments.max_download_retries, 0);
@@ -625,10 +360,7 @@ mod tests {
             "--monitor",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         assert!(arguments.monitor);
     }
@@ -643,10 +375,7 @@ mod tests {
             "--monitor",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -666,10 +395,7 @@ mod tests {
             "--monitor",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -686,10 +412,7 @@ mod tests {
             "--monitor",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let error = arguments.into_request().unwrap_err();
 
@@ -717,10 +440,7 @@ mod tests {
     #[test]
     fn deploy_command_builds_no_operation_request() {
         let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -739,10 +459,7 @@ mod tests {
             "d",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -772,10 +489,7 @@ mod tests {
             "5",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -834,10 +548,7 @@ mod tests {
             "3",
         ])
         .unwrap();
-        let Command::Deploy(arguments) = cli.command
-        else {
-            panic!("expected deploy command");
-        };
+        let Command::Deploy(arguments) = cli.command;
 
         let request = arguments.into_request().unwrap();
 
@@ -884,42 +595,5 @@ mod tests {
         let outcome = resolve_monitor_outcome(None, true).unwrap();
 
         assert_eq!(outcome, Ok(None));
-    }
-
-    #[test]
-    fn msgbox_command_accepts_overrides() {
-        let cli = Cli::try_parse_from([
-            "windows-bridge",
-            "msgbox",
-            "--process",
-            "notepad.exe",
-            "--title",
-            "Custom title",
-            "--text",
-            "Custom text",
-        ])
-        .unwrap();
-        let Command::Msgbox(arguments) = cli.command
-        else {
-            panic!("expected msgbox command");
-        };
-
-        let MsgboxRequest {
-            process,
-            parameters,
-        } = arguments.into_request();
-
-        assert_eq!(process, "notepad.exe");
-        assert_eq!(
-            encode_parameters(&parameters),
-            b"Custom title\0Custom text\0"
-        );
-    }
-
-    #[test]
-    fn zero_message_box_result_is_an_error() {
-        let error = validate_msgbox_result(0).unwrap_err();
-
-        assert_eq!(error.to_string(), "MessageBoxA failed");
     }
 }

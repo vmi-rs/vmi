@@ -36,6 +36,16 @@ capabilities, from basic operations to more complex scenarios.
   A more complex example showing how to write to a file in chunks and
   handle potential errors during injection.
 
+- **[`windows-shellcode`]**
+
+  Injects `scfw` payloads in all four execution modes: called or spawned,
+  in user mode or kernel mode.
+
+- **[`windows-bridge`]**
+
+  Composes those primitives into a host-gated deployment, monitors the
+  process it launches, and transfers the files it writes back to the host.
+
 
 [`BreakpointManager`]: https://docs.rs/vmi/latest/vmi/utils/bpm/struct.BreakpointManager.html
 [`PageTableMonitor`]: https://docs.rs/vmi/latest/vmi/utils/ptm/struct.PageTableMonitor.html
@@ -47,3 +57,5 @@ capabilities, from basic operations to more complex scenarios.
 [`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs
 [`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
+[`windows-shellcode`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode
+[`windows-bridge`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-bridge

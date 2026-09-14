@@ -247,10 +247,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use vmi::utils::bridge::BridgeContract;
+    use vmi::utils::{bridge::BridgeContract, shellcode::BRIDGE_MAGIC};
 
     use super::*;
-    use crate::bridge::BRIDGE_MAGIC;
 
     /// Creates a packet routed to the deploy handler.
     fn packet(method: u16) -> BridgePacket {

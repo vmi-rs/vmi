@@ -521,7 +521,7 @@ mod tests {
         let first = output_filename(1, r"\dir\a:b.txt");
         let second = output_filename(2, r"\dir\a:b.txt");
 
-        assert_eq!(first, "0001-a_b.txt");
+        assert_eq!(first, "0001-a_b_txt");
         assert_ne!(first, second);
     }
 

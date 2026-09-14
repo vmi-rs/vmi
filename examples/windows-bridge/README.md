@@ -1,35 +1,35 @@
-# Windows bridge: architecture and workflow
+# Windows bridge: deployment, monitoring and file transfer
 
 ## The short version
 
-`windows-bridge` lets a Rust program on the **host** run a small `scfw` payload inside a Windows **guest** without installing a guest agent.
+`windows-bridge` composes the shellcode primitives into a supervised workflow: the host deploys content into a Windows **guest**, gates every stage from outside the VM, then watches the process it launched and pulls the files it writes back to the host.
 
-The host temporarily hijacks a guest thread to allocate and start the payload. The payload performs Windows work, then uses `VMCALL` as a synchronous request/response boundary. Xen turns that instruction into a VM event; the Rust bridge decodes the guest registers, runs the matching host handler, writes a response into the registers, and resumes the guest.
+It assumes the injection and bridge mechanics documented in [`windows-shellcode`](../windows-shellcode/README.md) - payload embedding, thread hijacking, the `VMCALL` register protocol, the verification stamps, the request id registry and the terminal status encoding. This document covers only what is built on top of them. `windows-bridge` uses requests `0x0011` (`DeployBridge`) and `0x0012` (`FileTransferBridge`).
 
 ```mermaid
 flowchart LR
-    CLI[Host CLI] --> Recipe[Injection recipe]
-    Recipe -->|hijack thread; allocate and write| Guest[Windows guest memory]
-    Guest --> SCFW[SCFW shellcode]
-    SCFW -->|VMCALL request in registers| Xen[Xen VM event]
-    Xen --> Dispatch[Host Bridge dispatcher]
-    Dispatch --> Handler[DeployBridge or FileTransferBridge]
-    Handler -->|response in registers| Xen
-    Xen -->|resume after VMCALL| SCFW
+    CLI[Host CLI] --> Recipe[Deploy recipe]
+    Recipe -->|hijack thread; spawn payload| Deploy[SCFW deploy payload]
+    Deploy -->|download, extract, execute gates| DB[DeployBridge]
+    DB -->|park at execute gate| Monitor[Host Monitor]
+    Monitor -->|kernel breakpoints| Child[Deployed process]
+    Child -->|NtWriteFile / NtClose| Transfer[SCFW file-transfer payload]
+    Transfer --> FB[FileTransferBridge]
+    FB --> Output[Host artifact files]
 ```
 
-There is no socket, shared filesystem, or long-running service in the guest. Registers carry control messages; VMI reads and writes guest memory when a request needs bulk data.
+The two payloads differ in how they are started: deploy is spawned on its own guest thread and outlives the recipe, while file transfer is called synchronously on the closing thread inside an `NtClose` hook.
 
 ## Vocabulary
 
+Terms specific to this example; the shared ones are defined in [`windows-shellcode`](../windows-shellcode/README.md#vocabulary).
+
 | Name | Meaning here |
 |---|---|
-| **SCFW** | The C++ shellcode framework and the payloads built with it. It supplies position-independent startup/import resolution and the guest side of the bridge transport. |
-| **Guest** | The Windows VM. The deploy payload runs in user mode; the file-transfer payload runs in kernel mode on an intercepted guest thread. |
+| **Guest** | The Windows VM. The deploy payload runs in user mode on its own thread; the file-transfer payload runs in kernel mode on an intercepted guest thread. |
 | **Host** | The Rust `windows-bridge` process. It controls Xen through VMI, injects payloads, handles bridge requests, and writes transferred artifacts. |
-| **Recipe** | A host-side sequence of guest calls and register changes. It advances only when the hijacked thread reaches the expected return point. |
-| **Bridge** | The register protocol plus the Rust dispatcher and request-specific handler. `DeployBridge` and `FileTransferBridge` are handlers, not transports. |
 | **Monitor** | The second host event loop used by monitored deploys. It installs kernel breakpoints, tracks the launched process, and owns both bridge handlers. |
+| **Gate** | A bridge method whose response decides whether the payload may proceed to the next stage. The host, not the guest, holds the policy. |
 
 ## Layers and ownership
 
@@ -75,88 +75,27 @@ flowchart TB
 
 The host controls execution but does not call Windows APIs itself. Recipes arrange a guest call frame; Windows executes the call. Conversely, the guest never opens a host file directly. It exposes a buffer address, and the host reads that guest memory through VMI.
 
-## Common lifecycle
+## Deploy lifecycle
 
-### 1. Build-time: payload becomes part of the host binary
+### 1. Startup
 
-SCFW builds each x64 payload as a flat `.bin`. Rust embeds it with `include_bytes!`. No payload file is fetched at runtime.
+`main` builds the session through the shared example bootstrap and keeps the kernel profile, which the monitor needs in order to place kernel breakpoints. It also registers `SIGHUP`, `SIGINT`, `SIGALRM` and `SIGTERM` handlers, because monitoring runs until the tracked process is gone and must stay interruptible.
 
-### 2. Startup: establish Windows and Xen context
+### 2. Injection: spawn the deploy payload
 
-`main`:
+`InjectorHandler<UserMode>` hijacks a thread in the carrier process, normally `explorer.exe`, and runs `user_shellcode_spawn_recipe` with the encoded `DeployParameters` block. Spawning rather than calling is required here: the payload must outlive the recipe so the host can park it at a gate, install monitoring, and only then let it continue.
 
-1. opens the Xen domain selected by `VMI_XEN_DOMAIN`;
-2. pauses the VM briefly to find the Windows kernel;
-3. loads the matching kernel profile, including structure offsets and symbols;
-4. creates a `VmiSession` and finds the configured carrier process, normally `explorer.exe`.
+The recipe, the register protocol and the terminal status encoding are described in [`windows-shellcode`](../windows-shellcode/README.md#lifecycle).
 
-The kernel profile is also required later by the monitor to place kernel breakpoints.
+### 3. Gates: host-side policy
 
-### 3. Injection: borrow a guest thread
+`DeployBridge` answers three methods. The download gate reports readiness and permits bounded retries; the execute gate decides whether the payload may launch the program, abort, or park; the terminal method reports the payload's final status. The guest carries no policy of its own - it asks before every irreversible step.
 
-For deploy, `InjectorHandler<UserMode>` watches the target process until it finds a viable user-mode return point. It removes execute permission in a private Xen view so that the returning thread traps. At that trap, the recipe owns the thread registers long enough to run this call chain:
+`DeployBridge` completes the injector event loop, while the monitor's copy deliberately does not: it answers gates but keeps running until the tracked process is cleaned up or monitoring is cancelled.
 
-```text
-user_shellcode_spawn_recipe
-├─ VirtualAlloc(RWX, payload size)
-├─ retry if allocation fails
-├─ RtlFillMemory(payload bytes)    # materialize demand-zero pages
-├─ VMI write(shellcode + parameters)
-├─ on write failure: VirtualFree + retry
-├─ CreateThread(shellcode, parameter)
-├─ on creation failure: VirtualFree + retry
-└─ CloseHandle(created thread handle)
-```
+### 4. File transfer: kernel-mode injection from a hook
 
-`user_shellcode_spawn_recipe` accepts either an encoded `ShellcodeParameters` block by reference or a `ShellcodeParameterValue`. An encoded block is appended to the payload and its guest address becomes `lpParameter`; a `ShellcodeParameterValue` appends no data and is passed through unchanged. The single parameter-source argument makes these modes mutually exclusive. After `CreateThread` succeeds, the self-cleaning shellcode owns and releases its allocation.
-
-Before the recipe starts, an injector with a nonempty bridge enables user-mode hypercall monitoring. After the recipe restores the carrier thread's original registers, the injector tears down its private view. The newly created guest thread runs independently while bridge monitoring remains active.
-
-### 4. Bridge exchange: route one register packet
-
-The guest transport builds:
-
-```text
-magic = "VMIB"
-request = handler id
-method = operation within that handler
-value1..value4 = operation-specific values
-```
-
-On x64 Xen, a request uses `RCX` for the magic, `RDX` for `request | method << 16`, and `R8`-`R11` for the four values. The host response uses `RAX`, `RBX`, `RCX`, and `RDX`.
-
-For every handled hypercall, the host:
-
-1. advances guest `RIP` past `VMCALL`;
-2. decodes the registers into a `BridgePacket`;
-3. matches `magic`, then `request`;
-4. calls the handler selected by `request` and the operation selected by `method`;
-5. stamps `"VMI-RS3!"` and `"VMI-RS4!"` into response slots 3 and 4;
-6. writes the response registers and resumes the vCPU.
-
-The SCFW client accepts a response only when both verification stamps match. A missing or unrelated host handler therefore looks like “no response,” not a valid policy decision.
-
-| Request | Handler | Methods |
-|---:|---|---|
-| `0x0001` | `MsgboxBridge` | terminal message box result |
-| `0x0002` | `KernelFileBridge` | terminal kernel-file status |
-| `0x0011` | `DeployBridge` | download gate, execute gate, terminal status |
-| `0x0012` | `FileTransferBridge` | begin, set buffer, chunk, close, terminal status |
-
-Handlers may return a typed completion result in addition to register values. The injector uses that result to end its event loop. The deploy monitor deliberately keeps running: it writes bridge responses but completes only when the tracked process is cleaned up or monitoring is cancelled.
-
-### 5. Terminal status
-
-Both payloads report a compact status in `value1` and a native Windows error in `value2`:
-
-```text
-value1 bits  0..7   stage
-             8..15  stable status
-            16..23  stage-specific error code
-value2               NTSTATUS / HRESULT / native code
-```
-
-Stable statuses are success, waiting, invalid parameters, operation failed, and aborted. Keeping the stage separate answers both “what failed?” and “how did it fail?”
+The monitor's `NtWriteFile` and `NtClose` hooks drive `kernel_shellcode_call_recipe` on the closing thread through its own `RecipeExecutor`, without an injector. Calling rather than spawning is required here too, for the opposite reason: the payload must finish before `NtClose` proceeds, and it operates on a handle that is only valid in the closing process. See [File-transfer workflow](file_transfer/README.md).
 
 ## The monitored-deploy handoff
 
@@ -200,7 +139,7 @@ main
    ├─ DeployArguments::into_request
    │  ├─ DeployParameters builder
    │  └─ DeployPolicy
-   ├─ find_process_id
+   ├─ common::find_process_id
    ├─ VmiSession::handle(User InjectorHandler)
    │  ├─ deploy_recipe
    │  │  └─ user_shellcode_spawn_recipe
@@ -222,5 +161,6 @@ SCFW deploy entry
 
 ## What to read next
 
+- [Shellcode primitives](../windows-shellcode/README.md): payload embedding, the four execution modes, the register protocol, and the status encoding this example builds on.
 - [Deploy workflow](deploy/README.md): parameter encoding, policy gates, stage order, and monitor handoff.
 - [File-transfer workflow](file_transfer/README.md): kernel hooks, synchronous injection, chunk movement, and host output rules.

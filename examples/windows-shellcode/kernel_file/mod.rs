@@ -4,6 +4,8 @@ mod bridge;
 mod parameters;
 mod recipe;
 
+#[cfg(test)]
+pub use self::bridge::KernelFileStage;
 pub use self::{
     bridge::{KernelFileBridge, KernelFileStatus},
     parameters::KernelFileParameters,

@@ -32,7 +32,7 @@ impl ShellcodeParameters for MsgboxParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bridge::encode_parameters;
+    use crate::common::encode_parameters;
 
     #[test]
     fn parameter_block_is_byte_aligned() {
