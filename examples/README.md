@@ -40,6 +40,11 @@ capabilities, from basic operations to more complex scenarios.
 
   Demonstrates how to inject shellcode into the guest VM.
 
+- **[`windows-bridge`]**
+
+  Composes those primitives into a host-gated deployment, monitors the
+  process it launches, and transfers the files it writes back to the host.
+
 
 [`BreakpointManager`]: https://docs.rs/vmi/latest/vmi/utils/bpm/struct.BreakpointManager.html
 [`PageTableMonitor`]: https://docs.rs/vmi/latest/vmi/utils/ptm/struct.PageTableMonitor.html
@@ -52,3 +57,4 @@ capabilities, from basic operations to more complex scenarios.
 [`windows-recipe-writefile.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile.rs
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
 [`windows-shellcode`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode
+[`windows-bridge`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-bridge
