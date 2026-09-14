@@ -21,5 +21,8 @@ pub mod reactor;
 #[cfg(feature = "resolver")]
 pub mod resolver;
 
+#[cfg(feature = "shellcode")]
+pub mod shellcode;
+
 mod hexdump;
 pub use self::hexdump::{Representation, hexdump};
