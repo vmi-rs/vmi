@@ -7,7 +7,7 @@ use super::ShellcodeParameterSource;
 use crate::injector::Recipe;
 
 /// Operating system-specific shellcode injection functionality.
-pub trait OsAdapter: VmiOs + Sized {
+pub trait OsAdapter: VmiOs {
     /// Data retained by a kernel-mode shellcode recipe.
     type KernelRecipeData;
 
