@@ -143,3 +143,51 @@ macro_rules! _private_impl_stage {
 
 #[doc(inline)]
 pub use _private_impl_stage as impl_stage;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct TestStage(u8);
+
+    impl_stage!(TestStage);
+
+    #[test]
+    fn status_encodes_protocol_bytes() {
+        const STATUS: Status<TestStage> = Status::new(TestStage(0x05), StatusKind::WAITING);
+        const STAGE: TestStage = STATUS.stage();
+        const KIND: StatusKind = STATUS.kind();
+        const CODE: u8 = STATUS.code();
+
+        assert_eq!(STATUS.encode(), 0x0000_0105);
+        assert_eq!(STAGE, TestStage(0x05));
+        assert_eq!(KIND, StatusKind::WAITING);
+        assert_eq!(CODE, 0);
+    }
+
+    #[test]
+    fn status_decodes_unknown_wire_values() {
+        let status = Status::<TestStage>::decode(0xffff_ffff_ab5d_7ce6);
+
+        assert_eq!(status.stage(), TestStage(0xe6));
+        assert_eq!(status.kind(), StatusKind(0x7c));
+        assert_eq!(status.code(), 0x5d);
+        assert_eq!(status.native_code(), u32::MAX);
+        assert_eq!(status.encode(), 0xffff_ffff_005d_7ce6);
+    }
+
+    #[test]
+    fn status_preserves_native_error_codes() {
+        for native_code in [0x7fff_ffff_u32, 0x8000_0000, 0x8000_4005, 0xc000_000d] {
+            let encoded = (u64::from(native_code) << 32) | 0x0002_fe03;
+            let status = Status::<TestStage>::decode(encoded);
+
+            assert_eq!(status.stage(), TestStage(0x03));
+            assert_eq!(status.kind(), StatusKind::OPERATION_FAILED);
+            assert_eq!(status.code(), 2);
+            assert_eq!(status.native_code(), native_code);
+            assert_eq!(status.encode(), encoded);
+        }
+    }
+}

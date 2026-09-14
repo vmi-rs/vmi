@@ -136,3 +136,97 @@ impl ParameterSource for ParameterValue {
         Parameter::Value(self.0)
     }
 }
+
+/// Encodes a standalone parameter block for test assertions.
+#[cfg(test)]
+pub fn encode_parameters(parameters: &impl Parameters) -> Vec<u8> {
+    let mut output = Vec::new();
+    parameters.encode(&mut ParameterWriter::new(&mut output));
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parameter_writer_writes_wire_values() {
+        let mut output = Vec::new();
+        let mut writer = ParameterWriter::new(&mut output);
+        writer.write_u32(0x1122_3344);
+        writer.write_i32(-2);
+        writer.write_string("A");
+        writer.write_string_utf16("B");
+        writer.write_bytes(&[0x10, 0x20]);
+        assert_eq!(
+            output,
+            [
+                0x44, 0x33, 0x22, 0x11, // u32
+                0xfe, 0xff, 0xff, 0xff, // i32
+                b'A', 0x00, // byte string
+                b'B', 0x00, 0x00, 0x00, // UTF-16 string
+                0x10, 0x20, // raw bytes
+            ]
+        );
+    }
+
+    struct FourByteParameters;
+
+    impl Parameters for FourByteParameters {
+        const ALIGNMENT: usize = 4;
+
+        fn encode(&self, writer: &mut ParameterWriter<'_>) {
+            writer.write_bytes(&[0x11, 0x22]);
+        }
+    }
+
+    #[test]
+    fn parameter_block_alignment_does_not_pad_stored_bytes() {
+        const SHELLCODE: &[u8] = &[0xaa, 0xbb, 0xcc];
+        let mut bytes = SHELLCODE.to_vec();
+
+        let parameter = (&FourByteParameters).resolve(&mut bytes);
+
+        assert_eq!(parameter, Parameter::Offset(4));
+        assert_eq!(&bytes[..SHELLCODE.len()], SHELLCODE);
+        assert_eq!(bytes[SHELLCODE.len()], 0);
+        assert_eq!(&bytes[4..], &[0x11, 0x22]);
+        assert_eq!(bytes.len(), 6);
+    }
+
+    #[test]
+    fn already_aligned_parameter_offset_is_unchanged() {
+        let mut bytes = vec![0xaa, 0xbb, 0xcc, 0xdd];
+        let parameter = (&FourByteParameters).resolve(&mut bytes);
+
+        assert_eq!(parameter, Parameter::Offset(4));
+    }
+
+    struct ZeroAlignedParameters;
+
+    impl Parameters for ZeroAlignedParameters {
+        const ALIGNMENT: usize = 0;
+
+        fn encode(&self, _writer: &mut ParameterWriter<'_>) {}
+    }
+
+    struct ThreeByteAlignedParameters;
+
+    impl Parameters for ThreeByteAlignedParameters {
+        const ALIGNMENT: usize = 3;
+
+        fn encode(&self, _writer: &mut ParameterWriter<'_>) {}
+    }
+
+    #[test]
+    #[should_panic(expected = "shellcode parameter alignment must be a nonzero power of two")]
+    fn rejects_zero_parameter_alignment() {
+        (&ZeroAlignedParameters).resolve(&mut vec![0xaa]);
+    }
+
+    #[test]
+    #[should_panic(expected = "shellcode parameter alignment must be a nonzero power of two")]
+    fn rejects_non_power_of_two_parameter_alignment() {
+        (&ThreeByteAlignedParameters).resolve(&mut vec![0xaa]);
+    }
+}

@@ -43,3 +43,32 @@ where
         }
     }
 }
+
+#[cfg(all(test, feature = "arch-amd64"))]
+mod tests {
+    use vmi_arch_amd64::{Amd64, Registers};
+
+    use super::*;
+
+    #[test]
+    fn retry_state_captures_then_restores_registers() {
+        let mut retry = RetryState::<Amd64>::default();
+        let original = Registers {
+            rax: 1,
+            rsp: 2,
+            rip: 3,
+            ..Registers::default()
+        };
+        let mut registers = original;
+
+        assert_eq!(retry.begin_attempt(&mut registers), 1);
+        assert_eq!(retry.original_registers, Some(original));
+
+        registers.rax = 10;
+        registers.rsp = 20;
+        registers.rip = 30;
+
+        assert_eq!(retry.begin_attempt(&mut registers), 2);
+        assert_eq!(registers, original);
+    }
+}

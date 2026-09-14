@@ -131,6 +131,8 @@ mod payload;
 mod recipe;
 mod status;
 
+#[cfg(test)]
+pub use self::parameters::encode_parameters;
 pub use self::{
     arch::ArchAdapter,
     bridge::{BRIDGE_MAGIC, BRIDGE_VERIFY_VALUE3, BRIDGE_VERIFY_VALUE4, impl_bridge_contract},
