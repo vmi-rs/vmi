@@ -1,4 +1,4 @@
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
+#[cfg(any(test, all(feature = "arch-amd64", feature = "os-windows")))]
 use vmi_core::Va;
 
 /// Cursor-based encoder for shellcode parameter wire formats.
@@ -134,7 +134,15 @@ impl ShellcodeParameterSource for ShellcodeParameterValue {
     }
 }
 
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
+/// Encodes a standalone parameter block for test assertions.
+#[cfg(test)]
+pub fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
+    let mut output = Vec::new();
+    parameters.encode(&mut ParameterWriter::new(&mut output));
+    output
+}
+
+#[cfg(any(test, all(feature = "arch-amd64", feature = "os-windows")))]
 /// Prepared shellcode and parameter data.
 #[derive(Debug)]
 pub struct ShellcodePayload {
@@ -145,7 +153,7 @@ pub struct ShellcodePayload {
     pub parameter: ShellcodeParameter,
 }
 
-#[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
+#[cfg(any(test, all(feature = "arch-amd64", feature = "os-windows")))]
 impl ShellcodePayload {
     /// Creates a payload from the given shellcode and parameter.
     pub fn new(shellcode: impl AsRef<[u8]>, parameter: impl ShellcodeParameterSource) -> Self {
@@ -161,5 +169,109 @@ impl ShellcodePayload {
             ShellcodeParameter::Offset(offset) => allocation_base.0 + offset,
             ShellcodeParameter::Value(value) => value,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parameter_writer_writes_wire_values() {
+        let mut output = Vec::new();
+        let mut writer = ParameterWriter::new(&mut output);
+        writer.write_u32(0x1122_3344);
+        writer.write_i32(-2);
+        writer.write_string("A");
+        writer.write_string_utf16("B");
+        writer.write_bytes(&[0x10, 0x20]);
+        assert_eq!(
+            output,
+            [
+                0x44, 0x33, 0x22, 0x11, // u32
+                0xfe, 0xff, 0xff, 0xff, // i32
+                b'A', 0x00, // byte string
+                b'B', 0x00, 0x00, 0x00, // UTF-16 string
+                0x10, 0x20, // raw bytes
+            ]
+        );
+    }
+
+    struct FourByteParameters;
+
+    impl ShellcodeParameters for FourByteParameters {
+        const ALIGNMENT: usize = 4;
+
+        fn encode(&self, writer: &mut ParameterWriter<'_>) {
+            writer.write_bytes(&[0x11, 0x22]);
+        }
+    }
+
+    #[test]
+    fn payload_aligns_parameters_without_padding_stored_bytes() {
+        const SHELLCODE: &[u8] = &[0xaa, 0xbb, 0xcc];
+
+        let payload = ShellcodePayload::new(SHELLCODE, &FourByteParameters);
+
+        assert_eq!(payload.parameter, ShellcodeParameter::Offset(4));
+        assert_eq!(&payload.bytes[..SHELLCODE.len()], SHELLCODE);
+        assert_eq!(payload.bytes[SHELLCODE.len()], 0);
+        assert_eq!(&payload.bytes[4..], &[0x11, 0x22]);
+        assert_eq!(payload.bytes.len(), 6);
+    }
+
+    #[test]
+    fn already_aligned_parameter_offset_is_unchanged() {
+        let payload = ShellcodePayload::new([0xaa, 0xbb, 0xcc, 0xdd], &FourByteParameters);
+
+        assert_eq!(payload.parameter, ShellcodeParameter::Offset(4));
+    }
+
+    #[test]
+    fn direct_parameter_value_does_not_append_data() {
+        const SHELLCODE: &[u8] = &[0xaa, 0xbb, 0xcc];
+        const PARAMETER: u64 = 0x1122_3344_5566_7788;
+
+        let payload = ShellcodePayload::new(SHELLCODE, ShellcodeParameterValue(PARAMETER));
+
+        assert_eq!(payload.parameter, ShellcodeParameter::Value(PARAMETER));
+        assert_eq!(payload.bytes, SHELLCODE);
+        assert_eq!(payload.parameter_value(Va(0x1000)), PARAMETER);
+    }
+
+    #[test]
+    fn payload_offset_resolves_against_each_allocation() {
+        let payload = ShellcodePayload::new([0xaa, 0xbb, 0xcc], &FourByteParameters);
+
+        assert_eq!(payload.parameter_value(Va(0x1000)), 0x1004);
+        assert_eq!(payload.parameter_value(Va(0x2000)), 0x2004);
+    }
+
+    struct ZeroAlignedParameters;
+
+    impl ShellcodeParameters for ZeroAlignedParameters {
+        const ALIGNMENT: usize = 0;
+
+        fn encode(&self, _writer: &mut ParameterWriter<'_>) {}
+    }
+
+    struct ThreeByteAlignedParameters;
+
+    impl ShellcodeParameters for ThreeByteAlignedParameters {
+        const ALIGNMENT: usize = 3;
+
+        fn encode(&self, _writer: &mut ParameterWriter<'_>) {}
+    }
+
+    #[test]
+    #[should_panic(expected = "shellcode parameter alignment must be a nonzero power of two")]
+    fn rejects_zero_parameter_alignment() {
+        ShellcodePayload::new([0xaa], &ZeroAlignedParameters);
+    }
+
+    #[test]
+    #[should_panic(expected = "shellcode parameter alignment must be a nonzero power of two")]
+    fn rejects_non_power_of_two_parameter_alignment() {
+        ShellcodePayload::new([0xaa], &ThreeByteAlignedParameters);
     }
 }

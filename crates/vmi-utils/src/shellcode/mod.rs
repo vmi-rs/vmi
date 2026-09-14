@@ -12,6 +12,8 @@ mod payload;
 mod protocol;
 mod recipe;
 
+#[cfg(test)]
+pub use self::payload::encode_parameters;
 pub use self::{
     os::OsAdapter,
     payload::{
