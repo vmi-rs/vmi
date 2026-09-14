@@ -143,3 +143,44 @@ macro_rules! _private_impl_bridge_stage {
 pub use _private_impl_bridge_contract as impl_bridge_contract;
 #[doc(inline)]
 pub use _private_impl_bridge_stage as impl_bridge_stage;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct TestStage(u8);
+
+    impl_bridge_stage!(TestStage);
+
+    #[test]
+    fn bridge_stage_macro_preserves_raw_byte() {
+        let stage = <TestStage as BridgeStage>::from_raw(0xa5);
+
+        assert_eq!(stage, TestStage(0xa5));
+        assert_eq!(stage.into_raw(), 0xa5);
+    }
+
+    #[test]
+    fn terminal_status_encodes_protocol_bytes() {
+        const STATUS: Status<TestStage> = Status::new(TestStage(0x05), StatusKind::WAITING);
+        const STAGE: TestStage = STATUS.stage();
+        const KIND: StatusKind = STATUS.kind();
+        const CODE: u8 = STATUS.code();
+
+        assert_eq!(STATUS.encode(), 0x0000_0105);
+        assert_eq!(STAGE, TestStage(0x05));
+        assert_eq!(KIND, StatusKind::WAITING);
+        assert_eq!(CODE, 0);
+    }
+
+    #[test]
+    fn terminal_status_decodes_unknown_wire_values() {
+        let status = Status::<TestStage>::decode(0xffff_ffff_ab5d_7ce6);
+
+        assert_eq!(status.stage(), TestStage(0xe6));
+        assert_eq!(status.kind(), StatusKind(0x7c));
+        assert_eq!(status.code(), 0x5d);
+        assert_eq!(status.encode(), 0x005d_7ce6);
+    }
+}
