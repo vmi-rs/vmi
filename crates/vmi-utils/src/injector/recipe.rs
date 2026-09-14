@@ -136,6 +136,7 @@ where
     ///
     /// Returns the new CPU registers after executing the step.
     /// If the recipe has finished executing, returns the original registers.
+    #[tracing::instrument(name = "recipe", skip_all)]
     pub fn execute(
         &mut self,
         vmi: &VmiState<Os>,
@@ -157,12 +158,12 @@ where
                 }
             };
 
+            let _span = tracing::debug_span!("step", index).entered();
+
             let step = match self.recipe.steps.get(*index) {
                 Some(step) => step,
                 None => break,
             };
-
-            tracing::debug!(index, "recipe step");
 
             let next = step(&mut RecipeContext {
                 vmi,
@@ -207,7 +208,7 @@ where
 
         tracing::debug!(
             result = %Hex(vmi.registers().result()),
-            "recipe finished"
+            "finished"
         );
 
         self.index = None;
