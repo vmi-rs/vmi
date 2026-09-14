@@ -33,8 +33,14 @@ vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 vmi = { workspace = true, features = ["arch-amd64", "os-windows", "utils"] }
 vmi-driver-mock = { workspace = true, features = ["arch-amd64"] }
+
+[[bench]]
+name = "process-tracker"
+harness = false
+required-features = ["tracker"]
 
 [features]
 default = []
