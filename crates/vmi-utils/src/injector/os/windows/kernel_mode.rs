@@ -148,11 +148,14 @@ where
     fn with_bridge<Bridge>(
         self,
         bridge: Bridge,
-    ) -> <WindowsOs<Driver> as InjectorExecutionAdapter<KernelMode, T, Bridge>>::Handler
+    ) -> Result<
+        <WindowsOs<Driver> as InjectorExecutionAdapter<KernelMode, T, Bridge>>::Handler,
+        VmiError,
+    >
     where
         Bridge: BridgeDispatch<WindowsOs<Driver>>,
     {
-        KernelInjectorHandler {
+        Ok(KernelInjectorHandler {
             pid: self.pid,
             tid: self.tid,
             view: self.view,
@@ -162,7 +165,7 @@ where
             bridge,
             state: InjectorState::PreHijack,
             output: None,
-        }
+        })
     }
 }
 

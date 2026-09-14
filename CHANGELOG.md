@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type through an associated `Output` type instead of a generic parameter.
 - **Breaking:** Injector handlers with guest-host bridges are now created by
   calling `InjectorHandler::new` + `with_bridge` method.
+- **Breaking:** `InjectorHandler::with_pid` (and `with_bridge`) return `Result`.
 
 ### Added
 

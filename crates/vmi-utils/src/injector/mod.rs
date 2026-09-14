@@ -146,7 +146,7 @@ where
     fn with_bridge<Bridge>(
         self,
         bridge: Bridge,
-    ) -> <Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler
+    ) -> Result<<Os as InjectorExecutionAdapter<Mode, T, Bridge>>::Handler, VmiError>
     where
         Bridge: BridgeDispatch<Os>,
         Os: InjectorExecutionAdapter<Mode, T, Bridge>;
@@ -197,15 +197,18 @@ where
     }
 
     /// Attaches a custom bridge for guest-host communication.
-    pub fn with_bridge<Bridge>(self, bridge: Bridge) -> InjectorHandler<Os, Mode, T, Bridge>
+    pub fn with_bridge<Bridge>(
+        self,
+        bridge: Bridge,
+    ) -> Result<InjectorHandler<Os, Mode, T, Bridge>, VmiError>
     where
         Bridge: BridgeDispatch<Os>,
         Os: InjectorExecutionAdapter<Mode, T, Bridge>,
     {
-        InjectorHandler {
-            inner: self.inner.with_bridge(bridge),
+        Ok(InjectorHandler {
+            inner: self.inner.with_bridge(bridge)?,
             _marker: std::marker::PhantomData,
-        }
+        })
     }
 }
 
