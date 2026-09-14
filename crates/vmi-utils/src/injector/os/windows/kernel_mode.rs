@@ -280,7 +280,10 @@ where
                     .unwrap_or(0),
                 %current_pid,
                 %current_tid,
-                filename = current_process.name().unwrap_or_else(|_| String::from("<unknown>")),
+                filename = current_process
+                    .name()
+                    .as_deref()
+                    .unwrap_or("<unknown>"),
                 "thread hijacked"
             );
         }
