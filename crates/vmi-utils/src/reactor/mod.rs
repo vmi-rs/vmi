@@ -414,7 +414,7 @@ where
         }
     }
 
-    fn poll(&self) -> Option<Self::Output> {
+    fn poll(&mut self) -> Option<Self::Output> {
         if let Some(terminate_flag) = &self.termination_flag
             && terminate_flag.load(Ordering::Relaxed)
         {

@@ -222,7 +222,7 @@ where
         self.inner.handle_event(vmi)
     }
 
-    fn poll(&self) -> Option<Self::Output> {
+    fn poll(&mut self) -> Option<Self::Output> {
         self.inner.poll()
     }
 }
