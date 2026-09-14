@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.22)
+
+include(FetchContent)
+
+# CMakePresets.json points at scfw's initially missing toolchain,
+# loaded only by project(). Populating here makes that path valid.
+# SOURCE_SUBDIR defers scfw's own configuration.
+FetchContent_Declare(
+    scfw
+    GIT_REPOSITORY https://github.com/vmi-rs/scfw.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR cmake
+)
+FetchContent_MakeAvailable(scfw)
+
+# Language detection now runs through scfw's Windows cross-compilation toolchain.
+project(windows_bridge_shellcode C CXX ASM)
+
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "This project requires Clang")
+endif()
+
+if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+    message(FATAL_ERROR "This project supports x64 only")
+endif()
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Keep the dependency minimal.
+set(SCFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SCFW_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+
+# Injected payloads must free their memory.
+set(SCFW_OPT_CLEANUP ON CACHE BOOL "" FORCE)
+
+# Include and configure scfw now that its options are fixed.
+add_subdirectory("${scfw_SOURCE_DIR}" "${scfw_BINARY_DIR}")
+
+# Use local vmi-utils shellcode implementation.
+add_subdirectory(
+    "${CMAKE_CURRENT_LIST_DIR}/../../crates/vmi-utils/shellcode"
+    "${CMAKE_CURRENT_BINARY_DIR}/vmi-utils-shellcode"
+)
+
+# Once vmi-utils with shellcode/ is published, uncomment this block and
+# remove the local add_subdirectory above. Pin URL_HASH to the checksum
+# in the crates.io index.
+#
+# FetchContent_Declare(
+#     vmi_utils
+#     URL https://static.crates.io/crates/vmi-utils/vmi-utils-0.11.0.crate
+#     SOURCE_SUBDIR shellcode
+# )
+# FetchContent_MakeAvailable(vmi_utils)
+
+# Finally, add the shellcode subdirectories.
+set(SHELLCODE_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/bin/${SCFW_TARGET}")
+
+add_subdirectory(kernel-file)
+add_subdirectory(msgbox)
