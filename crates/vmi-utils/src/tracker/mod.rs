@@ -341,3 +341,395 @@ impl<P, T> Tracker<P, T> {
     }
 }
 
+/// Tests public relationship and lifecycle contracts.
+#[cfg(test)]
+mod tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use vmi_core::{
+        Va,
+        os::{ProcessObject, ThreadObject},
+    };
+
+    use super::Tracker;
+
+    /// Builds a process object from a test address.
+    fn process(value: u64) -> ProcessObject {
+        ProcessObject(Va(value))
+    }
+
+    /// Builds a thread object from a test address.
+    fn thread(value: u64) -> ThreadObject {
+        ThreadObject(Va(value))
+    }
+
+    /// Verifies process, thread, and relationship containment.
+    #[test]
+    fn checks_containment() {
+        let mut tracker = Tracker::<u32, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread1 = thread(0x3000);
+        let thread2 = thread(0x4000);
+        let missing_process = process(0x5000);
+        let missing_thread = thread(0x6000);
+
+        tracker.insert(process1, thread1, 1, 2);
+        tracker.insert(process2, thread2, 3, 4);
+
+        assert!(tracker.contains(process1, thread1));
+        assert!(tracker.contains_process(process1));
+        assert!(tracker.contains_thread(thread1));
+        assert!(!tracker.contains(process1, thread2));
+        assert!(!tracker.contains(missing_process, thread1));
+        assert!(!tracker.contains(process1, missing_thread));
+        assert!(!tracker.contains_process(missing_process));
+        assert!(!tracker.contains_thread(missing_thread));
+
+        tracker.retire_process(process1).unwrap();
+        tracker.retire_thread(process1, thread1).unwrap();
+
+        assert!(tracker.contains(process1, thread1));
+        assert!(tracker.contains_process(process1));
+        assert!(tracker.contains_thread(thread1));
+
+        assert_eq!(tracker.remove_thread(thread1), Some(2));
+
+        assert!(!tracker.contains(process1, thread1));
+        assert!(tracker.contains_process(process1));
+        assert!(!tracker.contains_thread(thread1));
+    }
+
+    /// Verifies that an active pair bypasses both initializers.
+    #[test]
+    fn reuses_active_pair_without_initializing() {
+        let mut tracker = Tracker::<u32, u32>::default();
+        let process = process(0x1000);
+        let thread = thread(0x2000);
+
+        tracker.insert(process, thread, 1, 2);
+
+        let (process_value, thread_value) = tracker
+            .try_get_or_insert(
+                process,
+                thread,
+                || -> Result<u32, ()> { panic!("initialized an active process") },
+                || -> Result<u32, ()> { panic!("initialized an active thread") },
+            )
+            .unwrap();
+
+        assert_eq!((*process_value, *thread_value), (1, 2));
+    }
+
+    /// Verifies successful replacement of a retired process generation.
+    #[test]
+    fn replaces_retired_process_generation() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "old", 1);
+        tracker.insert(process, thread2, "old", 2);
+        tracker.retire_process(process).unwrap();
+
+        let (process_value, thread_value) = tracker
+            .try_get_or_insert(process, thread1, || Ok::<_, ()>("new"), || Ok(3))
+            .unwrap();
+
+        assert_eq!((*process_value, *thread_value), ("new", 3));
+        assert_eq!(tracker.get_thread(thread1), Some(&3));
+        assert!(tracker.get_thread(thread2).is_none());
+        assert_eq!(tracker.threads_of(process).collect::<Vec<_>>(), [thread1]);
+    }
+
+    /// Verifies successful replacement of a retired thread.
+    #[test]
+    fn replaces_retired_thread() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "process", 1);
+        tracker.insert(process, thread2, "process", 2);
+        tracker.retire_thread(process, thread1).unwrap();
+
+        let (process_value, thread_value) = tracker
+            .try_get_or_insert(
+                process,
+                thread1,
+                || -> Result<&str, ()> { panic!("initialized an active process") },
+                || Ok(3),
+            )
+            .unwrap();
+
+        assert_eq!((*process_value, *thread_value), ("process", 3));
+        assert_eq!(tracker.get_thread(thread2), Some(&2));
+        assert_eq!(tracker.threads_of(process).count(), 2);
+    }
+
+    /// Verifies that both insertion paths move a reused thread identity.
+    #[test]
+    fn moves_thread_identity_between_processes() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread = thread(0x3000);
+
+        tracker.insert(process1, thread, "process1", 1);
+        tracker.insert_process(process2, "process2");
+        tracker.insert(process2, thread, "process2", 2);
+
+        assert_eq!(tracker.process_of(thread), Some(process2));
+        assert_eq!(tracker.threads_of(process1).count(), 0);
+        assert_eq!(tracker.threads_of(process2).collect::<Vec<_>>(), [thread]);
+
+        let (_, thread_value) = tracker
+            .try_get_or_insert(
+                process1,
+                thread,
+                || -> Result<&str, ()> { panic!("initialized an active process") },
+                || Ok(3),
+            )
+            .unwrap();
+
+        assert_eq!(*thread_value, 3);
+        assert_eq!(tracker.process_of(thread), Some(process1));
+        assert_eq!(tracker.threads_of(process1).collect::<Vec<_>>(), [thread]);
+        assert_eq!(tracker.threads_of(process2).count(), 0);
+    }
+
+    /// Verifies that active process replacement retains owned threads.
+    #[test]
+    fn replaces_active_process_without_evicting_threads() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "first", 1);
+        tracker.insert(process, thread2, "second", 2);
+        tracker.insert_process(process, "third");
+
+        assert_eq!(tracker.get_process(process), Some(&"third"));
+        assert_eq!(tracker.get_thread(thread1), Some(&1));
+        assert_eq!(tracker.get_thread(thread2), Some(&2));
+        assert_eq!(tracker.threads_of(process).count(), 2);
+    }
+
+    /// Verifies that explicit removal updates values and memberships together.
+    #[test]
+    fn removes_values_and_memberships_explicitly() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "process", 1);
+        tracker.insert(process, thread2, "process", 2);
+
+        assert_eq!(tracker.remove_thread(thread1), Some(1));
+        assert!(tracker.get_thread(thread1).is_none());
+        assert!(tracker.process_of(thread1).is_none());
+        assert_eq!(tracker.threads_of(process).collect::<Vec<_>>(), [thread2]);
+
+        assert_eq!(tracker.remove_process(process), Some("process"));
+        assert!(tracker.get_process(process).is_none());
+        assert!(tracker.get_thread(thread2).is_none());
+        assert!(tracker.process_of(thread2).is_none());
+        assert_eq!(tracker.threads_of(process).count(), 0);
+    }
+
+    /// Verifies the build-mode behavior for mismatched pair lookups.
+    #[test]
+    fn handles_mismatched_pair_lookup() {
+        let mut tracker = Tracker::<u32, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread = thread(0x3000);
+
+        tracker.insert(process1, thread, 1, 2);
+        tracker.insert_process(process2, 3);
+
+        let get_result = catch_unwind(AssertUnwindSafe(|| tracker.get(process2, thread).is_none()));
+        let get_mut_result = catch_unwind(AssertUnwindSafe(|| {
+            tracker.get_mut(process2, thread).is_none()
+        }));
+
+        if cfg!(debug_assertions) {
+            assert!(get_result.is_err());
+            assert!(get_mut_result.is_err());
+        }
+        else {
+            assert!(get_result.unwrap());
+            assert!(get_mut_result.unwrap());
+        }
+
+        assert_eq!(tracker.get(process1, thread), Some((&1, &2)));
+    }
+
+    /// Verifies the build-mode behavior for mismatched thread retirement.
+    #[test]
+    fn handles_mismatched_thread_retirement() {
+        let mut tracker = Tracker::<u32, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread = thread(0x3000);
+
+        tracker.insert(process1, thread, 1, 2);
+        tracker.insert_process(process2, 3);
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            tracker.retire_thread(process2, thread).is_none()
+        }));
+
+        if cfg!(debug_assertions) {
+            assert!(result.is_err());
+        }
+        else {
+            assert!(result.unwrap());
+        }
+
+        assert_eq!(tracker.get(process1, thread), Some((&1, &2)));
+    }
+
+    /// Verifies that a thread error retains a newly initialized process.
+    #[test]
+    fn thread_error_retains_new_process() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread = thread(0x2000);
+
+        let result =
+            tracker.try_get_or_insert(process, thread, || Ok("process"), || Err("thread error"));
+
+        assert_eq!(result.unwrap_err(), "thread error");
+        assert_eq!(tracker.get_process(process), Some(&"process"));
+        assert!(tracker.get_thread(thread).is_none());
+        assert_eq!(tracker.threads_of(process).count(), 0);
+    }
+
+    /// Verifies that a thread error commits process generation replacement.
+    #[test]
+    fn thread_error_commits_process_generation_replacement() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "old", 1);
+        tracker.insert(process, thread2, "old", 2);
+        tracker.retire_process(process).unwrap();
+
+        let result =
+            tracker.try_get_or_insert(process, thread1, || Ok("new"), || Err("thread error"));
+
+        assert_eq!(result.unwrap_err(), "thread error");
+        assert_eq!(tracker.get_process(process), Some(&"new"));
+        assert!(tracker.get_thread(thread1).is_none());
+        assert!(tracker.get_thread(thread2).is_none());
+        assert_eq!(tracker.threads_of(process).count(), 0);
+    }
+
+    /// Verifies that a process error preserves the previous generation.
+    #[test]
+    fn process_error_preserves_previous_generation() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "old", 1);
+        tracker.insert(process, thread2, "old", 2);
+        tracker.retire_process(process).unwrap();
+
+        let result = tracker.try_get_or_insert(
+            process,
+            thread1,
+            || Err("process error"),
+            || -> Result<u32, &str> {
+                panic!("initialized thread after process initialization failed")
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "process error");
+        assert_eq!(tracker.get_process(process), Some(&"old"));
+        assert_eq!(tracker.get_thread(thread1), Some(&1));
+        assert_eq!(tracker.get_thread(thread2), Some(&2));
+        assert_eq!(tracker.threads_of(process).count(), 2);
+    }
+
+    /// Verifies that process cleanup cascades to all owned threads.
+    #[test]
+    fn removes_retired_processes_and_owned_threads() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread1 = thread(0x3000);
+        let thread2 = thread(0x4000);
+        let thread3 = thread(0x5000);
+
+        tracker.insert(process1, thread1, "retired", 1);
+        tracker.insert(process1, thread2, "retired", 2);
+        tracker.insert(process2, thread3, "active", 3);
+        tracker.retire_process(process1).unwrap();
+        tracker.retire_thread(process2, thread3).unwrap();
+
+        tracker.remove_retired_processes();
+
+        assert!(tracker.get_process(process1).is_none());
+        assert!(tracker.get_thread(thread1).is_none());
+        assert!(tracker.get_thread(thread2).is_none());
+        assert_eq!(tracker.get_process(process2), Some(&"active"));
+        assert_eq!(tracker.get_thread(thread3), Some(&3));
+        assert_eq!(tracker.process_of(thread3), Some(process2));
+    }
+
+    /// Verifies that thread cleanup leaves processes and active threads tracked.
+    #[test]
+    fn removes_only_retired_threads() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process = process(0x1000);
+        let thread1 = thread(0x2000);
+        let thread2 = thread(0x3000);
+
+        tracker.insert(process, thread1, "process", 1);
+        tracker.insert(process, thread2, "process", 2);
+        tracker.retire_process(process).unwrap();
+        tracker.retire_thread(process, thread1).unwrap();
+
+        tracker.remove_retired_threads();
+
+        assert_eq!(tracker.get_process(process), Some(&"process"));
+        assert!(tracker.get_thread(thread1).is_none());
+        assert_eq!(tracker.get_thread(thread2), Some(&2));
+        assert_eq!(tracker.threads_of(process).collect::<Vec<_>>(), [thread2]);
+    }
+
+    /// Verifies that combined cleanup removes both retired categories.
+    #[test]
+    fn removes_all_retired_entries() {
+        let mut tracker = Tracker::<&str, u32>::default();
+        let process1 = process(0x1000);
+        let process2 = process(0x2000);
+        let thread1 = thread(0x3000);
+        let thread2 = thread(0x4000);
+        let thread3 = thread(0x5000);
+
+        tracker.insert(process1, thread1, "retired", 1);
+        tracker.insert(process2, thread2, "active", 2);
+        tracker.insert(process2, thread3, "active", 3);
+        tracker.retire_process(process1).unwrap();
+        tracker.retire_thread(process2, thread2).unwrap();
+
+        tracker.remove_retired();
+
+        assert!(tracker.get_process(process1).is_none());
+        assert!(tracker.get_thread(thread1).is_none());
+        assert_eq!(tracker.get_process(process2), Some(&"active"));
+        assert!(tracker.get_thread(thread2).is_none());
+        assert_eq!(tracker.get_thread(thread3), Some(&3));
+        assert_eq!(tracker.threads_of(process2).collect::<Vec<_>>(), [thread3]);
+    }
+}
