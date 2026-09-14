@@ -1,53 +1,16 @@
 //! This example demonstrates how to enumerate the running processes of a
 //! Windows guest running inside a Xen domain.
 
-use anyhow::{Context as _, Error};
-use isr::cache::IsrCache;
-use vmi::{
-    VcpuId, VmiCore, VmiSession,
-    arch::amd64::Amd64,
-    driver::xen::VmiXenDriver,
-    os::{VmiOsProcess as _, windows::WindowsOs},
-};
+mod common;
+
+use anyhow::Error;
+use vmi::os::VmiOsProcess as _;
 
 fn main() -> Result<(), Error> {
-    // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::try_from_env()?
-        .context("invalid VMI_XEN_DOMAIN environment variable")?;
-    let core = VmiCore::new(driver)?;
+    let setup = common::VmiSetup::new()?;
+    let session = setup.session();
 
-    // Try to find the kernel information.
-    // This is necessary in order to load the profile.
-    let kernel_info = {
-        // Pause the VM to get consistent state.
-        let _pause_guard = core.pause_guard()?;
-
-        // Get the register state for the first vCPU.
-        let registers = core.registers(VcpuId(0))?;
-
-        // On AMD64 architecture, the kernel is usually found using the
-        // `MSR_LSTAR` register, which contains the address of the system call
-        // handler. This register is set by the operating system during boot
-        // and is left unchanged (unless some rootkits are involved).
-        //
-        // Therefore, we can take an arbitrary registers at any point in time
-        // (as long as the OS has booted and the page tables are set up) and
-        // use them to find the kernel.
-        WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
-    };
-
-    // Load the profile.
-    // The profile contains offsets to kernel functions and data structures.
-    let isr = IsrCache::new("cache")?;
-    let entry = isr.entry_from_codeview(kernel_info.codeview)?;
-    let profile = entry.profile()?;
-
-    // Create the VMI session.
-    tracing::info!("Creating VMI session");
-    let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-    let session = VmiSession::new(&core, &os);
-
-    // Pause the VM again to get consistent state.
+    // Pause the VM to get consistent state.
     let paused = session.pause_guard()?;
 
     // Create a new `VmiState` with the boot CPU registers.

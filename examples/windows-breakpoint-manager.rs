@@ -2,18 +2,19 @@
 //! [`PageTableMonitor`] to intercept calls to selected kernel routines
 //! on a Windows guest.
 
+mod common;
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 
-use anyhow::{Context as _, Error};
-use isr::{Profile, cache::IsrCache, macros::symbols};
+use anyhow::Error;
+use isr::{Profile, macros::symbols};
 use vmi::{
-    MemoryAccess, Va, VcpuId, View, VmiContext, VmiCore, VmiError, VmiEventResponse, VmiHandler,
-    VmiSession,
+    MemoryAccess, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
-    driver::{VmiFullDriver, xen::VmiXenDriver},
+    driver::VmiFullDriver,
     os::{
         ProcessObject, VmiOsProcess as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
@@ -518,42 +519,11 @@ where
 }
 
 fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    let setup = common::VmiSetup::new()?;
+    let session = setup.session();
+    let profile = setup.profile();
 
-    // Setup VMI.
-    let driver = VmiXenDriver::<Amd64>::try_from_env()?
-        .context("invalid VMI_XEN_DOMAIN environment variable")?;
-    let core = VmiCore::new(driver)?;
-
-    // Try to find the kernel information.
-    // This is necessary in order to load the profile.
-    let kernel_info = {
-        let _pause_guard = core.pause_guard()?;
-        let regs = core.registers(0.into())?;
-
-        WindowsOs::find_kernel(&core, &regs)?.expect("kernel information")
-    };
-
-    // Load the profile.
-    // The profile contains offsets to kernel functions and data structures.
-    let isr = IsrCache::new("cache")?;
-    let entry = isr.entry_from_codeview(kernel_info.codeview)?;
-    let profile = entry.profile()?;
-
-    // Create the VMI session.
-    tracing::info!("Creating VMI session");
-    let terminate_flag = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGHUP, terminate_flag.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGINT, terminate_flag.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGALRM, terminate_flag.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, terminate_flag.clone())?;
-
-    let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-    let session = VmiSession::new(&core, &os);
-
-    session.handle(|session| Monitor::new(session, &profile, terminate_flag))?;
+    session.handle(|session| Monitor::new(session, profile, setup.terminate_flag()))?;
 
     Ok(())
 }

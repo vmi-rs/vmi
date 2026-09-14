@@ -203,7 +203,8 @@ where
 }
 
 fn main() -> Result<(), Error> {
-    let session = common::create_vmi_session()?;
+    let setup = common::VmiSetup::new()?;
+    let session = setup.session();
 
     let explorer_pid = {
         // This block is used to drop the pause guard after the PID is found.
