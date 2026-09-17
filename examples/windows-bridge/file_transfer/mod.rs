@@ -1,4 +1,4 @@
-//! Per-process file transfer lifecycle driven by `NtWriteFile`/`NtClose` hooks.
+//! Tracks files marked by `NtWriteFile` and transfers them during `NtClose`.
 
 mod bridge;
 mod recipe;
@@ -15,11 +15,11 @@ use vmi::{
 pub use self::bridge::{FileTransferBridge, FileTransferStatus};
 use self::recipe::file_transfer_recipe;
 
-/// Lifecycle of one file marked by `NtWriteFile` and transferred at `NtClose`.
+/// State of a file marked by `NtWriteFile` and transferred during `NtClose`.
 #[expect(
     clippy::large_enum_variant,
     reason = "only a handful of transfers exist at a time, so boxing the recipe \
-              executor would trade a pointless allocation for readability"
+              executor would add an allocation without improving readability"
 )]
 enum FileTransferState<Driver>
 where
@@ -35,7 +35,7 @@ where
     },
 }
 
-/// A process-local file transfer that moves to the closing thread while executing.
+/// A process-local file transfer that runs on the thread closing the file handle.
 pub struct FileTransfer<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
@@ -50,7 +50,7 @@ impl<Driver> FileTransfer<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    /// Marks a file for transfer without allocating guest or host resources.
+    /// Creates a pending transfer.
     pub fn new(handle: u64, file_object: Va, path: String) -> Self {
         Self {
             handle,
@@ -60,7 +60,7 @@ where
         }
     }
 
-    /// Returns the guest transfer handle.
+    /// Returns the process-local file handle.
     pub fn handle(&self) -> u64 {
         self.handle
     }
@@ -75,7 +75,7 @@ where
         &self.path
     }
 
-    /// Starts synchronous execution in the thread that is about to close the handle.
+    /// Starts the transfer on the thread that is about to close the file handle.
     pub fn start(&mut self) {
         assert!(
             matches!(self.state, FileTransferState::Pending),
@@ -87,7 +87,7 @@ where
         };
     }
 
-    /// Advances the injection recipe on the current thread.
+    /// Advances the `file-transfer` recipe on the current thread.
     pub fn execute(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -100,7 +100,7 @@ where
         executor.execute(vmi)
     }
 
-    /// Returns whether the transfer has finished executing.
+    /// Returns whether the `file-transfer` recipe has finished.
     pub fn done(&self) -> bool {
         match &self.state {
             FileTransferState::Pending => false,

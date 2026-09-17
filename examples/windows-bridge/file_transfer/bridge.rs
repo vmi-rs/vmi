@@ -1,5 +1,3 @@
-//! Guest-driven file-transfer protocol handler for the deploy monitor bridge.
-
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
@@ -19,38 +17,38 @@ use vmi::{
     },
 };
 
-/// Number of bytes shared with the guest for each transfer chunk.
+/// Chunk size shared with the guest.
 const CHUNK_SIZE: u64 = 64 * 1024;
 
-/// Guest transfer handles occupy the low 12 bits of a begin response.
+/// Number of low bits reserved for the transfer handle in a begin response.
 const TRANSFER_HANDLE_BITS: u32 = 12;
 
-/// Upper bound on a guest transfer handle before the space is exhausted.
+/// Largest transfer handle that fits in a begin response.
 const TRANSFER_HANDLE_MAX: u32 = (1 << TRANSFER_HANDLE_BITS) - 1;
 
-/// File-transfer operation stage encoded in a packed status.
+/// Stage reported by the `file-transfer` shellcode.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct FileTransferStage(u8);
 
 impl_bridge_stage!(FileTransferStage);
 
 impl FileTransferStage {
-    /// No operation ran.
+    /// No transfer operation was started.
     pub const NONE: Self = Self(0x00);
 
-    /// File name query failed.
+    /// File name query stage.
     pub const FILE_NAME: Self = Self(0x01);
 
-    /// File size query failed.
+    /// File size query stage.
     pub const FILE_SIZE: Self = Self(0x02);
 
-    /// File mapping failed.
+    /// File mapping stage.
     pub const MAPPING: Self = Self(0x03);
 
-    /// Transfer buffer setup failed.
+    /// Transfer buffer setup stage.
     pub const BUFFER: Self = Self(0x04);
 
-    /// File transfer failed or was interrupted.
+    /// File transfer stage.
     pub const TRANSFER: Self = Self(0x05);
 }
 
@@ -69,10 +67,10 @@ impl std::fmt::Debug for FileTransferStage {
     }
 }
 
-/// Decoded terminal status returned by the file-transfer shellcode.
+/// Status reported by the `file-transfer` shellcode.
 pub type FileTransferStatus = Status<FileTransferStage>;
 
-/// Host output for one active transfer.
+/// Host output for an active transfer.
 struct HostFile {
     file: File,
     path: PathBuf,
@@ -103,12 +101,12 @@ impl HostFile {
         })
     }
 
-    /// Records the guest buffer address shared for this transfer.
+    /// Sets the guest buffer address shared for this transfer.
     fn set_buffer(&mut self, buffer: Va) {
         self.buffer = Some(buffer);
     }
 
-    /// Appends one validated chunk to the host output file.
+    /// Appends a chunk to the host output file.
     fn append(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let length = bytes.len() as u64;
         if length > CHUNK_SIZE || self.received + length > self.expected_size {
@@ -124,8 +122,8 @@ impl HostFile {
         Ok(())
     }
 
-    /// Flushes the host output file once its full size has arrived.
-    fn commit(&mut self) -> Result<(), Error> {
+    /// Flushes the host output.
+    fn flush(&mut self) -> Result<(), Error> {
         if self.received != self.expected_size {
             return Err(Error::new(
                 ErrorKind::UnexpectedEof,
@@ -137,7 +135,7 @@ impl HostFile {
     }
 }
 
-/// Host session for one guest-issued transfer handle.
+/// State associated with a guest-issued transfer handle.
 struct TransferSession {
     path: String,
     host_file: HostFile,
@@ -145,7 +143,7 @@ struct TransferSession {
 }
 
 impl TransferSession {
-    /// Creates a session with an empty chunk buffer sized to one chunk.
+    /// Creates a transfer session with a buffer large enough for one chunk.
     fn new(path: String, host_file: HostFile) -> Self {
         Self {
             path,
@@ -155,7 +153,7 @@ impl TransferSession {
     }
 }
 
-/// Handles file-transfer negotiation and output for the deploy monitor.
+/// Handles communication with the `file-transfer` shellcode.
 pub struct FileTransferBridge {
     output_directory: PathBuf,
     next_transfer_handle: u32,
@@ -166,19 +164,19 @@ pub struct FileTransferBridge {
 impl_bridge_contract!(FileTransferBridge);
 
 impl FileTransferBridge {
-    /// Begins a new transfer and allocates its guest handle.
+    /// Method used to begin a transfer.
     const METHOD_BEGIN: u16 = 0x0001;
 
-    /// Registers the shared guest buffer for a transfer handle.
+    /// Method used to register the shared guest buffer.
     const METHOD_SET_BUFFER: u16 = 0x0002;
 
-    /// Copies one filled guest buffer into the host output file.
+    /// Method used to transfer a guest buffer.
     const METHOD_CHUNK: u16 = 0x0003;
 
-    /// Closes a transfer handle and commits the host output.
+    /// Method used to close a transfer.
     const METHOD_CLOSE: u16 = 0x0004;
 
-    /// Terminal status method.
+    /// Method used to report the final status.
     const METHOD_EXIT: u16 = 0xffff;
 
     /// Allows the shellcode to continue its current stage.
@@ -187,7 +185,7 @@ impl FileTransferBridge {
     /// Aborts the shellcode's current stage.
     const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
-    /// Creates a persistent handler writing files beneath `output_directory`.
+    /// Creates a handler that writes transferred files to `output_directory`.
     pub fn new(output_directory: PathBuf) -> Self {
         Self {
             output_directory,
@@ -197,7 +195,7 @@ impl FileTransferBridge {
         }
     }
 
-    /// Allocates the next guest transfer handle, if the handle space is not exhausted.
+    /// Allocates the next transfer handle.
     fn allocate_transfer_handle(&mut self) -> Option<u32> {
         if self.next_transfer_handle > TRANSFER_HANDLE_MAX {
             return None;
@@ -208,7 +206,7 @@ impl FileTransferBridge {
         Some(handle)
     }
 
-    /// Produces the protocol response for one file-transfer packet.
+    /// Handles a `file-transfer` bridge packet.
     fn handle_packet<Driver>(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -229,7 +227,11 @@ impl FileTransferBridge {
         }
     }
 
-    /// Starts one transfer and returns its newly allocated guest handle.
+    /// Handles the [`METHOD_BEGIN`] bridge method.
+    ///
+    /// Starts a transfer and returns its newly allocated handle.
+    ///
+    /// [`METHOD_BEGIN`]: Self::METHOD_BEGIN
     fn handle_begin<Driver>(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -300,7 +302,9 @@ impl FileTransferBridge {
         BridgeResponse::new((CHUNK_SIZE << TRANSFER_HANDLE_BITS) | u64::from(transfer_handle))
     }
 
-    /// Registers the shared guest buffer for a transfer handle.
+    /// Handles the [`METHOD_SET_BUFFER`] bridge method.
+    ///
+    /// [`METHOD_SET_BUFFER`]: Self::METHOD_SET_BUFFER
     fn handle_set_buffer<Driver>(
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -322,7 +326,9 @@ impl FileTransferBridge {
         BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
-    /// Copies one filled guest buffer into its host output file.
+    /// Handles the [`METHOD_CHUNK`] bridge method.
+    ///
+    /// [`METHOD_CHUNK`]: Self::METHOD_CHUNK
     fn handle_chunk<Driver>(
         &mut self,
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -362,7 +368,9 @@ impl FileTransferBridge {
         BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
-    /// Closes a transfer handle and commits a successful host output.
+    /// Handles the [`METHOD_CLOSE`] bridge method.
+    ///
+    /// [`METHOD_CLOSE`]: Self::METHOD_CLOSE
     fn handle_close<Driver>(
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -382,8 +390,8 @@ impl FileTransferBridge {
         };
 
         if transfer_status == TRANSFER_SUCCESS {
-            if let Err(err) = transfer.host_file.commit() {
-                tracing::error!(%err, path = transfer.path, "cannot commit file");
+            if let Err(err) = transfer.host_file.flush() {
+                tracing::error!(%err, path = transfer.path, "cannot flush file");
                 return BridgeResponse::new(Self::RESPONSE_ABORT);
             }
 
@@ -397,7 +405,9 @@ impl FileTransferBridge {
         BridgeResponse::new(Self::RESPONSE_CONTINUE)
     }
 
-    /// Completes one shellcode invocation.
+    /// Handles the [`METHOD_EXIT`] bridge method.
+    ///
+    /// [`METHOD_EXIT`]: Self::METHOD_EXIT
     fn handle_exit<Driver>(
         &mut self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -422,7 +432,9 @@ impl FileTransferBridge {
         BridgeResponse::default()
     }
 
-    /// Logs and rejects one unknown file-transfer method.
+    /// Handles a bridge packet with an unknown method.
+    ///
+    /// Logs the packet details and returns no response.
     fn handle_unknown<Driver>(
         &self,
         _vmi: &VmiContext<'_, WindowsOs<Driver>>,
@@ -431,7 +443,7 @@ impl FileTransferBridge {
     where
         Driver: VmiRead<Architecture = Amd64>,
     {
-        tracing::error!(
+        tracing::warn!(
             request = %Hex(packet.request()),
             method = %Hex(packet.method()),
             value1 = %Hex(packet.value1()),
@@ -451,6 +463,7 @@ where
 {
     type Output = BridgeStatusCode;
 
+    /// Request code for the `file-transfer` shellcode.
     const REQUEST: u16 = 0x0012;
 
     #[tracing::instrument(name = "file_transfer", skip_all)]
@@ -468,7 +481,7 @@ where
     }
 }
 
-/// Builds a flat, filesystem-safe host output name for one transferred file.
+/// Returns a filesystem-safe name for a transferred file.
 fn output_filename(output_id: u64, path: &str) -> String {
     let basename = path
         .rsplit(['\\', '/'])
@@ -528,12 +541,12 @@ mod tests {
     }
 
     #[test]
-    fn host_file_commits_exact_declared_bytes() {
+    fn host_file_flushes_exact_declared_bytes() {
         let output = temporary_output("complete");
         let mut host_file = HostFile::create(output.clone(), 3).unwrap();
 
         host_file.append(b"abc").unwrap();
-        host_file.commit().unwrap();
+        host_file.flush().unwrap();
 
         assert_eq!(std::fs::read(&output).unwrap(), b"abc");
         std::fs::remove_file(output).unwrap();
@@ -546,7 +559,7 @@ mod tests {
 
         host_file.append(b"abc").unwrap();
         assert_eq!(
-            host_file.commit().unwrap_err().kind(),
+            host_file.flush().unwrap_err().kind(),
             ErrorKind::UnexpectedEof
         );
         drop(host_file);

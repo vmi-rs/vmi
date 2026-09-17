@@ -1,3 +1,8 @@
+// Kernel-mode `file-transfer` shellcode.
+//
+// The shellcode maps a file handle, copies its contents into a shared nonpaged
+// buffer, and asks the bridge host to read each chunk.
+
 #include <scfw/runtime.h>
 #include <scfw/platform/windows/kernelmode.h>
 
@@ -517,7 +522,7 @@ CleanupFileName:
     ExFreePoolWithTag(FileNameInformation, SHELLCODE_MEMORY_TAG);
 
     //
-    // Return the terminal status.
+    // Return the final status.
     //
 
 Exit:

@@ -36,14 +36,14 @@ capabilities, from basic operations to more complex scenarios.
   A more complex example showing how to write to a file in chunks and
   handle potential errors during injection.
 
+- **[`windows-bridge`]**
+
+  Demonstrates how to use the _bridge_ for communication between the guest
+  and the host.
+
 - **[`windows-shellcode`]**
 
   Demonstrates how to inject shellcode into the guest VM.
-
-- **[`windows-bridge`]**
-
-  Composes those primitives into a host-gated deployment, monitors the
-  process it launches, and transfers the files it writes back to the host.
 
 
 [`BreakpointManager`]: https://docs.rs/vmi/latest/vmi/utils/bpm/struct.BreakpointManager.html

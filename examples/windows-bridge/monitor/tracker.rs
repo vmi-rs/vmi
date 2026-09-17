@@ -1,22 +1,22 @@
-//! Generic process/thread identity tracker decoupled from payload interpretation.
+//! Tracks process and thread identities with their associated values.
 
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use vmi::os::{ProcessObject, ThreadObject};
 
-/// Opaque process payload and its tracked thread identities.
+/// Process value and its tracked thread identities.
 struct ProcessEntry<P> {
     value: P,
     threads: HashSet<ThreadObject>,
 }
 
-/// Opaque thread payload and its owning process identity.
+/// Thread value and its owning process identity.
 struct ThreadEntry<T> {
     value: T,
     process: ProcessObject,
 }
 
-/// Maintains process and thread identity relationships without interpreting payloads.
+/// Tracks process and thread relationships with their associated values.
 pub struct ProcessTracker<P, T> {
     processes: HashMap<ProcessObject, ProcessEntry<P>>,
     threads: HashMap<ThreadObject, ThreadEntry<T>>,
@@ -32,7 +32,7 @@ impl<P, T> Default for ProcessTracker<P, T> {
 }
 
 impl<P, T> ProcessTracker<P, T> {
-    /// Inserts a process payload while retaining any threads already associated with it.
+    /// Inserts a process value while retaining its tracked threads.
     pub fn insert_process(&mut self, object: ProcessObject, value: P) -> Option<P> {
         match self.processes.entry(object) {
             Entry::Occupied(mut entry) => {
@@ -48,9 +48,9 @@ impl<P, T> ProcessTracker<P, T> {
         }
     }
 
-    /// Inserts a thread payload and records its owning process.
+    /// Inserts a thread value and records its owning process.
     ///
-    /// Returns `Err(value)` when the owning process is not tracked.
+    /// Returns `Err(value)` when the process is not tracked.
     pub fn insert_thread(
         &mut self,
         process: ProcessObject,
@@ -75,19 +75,19 @@ impl<P, T> ProcessTracker<P, T> {
         Ok(previous.map(|entry| entry.value))
     }
 
-    /// Returns a mutable process payload.
+    /// Returns a mutable process value.
     pub fn get_process_mut(&mut self, object: ProcessObject) -> Option<&mut P> {
         self.processes
             .get_mut(&object)
             .map(|entry| &mut entry.value)
     }
 
-    /// Returns a thread payload.
+    /// Returns a thread value.
     pub fn get_thread(&self, object: ThreadObject) -> Option<&T> {
         self.threads.get(&object).map(|entry| &entry.value)
     }
 
-    /// Returns a mutable thread payload.
+    /// Returns a mutable thread value.
     pub fn get_thread_mut(&mut self, object: ThreadObject) -> Option<&mut T> {
         self.threads.get_mut(&object).map(|entry| &mut entry.value)
     }

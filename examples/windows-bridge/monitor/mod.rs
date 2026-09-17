@@ -1,4 +1,4 @@
-//! Deploy monitor that installs kernel breakpoints and drains marked file transfers.
+//! Monitors a deployed process and transfers the files it writes.
 
 mod hooks;
 mod tracker;
@@ -32,7 +32,7 @@ use crate::{
     file_transfer::{FileTransfer, FileTransferBridge},
 };
 
-/// Shortest observed `_EPROCESS.ImageFileName` truncation.
+/// Size of `_EPROCESS.ImageFileName[15]` minus the NUL terminator.
 const MIN_TRUNCATED_PROCESS_NAME_LEN: usize = 14;
 
 /// Matches a complete executable name or its kernel-truncated representation.
@@ -128,7 +128,7 @@ symbols! {
     }
 }
 
-/// Terminal outcome produced by deploy monitoring.
+/// Result produced when deploy monitoring finishes.
 pub type MonitorOutput = Result<Option<ProcessId>, DeployStatus>;
 
 /// Kernel breakpoint handler installed at a hooked function's entry.
@@ -137,7 +137,7 @@ type Hook<Driver> = fn(
     &mut MonitorState<Driver>,
 ) -> Result<VmiEventResponse<Amd64>, VmiError>;
 
-/// Mutable monitor state threaded through kernel hook dispatch.
+/// State passed through kernel breakpoint dispatch.
 struct MonitorState<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
@@ -149,15 +149,15 @@ where
     completion: Option<MonitorOutput>,
 }
 
-/// Returns terminal process status or graceful external termination.
+/// Returns a completed monitor result or graceful external termination.
 fn monitor_poll(completion: Option<MonitorOutput>, terminated: bool) -> Option<MonitorOutput> {
     completion.or_else(|| terminated.then_some(Ok(None)))
 }
 
-/// Monitors a deployed process from creation through address-space cleanup.
+/// Monitors a deployed process.
 ///
-/// This is intentionally a proof-of-concept handler. Setup and event errors are
-/// propagated or treated as fatal instead of maintaining a recovery state machine.
+/// Setup and event errors are returned or treated as fatal. The monitor does
+/// not attempt recovery.
 pub struct Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
@@ -258,6 +258,7 @@ where
         if memory_access.access.contains(MemoryAccess::W) {
             self.ptm
                 .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
+
             Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
         }
         else if memory_access.access.contains(MemoryAccess::R) {
@@ -296,10 +297,12 @@ where
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let events = self.ptm.process_dirty_entries(vmi, vmi.event().vcpu_id())?;
         self.bpm.handle_ptm_events(vmi, events)?;
+
         Ok(VmiEventResponse::default().with_view(self.view))
     }
 
-    /// Dispatches deploy and file-transfer hypercalls through the composed bridge.
+    /// Dispatches `deploy` and `file-transfer` hypercalls through the composed
+    /// bridge.
     #[tracing::instrument(skip_all)]
     fn hypercall(
         &mut self,

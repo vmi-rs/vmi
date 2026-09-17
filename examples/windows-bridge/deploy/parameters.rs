@@ -1,7 +1,7 @@
 use vmi::utils::shellcode::{ParameterWriter, ShellcodeParameters};
 
 bitflags::bitflags! {
-    /// Operation and optional-field flags consumed by the deploy shellcode.
+    /// Flags encoded for the `deploy` shellcode.
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     struct ParameterFlags: u32 {
         /// Enables archive extraction after a download.
@@ -68,7 +68,7 @@ pub struct ExecutionEnabled {
     show_window: Option<i32>,
 }
 
-/// Host representation of the deploy shellcode's sequential parameter block.
+/// Parameters for the `deploy` shellcode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeployParameters {
     /// Optional complete download operation.
@@ -79,7 +79,7 @@ pub struct DeployParameters {
 }
 
 impl DeployParameters {
-    /// Starts a no-op builder with download and execution disabled.
+    /// Creates a builder with download and execution disabled.
     pub fn builder() -> DeployParametersBuilder {
         DeployParametersBuilder {
             download: DownloadDisabled,
@@ -87,7 +87,7 @@ impl DeployParameters {
         }
     }
 
-    /// Computes the operation and optional-field flags.
+    /// Returns the operation and optional-field flags.
     fn flags(&self) -> ParameterFlags {
         let mut flags = ParameterFlags::empty();
 
@@ -118,7 +118,7 @@ impl DeployParameters {
         flags
     }
 
-    /// Erases completed builder states into serializable parameters.
+    /// Creates serializable parameters from completed builder states.
     fn from_states(download: Option<DownloadEnabled>, execution: Option<ExecutionEnabled>) -> Self {
         Self {
             download,
@@ -128,6 +128,7 @@ impl DeployParameters {
 }
 
 impl ShellcodeParameters for DeployParameters {
+    /// Uses `u32` alignment because the operation flags are encoded first.
     const ALIGNMENT: usize = align_of::<u32>();
 
     fn encode(&self, writer: &mut ParameterWriter) {
@@ -160,11 +161,11 @@ impl ShellcodeParameters for DeployParameters {
     }
 }
 
-/// Builds one deploy request while tracking enabled operations in its type.
+/// Builds `deploy` parameters while tracking enabled operations in its type.
 ///
-/// Callers must supply strings accepted by the guest APIs. Values are not validated.
-/// Download setters are unavailable after [`execute`](Self::execute), so an
-/// enabled download must be completed before execution is configured.
+/// Callers must supply strings accepted by the guest APIs. Values are not
+/// validated. Download setters are unavailable after [`execute`](Self::execute),
+/// so an enabled download must be completed before execution is configured.
 #[derive(Debug)]
 #[must_use]
 pub struct DeployParametersBuilder<Download = DownloadDisabled, Execution = ExecutionDisabled> {
@@ -206,13 +207,13 @@ impl DeployParametersBuilder<DownloadNeedsPath, ExecutionDisabled> {
 }
 
 impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
-    /// Enables extraction into the supplied guest directory.
+    /// Sets the guest extraction directory.
     #[allow(unused, reason = "exercised by tests only")]
     pub fn extraction_directory(self, extraction_directory: impl Into<String>) -> Self {
         self.maybe_extraction_directory(Some(extraction_directory))
     }
 
-    /// Supplies an optional extraction directory.
+    /// Sets the optional guest extraction directory.
     pub fn maybe_extraction_directory(
         self,
         extraction_directory: Option<impl Into<String>>,
@@ -264,13 +265,13 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
 }
 
 impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
-    /// Supplies a present argument slot. An empty string remains meaningful.
+    /// Sets command-line arguments. An empty string remains present.
     #[allow(unused, reason = "exercised by tests only")]
     pub fn arguments(self, arguments: impl Into<String>) -> Self {
         self.maybe_arguments(Some(arguments))
     }
 
-    /// Supplies an optional argument slot. A present empty string remains meaningful.
+    /// Sets optional command-line arguments. A present empty string remains meaningful.
     pub fn maybe_arguments(self, arguments: Option<impl Into<String>>) -> Self {
         Self {
             download: self.download,
@@ -281,13 +282,13 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
         }
     }
 
-    /// Supplies a present guest working directory.
+    /// Sets the guest working directory.
     #[allow(unused, reason = "exercised by tests only")]
     pub fn working_directory(self, working_directory: impl Into<String>) -> Self {
         self.maybe_working_directory(Some(working_directory))
     }
 
-    /// Supplies an optional guest working directory.
+    /// Sets the optional guest working directory.
     pub fn maybe_working_directory(self, working_directory: Option<impl Into<String>>) -> Self {
         Self {
             download: self.download,
@@ -298,13 +299,13 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
         }
     }
 
-    /// Supplies an explicit Windows `SW_*` display value.
+    /// Sets the Windows `SW_*` display value.
     #[allow(unused, reason = "exercised by tests only")]
     pub fn show_window(self, show_window: i32) -> Self {
         self.maybe_show_window(Some(show_window))
     }
 
-    /// Supplies an optional Windows `SW_*` display value.
+    /// Sets the optional Windows `SW_*` display value.
     pub fn maybe_show_window(self, show_window: Option<i32>) -> Self {
         Self {
             download: self.download,
@@ -317,34 +318,34 @@ impl<Download> DeployParametersBuilder<Download, ExecutionEnabled> {
 }
 
 impl DeployParametersBuilder<DownloadDisabled, ExecutionDisabled> {
-    /// Finishes a no-op request.
+    /// Builds `deploy` parameters with no operations.
     pub fn build(self) -> DeployParameters {
         DeployParameters::from_states(None, None)
     }
 }
 
 impl DeployParametersBuilder<DownloadEnabled, ExecutionDisabled> {
-    /// Finishes a request containing only download and optional extraction.
+    /// Builds `deploy` parameters with download and optional extraction.
     pub fn build(self) -> DeployParameters {
         DeployParameters::from_states(Some(self.download), None)
     }
 }
 
 impl DeployParametersBuilder<DownloadDisabled, ExecutionEnabled> {
-    /// Finishes a request containing only execution.
+    /// Builds `deploy` parameters with execution.
     pub fn build(self) -> DeployParameters {
         DeployParameters::from_states(None, Some(self.execution))
     }
 }
 
 impl DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
-    /// Finishes a request containing download and execution operations.
+    /// Builds `deploy` parameters with download and execution.
     pub fn build(self) -> DeployParameters {
         DeployParameters::from_states(Some(self.download), Some(self.execution))
     }
 }
 
-/// Encodes a parameter block for test assertions.
+/// Encodes `deploy` parameters for test assertions.
 #[cfg(test)]
 pub fn encode_parameters(parameters: &impl ShellcodeParameters) -> Vec<u8> {
     let mut output = Vec::new();

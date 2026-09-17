@@ -4,7 +4,7 @@
 
 `windows-bridge` composes the shellcode primitives into a supervised workflow: the host deploys content into a Windows **guest**, gates every stage from outside the VM, then watches the process it launched and pulls the files it writes back to the host.
 
-It assumes the injection and bridge mechanics documented in [`windows-shellcode`](../windows-shellcode/README.md) - payload embedding, thread hijacking, the `VMCALL` register protocol, the verification stamps, the request id registry and the terminal status encoding. This document covers only what is built on top of them. `windows-bridge` uses requests `0x0011` (`DeployBridge`) and `0x0012` (`FileTransferBridge`).
+It assumes the injection and bridge mechanics documented in [`windows-shellcode`](../windows-shellcode/README.md) - payload embedding, thread hijacking, the `VMCALL` register protocol, verification stamps, the request id registry, and shellcode status encoding. This document covers only what is built on top of them. `windows-bridge` uses requests `0x0011` (`DeployBridge`) and `0x0012` (`FileTransferBridge`).
 
 ```mermaid
 flowchart LR
@@ -36,7 +36,7 @@ Terms specific to this example; the shared ones are defined in [`windows-shellco
 ```mermaid
 flowchart TB
     subgraph H[Host]
-        Main[CLI and run_deploy]
+        Main[CLI and deploy::run]
         Injector[User-mode InjectorHandler]
         Monitor[Deploy Monitor]
         DB[DeployBridge]
@@ -85,11 +85,11 @@ The host controls execution but does not call Windows APIs itself. Recipes arran
 
 `InjectorHandler<UserMode>` hijacks a thread in the carrier process, normally `explorer.exe`, and runs `user_shellcode_spawn_recipe` with the encoded `DeployParameters` block. Spawning rather than calling is required here: the payload must outlive the recipe so the host can park it at a gate, install monitoring, and only then let it continue.
 
-The recipe, the register protocol and the terminal status encoding are described in [`windows-shellcode`](../windows-shellcode/README.md#lifecycle).
+The recipe, register protocol, and shellcode status encoding are described in [`windows-shellcode`](../windows-shellcode/README.md#lifecycle).
 
 ### 3. Gates: host-side policy
 
-`DeployBridge` answers three methods. The download gate reports readiness and permits bounded retries; the execute gate decides whether the payload may launch the program, abort, or park; the terminal method reports the payload's final status. The guest carries no policy of its own - it asks before every irreversible step.
+`DeployBridge` answers three methods. The download gate reports readiness and permits bounded retries; the execute gate decides whether the payload may launch the program, abort, or park; the exit method reports the payload's final status. The guest carries no policy of its own - it asks before every irreversible step.
 
 `DeployBridge` completes the injector event loop, while the monitor's copy deliberately does not: it answers gates but keeps running until the tracked process is cleaned up or monitoring is cancelled.
 
@@ -104,7 +104,7 @@ Monitoring must be installed **before** execution is allowed, or a short-lived c
 ```mermaid
 sequenceDiagram
     participant G as Guest deploy payload
-    participant H as Host run_deploy
+    participant H as Host deploy::run
     participant I as Host injector + DeployBridge
     participant M as Host Monitor
     participant W as Windows kernel
@@ -123,19 +123,19 @@ sequenceDiagram
     G->>W: ShellExecuteExW
     W->>C: create process
     W-->>M: process/thread breakpoint events
-    G->>M: terminal deploy status
+    G->>M: final deploy status
     C-->>M: file and lifecycle breakpoint events
     W-->>M: target address-space cleanup
     M-->>H: monitoring complete
 ```
 
-Without `--monitor`, the first `DeployBridge` answers the execute gate directly and waits for the payload's terminal status. With `--monitor`, it returns `WAIT`; a new `DeployBridge` inside `Monitor` answers the repeated gate with `CONTINUE`.
+Without `--monitor`, the first `DeployBridge` answers the execute gate directly and waits for the payload's final status. With `--monitor`, it returns `WAIT`; a new `DeployBridge` inside `Monitor` answers the repeated gate with `CONTINUE`.
 
 ## Call graph
 
 ```text
 main
-└─ run_deploy
+└─ deploy::run
    ├─ DeployArguments::into_request
    │  ├─ DeployParameters builder
    │  └─ DeployPolicy
@@ -156,7 +156,7 @@ SCFW deploy entry
 └─ wait_for_host
    └─ parse parameters → initialize COM/paths
       └─ download? → extract? → execute?
-         └─ terminal bridge result
+         └─ final bridge result
 ```
 
 ## What to read next

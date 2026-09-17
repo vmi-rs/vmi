@@ -12,29 +12,29 @@ use vmi::{
     },
 };
 
-/// Deploy operation stage encoded in a packed status.
+/// Stage reported by the `deploy` shellcode.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct DeployStage(u8);
 
 impl_bridge_stage!(DeployStage);
 
 impl DeployStage {
-    /// No operation ran.
+    /// No deploy operation was started.
     pub const NONE: Self = Self(0x00);
 
-    /// Parameter parsing failed.
+    /// Parameter parsing stage.
     pub const PARAMETERS: Self = Self(0x01);
 
-    /// Initialization failed.
+    /// Initialization stage.
     pub const INITIALIZATION: Self = Self(0x02);
 
-    /// Download completed or failed.
+    /// Download stage.
     pub const DOWNLOAD: Self = Self(0x03);
 
-    /// Extraction completed or failed.
+    /// Extraction stage.
     pub const EXTRACT: Self = Self(0x04);
 
-    /// Execution completed or failed.
+    /// Execution stage.
     pub const EXECUTE: Self = Self(0x05);
 }
 
@@ -53,7 +53,7 @@ impl std::fmt::Debug for DeployStage {
     }
 }
 
-/// Decoded status returned by the injector handler.
+/// Status reported by the `deploy` shellcode.
 pub type DeployStatus = Status<DeployStage>;
 
 /// Host response when the shellcode reaches the execution gate.
@@ -70,7 +70,7 @@ pub enum ExecuteResponse {
     Wait,
 }
 
-/// Host-side limits and permissions for a deploy request.
+/// Policy applied to a `deploy` request.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DeployPolicy {
     /// Number of retries allowed after failed download attempts.
@@ -113,7 +113,7 @@ impl DeployPolicy {
     }
 }
 
-/// Handles download and execute gates plus the terminal shellcode status.
+/// Handles communication with the `deploy` shellcode.
 #[derive(Debug)]
 pub struct DeployBridge {
     /// Policy applied to shellcode requests.
@@ -123,13 +123,13 @@ pub struct DeployBridge {
 impl_bridge_contract!(DeployBridge);
 
 impl DeployBridge {
-    /// Download readiness and retry method.
+    /// Method used to report download readiness or failure.
     const METHOD_DOWNLOAD: u16 = 0x0001;
 
-    /// Execution policy gate method.
+    /// Method used to request permission to execute.
     const METHOD_EXECUTE: u16 = 0x0002;
 
-    /// Terminal status method.
+    /// Method used to report the final status.
     const METHOD_EXIT: u16 = 0xffff;
 
     /// Allows the shellcode to continue its current stage.
@@ -141,12 +141,12 @@ impl DeployBridge {
     /// Aborts the shellcode's current stage.
     const RESPONSE_ABORT: u64 = 0xffff_ffff;
 
-    /// Creates a deploy bridge with the supplied host policy.
+    /// Creates a `deploy` bridge with the given policy.
     pub fn new(policy: DeployPolicy) -> Self {
         Self { policy }
     }
 
-    /// Produces the protocol response for one deploy packet.
+    /// Handles a `deploy` bridge packet.
     fn handle_packet(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         match packet.method() {
             Self::METHOD_DOWNLOAD => self.handle_download(packet),
@@ -156,7 +156,11 @@ impl DeployBridge {
         }
     }
 
+    /// Handles the [`METHOD_DOWNLOAD`] bridge method.
+    ///
     /// Applies the download retry limit to a readiness or failure report.
+    ///
+    /// [`METHOD_DOWNLOAD`]: Self::METHOD_DOWNLOAD
     fn handle_download(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let attempt = packet.value1();
         let native_code = packet.value2();
@@ -173,7 +177,11 @@ impl DeployBridge {
         Some(BridgeResponse::new(response))
     }
 
-    /// Applies the configured response to an execution gate.
+    /// Handles the [`METHOD_EXECUTE`] bridge method.
+    ///
+    /// Returns the configured execution response.
+    ///
+    /// [`METHOD_EXECUTE`]: Self::METHOD_EXECUTE
     fn handle_execute(&self, _packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let response = match self.policy.execute_response {
             ExecuteResponse::Continue => BridgeResponse::new(Self::RESPONSE_CONTINUE),
@@ -190,7 +198,9 @@ impl DeployBridge {
         Some(response)
     }
 
-    /// Completes the injector from a terminal status packet.
+    /// Handles the [`METHOD_EXIT`] bridge method.
+    ///
+    /// [`METHOD_EXIT`]: Self::METHOD_EXIT
     fn handle_exit(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
         let status = DeployStatus::decode(packet.value1());
         let native_code = packet.value2();
@@ -206,9 +216,11 @@ impl DeployBridge {
         Some(BridgeResponse::default().with_result(packet.value1()))
     }
 
-    /// Logs and rejects one packet with an unknown deploy bridge method.
+    /// Handles a bridge packet with an unknown method.
+    ///
+    /// Logs the packet details and returns no response.
     fn handle_unknown(&self, packet: BridgePacket) -> Option<BridgeResponse<BridgeStatusCode>> {
-        tracing::error!(
+        tracing::warn!(
             request = %Hex(packet.request()),
             method = %Hex(packet.method()),
             value1 = %Hex(packet.value1()),
@@ -228,6 +240,7 @@ where
 {
     type Output = BridgeStatusCode;
 
+    /// Request code for the `deploy` shellcode.
     const REQUEST: u16 = 0x0011;
 
     #[tracing::instrument(name = "deploy", skip_all)]
@@ -251,7 +264,7 @@ mod tests {
 
     use super::*;
 
-    /// Creates a packet routed to the deploy handler.
+    /// Creates a `deploy` bridge packet.
     fn packet(method: u16) -> BridgePacket {
         BridgePacket::new(BRIDGE_MAGIC, 0x0011, method)
     }
@@ -378,8 +391,9 @@ mod tests {
         assert_eq!(status.kind(), StatusKind::OPERATION_FAILED);
         assert_eq!(status.code(), 2);
     }
+
     #[test]
-    fn corrupt_terminal_values_are_preserved() {
+    fn corrupt_final_status_values_are_preserved() {
         let bridge = DeployBridge::new(DeployPolicy::default());
         let packed = 0xab5d_7ce6;
 
@@ -392,7 +406,7 @@ mod tests {
 
         let response = bridge
             .handle_packet(packet(DeployBridge::METHOD_EXIT).with_value1(packed))
-            .expect("corrupt terminal values must produce a response");
+            .expect("corrupt final status values must produce a response");
         assert_eq!(response.into_result(), Some(packed));
     }
 }

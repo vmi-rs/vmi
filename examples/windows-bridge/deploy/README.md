@@ -9,7 +9,7 @@ download  →  extract  →  execute
  optional    optional    optional
 ```
 
-The Rust host serializes the request and injects an embedded user-mode SCFW payload into a carrier process, normally `explorer.exe`. The payload calls Windows APIs in the guest. `DeployBridge` does not perform those operations; it supplies policy decisions at two synchronization gates and receives the terminal status.
+The Rust host serializes the request and injects an embedded user-mode SCFW payload into a carrier process, normally `explorer.exe`. The payload calls Windows APIs in the guest. `DeployBridge` does not perform those operations; it supplies policy decisions at two synchronization gates and receives the final status.
 
 With `--monitor`, the execute gate also hands control from the short-lived injector to a kernel-breakpoint monitor **before** the child is allowed to start.
 
@@ -23,7 +23,7 @@ flowchart LR
     Download --> Extract[Shell.Application extraction]
     Extract --> Gate2{Execute gate}
     Gate2 --> Execute[ShellExecuteExW]
-    Execute --> Result[Terminal bridge result]
+    Execute --> Result[Final bridge result]
 ```
 
 Disabled stages are skipped; the arrows show ordering, not mandatory work.
@@ -36,7 +36,7 @@ Disabled stages are skipped; the arrows show ordering, not mandatory work.
 | `DeployParameters` | Host | Encodes the exact sequential buffer consumed by the payload. |
 | `deploy_recipe` / `user_shellcode_spawn_recipe` | Host controlling guest | Allocates guest memory, copies payload plus parameters, and starts a guest thread. |
 | SCFW deploy payload | Guest user mode | Parses parameters, resolves imports, expands paths, and calls download/extract/execute APIs. |
-| `DeployBridge` | Host | Answers download and execute gates and decodes terminal statuses. |
+| `DeployBridge` | Host | Answers download and execute gates and decodes final statuses. |
 | `Monitor` | Host | For monitored execution, installs kernel hooks, allows the parked execute gate, tracks the child, and runs file transfer. |
 
 ## End-to-end workflow
@@ -148,11 +148,11 @@ Therefore `--max-download-retries 0` aborts after the first failure, while `2` p
 
 | Host response | Guest behavior | Injector behavior |
 |---|---|---|
-| `CONTINUE` | Call `ShellExecuteExW`. | Keep waiting for terminal `EXIT`. |
-| `ABORT` | Return terminal `Aborted(Execute)`. | Complete when `EXIT` arrives. |
+| `CONTINUE` | Call `ShellExecuteExW`. | Keep waiting for the final `EXIT`. |
+| `ABORT` | Return final `Aborted(Execute)` status. | Complete when `EXIT` arrives. |
 | `WAIT` | Sleep 250 ms and repeat the same gate. | Return a synthetic `Waiting(Execute)` status immediately, allowing the host to replace the injector with `Monitor`. |
 
-### 6. Return terminal status
+### 6. Return the final status
 
 The payload sends method `EXIT` with:
 
@@ -161,13 +161,13 @@ value1 = stage | status << 8 | error_code << 16
 value2 = native Windows error (NTSTATUS, HRESULT, or Win32 code)
 ```
 
-`DeployBridge` logs all four pieces. In an unmonitored run, it attaches `value1` as the injector completion result; `run_deploy` accepts only stable status `Success`.
+`DeployBridge` logs all four pieces. In an unmonitored run, it attaches `value1` as the injector completion result; `deploy::run` accepts only status kind `Success`.
 
 ## Unmonitored sequence
 
 ```mermaid
 sequenceDiagram
-    participant H as Host run_deploy
+    participant H as Host deploy::run
     participant I as InjectorHandler + DeployBridge
     participant G as Guest deploy payload
     participant W as Windows APIs
@@ -195,7 +195,7 @@ sequenceDiagram
         G->>W: ShellExecuteExW
     end
     G->>I: EXIT(packed status, native code)
-    I-->>H: terminal DeployStatus
+    I-->>H: final DeployStatus
 ```
 
 ## Monitored handoff
@@ -205,7 +205,7 @@ The monitor must see process creation, so the first bridge is intentionally conf
 ```mermaid
 sequenceDiagram
     participant G as Guest deploy payload
-    participant H as Host run_deploy
+    participant H as Host deploy::run
     participant I as Host InjectorHandler
     participant B1 as Injector DeployBridge
     participant M as Host Monitor
@@ -278,7 +278,7 @@ The deploy payload's later `EXIT` is decoded and answered, but it does not end t
 Host:
 
 ```text
-run_deploy
+deploy::run
 ├─ DeployArguments::into_request
 │  ├─ DeployParametersBuilder::build
 │  └─ DeployPolicy

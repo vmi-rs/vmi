@@ -1,9 +1,7 @@
-//////////////////////////////////////////////////////////////////////////
-// Deploy shellcode protocol and execution model.
-//////////////////////////////////////////////////////////////////////////
+// User-mode `deploy` shellcode.
 //
-// This shellcode receives a packed parameter buffer through entry's first
-// argument. It waits for the bridge host, validates the flags, expands the
+// This shellcode receives a packed parameter buffer as the first argument to
+// `entry`. It waits for the bridge host, validates the flags, expands the
 // requested paths, and runs the enabled stages in this order:
 //
 //   entry(argument1)
@@ -22,7 +20,7 @@
 //  (optional)      (optional)     (optional)
 //          |
 //          v
-//   report the terminal status to the bridge host
+//   report the final status to the bridge host
 //
 // Extraction consumes the downloaded file, so extract requires download.
 // Execution may follow download and extraction, or run independently.
@@ -387,7 +385,7 @@ public:
     operator InterfaceType*() const { return this->ptr_; }
     explicit operator bool() const { return this->ptr_ != nullptr; }
 
-    // CComPtr::ReleaseAndGetAddressOf, but with a shorter name.
+    // `CComPtr::ReleaseAndGetAddressOf`, but with a shorter name.
     InterfaceType** Put()
     {
         this->Reset();
@@ -938,7 +936,7 @@ DeployInternal(
     ) -> status
 {
     //
-    // Expand DownloadPath.
+    // Expand the `DownloadPath`.
     //
 
     WCHAR wszDownloadPath[MAX_PATH];
@@ -958,7 +956,7 @@ DeployInternal(
     }
 
     //
-    // Expand ExtractionDirectory.
+    // Expand the `ExtractionDirectory`.
     //
 
     WCHAR wszExtractionPath[MAX_PATH];
@@ -982,7 +980,7 @@ DeployInternal(
     }
 
     //
-    // Prepare execution paths.
+    // Prepare paths used for execution.
     //
 
     WCHAR wszExecutablePath[MAX_PATH];
@@ -993,7 +991,7 @@ DeployInternal(
     if (has_any(parameters.flags, parameter_flags::execute))
     {
         //
-        // Expand ExecutablePath.
+        // Expand the `ExecutablePath`.
         //
 
         if (!ExpandPath(
@@ -1011,7 +1009,8 @@ DeployInternal(
         pwszExecutablePath = wszExecutablePath;
 
         //
-        // Expand WorkingDirectory, or default to dirname(ExecutablePath).
+        // Expand the `WorkingDirectory`, or use the parent directory of the
+        // executable.
         //
 
         if (parameters.working_directory != NULL)

@@ -7,19 +7,22 @@ use vmi::{
     },
 };
 
-/// File-transfer shellcode embedded from the selected `scfw` build artifact.
+/// Compiled `file-transfer` shellcode.
 const FILE_TRANSFER_SHELLCODE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/shellcodes/bin/x64/file-transfer.bin"
 ));
 
-/// Builds the kernel-mode file-transfer recipe for a process-local handle.
+/// Builds a recipe that runs the `file-transfer` shellcode on the thread
+/// executing `NtClose`.
 ///
-/// The generic kernel call recipe supplies the kernel image base to the `scfw`
-/// bootstrap and passes `file_handle` through its second argument unchanged.
-/// The payload must run on the closing thread, so the call recipe is required
-/// here: a spawned thread would run in the System process, where the
-/// process-local handle is meaningless.
+/// The call recipe passes the kernel image base as the first and the
+/// `file_handle` as the second argument.
+///
+/// **Note:** We intentionally run the shellcode in a `call` mode (synchronously
+/// on the current thread) rather than `spawn`ing a new thread. A spawned thread
+/// would run in the `System` process, where the (process-local) file handle
+/// is invalid.
 pub fn file_transfer_recipe<Driver>(file_handle: u64) -> KernelShellcodeRecipe<WindowsOs<Driver>>
 where
     Driver: VmiMemory<Architecture = Amd64>,

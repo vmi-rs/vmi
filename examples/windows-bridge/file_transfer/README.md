@@ -141,7 +141,7 @@ sequenceDiagram
 | `SET_BUFFER` `0x0002` | transfer handle, guest buffer address | Associate the buffer VA with the session | `CONTINUE` or `ABORT` |
 | `CHUNK` `0x0003` | transfer handle, valid byte count | VMI-read that many bytes and append | `CONTINUE` or `ABORT` |
 | `CLOSE` `0x0004` | transfer handle, success/error | Remove session; exact-size check and flush on success | `CONTINUE` or `ABORT` |
-| `EXIT` `0xffff` | packed terminal status, native code | Log payload completion; keep the deploy monitor running | verified response, no monitor completion |
+| `EXIT` `0xffff` | packed final status, native code | Log payload completion; keep the deploy monitor running | verified response, no monitor completion |
 
 The packed `BEGIN` response reserves its low 12 bits for a transfer handle (`1..4095`) and stores the negotiated chunk size above them.
 
@@ -192,7 +192,7 @@ entry(kernel_image_base, file_handle)
    │  └─ bridge.chunk
    ├─ bridge.close
    ├─ free buffer / unmap view / free filename
-   └─ bridge.exit(terminal status)
+   └─ bridge.exit(final status)
 ```
 
 ## Host call graph

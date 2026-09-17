@@ -7,13 +7,15 @@ use vmi::{
 
 use super::parameters::DeployParameters;
 
-/// Deploy shellcode embedded from the selected `scfw` build artifact.
+/// Compiled `deploy` shellcode.
 const DEPLOY_SHELLCODE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/shellcodes/bin/x64/deploy.bin"
 ));
 
-/// Builds the deploy shellcode injection recipe.
+/// Builds a recipe that runs the `deploy` shellcode on a guest thread.
+///
+/// The recipe completes once the guest thread has been created.
 #[tracing::instrument(name = "deploy", skip_all)]
 pub fn deploy_recipe<Driver>(
     parameters: &DeployParameters,
