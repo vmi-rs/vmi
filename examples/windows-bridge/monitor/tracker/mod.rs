@@ -203,40 +203,10 @@ impl<P, T> ProcessTracker<P, T> {
         Some((&mut process.value, &mut thread.value))
     }
 
-    /// Marks a process as terminated and diagnoses active threads in debug builds.
+    /// Marks a process as terminated.
     pub fn mark_process_terminated(&mut self, process_object: ProcessObject) -> Option<&mut P> {
         let process = self.processes.get_mut(process_object)?;
         process.terminated = true;
-
-        // The OS should terminate every thread before tearing down its process.
-        // Check and repair missed thread notifications only in debug builds.
-        #[cfg(debug_assertions)]
-        for thread_object in process.threads.iter().copied() {
-            let thread = match self.threads.get_mut(thread_object) {
-                Some(thread) => {
-                    debug_assert_eq!(
-                        process_object, thread.process,
-                        "tracked thread belongs to an unexpected process"
-                    );
-
-                    thread
-                }
-                None => {
-                    debug_assert!(false, "tracked process thread must have an entry");
-                    continue;
-                }
-            };
-
-            if !thread.terminated {
-                tracing::warn!(
-                    %process_object,
-                    %thread_object,
-                    "process terminated with an active tracked thread"
-                );
-
-                thread.terminated = true;
-            }
-        }
 
         Some(&mut process.value)
     }

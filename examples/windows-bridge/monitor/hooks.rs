@@ -357,7 +357,8 @@ where
         return advance_file_transfer(vmi, state, thread_object);
     }
 
-    let current_process = vmi.os().current_process()?;
+    // (equivalent to `vmi.os().current_process()?`)
+    let current_process = current_thread.current_process()?;
     let process_object = current_process.object()?;
 
     if state.target_process != Some(process_object) {
