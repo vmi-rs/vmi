@@ -491,6 +491,7 @@ TransferFile(
     {
         status = status::aborted(stage::buffer);
         bridge::close(TransferHandle, transfer_status::error);
+
         goto CleanupTransferBuffer;
     }
 
@@ -525,12 +526,13 @@ TransferFile(
         {
             status = status::aborted(stage::transfer);
             bridge::close(TransferHandle, transfer_status::error);
+
             goto CleanupTransferBuffer;
         }
     }
 
-    bridge::close(TransferHandle, transfer_status::success);
     status = status::success(stage::transfer);
+    bridge::close(TransferHandle, transfer_status::success);
 
     //
     // Release acquired resources in reverse order.
