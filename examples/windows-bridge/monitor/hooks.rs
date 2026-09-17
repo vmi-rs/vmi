@@ -7,7 +7,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::{
-        ProcessObject, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
+        ProcessId, ProcessObject, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
         windows::{WindowsFileObject, WindowsOs, WindowsOsExt as _},
     },
     trace::Hex,
@@ -15,6 +15,48 @@ use vmi::{
 
 use super::{MonitorState, Process, Thread, process_matches_target};
 use crate::file_transfer::FileTransfer;
+
+fn record_process_start<Driver>(
+    expected_name: &str,
+    expected_ppid: ProcessId,
+    target_process: &mut Option<ProcessObject>,
+    process_object: ProcessObject,
+    parent_object: Option<ProcessObject>,
+    process: &Process<Driver>,
+) where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    let is_target =
+        target_process.is_none() && process_matches_target(expected_name, expected_ppid, process);
+
+    if is_target {
+        *target_process = Some(process_object);
+
+        tracing::info!(
+            name = process.name,
+            pid = %process.pid,
+            process = %process_object,
+            "deployed process started"
+        );
+    }
+    else if let Some(parent_object) = parent_object {
+        tracing::debug!(
+            name = process.name,
+            pid = %process.pid,
+            ppid = %process.ppid,
+            process = %process_object,
+            parent = %parent_object,
+        );
+    }
+    else {
+        tracing::debug!(
+            name = process.name,
+            pid = %process.pid,
+            ppid = %process.ppid,
+            process = %process_object,
+        );
+    }
+}
 
 /// Handles a `PspInsertProcess` breakpoint and records the process and its parent.
 #[tracing::instrument(skip_all)]
@@ -44,38 +86,17 @@ where
     let new_process = vmi.os().process(NewProcess)?;
     let parent = vmi.os().process(Parent)?;
 
-    let process = Process {
-        pid: new_process.id()?,
-        ppid: parent.id()?,
-        name: new_process.name()?,
-        terminated: false,
-        file_transfers: Default::default(),
-    };
+    let process = Process::new(new_process.id()?, parent.id()?, new_process.name()?);
+    let process = state.processes.insert_process(NewProcess, process);
 
-    let is_target = state.target_process.is_none()
-        && process_matches_target(&state.expected_name, state.expected_ppid, &process);
-
-    if is_target {
-        state.target_process = Some(NewProcess);
-
-        tracing::info!(
-            name = process.name,
-            pid = %process.pid,
-            process = %NewProcess,
-            "deployed process started"
-        );
-    }
-    else {
-        tracing::debug!(
-            name = process.name,
-            pid = %process.pid,
-            ppid = %process.ppid,
-            process = %NewProcess,
-            parent = %Parent,
-        );
-    }
-
-    state.processes.insert_process(NewProcess, process);
+    record_process_start(
+        &state.expected_name,
+        state.expected_ppid,
+        &mut state.target_process,
+        NewProcess,
+        Some(Parent),
+        process,
+    );
 
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
@@ -100,24 +121,13 @@ where
 
     tracing::trace!(%Process);
 
-    // REVIEW: avoid .collect()
-    let thread_objects = state.processes.threads_of(Process).collect::<Vec<_>>();
-
-    for thread_object in thread_objects {
-        if let Some(thread) = state.processes.get_thread_mut(thread_object) {
-            thread.mark_terminated();
-        }
-    }
-
-    let process = match state.processes.get_process_mut(Process) {
+    let process = match state.processes.mark_process_terminated(Process) {
         Some(process) => process,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };
 
-    process.mark_terminated();
-
     if state.target_process == Some(Process) {
-        state.completion = Some(Ok(Some(process.pid)));
+        state.output = Some(Ok(Some(process.pid)));
 
         tracing::info!(
             name = process.name,
@@ -168,34 +178,40 @@ where
 
     let thread_object = Thread;
     let process_object = Process;
+    let thread = Thread::new(tid);
+    let mut process_initialized = false;
 
-    let thread = Thread {
-        tid,
-        terminated: false,
-        file_transfer: None,
-    };
+    let (process, _) = state.processes.try_get_or_insert(
+        process_object,
+        thread_object,
+        || {
+            process_initialized = true;
+            Ok::<_, VmiError>(Process::new(
+                pid,
+                os_process.parent_id()?,
+                os_process.name()?,
+            ))
+        },
+        || Ok::<_, VmiError>(thread),
+    )?;
 
-    match state
-        .processes
-        .insert_thread(process_object, thread_object, thread)
-    {
-        Ok(_) => {
-            tracing::debug!(
-                %pid,
-                %tid,
-                process = %process_object,
-                thread = %thread_object,
-            );
-        }
-        Err(_) => {
-            tracing::trace!(
-                %pid,
-                %tid,
-                process = %process_object,
-                thread = %thread_object,
-            );
-        }
+    if process_initialized {
+        record_process_start(
+            &state.expected_name,
+            state.expected_ppid,
+            &mut state.target_process,
+            process_object,
+            None,
+            process,
+        );
     }
+
+    tracing::debug!(
+        %pid,
+        %tid,
+        process = %process_object,
+        thread = %thread_object,
+    );
 
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
@@ -229,12 +245,13 @@ where
     let thread_object = Thread;
     let process_object = os_process.object()?;
 
-    let thread = match state.processes.get_thread_mut(thread_object) {
+    let thread = match state
+        .processes
+        .mark_thread_terminated(process_object, thread_object)
+    {
         Some(thread) => thread,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };
-
-    thread.mark_terminated();
 
     tracing::debug!(
         %pid,
@@ -331,12 +348,11 @@ where
     //     );
     //
 
-    let thread_object = vmi.os().current_thread()?.object()?;
+    let current_thread = vmi.os().current_thread()?;
+    let thread_object = current_thread.object()?;
 
-    if state
-        .processes
-        .get_thread(thread_object)
-        .is_some_and(|thread| thread.file_transfer.is_some())
+    if let Some(thread) = state.processes.get_thread(thread_object)
+        && thread.file_transfer.is_some()
     {
         return advance_file_transfer(vmi, state, thread_object);
     }

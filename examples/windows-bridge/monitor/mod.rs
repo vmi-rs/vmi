@@ -67,7 +67,6 @@ where
     pid: ProcessId,
     ppid: ProcessId,
     name: String,
-    terminated: bool,
     file_transfers: HashMap<u64, FileTransfer<Driver>>,
 }
 
@@ -75,9 +74,14 @@ impl<Driver> Process<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    /// Marks the process as terminated.
-    fn mark_terminated(&mut self) {
-        self.terminated = true;
+    /// Creates process metadata without marked file transfers.
+    fn new(pid: ProcessId, ppid: ProcessId, name: String) -> Self {
+        Self {
+            pid,
+            ppid,
+            name,
+            file_transfers: HashMap::new(),
+        }
     }
 
     /// Records a file transfer keyed by its handle.
@@ -102,7 +106,6 @@ where
 {
     #[expect(unused)]
     tid: ThreadId,
-    terminated: bool,
     file_transfer: Option<FileTransfer<Driver>>,
 }
 
@@ -110,9 +113,12 @@ impl<Driver> Thread<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    /// Marks the thread as terminated.
-    fn mark_terminated(&mut self) {
-        self.terminated = true;
+    /// Creates thread metadata without an active file transfer.
+    fn new(tid: ThreadId) -> Self {
+        Self {
+            tid,
+            file_transfer: None,
+        }
     }
 }
 
@@ -146,7 +152,7 @@ where
     expected_name: String,
     expected_ppid: ProcessId,
     target_process: Option<ProcessObject>,
-    completion: Option<MonitorOutput>,
+    output: Option<MonitorOutput>,
 }
 
 /// Returns a completed monitor result or graceful external termination.
@@ -243,7 +249,7 @@ where
                 expected_name,
                 expected_ppid,
                 target_process: None,
-                completion: None,
+                output: None,
             },
         })
     }
@@ -411,7 +417,7 @@ where
 
     fn poll(&mut self) -> Option<Self::Output> {
         monitor_poll(
-            self.state.completion,
+            self.state.output,
             self.terminate_flag.load(Ordering::Relaxed),
         )
     }
@@ -424,13 +430,7 @@ mod tests {
     use super::*;
 
     fn process(name: &str, ppid: ProcessId) -> Process<VmiXenDriver<Amd64>> {
-        Process {
-            pid: ProcessId(100),
-            ppid,
-            name: name.to_owned(),
-            terminated: false,
-            file_transfers: HashMap::new(),
-        }
+        Process::new(ProcessId(100), ppid, name.to_owned())
     }
 
     #[test]
