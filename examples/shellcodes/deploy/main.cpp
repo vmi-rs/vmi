@@ -193,13 +193,37 @@ using vmi::failure;
 using status = vmi::status<stage>;
 
 struct bridge_traits : vmi::default_bridge_traits {
+    //
+    // The request code used by the bridge to identify this shellcode.
+    //
+    // This value is arbitrary but must match the request code expected
+    // by the receiving side.
+    //
+    // See `DeployBridge::REQUEST` in
+    //     examples/windows-shellcode/deploy/bridge.rs
+    //
+
     static constexpr uint16_t request = 0x0011;
 };
 
 struct bridge : vmi::bridge<bridge_traits> {
+    //
+    // The method codes used by the bridge to identify the different operations.
+    //
+    // Similarly to the request code, these values are also arbitrary but
+    // must match the method codes expected by the receiving side.
+    //
+
     static constexpr uint16_t  method_download      = 0x0001;
     static constexpr uint16_t  method_execute       = 0x0002;
     static constexpr uint16_t  method_exit          = 0xffff;
+
+    //
+    // The response codes used by the bridge to indicate the desired action.
+    //
+    // Also arbitrary, but also must match the response codes expected by
+    // the receiving side.
+    //
 
     static constexpr uintptr_t response_continue    = 0x00000000;
     static constexpr uintptr_t response_wait        = 0x00000001;
