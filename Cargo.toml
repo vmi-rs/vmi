@@ -28,7 +28,9 @@ doc_overindented_list_items = "allow"
 
 [workspace.dependencies]
 bitflags = "2"
+criterion = "0.8.2"
 elf = "0.8"
+foldhash = "0.2"
 indexmap = "2"
 kdmp-parser = "0.8"
 libc = "0.2"
@@ -161,6 +163,7 @@ utils = [
     "vmi-utils/reactor",
     "vmi-utils/resolver",
     "vmi-utils/shellcode",
+    "vmi-utils/tracker",
 ]
 
 [dev-dependencies]

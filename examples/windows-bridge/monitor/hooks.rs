@@ -87,7 +87,7 @@ where
     let parent = vmi.os().process(Parent)?;
 
     let process = Process::new(new_process.id()?, parent.id()?, new_process.name()?);
-    let process = state.processes.insert_process(NewProcess, process);
+    let process = state.tracker.insert_process(NewProcess, process);
 
     record_process_start(
         &state.expected_name,
@@ -121,7 +121,7 @@ where
 
     tracing::trace!(%Process);
 
-    let process = match state.processes.mark_process_terminated(Process) {
+    let process = match state.tracker.retire_process(Process) {
         Some(process) => process,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };
@@ -181,7 +181,7 @@ where
     let thread = Thread::new(tid);
     let mut process_initialized = false;
 
-    let (process, _) = state.processes.try_get_or_insert(
+    let (process, _) = state.tracker.try_get_or_insert(
         process_object,
         thread_object,
         || {
@@ -245,10 +245,7 @@ where
     let thread_object = Thread;
     let process_object = os_process.object()?;
 
-    let thread = match state
-        .processes
-        .mark_thread_terminated(process_object, thread_object)
-    {
+    let thread = match state.tracker.retire_thread(process_object, thread_object) {
         Some(thread) => thread,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };
@@ -316,7 +313,7 @@ where
     let path = file_object.full_path()?;
 
     let transfer = FileTransfer::new(FileHandle, file_object.va(), path.clone());
-    let process = match state.processes.get_process_mut(process_object) {
+    let process = match state.tracker.get_process_mut(process_object) {
         Some(process) => process,
         None => {
             tracing::warn!("target process not tracked");
@@ -351,7 +348,7 @@ where
     let current_thread = vmi.os().current_thread()?;
     let thread_object = current_thread.object()?;
 
-    if let Some(thread) = state.processes.get_thread(thread_object)
+    if let Some(thread) = state.tracker.get_thread(thread_object)
         && thread.file_transfer.is_some()
     {
         return advance_file_transfer(vmi, state, thread_object);
@@ -365,7 +362,7 @@ where
         return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
     }
 
-    if state.processes.get_thread(thread_object).is_none() {
+    if state.tracker.get_thread(thread_object).is_none() {
         tracing::warn!(%thread_object, "close on untracked target thread");
         return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
     }
@@ -380,7 +377,7 @@ where
 
     // REVIEW: if-let-chain?
     let mut transfer = match state
-        .processes
+        .tracker
         .get_process_mut(process_object)
         .and_then(|process| process.take_file(Handle))
     {
@@ -401,7 +398,7 @@ where
 
     transfer.start();
 
-    if let Some(thread) = state.processes.get_thread_mut(thread_object) {
+    if let Some(thread) = state.tracker.get_thread_mut(thread_object) {
         thread.file_transfer = Some(transfer);
     }
 
@@ -417,7 +414,7 @@ fn advance_file_transfer<Driver>(
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    let thread = match state.processes.get_thread_mut(thread_object) {
+    let thread = match state.tracker.get_thread_mut(thread_object) {
         Some(thread) => thread,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
     };

@@ -1,7 +1,6 @@
 //! Monitors a deployed process and transfers the files it writes.
 
 mod hooks;
-mod tracker;
 
 use std::{
     collections::HashMap,
@@ -23,10 +22,10 @@ use vmi::{
         bpm::{Breakpoint, BreakpointController, BreakpointManager},
         bridge::Bridge,
         ptm::PageTableMonitor,
+        tracker::Tracker,
     },
 };
 
-use self::tracker::ProcessTracker;
 use crate::{
     deploy::{DeployBridge, DeployPolicy, DeployStatus},
     file_transfer::{FileTransfer, FileTransferBridge},
@@ -148,16 +147,11 @@ struct MonitorState<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    processes: ProcessTracker<Process<Driver>, Thread<Driver>>,
+    tracker: Tracker<Process<Driver>, Thread<Driver>>,
     expected_name: String,
     expected_ppid: ProcessId,
     target_process: Option<ProcessObject>,
     output: Option<MonitorOutput>,
-}
-
-/// Returns a completed monitor result or graceful external termination.
-fn monitor_poll(completion: Option<MonitorOutput>, terminated: bool) -> Option<MonitorOutput> {
-    completion.or_else(|| terminated.then_some(Ok(None)))
 }
 
 /// Monitors a deployed process.
@@ -245,7 +239,7 @@ where
                 FileTransferBridge::new(output_directory),
             )),
             state: MonitorState {
-                processes: ProcessTracker::default(),
+                tracker: Tracker::default(),
                 expected_name,
                 expected_ppid,
                 target_process: None,
@@ -416,10 +410,11 @@ where
     }
 
     fn poll(&mut self) -> Option<Self::Output> {
-        monitor_poll(
-            self.state.output,
-            self.terminate_flag.load(Ordering::Relaxed),
-        )
+        self.state.output.or_else(|| {
+            self.terminate_flag
+                .load(Ordering::Relaxed)
+                .then_some(Ok(None))
+        })
     }
 }
 
@@ -464,11 +459,5 @@ mod tests {
             ProcessId(42),
             &process("dynasample-ful", ProcessId(42)),
         ));
-    }
-
-    #[test]
-    fn termination_flag_completes_monitor_gracefully() {
-        assert_eq!(monitor_poll(None, true), Some(Ok(None)));
-        assert_eq!(monitor_poll(None, false), None);
     }
 }
