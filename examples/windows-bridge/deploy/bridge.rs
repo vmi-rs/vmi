@@ -265,3 +265,106 @@ where
         self.handle_packet(packet)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vmi::utils::shellcode::{BRIDGE_MAGIC, StatusKind};
+
+    use super::*;
+
+    /// Creates a `deploy` bridge packet.
+    fn packet(method: u16) -> BridgePacket {
+        BridgePacket::new(BRIDGE_MAGIC, 0x0011, method)
+    }
+
+    #[test]
+    fn unknown_method_is_not_handled() {
+        let bridge = DeployBridge::new(DeployPolicy::default());
+
+        assert!(bridge.handle_unknown(packet(0x1234)).is_none());
+        assert!(bridge.handle_packet(packet(0x1234)).is_none());
+    }
+
+    #[test]
+    fn download_gate_enforces_retry_boundary() {
+        let bridge = DeployBridge::new(DeployPolicy::default().max_download_retries(2));
+
+        for attempt in [0, 1, 2] {
+            let response = bridge
+                .handle_packet(packet(DeployBridge::METHOD_DOWNLOAD).with_value1(attempt))
+                .expect("valid download packet");
+            assert_eq!(response.value1(), Some(DeployBridge::RESPONSE_CONTINUE));
+        }
+
+        let response = bridge
+            .handle_packet(packet(DeployBridge::METHOD_DOWNLOAD).with_value1(3))
+            .expect("valid download packet");
+        assert_eq!(response.value1(), Some(DeployBridge::RESPONSE_ABORT));
+    }
+
+    #[test]
+    fn execute_gate_applies_configured_response() {
+        for (policy_response, wire_response, handler_output) in [
+            (
+                ExecuteResponse::Continue,
+                DeployBridge::RESPONSE_CONTINUE,
+                None,
+            ),
+            (
+                ExecuteResponse::ContinueAndNotify,
+                DeployBridge::RESPONSE_CONTINUE,
+                Some(BridgeOutput::DeployExecuting),
+            ),
+            (ExecuteResponse::Abort, DeployBridge::RESPONSE_ABORT, None),
+            (
+                ExecuteResponse::Wait,
+                DeployBridge::RESPONSE_WAIT,
+                Some(BridgeOutput::DeployWaiting),
+            ),
+        ] {
+            let bridge =
+                DeployBridge::new(DeployPolicy::default().execute_response(policy_response));
+            let response = bridge
+                .handle_packet(packet(DeployBridge::METHOD_EXECUTE))
+                .expect("valid execute packet");
+
+            assert_eq!(response.value1(), Some(wire_response));
+            assert_eq!(response.into_output(), handler_output);
+        }
+    }
+
+    #[test]
+    fn exit_reports_deploy_status() {
+        let bridge = DeployBridge::new(DeployPolicy::default());
+        let encoded_status = 0x8000_4005_0002_fe03;
+        let response = bridge
+            .handle_packet(packet(DeployBridge::METHOD_EXIT).with_value1(encoded_status))
+            .expect("valid exit packet");
+
+        let status = match response.into_output() {
+            Some(BridgeOutput::DeployFinished(status)) => status,
+            output => panic!("unexpected exit output: {output:?}"),
+        };
+        assert_eq!(status.stage(), DeployStage::DOWNLOAD);
+        assert_eq!(status.kind(), StatusKind::OPERATION_FAILED);
+        assert_eq!(status.code(), 2);
+        assert_eq!(status.native_code(), 0x8000_4005);
+    }
+
+    #[test]
+    fn corrupt_final_status_values_are_preserved() {
+        let bridge = DeployBridge::new(DeployPolicy::default());
+        let encoded_status = 0xab5d_7ce6;
+
+        let response = bridge
+            .handle_packet(packet(DeployBridge::METHOD_EXIT).with_value1(encoded_status))
+            .expect("corrupt final status values must produce a response");
+        let status = match response.into_output() {
+            Some(BridgeOutput::DeployFinished(status)) => status,
+            output => panic!("unexpected exit output: {output:?}"),
+        };
+        assert_eq!(status.stage(), DeployStage(0xe6));
+        assert_eq!(status.kind(), StatusKind(0x7c));
+        assert_eq!(status.code(), 0x5d);
+    }
+}

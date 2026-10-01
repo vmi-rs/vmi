@@ -354,3 +354,86 @@ impl DeployParametersBuilder<DownloadEnabled, ExecutionEnabled> {
         DeployParameters::from_states(Some(self.download), Some(self.execution))
     }
 }
+
+/// Encodes `deploy` parameters for test assertions.
+#[cfg(test)]
+pub fn encode_parameters(parameters: &impl Parameters) -> Vec<u8> {
+    let mut output = Vec::new();
+    parameters.encode(&mut ParameterWriter::new(&mut output));
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_no_operation_request() {
+        let bytes = encode_parameters(&DeployParameters::builder().build());
+
+        assert_eq!(bytes, [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn serializes_all_conditional_slots_in_reader_order() {
+        let parameters = DeployParameters::builder()
+            .download("u")
+            .download_path("d")
+            .extraction_directory("x")
+            .execute("e")
+            .arguments("")
+            .working_directory("w")
+            .show_window(5)
+            .build();
+
+        let bytes = encode_parameters(&parameters);
+
+        assert_eq!(
+            bytes,
+            [
+                0x03, 0x71, 0x00, 0x00, // flags
+                b'u', 0, 0, 0, // URL
+                b'd', 0, 0, 0, // download path
+                b'x', 0, 0, 0, // extraction directory
+                b'e', 0, 0, 0, // executable path
+                0, 0, // present empty arguments
+                b'w', 0, 0, 0, // working directory
+                5, 0, 0, 0, // show window
+            ]
+        );
+    }
+
+    #[test]
+    fn maybe_setters_encode_only_present_values() {
+        let parameters = DeployParameters::builder()
+            .download("u")
+            .download_path("d")
+            .maybe_extraction_directory(Some("x"))
+            .execute("e")
+            .maybe_arguments(None::<&str>)
+            .maybe_working_directory(Some("w"))
+            .maybe_show_window(None)
+            .build();
+        let bytes = encode_parameters(&parameters);
+
+        assert_eq!(
+            bytes,
+            [
+                0x03, 0x21, 0x00, 0x00, // flags
+                b'u', 0, 0, 0, // URL
+                b'd', 0, 0, 0, // download path
+                b'x', 0, 0, 0, // extraction directory
+                b'e', 0, 0, 0, // executable path
+                b'w', 0, 0, 0, // working directory
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_execute_only_parameters() {
+        let parameters = DeployParameters::builder().execute("program.exe").build();
+        let bytes = encode_parameters(&parameters);
+
+        assert_eq!(&bytes[..4], &ParameterFlags::EXECUTE.bits().to_le_bytes());
+    }
+}

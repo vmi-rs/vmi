@@ -522,3 +522,69 @@ fn output_filename(output_id: u64, path: &str) -> String {
 
     format!("{output_id:04}-{basename}")
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    fn temporary_output(name: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+
+        std::env::temp_dir().join(format!(
+            "windows-bridge-{}-{}-{}",
+            name,
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    #[test]
+    fn transfer_handles_increment_until_exhausted() {
+        let mut bridge = FileTransferBridge::new(PathBuf::new());
+
+        assert_eq!(bridge.allocate_transfer_handle(), Some(1));
+
+        bridge.next_transfer_handle = TRANSFER_HANDLE_MAX;
+        assert_eq!(bridge.allocate_transfer_handle(), Some(TRANSFER_HANDLE_MAX));
+        assert_eq!(bridge.allocate_transfer_handle(), None);
+    }
+
+    #[test]
+    fn output_names_are_flat_sanitized_and_unique() {
+        let first = output_filename(1, r"\dir\a:b.txt");
+        let second = output_filename(2, r"\dir\a:b.txt");
+
+        assert_eq!(first, "0001-a_b_txt");
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn host_file_flushes_exact_declared_bytes() {
+        let output = temporary_output("complete");
+        let mut host_file = HostFile::create(output.clone(), 3).unwrap();
+
+        host_file.append(b"abc").unwrap();
+        host_file.flush().unwrap();
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"abc");
+        std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn host_file_rejects_incomplete_transfer() {
+        let output = temporary_output("incomplete");
+        let mut host_file = HostFile::create(output.clone(), 4).unwrap();
+
+        host_file.append(b"abc").unwrap();
+        assert_eq!(
+            host_file.flush().unwrap_err().kind(),
+            ErrorKind::UnexpectedEof
+        );
+        drop(host_file);
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"abc");
+        std::fs::remove_file(output).unwrap();
+    }
+}

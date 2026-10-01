@@ -267,3 +267,189 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser as _;
+
+    use super::{super::parameters::encode_parameters, *};
+    use crate::{Cli, Command};
+
+    #[test]
+    fn deploy_command_accepts_monitor_with_execute() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--execute",
+            r"C:\samples\sample.exe",
+            "--monitor",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command;
+
+        assert!(arguments.monitor);
+    }
+
+    #[test]
+    fn deploy_command_builds_no_operation_request() {
+        let cli = Cli::try_parse_from(["windows-bridge", "deploy"]).unwrap();
+        let Command::Deploy(arguments) = cli.command;
+
+        let request = arguments.into_request();
+
+        assert_eq!(encode_parameters(&request.parameters), [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn deploy_command_maps_download_only_request() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--url",
+            "u",
+            "--download-path",
+            "d",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command;
+
+        let request = arguments.into_request();
+
+        assert_eq!(
+            encode_parameters(&request.parameters),
+            [
+                0x01, 0x00, 0x00, 0x00, // flags
+                b'u', 0, 0, 0, // URL
+                b'd', 0, 0, 0, // download path
+            ]
+        );
+    }
+
+    #[test]
+    fn deploy_command_maps_execute_only_request() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--execute",
+            "e",
+            "--arguments",
+            "a",
+            "--working-directory",
+            "w",
+            "--show-window",
+            "5",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command;
+
+        let request = arguments.into_request();
+
+        assert_eq!(
+            encode_parameters(&request.parameters),
+            [
+                0x02, 0x70, 0x00, 0x00, // flags
+                b'e', 0, 0, 0, // executable path
+                b'a', 0, 0, 0, // arguments
+                b'w', 0, 0, 0, // working directory
+                5, 0, 0, 0, // show window
+            ]
+        );
+    }
+
+    #[test]
+    fn deploy_command_rejects_incomplete_operations() {
+        let incomplete = [
+            &["windows-bridge", "deploy", "--url", "u"][..],
+            &["windows-bridge", "deploy", "--download-path", "d"][..],
+            &["windows-bridge", "deploy", "--extract-to", "x"][..],
+            &["windows-bridge", "deploy", "--arguments", "a"][..],
+            &["windows-bridge", "deploy", "--working-directory", "w"][..],
+            &["windows-bridge", "deploy", "--show-window", "1"][..],
+            &["windows-bridge", "deploy", "--monitor"][..],
+        ];
+
+        for arguments in incomplete {
+            assert!(Cli::try_parse_from(arguments.iter().copied()).is_err());
+        }
+    }
+
+    #[test]
+    fn deploy_command_maps_combined_request() {
+        let cli = Cli::try_parse_from([
+            "windows-bridge",
+            "deploy",
+            "--process",
+            "notepad.exe",
+            "--url",
+            "u",
+            "--download-path",
+            "d",
+            "--extract-to",
+            "x",
+            "--execute",
+            "e",
+            "--arguments",
+            "a",
+            "--working-directory",
+            "w",
+            "--show-window",
+            "5",
+            "--max-download-retries",
+            "3",
+        ])
+        .unwrap();
+        let Command::Deploy(arguments) = cli.command;
+
+        let request = arguments.into_request();
+
+        assert_eq!(request.process, "notepad.exe");
+        assert_eq!(
+            encode_parameters(&request.parameters),
+            [
+                0x03, 0x71, 0x00, 0x00, // flags
+                b'u', 0, 0, 0, // URL
+                b'd', 0, 0, 0, // download path
+                b'x', 0, 0, 0, // extraction directory
+                b'e', 0, 0, 0, // executable path
+                b'a', 0, 0, 0, // arguments
+                b'w', 0, 0, 0, // working directory
+                5, 0, 0, 0, // show window
+            ]
+        );
+    }
+
+    #[test]
+    fn deploy_output_requires_successful_completion() {
+        let status = DeployStatus::decode(0x0000_0005);
+        assert_eq!(
+            validate_deploy_output(BridgeOutput::DeployFinished(status)).unwrap(),
+            status
+        );
+
+        for output in [
+            BridgeOutput::DeployFinished(DeployStatus::decode(0x0001_fe03)),
+            BridgeOutput::DeployWaiting,
+            BridgeOutput::DeployExecuting,
+        ] {
+            assert!(validate_deploy_output(output).is_err());
+        }
+    }
+
+    #[test]
+    fn monitor_requires_waiting_handoff() {
+        assert!(validate_deploy_waiting_output(BridgeOutput::DeployWaiting).is_ok());
+        assert!(validate_deploy_waiting_output(BridgeOutput::DeployExecuting).is_err());
+        assert!(
+            validate_deploy_waiting_output(BridgeOutput::DeployFinished(DeployStatus::decode(
+                0x0000_0005
+            )))
+            .is_err()
+        );
+        assert!(
+            validate_deploy_waiting_output(BridgeOutput::DeployFinished(DeployStatus::decode(
+                0x0001_fe03
+            )))
+            .is_err()
+        );
+    }
+}
