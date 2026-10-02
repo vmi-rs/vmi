@@ -313,9 +313,8 @@ where
 
         // Removing a pending breakpoint only affects the requested key, leaving
         // pending breakpoints registered under other keys at the same address
-        // in place. The pending copy is keyed by the context the caller
-        // registered it with, so it is looked up before the root is folded
-        // below.
+        // in place. The pending copy is indexed by the caller-supplied context,
+        // so it is looked up before the root is folded below.
         //
         // A global breakpoint can hold a pending copy under one root and an
         // active copy under the canonical root at the same time, so removing the
