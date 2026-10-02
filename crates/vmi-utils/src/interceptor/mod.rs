@@ -63,7 +63,7 @@ struct Page {
     /// View whose mapping is redirected from the original frame to the shadow.
     view: View,
 
-    /// Breakpoints on this page, keyed by in-page offset.
+    /// Breakpoints on this page, indexed by in-page offset.
     breakpoints: HashMap<u16, Breakpoint>,
 }
 
