@@ -7,7 +7,7 @@ The file-transfer bridge copies files **written by the monitored deployed proces
 It is not a standalone upload/download command. It is a subsystem of `deploy --monitor`:
 
 1. kernel hooks notice a target-process file write;
-2. the file is only marked at that point;
+2. a pending file transfer is recorded at that point;
 3. the target thread's later `NtClose` is paused;
 4. a kernel-mode `scfw` payload reads the completed file;
 5. `FileTransferBridge` pulls 64 KiB chunks from guest memory into a host file;
@@ -15,8 +15,8 @@ It is not a standalone upload/download command. It is a subsystem of `deploy --m
 
 ```mermaid
 flowchart LR
-    Write["Target calls NtWriteFile"] --> Mark["Host marks handle and file object"]
-    Mark --> Close["Target calls NtClose"]
+    Write["Target calls NtWriteFile"] --> Record["Host records handle and file object"]
+    Record --> Close["Target calls NtClose"]
     Close --> Inject["Host injects kernel payload on closing thread"]
     Inject --> MapFile["Guest maps completed file"]
     MapFile --> Buffer["Guest fills 64 KiB buffer"]
@@ -31,14 +31,14 @@ flowchart LR
 | Actor | Responsibility |
 |---|---|
 | **Deploy monitor (host)** | Tracks processes and threads; hooks `NtWriteFile` and `NtClose`; decides which guest file handles belong to the target process. |
-| **`FileTransfer` (host)** | Holds one marked handle/path/`_FILE_OBJECT`; owns the recipe executor after the transfer moves onto a closing thread. |
+| **`FileTransfer` (host)** | Holds the handle/path/`_FILE_OBJECT` for one pending or active transfer; owns the recipe executor after the transfer moves onto a closing thread. |
 | **File-transfer recipe (host)** | Saves registers, allocates executable nonpaged guest memory, writes the embedded payload, and calls it with the kernel base and file handle. |
 | **`scfw` payload (guest kernel mode)** | Queries file metadata, maps the file, fills a shared chunk buffer, and drives the bridge methods. |
 | **`FileTransferBridge` (host)** | Creates output files, allocates protocol handles, reads guest buffers through VMI, validates byte counts, and commits complete outputs. |
 
 ## Lifecycle: process-owned, then thread-owned
 
-A marked file initially belongs to the tracked process because a Windows handle is process-local. Once `NtClose` starts, execution becomes synchronous on that specific thread, so ownership moves to the thread.
+A pending file transfer initially belongs to the tracked process. Once `NtClose` starts, execution becomes synchronous on that specific thread, so the transfer moves to the thread.
 
 ```mermaid
 stateDiagram-v2
@@ -53,7 +53,7 @@ stateDiagram-v2
     Finished --> [*]
 ```
 
-### 1. `NtWriteFile`: mark, do not copy
+### 1. `NtWriteFile`: record, do not copy
 
 The breakpoint handler acts only when the current process is the child selected by the deploy monitor. It skips kernel handles, resolves the process-local handle to a `WindowsFileObject`, and records:
 
@@ -61,13 +61,13 @@ The breakpoint handler acts only when the current process is the child selected 
 - the `_FILE_OBJECT` address;
 - the full guest path.
 
-Repeated writes keep the handle marked. Deferring transfer until close means the guest payload sees the final file size and contents instead of a sequence of partial writes.
+Repeated writes replace the pending transfer for the same handle. Deferring transfer until close means the guest payload sees the final file size and contents instead of a sequence of partial writes.
 
-The hook runs at `NtWriteFile` entry and does not inspect the call's eventual `NTSTATUS`; a write attempt is enough to mark the handle.
+The hook runs at `NtWriteFile` entry and does not inspect the call's eventual `NTSTATUS`; a write attempt is enough to record a pending transfer.
 
 ### 2. `NtClose`: validate and attach to the closing thread
 
-Before Windows closes a marked handle, the hook:
+Before Windows closes a handle with a pending transfer, the hook:
 
 1. removes the pending transfer from the process map;
 2. resolves the handle again;
@@ -200,9 +200,9 @@ entry(kernel_image_base, file_handle)
 ```text
 Monitor::handle_event
 ├─ NtWriteFile hook
-│  └─ Process::mark_file(FileTransfer::new)
+│  └─ Process::record_file_transfer(FileTransfer::new)
 ├─ NtClose hook
-│  ├─ Process::take_file
+│  ├─ Process::take_file_transfer
 │  ├─ FileTransfer::start
 │  └─ advance_file_transfer
 │     └─ RecipeExecutor::execute

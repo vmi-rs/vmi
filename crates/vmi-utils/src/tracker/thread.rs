@@ -3,20 +3,20 @@ use std::collections::{HashMap, HashSet, hash_map::Entry};
 use foldhash::fast::RandomState;
 use vmi_core::os::{ProcessObject, ThreadObject};
 
-/// A tracked thread entry.
+/// Saved data and a process object for one thread.
 struct ThreadEntry<T> {
-    /// Value associated with the thread.
+    /// Data saved for this thread.
     value: T,
 
     /// Owning process object.
     process: ProcessObject,
 
-    /// Marks the thread as retired.
+    /// Marks this entry for later removal.
     retired: bool,
 }
 
 impl<T> ThreadEntry<T> {
-    /// Creates an active thread entry owned by `process`.
+    /// Creates a thread entry owned by `process`.
     fn new(value: T, process: ProcessObject) -> Self {
         Self {
             value,
@@ -26,15 +26,15 @@ impl<T> ThreadEntry<T> {
     }
 }
 
-/// A membership index maps each process to its threads.
+/// Stores a set of thread objects for each process.
 #[derive(Default)]
 struct ProcessThreads {
-    /// Each set contains the threads owned by its process key.
+    /// Maps each process object to its thread objects.
     entries: HashMap<ProcessObject, HashSet<ThreadObject, RandomState>, RandomState>,
 }
 
 impl ProcessThreads {
-    /// Adds a thread to a process.
+    /// Adds a thread object to a process's set.
     fn attach(&mut self, process_object: ProcessObject, thread_object: ThreadObject) {
         self.entries
             .entry(process_object)
@@ -42,7 +42,7 @@ impl ProcessThreads {
             .insert(thread_object);
     }
 
-    /// Removes a thread from a process.
+    /// Removes a thread object from a process's set.
     fn detach(&mut self, process_object: ProcessObject, thread_object: ThreadObject) {
         let mut entry = match self.entries.entry(process_object) {
             Entry::Occupied(entry) => entry,
@@ -60,7 +60,7 @@ impl ProcessThreads {
         }
     }
 
-    /// Removes and returns all threads belonging to a process.
+    /// Removes a process's set and returns its thread objects.
     fn remove(
         &mut self,
         process_object: ProcessObject,
@@ -68,14 +68,14 @@ impl ProcessThreads {
         self.entries.remove(&process_object)
     }
 
-    /// Checks a process-to-thread relationship.
+    /// Checks whether a process's set includes a thread.
     fn contains(&self, process_object: ProcessObject, thread_object: ThreadObject) -> bool {
         self.entries
             .get(&process_object)
             .is_some_and(|threads| threads.contains(&thread_object))
     }
 
-    /// Iterates over the threads belonging to a process.
+    /// Lists the thread objects saved for a process.
     fn get(&self, process_object: ProcessObject) -> impl Iterator<Item = ThreadObject> {
         self.entries
             .get(&process_object)
@@ -84,12 +84,12 @@ impl ProcessThreads {
     }
 }
 
-/// A thread map stores values and their process memberships.
+/// Stores thread data and the process each thread belongs to.
 pub struct ThreadMap<T> {
     /// Thread entries indexed by thread object.
     entries: HashMap<ThreadObject, ThreadEntry<T>, RandomState>,
 
-    /// This index supports lookups and removals by process.
+    /// Stores each process's set of thread objects.
     process_threads: ProcessThreads,
 }
 
@@ -103,7 +103,7 @@ impl<T> Default for ThreadMap<T> {
 }
 
 impl<T> ThreadMap<T> {
-    /// Inserts a thread value and updates its process membership.
+    /// Inserts thread data and links it to the given process.
     pub fn insert(
         &mut self,
         process_object: ProcessObject,
@@ -131,7 +131,8 @@ impl<T> ThreadMap<T> {
         &mut thread.value
     }
 
-    /// Returns a thread, initializing or replacing it when needed.
+    /// Returns saved thread data, calling `init` if it is missing or belongs to
+    /// another process.
     pub fn try_get_or_insert<E>(
         &mut self,
         process_object: ProcessObject,
@@ -140,17 +141,10 @@ impl<T> ThreadMap<T> {
     ) -> Result<&mut T, E> {
         let (thread, previous_process_object, attach_thread) =
             match self.entries.entry(thread_object) {
-                Entry::Occupied(mut entry)
-                    if entry.get().retired || entry.get().process != process_object =>
-                {
+                Entry::Occupied(mut entry) if entry.get().process != process_object => {
                     let previous_process_object = entry.get().process;
                     entry.insert(ThreadEntry::new(init()?, process_object));
-                    (
-                        entry.into_mut(),
-                        (previous_process_object != process_object)
-                            .then_some(previous_process_object),
-                        previous_process_object != process_object,
-                    )
+                    (entry.into_mut(), Some(previous_process_object), true)
                 }
                 Entry::Occupied(entry) => (entry.into_mut(), None, false),
                 Entry::Vacant(entry) => (
@@ -171,14 +165,14 @@ impl<T> ThreadMap<T> {
         else {
             debug_assert!(
                 self.process_threads.contains(process_object, thread_object),
-                "active thread must belong to its tracked process"
+                "tracked thread must belong to its tracked process"
             );
         }
 
         Ok(&mut thread.value)
     }
 
-    /// Removes all threads belonging to a process.
+    /// Removes all thread entries linked to a process.
     pub fn remove_process(&mut self, process_object: ProcessObject) {
         let thread_objects = match self.process_threads.remove(process_object) {
             Some(thread_objects) => thread_objects,
@@ -206,7 +200,7 @@ impl<T> ThreadMap<T> {
         }
     }
 
-    /// Retires a thread for the expected process.
+    /// Marks a thread for later removal if it belongs to the given process.
     pub fn retire(
         &mut self,
         process_object: ProcessObject,
@@ -228,19 +222,19 @@ impl<T> ThreadMap<T> {
         Some(&mut thread.value)
     }
 
-    /// Returns a thread value.
+    /// Returns saved thread data.
     pub fn get(&self, thread_object: ThreadObject) -> Option<&T> {
         self.entries.get(&thread_object).map(|thread| &thread.value)
     }
 
-    /// Returns a mutable thread value.
+    /// Returns saved thread data that can be changed.
     pub fn get_mut(&mut self, thread_object: ThreadObject) -> Option<&mut T> {
         self.entries
             .get_mut(&thread_object)
             .map(|thread| &mut thread.value)
     }
 
-    /// Returns a thread value for the expected process.
+    /// Returns saved thread data if the thread belongs to this process.
     pub fn get_for_process(
         &self,
         process_object: ProcessObject,
@@ -260,7 +254,8 @@ impl<T> ThreadMap<T> {
         Some(&thread.value)
     }
 
-    /// Returns a mutable thread value for the expected process.
+    /// Returns thread data that can be changed if the thread belongs to this
+    /// process.
     pub fn get_for_process_mut(
         &mut self,
         process_object: ProcessObject,
@@ -280,26 +275,26 @@ impl<T> ThreadMap<T> {
         Some(&mut thread.value)
     }
 
-    /// Returns the process that owns a thread.
+    /// Returns the process stored for a thread.
     pub fn process_of(&self, thread_object: ThreadObject) -> Option<ProcessObject> {
         self.entries
             .get(&thread_object)
             .map(|thread| thread.process)
     }
 
-    /// Iterates over the threads belonging to a process.
+    /// Lists the thread objects saved for a process.
     pub fn threads_of(&self, process_object: ProcessObject) -> impl Iterator<Item = ThreadObject> {
         self.process_threads.get(process_object)
     }
 
-    /// Removes retired threads.
+    /// Removes retired thread entries and updates their processes' thread sets.
     pub fn remove_retired(&mut self) {
         for (thread_object, thread) in self.entries.extract_if(|_, thread| thread.retired) {
             self.process_threads.detach(thread.process, thread_object);
         }
     }
 
-    /// Removes a thread and its process membership.
+    /// Removes saved thread data and its address from the process's thread set.
     pub fn remove(&mut self, thread_object: ThreadObject) -> Option<T> {
         let thread = self.entries.remove(&thread_object)?;
         self.process_threads.detach(thread.process, thread_object);

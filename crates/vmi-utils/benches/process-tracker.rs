@@ -119,7 +119,7 @@ fn bench_replace_retired_thread(criterion: &mut Criterion) {
     let thread_object = thread(0);
 
     criterion.benchmark_group("process_tracker").bench_function(
-        "try_get_or_insert/replace_retired_thread",
+        "try_insert_thread/replace_retired_thread",
         |bencher| {
             bencher.iter_batched(
                 || {
@@ -131,11 +131,11 @@ fn bench_replace_retired_thread(criterion: &mut Criterion) {
                 },
                 |mut tracker| {
                     let (process_value, thread_value) = tracker
-                        .try_get_or_insert(
+                        .try_insert_thread(
                             black_box(process_object),
                             black_box(thread_object),
                             existing_process,
-                            || Ok::<_, Infallible>(1),
+                            black_box(1),
                         )
                         .unwrap();
 

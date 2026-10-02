@@ -34,7 +34,7 @@ use crate::{
     file_transfer::{FileTransfer, FileTransferBridge},
 };
 
-/// Process metadata and process-local handles marked for transfer.
+/// Process metadata and pending file transfers.
 struct Process<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
@@ -48,7 +48,7 @@ where
     /// Process name.
     name: String,
 
-    /// Marked file transfers indexed by process-local handle.
+    /// Pending file transfers indexed by handles in this process.
     file_transfers: HashMap<u64, FileTransfer<Driver>>,
 }
 
@@ -56,7 +56,7 @@ impl<Driver> Process<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    /// Creates process metadata without marked file transfers.
+    /// Creates process metadata without pending file transfers.
     fn new(pid: ProcessId, ppid: ProcessId, name: String) -> Self {
         Self {
             pid,
@@ -69,14 +69,14 @@ where
     /// Records a file transfer indexed by its handle.
     ///
     /// Returns `true` if the handle was not already present.
-    fn mark_file(&mut self, transfer: FileTransfer<Driver>) -> bool {
+    fn record_file_transfer(&mut self, transfer: FileTransfer<Driver>) -> bool {
         self.file_transfers
             .insert(transfer.handle(), transfer)
             .is_none()
     }
 
     /// Removes and returns the file transfer for a handle.
-    fn take_file(&mut self, handle: u64) -> Option<FileTransfer<Driver>> {
+    fn take_file_transfer(&mut self, handle: u64) -> Option<FileTransfer<Driver>> {
         self.file_transfers.remove(&handle)
     }
 }

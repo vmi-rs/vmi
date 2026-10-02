@@ -13,7 +13,7 @@ use vmi::{
 pub use self::bridge::{FileTransferBridge, FileTransferStatus};
 use self::recipe::file_transfer_recipe;
 
-/// State of a file marked by `NtWriteFile` and transferred during `NtClose`.
+/// State of a file transfer recorded by `NtWriteFile` and started during `NtClose`.
 #[expect(
     clippy::large_enum_variant,
     reason = "only a handful of transfers exist at a time, so boxing the recipe \

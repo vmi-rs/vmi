@@ -84,8 +84,8 @@ where
 
 /// Handles an `MmCleanProcessAddressSpace` breakpoint.
 ///
-/// Clears the saved information for this process. If it is our program, saves
-/// its process ID as the result and marks the run as finished.
+/// Retires the process while retaining its context for later events. If it is our
+/// program, saves its process ID as the result and marks the run as finished.
 #[tracing::instrument(skip_all)]
 pub fn MmCleanProcessAddressSpace<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -132,8 +132,8 @@ where
 
 /// Handles a `PspInsertThread` breakpoint.
 ///
-/// Keeps a record of the new thread. Also records its process if that process
-/// is not yet known to the monitor.
+/// Replaces the new thread's context and preserves existing process context.
+/// Records its process if that process is not yet known to the monitor.
 #[tracing::instrument(skip_all)]
 pub fn PspInsertThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -164,9 +164,8 @@ where
 
     let thread_object = Thread;
     let process_object = Process;
-    let thread = Thread::new(tid);
 
-    state.tracker.try_get_or_insert(
+    state.tracker.try_insert_thread(
         process_object,
         thread_object,
         || {
@@ -176,7 +175,7 @@ where
                 os_process.name()?,
             ))
         },
-        || Ok::<_, VmiError>(thread),
+        Thread::new(tid),
     )?;
 
     tracing::debug!(
@@ -191,9 +190,8 @@ where
 
 /// Handles a `KeTerminateThread` breakpoint.
 ///
-/// Checks whether this is the thread we expected to start our program. If so,
-/// forgets that reference so a new thread cannot be mistaken for it. Removes
-/// the thread's record.
+/// Clears the expected creator reference when that thread terminates. Retires
+/// the thread's record while retaining its context for later events.
 #[tracing::instrument(skip_all)]
 pub fn KeTerminateThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -289,6 +287,14 @@ where
         return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
     }
 
+    let process = match state.tracker.get_process_mut(process_object) {
+        Some(process) => process,
+        None => {
+            tracing::warn!("target process not tracked");
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+    };
+
     let file_object = match current_process.lookup_object::<WindowsFileObject<_>>(FileHandle)? {
         Some(file_object) => file_object,
         None => {
@@ -298,18 +304,10 @@ where
     };
 
     let path = file_object.full_path()?;
-
     let transfer = FileTransfer::new(FileHandle, file_object.va(), path.clone());
-    let process = match state.tracker.get_process_mut(process_object) {
-        Some(process) => process,
-        None => {
-            tracing::warn!("target process not tracked");
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-        }
-    };
 
-    if process.mark_file(transfer) {
-        tracing::info!(handle = %Hex(FileHandle), path, "marked file for transfer");
+    if process.record_file_transfer(transfer) {
+        tracing::info!(handle = %Hex(FileHandle), path, "recorded file transfer");
     }
 
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
@@ -370,7 +368,7 @@ where
     let mut transfer = match state
         .tracker
         .get_process_mut(process_object)
-        .and_then(|process| process.take_file(Handle))
+        .and_then(|process| process.take_file_transfer(Handle))
     {
         Some(transfer) => transfer,
         None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
