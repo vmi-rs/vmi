@@ -27,6 +27,7 @@ use vmi::{
     },
 };
 
+use self::hooks::MonitorHook;
 use crate::{
     bridge::BridgeResult,
     deploy::{DeployBridge, DeployPolicy, DeployStatus, ExecuteResponse},
@@ -65,7 +66,7 @@ where
         }
     }
 
-    /// Records a file transfer keyed by its handle.
+    /// Records a file transfer indexed by its handle.
     ///
     /// Returns `true` if the handle was not already present.
     fn mark_file(&mut self, transfer: FileTransfer<Driver>) -> bool {
@@ -118,15 +119,6 @@ symbols! {
     }
 }
 
-/// Result produced when deploy monitoring finishes.
-pub type MonitorOutput = Result<Option<ProcessId>, DeployStatus>;
-
-/// Kernel breakpoint handler installed at a hooked function's entry.
-type Hook<Driver> = fn(
-    &VmiContext<WindowsOs<Driver>>,
-    &mut MonitorState<Driver>,
-) -> Result<VmiEventResponse<Amd64>, VmiError>;
-
 /// State passed through kernel breakpoint dispatch.
 struct MonitorState<Driver>
 where
@@ -138,14 +130,14 @@ where
     /// Thread performing the deployed process creation.
     creator_thread: Option<ThreadObject>,
 
-    /// Object identity of the deployed process, once discovered.
+    /// Process object of the deployed process, once discovered.
     target_process: Option<ProcessObject>,
 
     /// Result produced when the deployed process terminates.
-    output: Option<MonitorOutput>,
+    output: Option<<Monitor<Driver> as VmiHandler<WindowsOs<Driver>>>::Output>,
 }
 
-/// Monitors a deployed process.
+/// Monitor for a deployed process.
 ///
 /// Setup and event errors are returned or treated as fatal. The monitor does
 /// not attempt recovery.
@@ -155,8 +147,8 @@ where
 {
     terminate_flag: Arc<AtomicBool>,
     view: View,
-    bpm: BreakpointManager<BreakpointController<Driver>, (), Hook<Driver>>,
-    ptm: PageTableMonitor<Driver, Hook<Driver>>,
+    bpm: BreakpointManager<BreakpointController<Driver>, (), MonitorHook<Driver>>,
+    ptm: PageTableMonitor<Driver, MonitorHook<Driver>>,
     bridge: Bridge<WindowsOs<Driver>, (DeployBridge, FileTransferBridge)>,
     state: MonitorState<Driver>,
 }
@@ -196,7 +188,7 @@ where
                 $(
                     let va = kernel_image_base + symbols.$name;
                     let context = (va, root);
-                    let hook = hooks::$name::<Driver> as Hook<Driver>;
+                    let hook = self::hooks::$name::<Driver> as MonitorHook<Driver>;
                     let breakpoint = Breakpoint::new(context, view).global().with_tag(hook);
                     bpm.insert(&vmi, breakpoint)?;
                     ptm.monitor(&vmi, context, view, hook)?;
@@ -388,7 +380,7 @@ impl<Driver> VmiHandler<WindowsOs<Driver>> for Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    type Output = MonitorOutput;
+    type Output = Result<Option<ProcessId>, DeployStatus>;
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();

@@ -72,12 +72,21 @@ impl std::fmt::Debug for FileTransferStage {
 /// Status reported by the `file-transfer` shellcode.
 pub type FileTransferStatus = Status<FileTransferStage>;
 
-/// Host output for an active transfer.
+/// State associated with a host-side file for an active transfer.
 struct HostFile {
+    /// Host-side file corresponding to the active transfer.
     file: File,
+
+    /// Host-side path to the file.
     path: PathBuf,
+
+    /// Expected size of the file being transferred.
     expected_size: u64,
+
+    /// Number of bytes received so far.
     received: u64,
+
+    /// Guest virtual address of the shared transfer buffer.
     buffer: Option<Va>,
 }
 
@@ -137,10 +146,15 @@ impl HostFile {
     }
 }
 
-/// State associated with a guest-issued transfer handle.
+/// State associated with a transfer handle.
 struct TransferSession {
+    /// Guest-side path of the file being transferred.
     path: String,
+
+    /// Host-side state of the file being transferred.
     host_file: HostFile,
+
+    /// Reusable buffer for transferring chunks.
     chunk_buffer: Vec<u8>,
 }
 
@@ -155,11 +169,18 @@ impl TransferSession {
     }
 }
 
-/// Handles communication with the `file-transfer` shellcode.
+/// Host-side bridge handler for the `file-transfer` shellcode.
 pub struct FileTransferBridge {
+    /// Host-side output directory for transferred files.
     output_directory: PathBuf,
+
+    /// Next candidate transfer handle.
     next_transfer_handle: u32,
+
+    /// Next numeric prefix for output file names.
     next_output_id: u64,
+
+    /// Active transfer sessions indexed by their transfer handle.
     transfers: HashMap<u32, TransferSession>,
 }
 
@@ -255,18 +276,16 @@ impl FileTransferBridge {
             }
         };
 
-        let expected_size = match i64::try_from(file_size) {
-            Ok(expected_size) => expected_size,
-            Err(_) => {
-                tracing::error!(size = file_size, "rejected size");
-                return BridgeResponse::new(0);
-            }
-        };
+        // Windows file sizes are LONGLONG.
+        if file_size > i64::MAX as u64 {
+            tracing::error!(path, size = file_size, "rejected size");
+            return BridgeResponse::new(0);
+        }
 
         let transfer_handle = match self.allocate_transfer_handle() {
             Some(transfer_handle) => transfer_handle,
             None => {
-                tracing::error!("handles exhausted");
+                tracing::error!(path, "handles exhausted");
                 return BridgeResponse::new(0);
             }
         };
@@ -279,7 +298,7 @@ impl FileTransferBridge {
             .output_directory
             .join(output_filename(output_id, &path));
 
-        let host_file = match HostFile::create(output_path.clone(), expected_size as u64) {
+        let host_file = match HostFile::create(output_path.clone(), file_size) {
             Ok(host_file) => host_file,
             Err(err) => {
                 tracing::error!(%err, path = ?output_path.display(), "cannot create file");
@@ -296,7 +315,7 @@ impl FileTransferBridge {
             transfer_handle,
             file_handle = %Hex(file_handle),
             path,
-            size = expected_size,
+            size = file_size,
             output = ?output_path.display(),
             "started"
         );

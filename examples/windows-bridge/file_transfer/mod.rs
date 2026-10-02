@@ -23,24 +23,28 @@ enum FileTransferState<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    /// Transfer has been created but not yet started.
     Pending,
-    // REVIEW: Executing(RecipeExecutor<
-    //     WindowsOs<Driver>,
-    //     KernelShellcodeRecipeData<WindowsOs<Driver>>,
-    // >),
-    Executing {
-        executor: RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData<WindowsOs<Driver>>>,
-    },
+
+    /// Transfer is currently being executed.
+    Executing(RecipeExecutor<WindowsOs<Driver>, KernelShellcodeRecipeData<WindowsOs<Driver>>>),
 }
 
-/// A process-local file transfer that runs on the thread closing the file handle.
+/// File transfer that runs on the thread executing `NtClose`.
 pub struct FileTransfer<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
+    /// Process-local handle of the file being transferred.
     handle: u64,
+
+    /// Guest `_FILE_OBJECT` address of the file being transferred.
     file_object: Va,
+
+    /// Guest path of the file being transferred.
     path: String,
+
+    /// Current state of the file transfer.
     state: FileTransferState<Driver>,
 }
 
@@ -80,9 +84,8 @@ where
             "file transfer started more than once"
         );
 
-        self.state = FileTransferState::Executing {
-            executor: RecipeExecutor::new(file_transfer_recipe(self.handle)),
-        };
+        self.state =
+            FileTransferState::Executing(RecipeExecutor::new(file_transfer_recipe(self.handle)));
     }
 
     /// Advances the `file-transfer` recipe on the current thread.
@@ -91,7 +94,7 @@ where
         vmi: &VmiContext<'_, WindowsOs<Driver>>,
     ) -> Result<Option<Registers>, VmiError> {
         let executor = match &mut self.state {
-            FileTransferState::Executing { executor } => executor,
+            FileTransferState::Executing(executor) => executor,
             FileTransferState::Pending => panic!("pending file transfer cannot execute"),
         };
 
@@ -102,7 +105,7 @@ where
     pub fn done(&self) -> bool {
         match &self.state {
             FileTransferState::Pending => false,
-            FileTransferState::Executing { executor } => executor.done(),
+            FileTransferState::Executing(executor) => executor.done(),
         }
     }
 }

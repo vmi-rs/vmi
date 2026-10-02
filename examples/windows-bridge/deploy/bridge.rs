@@ -59,17 +59,19 @@ pub type DeployStatus = Status<DeployStage>;
 /// Host response when the shellcode reaches the execution gate.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExecuteResponse {
-    /// Allows the shellcode to execute the configured program.
+    /// Allows the shellcode to run the configured executable.
     Continue,
 
-    /// Allows execution and notifies the monitor before the guest resumes.
+    /// Allows execution and reports [`BridgeResult::DeployExecuting`].
     ContinueAndNotify,
 
     /// Aborts the shellcode before process execution.
     #[default]
     Abort,
 
-    /// Parks the shellcode immediately before process execution.
+    /// Defers execution and reports [`BridgeResult::DeployWaiting`].
+    ///
+    /// The shellcode sleeps and retries the gate until allowed or aborted.
     Wait,
 }
 
@@ -117,7 +119,7 @@ impl DeployPolicy {
     }
 }
 
-/// Handles communication with the `deploy` shellcode.
+/// Host-side bridge handler for the `deploy` shellcode.
 #[derive(Debug)]
 pub struct DeployBridge {
     /// Policy applied to shellcode requests.

@@ -84,6 +84,17 @@ if working_directory: working_directory
 if show_window:       int32 show_window
 ```
 
+| Flag | Value |
+|---|---:|
+| `DOWNLOAD` | `0x0001` |
+| `EXECUTE` | `0x0002` |
+| `EXTRACT` | `0x0100` |
+| `ARGUMENTS` | `0x1000` |
+| `WORKING_DIRECTORY` | `0x2000` |
+| `SHOW_WINDOW` | `0x4000` |
+
+`EXTRACT` requires `DOWNLOAD`. `ARGUMENTS`, `WORKING_DIRECTORY`, and `SHOW_WINDOW` require `EXECUTE`.
+
 The payload parser validates flag relationships but trusts the buffer's bounds and string termination. The host must keep the correctly encoded allocation alive until the payload returns.
 
 ### 3. Inject into the carrier process

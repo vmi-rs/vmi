@@ -14,7 +14,16 @@ use vmi::{
 use super::{MonitorState, Process, Thread};
 use crate::file_transfer::FileTransfer;
 
-/// Handles a `PspInsertProcess` breakpoint and records the process and its parent.
+/// Kernel breakpoint handler.
+pub type MonitorHook<Driver> = fn(
+    &VmiContext<WindowsOs<Driver>>,
+    &mut MonitorState<Driver>,
+) -> Result<VmiEventResponse<Amd64>, VmiError>;
+
+/// Handles a `PspInsertProcess` breakpoint.
+///
+/// Checks whether the new process was created by the thread we expected. If so,
+/// selects it as the program to watch. Records the process and its parent ID.
 #[tracing::instrument(skip_all)]
 pub fn PspInsertProcess<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -73,7 +82,10 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
-/// Handles an `MmCleanProcessAddressSpace` breakpoint and finalizes the process.
+/// Handles an `MmCleanProcessAddressSpace` breakpoint.
+///
+/// Clears the saved information for this process. If it is our program, saves
+/// its process ID as the result and marks the run as finished.
 #[tracing::instrument(skip_all)]
 pub fn MmCleanProcessAddressSpace<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -118,7 +130,10 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
-/// Handles a `PspInsertThread` breakpoint and records the thread's process.
+/// Handles a `PspInsertThread` breakpoint.
+///
+/// Keeps a record of the new thread. Also records its process if that process
+/// is not yet known to the monitor.
 #[tracing::instrument(skip_all)]
 pub fn PspInsertThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -174,7 +189,11 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
-/// Handles a `KeTerminateThread` breakpoint and finalizes the thread.
+/// Handles a `KeTerminateThread` breakpoint.
+///
+/// Checks whether this is the thread we expected to start our program. If so,
+/// forgets that reference so a new thread cannot be mistaken for it. Removes
+/// the thread's record.
 #[tracing::instrument(skip_all)]
 pub fn KeTerminateThread<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -226,7 +245,10 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
-/// Handles an `NtWriteFile` breakpoint and marks the file for transfer.
+/// Handles an `NtWriteFile` breakpoint.
+///
+/// Keeps a list of files that our program tries to write. The `NtClose` handler
+/// uses this list to decide which files to copy out of the Windows VM.
 #[tracing::instrument(skip_all)]
 pub fn NtWriteFile<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,
@@ -293,7 +315,11 @@ where
     Ok(VmiEventResponse::fast_singlestep(vmi.default_view()))
 }
 
-/// Handles an `NtClose` breakpoint and starts the file transfer.
+/// Handles an `NtClose` breakpoint.
+///
+/// Starts copying a file when our program closes a handle recorded by the
+/// `NtWriteFile` handler. Later calls on the same thread run the next steps of
+/// the copy.
 #[tracing::instrument(skip_all)]
 pub fn NtClose<Driver>(
     vmi: &VmiContext<WindowsOs<Driver>>,

@@ -55,12 +55,12 @@
 // Flag bits
 // ---------
 //
-//   extract             0x00000001  Extract the downloaded archive.
+//   download            0x00000001  Download `url` to `download_path`.
 //   execute             0x00000002  Execute `executable_path`.
-//   download            0x00000004  Download `url` to `download_path`.
-//   arguments           0x00000100  Append the `arguments` string.
-//   working_directory   0x00000200  Append a working-directory string.
-//   show_window         0x00000400  Append an explicit show-window value.
+//   extract             0x00000100  Extract the downloaded archive.
+//   arguments           0x00001000  Append the `arguments` string.
+//   working_directory   0x00002000  Append a working-directory string.
+//   show_window         0x00004000  Append an explicit show-window value.
 //
 // `arguments`, `working_directory`, and `show_window` are invalid without
 // `execute`. Unknown flag bits are invalid. No placeholder is encoded for an
@@ -159,15 +159,18 @@ constexpr DWORD extraction_poll_limit = 600; // Maximum extraction checks.
 
 enum class parameter_flags: uint32_t {
     none                    = 0x00000000,
-    extract                 = 0x00000001,
+    download                = 0x00000001,
     execute                 = 0x00000002,
-    download                = 0x00000004,
-    arguments               = 0x00000100,
-    working_directory       = 0x00000200,
-    show_window             = 0x00000400,
+    extract                 = 0x00000100,
+    arguments               = 0x00001000,
+    working_directory       = 0x00002000,
+    show_window             = 0x00004000,
 };
 
 VMI_DEFINE_ENUM_FLAG_OPERATORS(parameter_flags);
+
+constexpr parameter_flags download_flags =
+    parameter_flags::extract;
 
 constexpr parameter_flags execute_flags =
     parameter_flags::arguments
@@ -175,9 +178,9 @@ constexpr parameter_flags execute_flags =
     | parameter_flags::show_window;
 
 constexpr parameter_flags valid_flags =
-    parameter_flags::extract
+    parameter_flags::download
     | parameter_flags::execute
-    | parameter_flags::download
+    | parameter_flags::extract
     | execute_flags;
 
 enum class stage : uint8_t {
@@ -336,10 +339,10 @@ parse_parameters(
         static_cast<parameter_flags>(cursor.next_uint32());
 
     if (has_any(parameters.flags, ~valid_flags)
+        || (has_all(parameters.flags, download_flags)
+            && !has_all(parameters.flags, parameter_flags::download))
         || (has_any(parameters.flags, execute_flags)
-            && !has_all(parameters.flags, parameter_flags::execute))
-        || (has_all(parameters.flags, parameter_flags::extract)
-            && !has_all(parameters.flags, parameter_flags::download)))
+            && !has_all(parameters.flags, parameter_flags::execute)))
     {
         return std::unexpected(parameter_error::flags);
     }
@@ -349,11 +352,11 @@ parse_parameters(
         parameters.url = cursor.next_wstring();
 
         parameters.download_path = cursor.next_wstring();
-    }
 
-    if (has_any(parameters.flags, parameter_flags::extract))
-    {
-        parameters.extraction_directory = cursor.next_wstring();
+        if (has_any(parameters.flags, parameter_flags::extract))
+        {
+            parameters.extraction_directory = cursor.next_wstring();
+        }
     }
 
     if (has_any(parameters.flags, parameter_flags::execute))

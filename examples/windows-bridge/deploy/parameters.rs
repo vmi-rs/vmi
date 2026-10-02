@@ -1,41 +1,50 @@
 use vmi::utils::shellcode::{ParameterWriter, ShellcodeParameters};
 
 bitflags::bitflags! {
-    /// Flags encoded for the `deploy` shellcode.
+    /// Flags for the `deploy` shellcode.
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     struct ParameterFlags: u32 {
-        /// Enables archive extraction after a download.
-        const EXTRACT = 1 << 0;
-
-        /// Enables executable launch.
-        const EXECUTE = 1 << 1;
-
         /// Enables file download.
-        const DOWNLOAD = 1 << 2;
+        const DOWNLOAD = 0x0001;
 
-        /// Marks an encoded execution argument string as present.
-        const ARGUMENTS = 1 << 8;
+        /// Enables execution of the configured executable.
+        const EXECUTE = 0x0002;
 
-        /// Marks an encoded execution working directory as present.
-        const WORKING_DIRECTORY = 1 << 9;
+        /// Enables extraction of the downloaded archive.
+        ///
+        /// Requires `DOWNLOAD` to be set.
+        const EXTRACT = 0x0100;
 
-        /// Marks an encoded execution display value as present.
-        const SHOW_WINDOW = 1 << 10;
+        /// Indicates that a command-line argument string is present.
+        ///
+        /// Requires `EXECUTE` to be set.
+        const ARGUMENTS = 0x1000;
+
+        /// Indicates that an execution working-directory string is present.
+        ///
+        /// Requires `EXECUTE` to be set.
+        const WORKING_DIRECTORY = 0x2000;
+
+        /// Indicates that a Windows SW_* show-window value is present.
+        ///
+        /// Requires `EXECUTE` to be set.
+        const SHOW_WINDOW = 0x4000;
     }
 }
 
-/// Marks a builder without a download operation.
+/// Builder state without a download operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DownloadDisabled;
 
-/// Holds a download URL until its required destination path is supplied.
+/// Builder state awaiting the required destination path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadNeedsPath {
     /// URL passed to `URLDownloadToFileW`.
     url: String,
 }
 
-/// Holds a complete download operation and its optional extraction stage.
+/// Builder state with a complete download configuration and optional
+/// archive extraction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadEnabled {
     /// URL passed to `URLDownloadToFileW`.
@@ -48,11 +57,11 @@ pub struct DownloadEnabled {
     extraction_directory: Option<String>,
 }
 
-/// Marks a builder without an execution operation.
+/// Builder state without an execution operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecutionDisabled;
 
-/// Holds a complete execution operation and its optional fields.
+/// Builder state with a complete execution configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionEnabled {
     /// Guest executable path, including optional environment variables.
@@ -128,7 +137,8 @@ impl DeployParameters {
 }
 
 impl ShellcodeParameters for DeployParameters {
-    /// Uses `u32` alignment because the operation flags are encoded first.
+    /// Uses `u32` alignment because the operation flags (which are u32)
+    /// are encoded first.
     const ALIGNMENT: usize = align_of::<u32>();
 
     fn encode(&self, writer: &mut ParameterWriter) {
@@ -389,7 +399,7 @@ mod tests {
         assert_eq!(
             bytes,
             [
-                0x07, 0x07, 0x00, 0x00, // flags
+                0x03, 0x71, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
                 b'd', 0, 0, 0, // download path
                 b'x', 0, 0, 0, // extraction directory
@@ -417,7 +427,7 @@ mod tests {
         assert_eq!(
             bytes,
             [
-                0x07, 0x02, 0x00, 0x00, // flags
+                0x03, 0x21, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
                 b'd', 0, 0, 0, // download path
                 b'x', 0, 0, 0, // extraction directory

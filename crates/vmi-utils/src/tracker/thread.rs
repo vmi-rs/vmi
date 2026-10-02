@@ -86,7 +86,7 @@ impl ProcessThreads {
 
 /// A thread map stores values and their process memberships.
 pub struct ThreadMap<T> {
-    /// Each key is a kernel thread object identity.
+    /// Thread entries indexed by thread object.
     entries: HashMap<ThreadObject, ThreadEntry<T>, RandomState>,
 
     /// This index supports lookups and removals by process.

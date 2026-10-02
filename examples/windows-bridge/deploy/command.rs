@@ -183,6 +183,7 @@ fn validate_deploy_result(result: BridgeResult) -> Result<DeployStatus, Error> {
         status.kind() == StatusKind::SUCCESS,
         "deploy failed: {status:?}"
     );
+
     Ok(status)
 }
 
@@ -190,8 +191,9 @@ fn validate_deploy_result(result: BridgeResult) -> Result<DeployStatus, Error> {
 fn validate_deploy_waiting_result(result: BridgeResult) -> Result<(), Error> {
     anyhow::ensure!(
         result == BridgeResult::DeployWaiting,
-        "deploy monitor handoff failed: {result:?}"
+        "deploy waiting failed: {result:?}"
     );
+
     Ok(())
 }
 
@@ -227,12 +229,19 @@ where
     let monitor = match monitor {
         Some(monitor) => monitor,
         None => {
+            // Without --monitor, there is nothing else to set up.
+            // The requested work should be finished, so check that it succeeded.
             let status = validate_deploy_result(result)?;
             tracing::info!(?status, "deploy completed");
             return Ok(());
         }
     };
 
+    // With --monitor, we told the code running in the VM to wait before
+    // starting the program. This gives us time to set up the monitor.
+    // Otherwise, the program could start before we are ready to watch it.
+    //
+    // Check that it is still waiting. The monitor will then allow it to start.
     validate_deploy_waiting_result(result)?;
     tracing::info!("deploy injector parked at execute gate");
 
@@ -309,7 +318,7 @@ mod tests {
         assert_eq!(
             encode_parameters(&request.parameters),
             [
-                0x04, 0x00, 0x00, 0x00, // flags
+                0x01, 0x00, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
                 b'd', 0, 0, 0, // download path
             ]
@@ -338,7 +347,7 @@ mod tests {
         assert_eq!(
             encode_parameters(&request.parameters),
             [
-                0x02, 0x07, 0x00, 0x00, // flags
+                0x02, 0x70, 0x00, 0x00, // flags
                 b'e', 0, 0, 0, // executable path
                 b'a', 0, 0, 0, // arguments
                 b'w', 0, 0, 0, // working directory
@@ -397,7 +406,7 @@ mod tests {
         assert_eq!(
             encode_parameters(&request.parameters),
             [
-                0x07, 0x07, 0x00, 0x00, // flags
+                0x03, 0x71, 0x00, 0x00, // flags
                 b'u', 0, 0, 0, // URL
                 b'd', 0, 0, 0, // download path
                 b'x', 0, 0, 0, // extraction directory

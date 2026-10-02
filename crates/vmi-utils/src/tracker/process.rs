@@ -22,9 +22,9 @@ impl<P> ProcessEntry<P> {
     }
 }
 
-/// A process map indexes values by their kernel object identities.
+/// Process values indexed by process object.
 pub struct ProcessMap<P> {
-    /// Each key is a kernel process object identity.
+    /// Process entries indexed by process object.
     entries: HashMap<ProcessObject, ProcessEntry<P>, RandomState>,
 }
 

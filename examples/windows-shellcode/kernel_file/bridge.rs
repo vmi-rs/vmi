@@ -42,7 +42,7 @@ impl std::fmt::Debug for KernelFileStage {
 /// Status reported by the `kernel-file` shellcode.
 pub type KernelFileStatus = Status<KernelFileStage>;
 
-/// Handles communication with the `kernel-file` shellcode.
+/// Host-side bridge handler for the `kernel-file` shellcode.
 #[derive(Debug, Default)]
 pub struct KernelFileBridge;
 

@@ -18,8 +18,8 @@ use self::{process::ProcessMap, thread::ThreadMap};
 /// A process remains in its current generation until
 /// [`retire_process`](Self::retire_process) retires it. Retiring a process does
 /// not remove its value or threads. A successful process initializer or explicit
-/// insertion for the same object identity replaces the process value, starts a
-/// new active generation, and evicts every thread owned by the previous
+/// insertion for the same process object address replaces the process value,
+/// starts a new active generation, and evicts every thread owned by the previous
 /// generation. Inserting a value for an active process replaces only its value
 /// and retains its threads.
 ///
@@ -30,9 +30,9 @@ use self::{process::ProcessMap, thread::ThreadMap};
 /// [`remove_process`](Self::remove_process) removes the process. Calling
 /// [`remove_thread`](Self::remove_thread) evicts only that thread.
 ///
-/// # Thread identity reuse
+/// # Thread object address reuse
 ///
-/// A thread object identity has one owning process. [`insert`](Self::insert)
+/// Each tracked thread object belongs to one process. [`insert`](Self::insert)
 /// always replaces the supplied thread value and moves the thread to the
 /// supplied process when its owner differs.
 /// [`try_get_or_insert`](Self::try_get_or_insert) reuses a thread value only
@@ -50,10 +50,10 @@ use self::{process::ProcessMap, thread::ThreadMap};
 ///
 /// # Cleanup
 ///
-/// Retired entries remain tracked until identity reuse, explicit removal, or a
-/// bulk cleanup method removes them. Removing retired processes also removes
-/// every thread they own, regardless of each thread's lifecycle state. Removing
-/// retired threads alone leaves all processes and their active threads tracked.
+/// Retired entries remain tracked until replacement or removal.
+/// Removing retired processes also removes every thread they own, regardless of
+/// each thread's lifecycle state. Removing retired threads alone leaves all
+/// processes and their active threads tracked.
 pub struct Tracker<P, T> {
     /// Stores process values and their lifecycle state.
     processes: ProcessMap<P>,
@@ -77,7 +77,7 @@ impl<P, T> Tracker<P, T> {
     /// An active process retains its other threads while its value is replaced.
     /// A retired process starts a new generation and evicts all threads from
     /// the previous generation. The supplied thread value always replaces any
-    /// value for the same thread identity. A thread owned by another process
+    /// value for the same thread object address. A thread owned by another process
     /// moves to `process_object`.
     pub fn insert(
         &mut self,
@@ -185,7 +185,7 @@ impl<P, T> Tracker<P, T> {
 
     /// Checks whether a tracked process owns a tracked thread.
     ///
-    /// Returns `false` if either identity is absent or the thread belongs to
+    /// Returns `false` if either object is untracked or the thread belongs to
     /// another process. Retired processes and threads remain contained until
     /// replacement or removal.
     pub fn contains(&self, process_object: ProcessObject, thread_object: ThreadObject) -> bool {
@@ -238,7 +238,7 @@ impl<P, T> Tracker<P, T> {
         self.processes.get_mut(process_object)
     }
 
-    /// Checks whether a process identity is tracked, including one marked retired.
+    /// Checks whether a process object is tracked, including one marked retired.
     pub fn contains_process(&self, process_object: ProcessObject) -> bool {
         self.processes.get(process_object).is_some()
     }
@@ -270,7 +270,7 @@ impl<P, T> Tracker<P, T> {
         self.threads.get_mut(thread_object)
     }
 
-    /// Checks whether a thread identity is tracked, including one marked retired.
+    /// Checks whether a thread object is tracked, including one marked retired.
     pub fn contains_thread(&self, thread_object: ThreadObject) -> bool {
         self.threads.get(thread_object).is_some()
     }
@@ -306,7 +306,7 @@ impl<P, T> Tracker<P, T> {
         self.threads.process_of(thread_object)
     }
 
-    /// Iterates over all thread identities associated with a process.
+    /// Returns an iterator over the thread objects associated with a process.
     ///
     /// The iterator includes retired threads and threads belonging to a retired
     /// process. Iteration order is unspecified.
@@ -469,7 +469,8 @@ mod tests {
         assert_eq!(tracker.threads_of(process).count(), 2);
     }
 
-    /// Verifies that both insertion paths move a reused thread identity.
+    /// Verifies that both insertion paths update ownership when a thread object
+    /// address is reused.
     #[test]
     fn moves_thread_identity_between_processes() {
         let mut tracker = Tracker::<&str, u32>::default();

@@ -10,7 +10,7 @@ use vmi::{
     },
 };
 
-/// Handles communication with the `msgbox` shellcode.
+/// Host-side bridge handler for the `msgbox` shellcode.
 #[derive(Debug, Default)]
 pub struct MsgboxBridge;
 

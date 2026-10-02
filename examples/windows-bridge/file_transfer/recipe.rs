@@ -19,10 +19,13 @@ const FILE_TRANSFER_SHELLCODE: &[u8] = include_bytes!(concat!(
 /// The call recipe passes the kernel image base as the first and the
 /// `file_handle` as the second argument.
 ///
-/// **Note:** We intentionally run the shellcode in a `call` mode (synchronously
-/// on the current thread) rather than `spawn`ing a new thread. A spawned thread
-/// would run in the `System` process, where the (process-local) file handle
-/// is invalid.
+/// **Note:** The transfer runs on the same thread that called `NtClose`.
+/// It reads the file before Windows closes the handle.
+///
+/// This keeps the transfer in the process where the handle refers to
+/// the file we want to read. The recipe for starting a new kernel thread
+/// (`spawn`) would run the transfer in the `System` process instead, where
+/// the same handle might refer to a different file or no file at all.
 pub fn file_transfer_recipe<Driver>(file_handle: u64) -> KernelShellcodeRecipe<WindowsOs<Driver>>
 where
     Driver: VmiMemory<Architecture = Amd64>,
