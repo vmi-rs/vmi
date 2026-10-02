@@ -97,6 +97,8 @@ Both bridge handlers use the example-local `BridgeResult` output type. `DeployWa
 
 ### 4. File transfer: kernel-mode injection from a hook
 
+Kernel breakpoints carry a `MonitorHook` tag containing the symbol name and callback. Breakpoint and page-table diagnostics print that name. Hook tags compare and hash by name, so each name must identify one callback.
+
 The monitor's `NtWriteFile` and `NtClose` hooks drive `kernel_shellcode_call_recipe` on the closing thread through its own `RecipeExecutor`, without an injector. Calling rather than spawning is required here too, for the opposite reason: the payload must finish before `NtClose` proceeds, and it operates on a handle that is only valid in the closing process. See [File-transfer workflow](file_transfer/README.md).
 
 ## The monitored-deploy handoff

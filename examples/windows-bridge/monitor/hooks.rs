@@ -1,5 +1,10 @@
 #![expect(non_snake_case)]
 
+use std::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+};
+
 use vmi::{
     Registers as _, Va, VmiContext, VmiError, VmiEventResponse, VmiVa as _,
     arch::amd64::Amd64,
@@ -14,11 +19,65 @@ use vmi::{
 use super::{MonitorState, Process, Thread};
 use crate::file_transfer::FileTransfer;
 
-/// Kernel breakpoint handler.
-pub type MonitorHook<Driver> = fn(
+/// Kernel breakpoint callback.
+type MonitorCallback<Driver> = fn(
     &VmiContext<WindowsOs<Driver>>,
     &mut MonitorState<Driver>,
 ) -> Result<VmiEventResponse<Amd64>, VmiError>;
+
+/// Named kernel breakpoint handler.
+///
+/// Each name must identify exactly one callback. Tags compare and hash by name.
+pub struct MonitorHook<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    /// Symbol name used for diagnostics and tag identity.
+    pub name: &'static str,
+
+    /// Handler invoked when the breakpoint fires.
+    pub callback: MonitorCallback<Driver>,
+}
+
+impl<Driver> Debug for MonitorHook<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.name)
+    }
+}
+
+impl<Driver> Clone for MonitorHook<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Driver> Copy for MonitorHook<Driver> where Driver: VmiFullDriver<Architecture = Amd64> {}
+
+impl<Driver> PartialEq for MonitorHook<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.name.eq(other.name)
+    }
+}
+
+impl<Driver> Eq for MonitorHook<Driver> where Driver: VmiFullDriver<Architecture = Amd64> {}
+
+impl<Driver> Hash for MonitorHook<Driver>
+where
+    Driver: VmiFullDriver<Architecture = Amd64>,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
 
 /// Handles a `PspInsertProcess` breakpoint.
 ///

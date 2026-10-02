@@ -188,12 +188,15 @@ where
                 $(
                     let va = kernel_image_base + symbols.$name;
                     let context = (va, root);
-                    let hook = self::hooks::$name::<Driver> as MonitorHook<Driver>;
+                    let hook = MonitorHook {
+                        name: stringify!($name),
+                        callback: self::hooks::$name::<Driver>,
+                    };
                     let breakpoint = Breakpoint::new(context, view).global().with_tag(hook);
                     bpm.insert(&vmi, breakpoint)?;
                     ptm.monitor(&vmi, context, view, hook)?;
                     tracing::debug!(
-                        hook = stringify!($name),
+                        ?hook,
                         %va,
                         "installed monitor hook"
                     );
@@ -269,7 +272,7 @@ where
             }
         };
 
-        hook(vmi, &mut self.state)
+        (hook.callback)(vmi, &mut self.state)
     }
 
     #[tracing::instrument(skip_all)]
