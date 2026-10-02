@@ -117,7 +117,10 @@
 //! guest memory allocation and must free it. The `scfw` example payloads handle
 //! this cleanup automatically.
 //!
+//! For a complete example, see the [Windows shellcode walkthrough].
+//!
 //! [`scfw`]: https://github.com/vmi-rs/scfw
+//! [Windows shellcode walkthrough]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode/README.md
 //! [`BridgeResponse::output`]: crate::bridge::BridgeResponse::output
 
 mod arch;
