@@ -462,12 +462,12 @@ where
         let Process = vmi.os().function_argument(0)?;
 
         let process = vmi.os().process(ProcessObject(Va(Process)))?;
-        let process_id = process.id()?;
+        let pid = process.id()?;
 
         let name = process.name()?;
         let image_base = process.image_base()?;
 
-        tracing::info!(%process_id, name, %image_base);
+        tracing::info!(%pid, name, %image_base);
 
         Ok(())
     }
