@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Injector handlers with guest-host bridges are now created by
   calling `InjectorHandler::new` followed by `with_bridge`, which returns
   `Result`.
+- **Breaking:** `BridgeResponse::result`, `into_result`, and `with_result`
+  renamed to `output`, `into_output`, and `with_output`.
 
 ### Added
 

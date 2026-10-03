@@ -58,15 +58,14 @@ pub trait BridgeContract {
 ///
 /// The [`handle`](Self::handle) return value controls the dispatch outcome:
 ///
-/// - `Some(response)` - request was handled; the response is written
-///   back to guest registers.
+/// - `Some(response)` - request was handled. See [`BridgeResponse`] for the reply.
 /// - `None` - request code matched but no response was produced (e.g.,
 ///   an unrecognized method). The dispatcher treats this as an error.
 pub trait BridgeHandler<Os>: BridgeContract
 where
     Os: VmiOs,
 {
-    /// The response output type.
+    /// The output type.
     type Output;
 
     /// The request code that this handler responds to.

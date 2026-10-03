@@ -2,9 +2,9 @@ use super::arch::GpRegistersAdapter;
 
 /// A response from the bridge.
 ///
-/// Carries up to four architecture-mapped values and an optional typed
-/// result. The values are written back into guest registers by
-/// [`write_to`](Self::write_to); the result signals handler completion.
+/// `value1`-`value4` are written into guest registers by
+/// [`write_to`](Self::write_to). `output` is returned to the caller and is not
+/// sent to the guest.
 ///
 /// # Architecture-specific
 ///
@@ -15,7 +15,7 @@ pub struct BridgeResponse<T = ()> {
     value2: Option<u64>,
     value3: Option<u64>,
     value4: Option<u64>,
-    result: Option<T>,
+    output: Option<T>,
 }
 
 impl<T> Default for BridgeResponse<T> {
@@ -25,7 +25,7 @@ impl<T> Default for BridgeResponse<T> {
             value2: None,
             value3: None,
             value4: None,
-            result: None,
+            output: None,
         }
     }
 }
@@ -38,7 +38,7 @@ impl<T> BridgeResponse<T> {
             value2: None,
             value3: None,
             value4: None,
-            result: None,
+            output: None,
         }
     }
 
@@ -62,17 +62,17 @@ impl<T> BridgeResponse<T> {
         self.value4
     }
 
-    /// Returns a reference to the result of the response.
-    pub fn result(&self) -> Option<&T> {
-        self.result.as_ref()
+    /// Returns a reference to the output of the response.
+    pub fn output(&self) -> Option<&T> {
+        self.output.as_ref()
     }
 
-    /// Consumes the response and returns the result, if present.
+    /// Consumes the response and returns the output, if present.
     ///
-    /// A `Some` value indicates that the handler has finished and the
+    /// A `Some` value can indicate that the handler has finished and the
     /// bridge dispatch loop should terminate.
-    pub fn into_result(self) -> Option<T> {
-        self.result
+    pub fn into_output(self) -> Option<T> {
+        self.output
     }
 
     /// Sets the first value of the response.
@@ -107,13 +107,13 @@ impl<T> BridgeResponse<T> {
         }
     }
 
-    /// Sets the completion result of the response.
+    /// Sets the output of the response.
     ///
-    /// When present, signals that the handler has finished processing
+    /// When present, it can signal that the handler has finished processing
     /// and the bridge dispatch loop should terminate.
-    pub fn with_result(self, result: T) -> Self {
+    pub fn with_output(self, output: T) -> Self {
         Self {
-            result: Some(result),
+            output: Some(output),
             ..self
         }
     }

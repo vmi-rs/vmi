@@ -507,7 +507,7 @@ where
             let complete = match result {
                 Ok(response) => {
                     response.write_to(&mut registers);
-                    response.into_result().map(Ok)
+                    response.into_output().map(Ok)
                 }
                 Err(packet) => {
                     tracing::error!(

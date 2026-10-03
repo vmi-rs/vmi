@@ -14,7 +14,7 @@ where
     /// Set to `true` in the implementation for the `()` type.
     const EMPTY: bool = false;
 
-    /// The response output type.
+    /// The output type.
     ///
     /// Every handler in a tuple dispatcher must use the same output type.
     type Output;

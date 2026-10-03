@@ -6,7 +6,8 @@
 //! executes a VMCALL (or CPUID) instruction, the hypervisor delivers
 //! the event to the monitor, which reads a [`BridgePacket`] from the
 //! registers, dispatches it to the appropriate handler, and writes
-//! the [`BridgeResponse`] back.
+//! the values from [`BridgeResponse`] into guest registers.
+//! The optional output is returned to the caller (not the guest).
 //!
 //! # Traits
 //!
@@ -31,14 +32,14 @@
 //! }
 //!
 //! impl BridgeHandler<MyOs> for HelloBridge {
-//!     type Output = MyResult;
+//!     type Output = MyOutput;
 //!     const REQUEST: u16 = 0x0000;
 //!
 //!     fn handle(
 //!         &mut self,
 //!         _vmi: &VmiContext<'_, MyOs>,
 //!         packet: BridgePacket,
-//!     ) -> Option<BridgeResponse<MyResult>> {
+//!     ) -> Option<BridgeResponse<MyOutput>> {
 //!         Some(BridgeResponse::default())
 //!     }
 //! }
@@ -61,8 +62,8 @@
 //!     match result {
 //!         Ok(response) => {
 //!             response.write_to(&mut registers);
-//!             if let Some(result) = response.into_result() {
-//!                 // Handler signaled completion.
+//!             if let Some(output) = response.into_output() {
+//!                 // Handle the output.
 //!             }
 //!         }
 //!         Err(packet) => {
