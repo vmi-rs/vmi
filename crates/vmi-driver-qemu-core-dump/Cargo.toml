@@ -1,0 +1,30 @@
+[package]
+name = "vmi-driver-qemu-core-dump"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "VMI driver for QEMU ELF core dump"
+keywords = [
+    "vmi",
+    "qemu",
+    "dump",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+elf = { workspace = true }
+memmap2 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+vmi-arch-arm64 = { workspace = true }
+vmi-core = { workspace = true }
