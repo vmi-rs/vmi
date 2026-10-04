@@ -1,0 +1,25 @@
+[package]
+name = "vmi-arch-arm64"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "ARM64 architecture specific code for VMI"
+keywords = [
+    "vmi",
+    "arm64",
+    "aarch64",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+zerocopy = { workspace = true, features = ["derive"] }
+
+vmi-core = { workspace = true }
