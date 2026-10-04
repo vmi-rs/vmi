@@ -54,11 +54,11 @@ tracing-subscriber = "0.3"
 # For release.
 #
 
-isr = "0.8.0"
-isr-cache = "0.8.0"
-isr-core = "0.8.0"
-isr-dl-windows = "0.8.0"
-isr-macros = "0.8.0"
+# isr = "0.8.0"
+# isr-cache = "0.8.0"
+# isr-core = "0.8.0"
+# isr-dl-windows = "0.8.0"
+# isr-macros = "0.8.0"
 
 xen = { package = "libxen", version = "0.6.0" }
 
@@ -66,10 +66,11 @@ xen = { package = "libxen", version = "0.6.0" }
 # For development.
 #
 
-# isr = { path = "../isr", version = "0.8.0" }
-# isr-core = { path = "../isr/crates/isr-core", version = "0.8.0" }
-# isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.8.0" }
-# isr-macros = { path = "../isr/crates/isr-macros", version = "0.8.0" }
+isr = { path = "../isr", version = "0.8.0" }
+isr-cache = { path = "../isr/crates/isr-cache", version = "0.8.0" }
+isr-core = { path = "../isr/crates/isr-core", version = "0.8.0" }
+isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.8.0" }
+isr-macros = { path = "../isr/crates/isr-macros", version = "0.8.0" }
 
 # xen = { path = "../xen", package = "libxen", version = "0.6.0" }
 
@@ -177,7 +178,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zerocopy = { workspace = true }
 
-isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
+isr = { workspace = true, features = ["cache", "pdb", "dl-windows", "dwarf", "dl-macos"] }
 
 # vmi = { workspace = true }
 vmi-core = { workspace = true }
