@@ -85,6 +85,7 @@ vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.10.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.10.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.10.0" }
 vmi-os-linux = { path = "./crates/vmi-os-linux", version = "0.10.0" }
+vmi-os-macos = { path = "./crates/vmi-os-macos", version = "0.10.0" }
 vmi-os-windows = { path = "./crates/vmi-os-windows", version = "0.10.0" }
 vmi-utils = { path = "./crates/vmi-utils", version = "0.10.0" }
 
@@ -138,6 +139,7 @@ vmi-driver-qemu-core-dump = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
 vmi-driver-xen-core-dump = { workspace = true, optional = true }
 vmi-os-linux = { workspace = true, optional = true }
+vmi-os-macos = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 vmi-utils = { workspace = true, optional = true }
 
@@ -154,6 +156,7 @@ driver-qemu-core-dump = ["vmi-driver-qemu-core-dump"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
 os-linux = ["vmi-os-linux"]
+os-macos = ["vmi-os-macos"]
 os-windows = [
     "vmi-os-windows",
     "vmi-utils?/os-windows"

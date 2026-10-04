@@ -120,6 +120,7 @@
 //! | `driver-xen` | Xen hypervisor driver (live introspection). |
 //! | `driver-xen-core-dump` | Xen core dump file driver. |
 //! | `os-linux` | Linux guest introspection. |
+//! | `os-macos` | macOS guest introspection on Apple silicon (`arch-arm64`). |
 //! | `os-windows` | Windows guest introspection. |
 //! | `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
 //!
@@ -747,6 +748,13 @@ pub mod os {
         #![doc = include_str!("../docs/vmi-os-linux.md")]
 
         pub use vmi_os_linux::*;
+    }
+
+    #[cfg(feature = "os-macos")]
+    pub mod macos {
+        #![doc = include_str!("../docs/vmi-os-macos.md")]
+
+        pub use vmi_os_macos::*;
     }
 
     #[cfg(feature = "os-windows")]

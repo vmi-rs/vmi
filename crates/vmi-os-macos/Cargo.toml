@@ -1,0 +1,33 @@
+[package]
+name = "vmi-os-macos"
+version = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "macOS OS specific code for VMI"
+keywords = [
+    "vmi",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+memchr = { workspace = true }
+thiserror = { workspace = true }
+
+isr-core = { workspace = true }
+isr-macros = { workspace = true }
+
+vmi-arch-arm64 = { workspace = true }
+vmi-core = { workspace = true }
+vmi-macros = { workspace = true }
+
+[dev-dependencies]
+isr = { workspace = true, features = ["cache", "dl-macos"] }
+vmi = { workspace = true, features = ["arch-arm64", "os-macos"] }

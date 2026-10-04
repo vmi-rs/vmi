@@ -2603,6 +2603,7 @@ dependencies = [
  "vmi-driver-xen",
  "vmi-driver-xen-core-dump",
  "vmi-os-linux",
+ "vmi-os-macos",
  "vmi-os-windows",
  "vmi-utils",
  "zerocopy",
@@ -2724,6 +2725,21 @@ dependencies = [
  "tracing",
  "vmi-arch-amd64",
  "vmi-core",
+]
+
+[[package]]
+name = "vmi-os-macos"
+version = "0.10.0"
+dependencies = [
+ "isr",
+ "isr-core",
+ "isr-macros",
+ "memchr",
+ "thiserror",
+ "vmi",
+ "vmi-arch-arm64",
+ "vmi-core",
+ "vmi-macros",
 ]
 
 [[package]]
