@@ -13,6 +13,11 @@ capabilities, from basic operations to more complex scenarios.
   Shows how to retrieve and display a list of running processes in the
   guest VM.
 
+- **[`macos-dump.rs`]**
+
+  Demonstrates how to use the VMI library to analyze a macOS memory dump
+  created by the QEMU `dump-guest-memory` command.
+
 - **[`windows-breakpoint-manager.rs`]**
 
   Illustrates the usage of the [`BreakpointManager`] and
@@ -42,6 +47,7 @@ capabilities, from basic operations to more complex scenarios.
 
 [`basic.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic.rs
 [`basic-process-list.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list.rs
+[`macos-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-dump.rs
 [`windows-breakpoint-manager.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-breakpoint-manager.rs
 [`windows-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-dump.rs
 [`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs

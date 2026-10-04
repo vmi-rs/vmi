@@ -190,6 +190,7 @@ vmi-arch-arm64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
 vmi-driver-qemu-core-dump = { workspace = true }
 vmi-os-linux = { workspace = true }
+vmi-os-macos = { workspace = true }
 vmi-os-windows = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -208,6 +209,12 @@ name = "basic-process-list"
 path = "examples/basic-process-list.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows"]
+
+[[example]]
+name = "macos-dump"
+path = "examples/macos-dump.rs"
+doc-scrape-examples = true
+required-features = ["arch-arm64", "driver-qemu-core-dump", "os-macos"]
 
 [[example]]
 name = "windows-breakpoint-manager"
