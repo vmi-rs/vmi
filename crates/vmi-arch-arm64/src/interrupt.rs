@@ -1,3 +1,6 @@
+/// Exception class (`ESR_ELx.EC`) of a `BRK` instruction in AArch64 state.
+const EC_BRK64: u64 = 0x3c;
+
 /// Type of AArch64 exception entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptType {
@@ -35,5 +38,16 @@ impl Interrupt {
             esr,
             far: 0,
         }
+    }
+
+    /// Returns the exception class (`ESR_ELx.EC`) of the entry.
+    pub fn exception_class(&self) -> u64 {
+        (self.esr >> 26) & 0x3f
+    }
+
+    /// Checks whether the entry is a `BRK` instruction executed in AArch64
+    /// state.
+    pub fn is_software_breakpoint(&self) -> bool {
+        self.typ == InterruptType::Synchronous && self.exception_class() == EC_BRK64
     }
 }
