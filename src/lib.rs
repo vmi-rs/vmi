@@ -48,8 +48,8 @@
 //!
 //! The framework is designed to be modular and extensible, supporting
 //! multiple CPU architectures, hypervisors, and operating systems.
-//! It includes built-in support for AMD64 architecture, Xen hypervisor,
-//! and Windows and Linux operating systems.
+//! It includes built-in support for AMD64 and ARM64 architectures, Xen
+//! hypervisor, and Windows, Linux and macOS operating systems.
 //!
 //! ## The Semantic Gap
 //!
@@ -103,7 +103,7 @@
 //!   drivers, CPU architectures, and OS support.
 //!
 //! - Batteries included:
-//!     - Built-in OS support with [`WindowsOs`] and [`LinuxOs`].
+//!     - Built-in OS support with [`WindowsOs`], [`LinuxOs`] and [`MacOs`].
 //!     - Powerful utilities like [`BreakpointManager`], [`PageTableMonitor`],
 //!       and [`InjectorHandler`].
 //!
@@ -643,6 +643,7 @@
 //! [`VmiKdmpDriver`]: crate::driver::kdmp::VmiKdmpDriver
 //! [`VmiXenCoreDumpDriver`]: crate::driver::xen_core_dump::VmiXenCoreDumpDriver
 //! [`LinuxOs`]: crate::os::linux::LinuxOs
+//! [`MacOs`]: crate::os::macos::MacOs
 //! [`WindowsOs`]: crate::os::windows::WindowsOs
 //! [`Translation`]: crate::VmiError::Translation
 //! [`Direct`]: crate::TranslationMechanism::Direct

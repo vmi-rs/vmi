@@ -54,8 +54,8 @@ and OS-specific introspection.
 
 The framework is designed to be modular and extensible, supporting
 multiple CPU architectures, hypervisors, and operating systems.
-It includes built-in support for AMD64 architecture, Xen hypervisor,
-and Windows and Linux operating systems.
+It includes built-in support for AMD64 and ARM64 architectures, Xen
+hypervisor, and Windows, Linux and macOS operating systems.
 
 ## The Semantic Gap
 
@@ -109,7 +109,7 @@ contributions are welcome!
   drivers, CPU architectures, and OS support.
 
 - Batteries included:
-    - Built-in OS support with [`WindowsOs`] and [`LinuxOs`].
+    - Built-in OS support with [`WindowsOs`], [`LinuxOs`] and [`MacOs`].
     - Powerful utilities like [`BreakpointManager`], [`PageTableMonitor`],
       and [`InjectorHandler`].
 
@@ -120,10 +120,13 @@ No features are enabled by default; opt in to what you need.
 | Feature | Enables |
 |---------|---------|
 | `arch-amd64` | Intel/AMD x86-64 architecture support. |
+| `arch-arm64` | ARM64 (AArch64) architecture support with 4KB and 16KB paging geometries. |
 | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
+| `driver-qemu-core-dump` | QEMU ELF core dump (`dump-guest-memory`) driver. |
 | `driver-xen` | Xen hypervisor driver (live introspection). |
 | `driver-xen-core-dump` | Xen core dump file driver. |
 | `os-linux` | Linux guest introspection. |
+| `os-macos` | macOS guest introspection on Apple silicon (`arch-arm64`). |
 | `os-windows` | Windows guest introspection. |
 | `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
 
@@ -623,6 +626,7 @@ This project is licensed under the MIT license.
 [`Amd64`]: https://docs.rs/vmi/latest/vmi/arch/amd64/struct.Amd64.html
 [`VmiXenDriver`]: https://docs.rs/vmi/latest/vmi/driver/xen/struct.VmiXenDriver.html
 [`LinuxOs`]: https://docs.rs/vmi/latest/vmi/os/linux/struct.LinuxOs.html
+[`MacOs`]: https://docs.rs/vmi/latest/vmi/os/macos/struct.MacOs.html
 [`WindowsOs`]: https://docs.rs/vmi/latest/vmi/os/windows/struct.WindowsOs.html
 [`Direct`]: https://docs.rs/vmi/latest/vmi/enum.TranslationMechanism.html#variant.Direct
 [`Paging`]: https://docs.rs/vmi/latest/vmi/enum.TranslationMechanism.html#variant.Paging
