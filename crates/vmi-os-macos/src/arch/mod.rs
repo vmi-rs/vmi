@@ -33,6 +33,14 @@ where
     /// - **ARM64**: Removes pointer authentication codes and top-byte tags.
     fn canonical_address(raw: u64) -> Va;
 
+    /// Checks whether `va` lies in the kernel half of the address space.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **ARM64**: Bit 55 is set, so the address translates through
+    ///   `TTBR1_EL1`.
+    fn is_kernel_address(va: Va) -> bool;
+
     /// Returns the address of the `struct thread` running on the current CPU.
     ///
     /// # Architecture-specific

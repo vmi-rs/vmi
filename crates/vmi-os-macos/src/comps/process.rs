@@ -595,10 +595,20 @@ where
 
     /// Checks whether the given virtual address is valid in the process.
     ///
-    /// An address is valid when it translates through the tables of the
+    /// A user address is valid when it translates through the tables of the
     /// process, or when it lies in a memory region with a non-empty
-    /// protection, where a page fault would populate it.
+    /// protection, where a page fault would populate it. A kernel address is
+    /// valid when it translates through the kernel tables.
     fn is_valid_address(&self, address: Va) -> Result<Option<bool>, VmiError> {
+        if Driver::Architecture::is_kernel_address(address) {
+            let root = self.vmi.translation_root(address);
+            return match self.vmi.core().translate_address((address, root)) {
+                Ok(_) => Ok(Some(true)),
+                Err(VmiError::Translation(_)) => Ok(Some(false)),
+                Err(err) => Err(err),
+            };
+        }
+
         let root = match self.translation_root() {
             Ok(root) => root,
             Err(VmiError::RootNotPresent) => return Ok(Some(false)),

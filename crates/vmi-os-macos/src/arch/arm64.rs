@@ -59,6 +59,10 @@ where
         Self::canonical_address(raw)
     }
 
+    fn is_kernel_address(va: Va) -> bool {
+        (va.0 >> 55) & 1 != 0
+    }
+
     fn current_thread(vmi: VmiState<MacOs<Driver>>) -> Va {
         Self::canonical_address(vmi.registers().tpidr_el1)
     }
