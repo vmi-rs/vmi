@@ -422,8 +422,12 @@ where
         };
 
         let first = summaries + header.summaries.offset();
-        Ok((0..count as u64)
-            .map(move |index| Ok(MacOsModule::new(vmi, first + index * entry_size))))
+        Ok(
+            (0..count as u64).map(move |index| match first.0.checked_add(index * entry_size) {
+                Some(entry) => Ok(MacOsModule::new(vmi, Va(entry))),
+                None => Err(MacOsError::CorruptedStruct("gLoadedKextSummaries").into()),
+            }),
+        )
     }
 
     /// Returns an iterator over all processes.

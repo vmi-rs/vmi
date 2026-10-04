@@ -367,11 +367,10 @@ where
         };
 
         Ok((0..count as u64).map(move |index| {
-            Ok(MacOsUserModule::new(
-                vmi,
-                info_array + index * DYLD_IMAGE_INFO_SIZE,
-                root,
-            ))
+            match info_array.0.checked_add(index * DYLD_IMAGE_INFO_SIZE) {
+                Some(entry) => Ok(MacOsUserModule::new(vmi, Va(entry), root)),
+                None => Err(MacOsError::CorruptedStruct("dyld_all_image_infos.infoArray").into()),
+            }
         }))
     }
 
