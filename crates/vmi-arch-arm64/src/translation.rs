@@ -99,7 +99,9 @@ where
 ///
 /// A table occupies exactly one granule page. A table base that is not page
 /// aligned, which happens when the root table is smaller than a page, offsets
-/// the index within the page.
+/// the index within the page. The page buffer may be unaligned, for example
+/// when a driver maps it directly from a file, so the descriptor is read
+/// without an alignment requirement.
 fn read_descriptor<Driver, Geometry>(
     vmi: &VmiCore<Driver>,
     table: Pa,
@@ -111,22 +113,22 @@ where
     Geometry: PagingGeometry,
 {
     let buffer = vmi.read_page(Arm64::<Geometry>::gfn_from_pa(table))?;
-    let descriptors = match <[PageTableEntry]>::ref_from_bytes(&buffer) {
-        Ok(descriptors) => descriptors,
-        Err(_) => return Err(VmiError::OutOfBounds),
-    };
 
     let base = Arm64::<Geometry>::pa_offset(table) as usize / size_of::<PageTableEntry>();
     let index = base + Geometry::control().index(va, level) as usize;
-    match descriptors.get(index) {
-        Some(descriptor) => Ok(*descriptor),
+    let offset = index * size_of::<PageTableEntry>();
+    match buffer
+        .get(offset..offset + size_of::<PageTableEntry>())
+        .and_then(|bytes| PageTableEntry::read_from_bytes(bytes).ok())
+    {
+        Some(descriptor) => Ok(descriptor),
         None => Err(VmiError::OutOfBounds),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap};
+    use std::{cell::RefCell, collections::HashMap, ops::Deref};
 
     use vmi_core::{
         Architecture as _, Gfn, Pa, Va, VmiCore, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
@@ -188,12 +190,27 @@ mod tests {
         Geometry: PagingGeometry,
     {
         fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
-            let page = match self.pages.borrow().get(&gfn.0) {
-                Some(page) => page.clone(),
-                None => vec![0; Arm64::<Geometry>::PAGE_SIZE as usize],
-            };
+            // Serve the page at an odd offset of its allocation, as a driver
+            // mapping pages directly from a file may, so every walk also
+            // exercises unaligned descriptor reads.
+            let mut storage = vec![0; 1];
+            match self.pages.borrow().get(&gfn.0) {
+                Some(page) => storage.extend_from_slice(page),
+                None => storage.resize(1 + Arm64::<Geometry>::PAGE_SIZE as usize, 0),
+            }
 
-            Ok(VmiMappedPage::new(page))
+            Ok(VmiMappedPage::new(Unaligned(storage)))
+        }
+    }
+
+    /// Page stored one byte past the start of its allocation.
+    struct Unaligned(Vec<u8>);
+
+    impl Deref for Unaligned {
+        type Target = [u8];
+
+        fn deref(&self) -> &Self::Target {
+            &self.0[1..]
         }
     }
 
