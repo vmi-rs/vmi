@@ -26,12 +26,16 @@ where
 
 /// The architecture of the operating system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum VmiOsImageArchitecture {
     /// The x86 architecture.
     X86,
 
     /// The x86-64 architecture.
     Amd64,
+
+    /// The 64-bit ARM (AArch64) architecture.
+    Arm64,
 }
 
 /// An exported symbol from an image (e.g., DLL or .so file).
