@@ -174,7 +174,8 @@ where
 
 /// Searches the kernel `__TEXT` segment for the XNU version string.
 ///
-/// Pages that cannot be read are treated as zero-filled.
+/// Pages that cannot be read are treated as zero-filled. The scan stops at
+/// the end of the address space.
 fn find_version<Driver>(
     vmi: &VmiCore<Driver>,
     text: &MacOsSegment,
@@ -183,29 +184,124 @@ fn find_version<Driver>(
 where
     Driver: VmiRead,
 {
-    let page_size = Driver::Architecture::PAGE_SIZE;
-    let mut data = vec![0u8; text.size as usize];
+    scan_version(
+        text.size,
+        Driver::Architecture::PAGE_SIZE,
+        |offset, buffer| {
+            let va = match text.address.0.checked_add(offset) {
+                Some(va) => Va(va),
+                None => return Ok(false),
+            };
 
-    for (index, page) in data.chunks_mut(page_size as usize).enumerate() {
-        let va = text.address + index as u64 * page_size;
+            match vmi.read((va, root), buffer) {
+                Ok(()) => {}
+                Err(VmiError::Translation(_) | VmiError::OutOfBounds) => buffer.fill(0),
+                Err(err) => return Err(err),
+            }
 
-        match vmi.read((va, root), page) {
-            Ok(()) => {}
-            Err(VmiError::Translation(_) | VmiError::OutOfBounds) => {}
-            Err(err) => return Err(err),
+            Ok(true)
+        },
+    )
+}
+
+/// Searches `size` bytes for the XNU version string, reading at most
+/// `page_size` bytes at a time.
+///
+/// `read` fills the buffer with the bytes at the given offset and returns
+/// `false` to end the scan early. The tail of the previous chunk is kept so
+/// that a prefix split across chunks is still found, and memory use stays
+/// bounded regardless of `size`.
+fn scan_version(
+    size: u64,
+    page_size: u64,
+    mut read: impl FnMut(u64, &mut [u8]) -> Result<bool, VmiError>,
+) -> Result<Option<String>, VmiError> {
+    let carry = VERSION_PREFIX.len() - 1;
+
+    let mut window = Vec::with_capacity(carry + MAX_VERSION_LENGTH + page_size as usize);
+    let mut found = false;
+    let mut offset = 0;
+
+    while offset < size {
+        let chunk = page_size.min(size - offset);
+        let start = window.len();
+        window.resize(start + chunk as usize, 0);
+
+        if !read(offset, &mut window[start..])? {
+            window.truncate(start);
+            break;
+        }
+
+        offset += chunk;
+
+        if !found {
+            match memchr::memmem::find(&window, VERSION_PREFIX) {
+                Some(position) => {
+                    window.drain(..position);
+                    found = true;
+                }
+                None => {
+                    window.drain(..window.len().saturating_sub(carry));
+                }
+            }
+        }
+
+        if found && window.len() >= MAX_VERSION_LENGTH {
+            break;
         }
     }
 
-    let start = match memchr::memmem::find(&data, VERSION_PREFIX) {
-        Some(start) => start,
-        None => return Ok(None),
-    };
+    if !found {
+        return Ok(None);
+    }
 
-    let version = &data[start..data.len().min(start + MAX_VERSION_LENGTH)];
+    let version = &window[..window.len().min(MAX_VERSION_LENGTH)];
     let end = match memchr::memchr(0, version) {
         Some(end) => end,
         None => return Ok(None),
     };
 
     Ok(Some(String::from_utf8_lossy(&version[..end]).into_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Scans `data` in chunks of `page_size` bytes.
+    fn scan(data: &[u8], page_size: u64) -> Option<String> {
+        scan_version(data.len() as u64, page_size, |offset, buffer| {
+            let offset = offset as usize;
+            buffer.copy_from_slice(&data[offset..offset + buffer.len()]);
+            Ok(true)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn finds_version_split_across_pages() {
+        let version = b"Darwin Kernel Version 27.0.0: root:xnu-1/RELEASE_ARM64\0";
+
+        for split in 0..=version.len() {
+            let mut data = vec![0xffu8; 0x1000 - split];
+            data.extend_from_slice(version);
+            data.resize(0x3000, 0xff);
+
+            assert_eq!(
+                scan(&data, 0x1000).as_deref(),
+                Some("Darwin Kernel Version 27.0.0: root:xnu-1/RELEASE_ARM64"),
+                "split at {split}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unterminated_or_missing_version() {
+        let mut data = vec![0u8; 0x100];
+        data.extend_from_slice(b"Darwin Kernel Version");
+        data.resize(0x100 + MAX_VERSION_LENGTH + 0x100, b'x');
+        assert_eq!(scan(&data, 0x40), None);
+
+        assert_eq!(scan(&[0u8; 0x4000], 0x1000), None);
+    }
 }
