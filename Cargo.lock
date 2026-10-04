@@ -2137,6 +2137,7 @@ dependencies = [
  "vmi-arch-arm64",
  "vmi-core",
  "vmi-driver-kdmp",
+ "vmi-driver-qemu-core-dump",
  "vmi-driver-xen",
  "vmi-driver-xen-core-dump",
  "vmi-os-linux",
@@ -2198,6 +2199,19 @@ name = "vmi-driver-mock"
 version = "0.10.0"
 dependencies = [
  "vmi-arch-amd64",
+ "vmi-core",
+]
+
+[[package]]
+name = "vmi-driver-qemu-core-dump"
+version = "0.10.0"
+dependencies = [
+ "elf",
+ "memmap2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "vmi-arch-arm64",
  "vmi-core",
 ]
 

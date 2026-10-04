@@ -38,6 +38,7 @@ memmap2 = "0.9"
 object = "0.40"
 once_cell = "1"
 serde = "1"
+serde_json = "1"
 smallvec = "1"
 thiserror = "2.0"
 tracing = "0.1"
@@ -78,6 +79,7 @@ vmi-arch-arm64 = { path = "./crates/vmi-arch-arm64", version = "0.10.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.10.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.10.0" }
 vmi-driver-mock = { path = "./crates/vmi-driver-mock" }
+vmi-driver-qemu-core-dump = { path = "./crates/vmi-driver-qemu-core-dump", version = "0.10.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.10.0" }
 vmi-driver-xen-core-dump = { path = "./crates/vmi-driver-xen-core-dump", version = "0.10.0" }
 vmi-macros = { path = "./crates/vmi-macros", version = "0.10.0" }
@@ -131,6 +133,7 @@ vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-arch-arm64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
+vmi-driver-qemu-core-dump = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
 vmi-driver-xen-core-dump = { workspace = true, optional = true }
 vmi-os-linux = { workspace = true, optional = true }
@@ -146,6 +149,7 @@ arch-amd64 = [
 ]
 arch-arm64 = ["vmi-arch-arm64"]
 driver-kdmp = ["vmi-driver-kdmp"]
+driver-qemu-core-dump = ["vmi-driver-qemu-core-dump"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
 os-linux = ["vmi-os-linux"]
@@ -180,6 +184,7 @@ vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true }
 vmi-arch-arm64 = { workspace = true }
 vmi-driver-kdmp = { workspace = true }
+vmi-driver-qemu-core-dump = { workspace = true }
 vmi-os-linux = { workspace = true }
 vmi-os-windows = { workspace = true }
 

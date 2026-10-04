@@ -116,6 +116,7 @@
 //! | `arch-amd64` | Intel/AMD x86-64 architecture support. |
 //! | `arch-arm64` | ARM64 (AArch64) architecture support with 4KB and 16KB paging geometries. |
 //! | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
+//! | `driver-qemu-core-dump` | QEMU ELF core dump (`dump-guest-memory`) driver. |
 //! | `driver-xen` | Xen hypervisor driver (live introspection). |
 //! | `driver-xen-core-dump` | Xen core dump file driver. |
 //! | `os-linux` | Linux guest introspection. |
@@ -712,6 +713,13 @@ pub mod driver {
         #![doc = include_str!("../docs/vmi-driver-kdmp.md")]
 
         pub use vmi_driver_kdmp::*;
+    }
+
+    #[cfg(feature = "driver-qemu-core-dump")]
+    pub mod qemu_core_dump {
+        #![doc = include_str!("../docs/vmi-driver-qemu-core-dump.md")]
+
+        pub use vmi_driver_qemu_core_dump::*;
     }
 
     #[cfg(feature = "driver-xen")]
