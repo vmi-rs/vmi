@@ -474,7 +474,7 @@ where
             return Ok(buffer);
         }
 
-        let mut page = [0u8; 4096_usize]; // FIXME: Driver::Architecture::PAGE_SIZE
+        let mut page = vec![0u8; Driver::Architecture::PAGE_SIZE as usize];
         loop {
             ctx.address += buffer.len() as u64;
             self.read(ctx, &mut page)?;
@@ -543,7 +543,7 @@ where
                 .collect());
         }
 
-        let mut page = [0u8; 4096_usize]; // FIXME: Driver::Architecture::PAGE_SIZE
+        let mut page = vec![0u8; Driver::Architecture::PAGE_SIZE as usize];
         loop {
             ctx.address += buffer.len() as u64;
             self.read(ctx, &mut page)?;
