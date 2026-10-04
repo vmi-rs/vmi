@@ -375,9 +375,7 @@ where
         &self,
     ) -> Option<&impl vmi_core::arch::EventInterrupt<Architecture = Arm64<Geometry>>> {
         match self {
-            EventReason::Interrupt(interrupt)
-                if interrupt.interrupt.typ == InterruptType::Synchronous =>
-            {
+            EventReason::Interrupt(interrupt) if interrupt.interrupt.is_software_breakpoint() => {
                 Some(interrupt)
             }
             _ => None,
@@ -521,5 +519,40 @@ mod tests {
         // A 16K low half with a mismatched high half does not match.
         let tcr_mixed = (0b10 << 30) | (16 << 16) | (0b10 << 14) | 17;
         assert!(!Granule16KVa47::matches_tcr(tcr_mixed));
+    }
+
+    #[test]
+    fn software_breakpoint_requires_brk_exception_class() {
+        use vmi_core::{Gfn, arch::EventReason as _};
+
+        use crate::{EventInterrupt, EventReason, Interrupt, InterruptType};
+
+        let reason = |interrupt| {
+            EventReason::<Granule16KVa47>::Interrupt(EventInterrupt::new(Gfn(0), interrupt))
+        };
+        let synchronous = |esr| Interrupt {
+            typ: InterruptType::Synchronous,
+            esr,
+            far: 0,
+        };
+
+        // BRK #0x1 in AArch64 state.
+        let brk = synchronous((0x3c << 26) | (1 << 25) | 1);
+        assert!(reason(brk).as_software_breakpoint().is_some());
+
+        // Data abort taken without a change in exception level.
+        let data_abort = synchronous((0x25 << 26) | (1 << 25));
+        assert!(reason(data_abort).as_software_breakpoint().is_none());
+
+        // SVC #0x80 in AArch64 state.
+        let svc = synchronous((0x15 << 26) | (1 << 25) | 0x80);
+        assert!(reason(svc).as_software_breakpoint().is_none());
+
+        // An IRQ never is a breakpoint, whatever the syndrome holds.
+        let irq = Interrupt {
+            typ: InterruptType::Irq,
+            ..brk
+        };
+        assert!(reason(irq).as_software_breakpoint().is_none());
     }
 }
