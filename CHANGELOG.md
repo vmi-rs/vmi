@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `OsAdapter` has a new required method,
   `user_shellcode_spawn_from_kernel_recipe`.
 - **Breaking:** `libxen` dependency updated to 0.8.
+- **Breaking:** `VmiOsImageArchitecture` is now `#[non_exhaustive]`.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -78,6 +79,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiXenBusyWait` and `VmiXenDriver::with_busy_wait` choose how the Xen
   driver waits for the next request, `Off` or `Adaptive` with its own start
   and maximum time.
+- `VmiOsImageArchitecture::Arm64`.
+- `vmi-arch-arm64` crate (feature `arch-arm64`, module `vmi::arch::arm64`)
+  with `Arm64<Geometry>`, the `PagingGeometry` trait and the `Granule4KVa48`
+  and `Granule16KVa47` geometries, plus `Arm64::canonical_address` for
+  stripping pointer authentication codes and top-byte tags.
+- `vmi-driver-qemu-core-dump` crate (feature `driver-qemu-core-dump`, module
+  `vmi::driver::qemu_core_dump`) with `VmiQemuCoreDumpDriver`, which reads
+  QEMU `dump-guest-memory` ELF dumps together with a JSON file of system
+  registers.
+- `vmi-os-macos` crate (feature `os-macos`, module `vmi::os::macos`) with
+  `MacOs`, macOS support for XNU on Apple silicon (arm64, 16KB pages). It finds
+  the kernel collection from `VBAR_EL1`, relocates profile symbols per kernel
+  segment, and enumerates processes, threads, memory regions with their mapped
+  files, open files, kernel extensions and dyld images. Pointers read from
+  kernel memory are stripped of pointer authentication codes.
+- `macos-dump` example, which analyzes a macOS QEMU ELF core dump.
 
 ### Removed
 
@@ -119,6 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answered. Before, a vCPU could hit a breakpoint that was still in memory
   after the breakpoint monitor was turned off. The guest then handled the
   breakpoint itself, and Windows crashed with a bugcheck.
+- `read_string*` methods read in chunks of the architecture page size instead
+  of a fixed 4096 bytes.
 
 ## [0.11.0] - 2026-10-09
 
