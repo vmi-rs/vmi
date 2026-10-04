@@ -128,10 +128,22 @@ impl Dump {
                         });
                     }
 
+                    let (end, file_end) = match (
+                        phdr.p_paddr.checked_add(phdr.p_memsz),
+                        phdr.p_paddr.checked_add(phdr.p_filesz),
+                    ) {
+                        (Some(end), Some(file_end)) => (end, file_end),
+                        _ => {
+                            return Err(Error::SegmentOverflow {
+                                address: phdr.p_paddr,
+                            });
+                        }
+                    };
+
                     segments.push(Segment {
                         start: phdr.p_paddr,
-                        end: phdr.p_paddr + phdr.p_memsz,
-                        file_end: phdr.p_paddr + phdr.p_filesz,
+                        end,
+                        file_end,
                         offset: phdr.p_offset,
                     });
                 }

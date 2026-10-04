@@ -47,6 +47,14 @@ pub enum Error {
         address: u64,
     },
 
+    /// A `PT_LOAD` segment extends past the end of the physical address
+    /// space.
+    #[error("PT_LOAD segment at physical address {address:#x} overflows the address space")]
+    SegmentOverflow {
+        /// Start of the segment.
+        address: u64,
+    },
+
     /// The dump has no `NT_PRSTATUS` note.
     #[error("no NT_PRSTATUS notes found")]
     NoVcpus,

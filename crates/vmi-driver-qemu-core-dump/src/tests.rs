@@ -510,3 +510,23 @@ fn overlapping_segments_are_rejected() {
         Error::OverlappingSegments { address: 0x4000 }
     ));
 }
+
+#[test]
+fn segment_past_address_space_is_rejected() {
+    let vcpus = default_vcpus();
+    let loads = vec![(u64::MAX - 0xff, pattern(1, 0x200))];
+    let elf = build_elf(ET_CORE, EM_AARCH64, &vcpus, &loads);
+    let json = build_json(&vcpus, TCR_16K);
+
+    let err = driver_error(
+        open::<Arm64<Granule16KVa47>>("overflow", &elf, &json)
+            .err()
+            .unwrap(),
+    );
+    assert!(matches!(
+        err,
+        Error::SegmentOverflow {
+            address: 0xffff_ffff_ffff_ff00
+        }
+    ));
+}
