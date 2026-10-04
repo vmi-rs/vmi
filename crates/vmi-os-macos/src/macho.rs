@@ -422,6 +422,8 @@ pub(crate) fn exported_symbols(symbols: &[u8], strings: &[u8]) -> Vec<(String, u
 /// The segments of an image in the dyld shared cache are scattered across
 /// the cache, so only the segments adjacent to the header count towards the
 /// image size. `segments` holds `(address, size)` pairs at runtime addresses.
+/// A segment that extends past the end of the address space ends the run at
+/// the end of the address space.
 pub(crate) fn contiguous_size(segments: &[(u64, u64)], start: u64) -> u64 {
     let mut segments = segments
         .iter()
@@ -434,13 +436,13 @@ pub(crate) fn contiguous_size(segments: &[(u64, u64)], start: u64) -> u64 {
         .iter()
         .find(|&&(address, size)| start >= address && start - address < size)
     {
-        Some(&(address, size)) => address + size,
+        Some(&(address, size)) => address.saturating_add(size),
         None => return 0,
     };
 
     for &(address, size) in &segments {
         if address == end {
-            end += size;
+            end = end.saturating_add(size);
         }
     }
 
@@ -638,5 +640,16 @@ mod tests {
         assert_eq!(contiguous_size(&segments, 0x196b78000), 0x50000);
 
         assert_eq!(contiguous_size(&segments, 0x1000), 0);
+    }
+
+    #[test]
+    fn clamps_segments_past_the_address_space() {
+        // The header segment itself wraps around.
+        let segments = [(u64::MAX - 0xfff, 0x2000)];
+        assert_eq!(contiguous_size(&segments, u64::MAX - 0xfff), 0xfff);
+
+        // A following segment wraps around.
+        let segments = [(u64::MAX - 0x1fff, 0x1000), (u64::MAX - 0xfff, 0x2000)];
+        assert_eq!(contiguous_size(&segments, u64::MAX - 0x1fff), 0x1fff);
     }
 }
