@@ -15,12 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Injector handlers with guest-host bridges are now created by
   calling `InjectorHandler::new` followed by `with_bridge`, which returns
   `Result`.
+- **Breaking:** `VmiOsImageArchitecture` is now `#[non_exhaustive]`.
+- The Xen dev-dependencies apply only on unix hosts, and the `basic` example
+  requires the `arch-amd64` and `driver-xen` features, so examples that do not
+  need Xen build on Windows.
 
 ### Added
+
+- `VmiOsImageArchitecture::Arm64`.
+- `vmi-arch-arm64` crate (feature `arch-arm64`, module `vmi::arch::arm64`)
+  with `Arm64<Geometry>`, the `PagingGeometry` trait and the `Granule4KVa48`
+  and `Granule16KVa47` geometries, plus `Arm64::canonical_address` for
+  stripping pointer authentication codes and top-byte tags.
+- `vmi-driver-qemu-core-dump` crate (feature `driver-qemu-core-dump`, module
+  `vmi::driver::qemu_core_dump`) with `VmiQemuCoreDumpDriver`, which reads
+  QEMU `dump-guest-memory` ELF dumps together with a JSON file of system
+  registers.
+- `vmi-os-macos` crate (feature `os-macos`, module `vmi::os::macos`) with
+  `MacOs`, macOS support for XNU on Apple silicon (arm64, 16KB pages). It finds
+  the kernel collection from `VBAR_EL1`, relocates profile symbols per kernel
+  segment, and enumerates processes, threads, memory regions with their mapped
+  files, open files, kernel extensions and dyld images. Pointers read from
+  kernel memory are stripped of pointer authentication codes.
+- `macos-dump` example, which analyzes a macOS QEMU ELF core dump.
 
 ### Removed
 
 ### Fixed
+
+- `read_string*` methods read in chunks of the architecture page size instead
+  of a fixed 4096 bytes.
 
 ## [0.10.0] - 2026-09-09
 
