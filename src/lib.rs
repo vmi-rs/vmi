@@ -114,6 +114,7 @@
 //! | Feature | Enables |
 //! |---------|---------|
 //! | `arch-amd64` | Intel/AMD x86-64 architecture support. |
+//! | `arch-arm64` | ARM64 (AArch64) architecture support with 4KB and 16KB paging geometries. |
 //! | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
 //! | `driver-xen` | Xen hypervisor driver (live introspection). |
 //! | `driver-xen-core-dump` | Xen core dump file driver. |
@@ -691,6 +692,13 @@ pub mod arch {
         #![doc = include_str!("../docs/vmi-arch-amd64.md")]
 
         pub use vmi_arch_amd64::*;
+    }
+
+    #[cfg(feature = "arch-arm64")]
+    pub mod arm64 {
+        #![doc = include_str!("../docs/vmi-arch-arm64.md")]
+
+        pub use vmi_arch_arm64::*;
     }
 }
 

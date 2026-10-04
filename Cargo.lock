@@ -2134,6 +2134,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vmi-arch-amd64",
+ "vmi-arch-arm64",
  "vmi-core",
  "vmi-driver-kdmp",
  "vmi-driver-xen",
@@ -2150,6 +2151,14 @@ version = "0.10.0"
 dependencies = [
  "bitflags",
  "smallvec",
+ "vmi-core",
+ "zerocopy",
+]
+
+[[package]]
+name = "vmi-arch-arm64"
+version = "0.10.0"
+dependencies = [
  "vmi-core",
  "zerocopy",
 ]
