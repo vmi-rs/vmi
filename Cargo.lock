@@ -1031,7 +1031,6 @@ dependencies = [
  "isr-dwarf",
  "isr-pdb",
  "memmap2",
- "object",
  "rkyv",
  "serde",
  "serde_json",
