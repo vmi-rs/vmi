@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Guard feature-dependent root doctests so they compile without optional features.
+
 ## [0.10.0] - 2026-09-09
 
 ### Changed

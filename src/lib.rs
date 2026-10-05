@@ -134,6 +134,12 @@
 //! Basic usage example:
 //!
 //! ```rust,no_run
+//! # #[cfg(all(
+//! #     feature = "arch-amd64",
+//! #     feature = "driver-xen",
+//! #     feature = "os-windows",
+//! # ))]
+//! # {
 //! use isr::IsrCache;
 //! use vmi::{
 //!     arch::amd64::Amd64,
@@ -143,63 +149,61 @@
 //! };
 //! use xen::XenDomainId;
 //!
-//! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Setup VMI.
-//!     let driver = VmiXenDriver::<Amd64>::new(XenDomainId(1))?;
-//!     let core = VmiCore::new(driver)?;
+//! // Setup VMI.
+//! let driver = VmiXenDriver::<Amd64>::new(XenDomainId(1))?;
+//! let core = VmiCore::new(driver)?;
 //!
-//!     // Try to find the kernel information.
-//!     // This is necessary in order to load the profile.
-//!     let kernel_info = {
-//!         // Pause the vCPU to get consistent state.
-//!         let _pause_guard = core.pause_guard()?;
+//! // Try to find the kernel information.
+//! // This is necessary in order to load the profile.
+//! let kernel_info = {
+//!     // Pause the vCPU to get consistent state.
+//!     let _pause_guard = core.pause_guard()?;
 //!
-//!         // Get the register state for the first vCPU.
-//!         let registers = core.registers(VcpuId(0))?;
+//!     // Get the register state for the first vCPU.
+//!     let registers = core.registers(VcpuId(0))?;
 //!
-//!         // On AMD64 architecture, the kernel is usually found using the
-//!         // `MSR_LSTAR` register, which contains the address of the system call
-//!         // handler. This register is set by the operating system during boot
-//!         // and is left unchanged (unless some rootkits are involved).
-//!         //
-//!         // Therefore, we can take an arbitrary registers at any point in time
-//!         // (as long as the OS has booted and the page tables are set up) and
-//!         // use them to find the kernel.
-//!         WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
-//!     };
+//!     // On AMD64 architecture, the kernel is usually found using the
+//!     // `MSR_LSTAR` register, which contains the address of the system call
+//!     // handler. This register is set by the operating system during boot
+//!     // and is left unchanged (unless some rootkits are involved).
+//!     //
+//!     // Therefore, we can take an arbitrary registers at any point in time
+//!     // (as long as the OS has booted and the page tables are set up) and
+//!     // use them to find the kernel.
+//!     WindowsOs::find_kernel(&core, &registers)?.expect("kernel information")
+//! };
 //!
-//!     // Load the profile.
-//!     // The profile contains offsets to kernel functions and data structures.
-//!     let isr = IsrCache::new("cache")?;
-//!     let entry = isr.entry_from_codeview(kernel_info.codeview)?;
-//!     let profile = entry.profile()?;
+//! // Load the profile.
+//! // The profile contains offsets to kernel functions and data structures.
+//! let isr = IsrCache::new("cache")?;
+//! let entry = isr.entry_from_codeview(kernel_info.codeview)?;
+//! let profile = entry.profile()?;
 //!
-//!     // Create the VMI session.
-//!     tracing::info!("Creating VMI session");
-//!     let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
-//!     let session = VmiSession::new(&core, &os);
+//! // Create the VMI session.
+//! tracing::info!("Creating VMI session");
+//! let os = WindowsOs::<VmiXenDriver<Amd64>>::new(&profile)?;
+//! let session = VmiSession::new(&core, &os);
 //!
-//!     // Pause the VM again to get consistent state.
-//!     let paused = session.pause_guard()?;
+//! // Pause the VM again to get consistent state.
+//! let paused = session.pause_guard()?;
 //!
-//!     // Create a new `VmiState` with the boot CPU registers.
-//!     let vmi = paused.state();
+//! // Create a new `VmiState` with the boot CPU registers.
+//! let vmi = paused.state();
 //!
-//!     // Get the list of processes and print them.
-//!     for process in vmi.os().processes()? {
-//!         let process = process?;
+//! // Get the list of processes and print them.
+//! for process in vmi.os().processes()? {
+//!     let process = process?;
 //!
-//!         println!(
-//!             "{} [{}] {} (root @ {})",
-//!             process.object()?,
-//!             process.id()?,
-//!             process.name()?,
-//!             process.translation_root()?
-//!         );
-//!     }
-//!
-//!     Ok(())
+//!     println!(
+//!         "{} [{}] {} (root @ {})",
+//!         process.object()?,
+//!         process.id()?,
+//!         process.name()?,
+//!         process.translation_root()?
+//!     );
 //! }
+//! # }
+//! # Ok::<_, Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Installation
@@ -272,6 +276,11 @@
 //! Example:
 //!
 //! ```rust,no_run
+//! # #[cfg(all(
+//! #     feature = "arch-amd64",
+//! #     feature = "driver-xen",
+//! # ))]
+//! # {
 //! use vmi::{
 //!     arch::amd64::{Amd64, Cr3},
 //! #   driver::xen::VmiXenDriver, VmiCore,
@@ -290,6 +299,7 @@
 //! let cr3 = Cr3(0x1aa000);
 //! let va = Va(0xfffff804590c8980);
 //! let pa = Amd64::translate_address(vmi, va, cr3.into())?;
+//! # }
 //! # Ok::<_, vmi::VmiError>(())
 //! ```
 //!
@@ -307,6 +317,8 @@
 //!   Example:
 //!
 //!     ```rust
+//!     # #[cfg(feature = "arch-amd64")]
+//!     # {
 //!     # use vmi::{
 //!     #     arch::amd64::Cr3,
 //!     #     AddressContext, Va,
@@ -315,6 +327,7 @@
 //!     let cr3 = Cr3(0x1aa000);
 //!     let va = Va(0xfffff804590c8980);
 //!     let address_context = AddressContext::new(va, cr3);
+//!     # }
 //!     ```
 //!
 //! - [`AccessContext`]: Defines the context for memory operations,
@@ -324,6 +337,8 @@
 //!   Example:
 //!
 //!     ```rust
+//!     # #[cfg(feature = "arch-amd64")]
+//!     # {
 //!     # use vmi::{
 //!     #     arch::amd64::Cr3,
 //!     #     AccessContext, Pa, TranslationMechanism, Va,
@@ -346,6 +361,7 @@
 //!             root: Some(Pa(0x1aa000))
 //!         }
 //!     ));
+//!     # }
 //!     ```
 //!
 //! # Architecture
@@ -456,6 +472,12 @@
 //!   the translation root (e.g., `CR3`) when performing memory operations:
 //!
 //!   ```rust,no_run
+//!   # #[cfg(all(
+//!   #     feature = "arch-amd64",
+//!   #     feature = "driver-xen",
+//!   #     feature = "os-windows",
+//!   # ))]
+//!   # {
 //!   # use vmi::{
 //!   #     arch::amd64::Amd64,
 //!   #     driver::xen::VmiXenDriver,
@@ -470,12 +492,19 @@
 //!   let registers = vmi.registers(VcpuId(0))?;
 //!   let value = vmi.read_u64((va, registers.cr3.into()))?; // Explicitly pass the translation root (CR3)
 //!   #
+//!   # }
 //!   # Ok::<_, vmi::VmiError>(())
 //!   ```
 //!
 //! - With `VmiState` and `VmiContext`, register state is managed internally:
 //!
 //!   ```rust,no_run
+//!   # #[cfg(all(
+//!   #     feature = "arch-amd64",
+//!   #     feature = "driver-xen",
+//!   #     feature = "os-windows",
+//!   # ))]
+//!   # {
 //!   # use vmi::{
 //!   #     arch::amd64::Amd64,
 //!   #     driver::xen::VmiXenDriver,
@@ -488,6 +517,7 @@
 //!   # let vmi: &VmiContext<'_, WindowsOs<VmiXenDriver<Amd64>>> = unimplemented!();
 //!   let value = vmi.read_u64(va)?; // No need to pass the translation root
 //!   #
+//!   # }
 //!   # Ok::<_, vmi::VmiError>(())
 //!   ```
 //!
@@ -496,6 +526,12 @@
 //! - `VmiSession` requires explicit register state:
 //!
 //! ```rust,no_run
+//! # #[cfg(all(
+//! #     feature = "arch-amd64",
+//! #     feature = "driver-xen",
+//! #     feature = "os-windows",
+//! # ))]
+//! # {
 //! # use vmi::{
 //! #     arch::amd64::Amd64,
 //! #     driver::xen::VmiXenDriver,
@@ -510,6 +546,7 @@
 //! let process = vmi.os().current_process()?;
 //! let process_id = process.id()?;
 //! #
+//! # }
 //! # Ok::<_, vmi::VmiError>(())
 //! ```
 //!
@@ -517,6 +554,12 @@
 //!   implicitly:
 //!
 //! ```rust,no_run
+//! # #[cfg(all(
+//! #     feature = "arch-amd64",
+//! #     feature = "driver-xen",
+//! #     feature = "os-windows",
+//! # ))]
+//! # {
 //! # use vmi::{
 //! #     arch::amd64::Amd64,
 //! #     driver::xen::VmiXenDriver,
@@ -528,6 +571,7 @@
 //! let process = vmi.os().current_process()?;
 //! let process_id = process.id()?;
 //! #
+//! # }
 //! # Ok::<_, vmi::VmiError>(())
 //! ```
 //!
