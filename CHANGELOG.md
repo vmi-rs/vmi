@@ -84,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `Arm64<Geometry>`, the `PagingGeometry` trait and the `Granule4KVa48`
   and `Granule16KVa47` geometries, plus `Arm64::canonical_address` for
   stripping pointer authentication codes and top-byte tags.
+- `vmi-arch-arm64` monitors writes to the EL1 virtual memory control
+  registers with `EventMonitor::Register(SystemRegister)` and reports them as
+  `EventReason::WriteSystemRegister`. `Interrupt` builds `BRK` and page-fault
+  exceptions and decodes the abort kind, fault status code and access
+  direction of a syndrome.
+- `vmi-driver-kvm` crate (feature `driver-kvm`, module `vmi::driver::kvm`)
+  with `VmiKvmDriver`, which introspects a running VM through the KVM VMI
+  interface of the host kernel. It supports amd64 guests on x86_64 hosts and
+  arm64 guests on aarch64 hosts whose page size is not smaller than the guest
+  page size.
 - `vmi-driver-qemu-core-dump` crate (feature `driver-qemu-core-dump`, module
   `vmi::driver::qemu_core_dump`) with `VmiQemuCoreDumpDriver`, which reads
   QEMU `dump-guest-memory` ELF dumps together with a JSON file of system
@@ -95,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files, open files, kernel extensions and dyld images. Pointers read from
   kernel memory are stripped of pointer authentication codes.
 - `macos-dump` example, which analyzes a macOS QEMU ELF core dump.
+- `basic-process-list-kvm-macos` example, which lists the processes of a
+  macOS guest running in KVM.
 
 ### Removed
 
