@@ -27,7 +27,10 @@ use vmi_core::{
 use self::address::TTBR_BADDR_MASK;
 pub use self::{
     address::ttbr_base,
-    event::{EventInterrupt, EventMemoryAccess, EventMonitor, EventReason, EventSinglestep},
+    event::{
+        EventInterrupt, EventMemoryAccess, EventMonitor, EventReason, EventSinglestep,
+        EventWriteSystemRegister, SystemRegister,
+    },
     interrupt::{Interrupt, InterruptType},
     paging::{
         Granule, Granule4KVa48, Granule16KVa47, PageTableEntry, PageTableLevel, PagingGeometry,
