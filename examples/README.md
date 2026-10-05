@@ -13,6 +13,11 @@ capabilities, from basic operations to more complex scenarios.
   Shows how to retrieve and display a list of running processes in the
   guest VM.
 
+- **[`basic-process-list-kvm-macos.rs`]**
+
+  Shows how to retrieve and display a list of running processes in a macOS
+  guest that runs in a KVM virtual machine on an Apple silicon host.
+
 - **[`macos-dump.rs`]**
 
   Demonstrates how to use the VMI library to analyze a macOS memory dump
@@ -60,6 +65,7 @@ capabilities, from basic operations to more complex scenarios.
 
 [`basic.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic.rs
 [`basic-process-list.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list.rs
+[`basic-process-list-kvm-macos.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list-kvm-macos.rs
 [`macos-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-dump.rs
 [`windows-breakpoint-manager.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-breakpoint-manager.rs
 [`windows-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-dump.rs

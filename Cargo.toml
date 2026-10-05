@@ -195,6 +195,9 @@ isr = { workspace = true, features = ["cache", "pdb", "dl-windows", "dwarf", "dl
 
 # vmi = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+kvm = { workspace = true }
+
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
@@ -206,6 +209,12 @@ name = "basic-process-list"
 path = "examples/basic-process-list.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows"]
+
+[[example]]
+name = "basic-process-list-kvm-macos"
+path = "examples/basic-process-list-kvm-macos.rs"
+doc-scrape-examples = true
+required-features = ["arch-arm64", "driver-kvm", "os-macos"]
 
 [[example]]
 name = "macos-dump"
