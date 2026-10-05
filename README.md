@@ -122,6 +122,7 @@ No features are enabled by default; opt in to what you need.
 | `arch-amd64` | Intel/AMD x86-64 architecture support. |
 | `arch-arm64` | ARM64 (AArch64) architecture support with 4KB and 16KB paging geometries. |
 | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
+| `driver-kvm` | KVM driver (live introspection through the KVM VMI interface of the host kernel). |
 | `driver-qemu-core-dump` | QEMU ELF core dump (`dump-guest-memory`) driver. |
 | `driver-xen` | Xen hypervisor driver (live introspection). |
 | `driver-xen-core-dump` | Xen core dump file driver. |

@@ -74,6 +74,8 @@ isr-core = { path = "../isr/crates/isr-core", version = "0.8.0" }
 isr-dl-windows = { path = "../isr/crates/isr-dl-windows", version = "0.8.0" }
 isr-macros = { path = "../isr/crates/isr-macros", version = "0.8.0" }
 
+kvm = { path = "../kvm", package = "libkvm" }
+
 # xen = { path = "../xen", package = "libxen", version = "0.8.0" }
 
 vmi = { path = "." }
@@ -81,6 +83,7 @@ vmi-arch-amd64 = { path = "./crates/vmi-arch-amd64", version = "0.11.0" }
 vmi-arch-arm64 = { path = "./crates/vmi-arch-arm64", version = "0.11.0" }
 vmi-core = { path = "./crates/vmi-core", version = "0.11.0" }
 vmi-driver-kdmp = { path = "./crates/vmi-driver-kdmp", version = "0.11.0" }
+vmi-driver-kvm = { path = "./crates/vmi-driver-kvm", version = "0.11.0" }
 vmi-driver-mock = { path = "./crates/vmi-driver-mock" }
 vmi-driver-qemu-core-dump = { path = "./crates/vmi-driver-qemu-core-dump", version = "0.11.0" }
 vmi-driver-xen = { path = "./crates/vmi-driver-xen", version = "0.11.0" }
@@ -137,6 +140,7 @@ vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-arch-arm64 = { workspace = true, optional = true }
 vmi-driver-kdmp = { workspace = true, optional = true }
+vmi-driver-kvm = { workspace = true, optional = true }
 vmi-driver-qemu-core-dump = { workspace = true, optional = true }
 vmi-driver-xen = { workspace = true, optional = true }
 vmi-driver-xen-core-dump = { workspace = true, optional = true }
@@ -154,6 +158,7 @@ arch-amd64 = [
 ]
 arch-arm64 = ["vmi-arch-arm64"]
 driver-kdmp = ["vmi-driver-kdmp"]
+driver-kvm = ["vmi-driver-kvm"]
 driver-qemu-core-dump = ["vmi-driver-qemu-core-dump"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
