@@ -2,9 +2,7 @@
 //! print the interrupt descriptor table (IDT) for each vCPU.
 
 use anyhow::{Context as _, Error};
-use vmi_arch_amd64::Amd64;
-use vmi_core::{VcpuId, VmiCore};
-use vmi_driver_xen::VmiXenDriver;
+use vmi::{VcpuId, VmiCore, arch::amd64::Amd64, driver::xen::VmiXenDriver};
 
 fn main() -> Result<(), Error> {
     // Setup VMI.

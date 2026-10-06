@@ -19,8 +19,9 @@ use vmi_core::{
         VmiSetRegisters, VmiViewControl, VmiVmControl, VmiWrite,
     },
 };
+pub use xen::XenDomainId; // Only `libxen` type in `VmiXenDriver`'s public API.
 use xen::{
-    XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain, XenDomainId, XenDomainInfo,
+    XenAltP2M, XenAltP2MView, XenControl, XenDeviceModel, XenDomain, XenDomainInfo,
     XenEventChannelPort, XenForeignMemory, XenForeignMemoryProtection, XenMonitor, XenStore,
     ctrl::VmEventRing,
 };

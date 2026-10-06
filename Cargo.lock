@@ -2250,7 +2250,6 @@ dependencies = [
  "isr",
  "isr-core",
  "isr-macros",
- "libxen",
  "signal-hook",
  "tracing",
  "tracing-subscriber",

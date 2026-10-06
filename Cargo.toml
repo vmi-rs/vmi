@@ -178,20 +178,12 @@ zerocopy = { workspace = true }
 isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
 
 # vmi = { workspace = true }
-vmi-core = { workspace = true }
-vmi-arch-amd64 = { workspace = true }
-vmi-driver-kdmp = { workspace = true }
-vmi-driver-xen = { workspace = true }
-vmi-driver-xen-core-dump = { workspace = true }
-vmi-os-linux = { workspace = true }
-vmi-os-windows = { workspace = true }
-
-xen = { workspace = true }
 
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
 doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen"]
 
 [[example]]
 name = "basic-process-list"

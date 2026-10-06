@@ -143,11 +143,10 @@
 //! use isr::IsrCache;
 //! use vmi::{
 //!     arch::amd64::Amd64,
-//!     driver::xen::VmiXenDriver,
+//!     driver::xen::{VmiXenDriver, XenDomainId},
 //!     os::{windows::WindowsOs, VmiOsProcess as _},
 //!     VcpuId, VmiCore, VmiSession,
 //! };
-//! use xen::XenDomainId;
 //!
 //! // Setup VMI.
 //! let driver = VmiXenDriver::<Amd64>::new(XenDomainId(1))?;
