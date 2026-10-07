@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Guard feature-dependent root doctests so they compile without optional features.
+- `VmiSession::handle` resets the driver state again after draining pending
+  events. A drained response could re-enable single-step on a vCPU after the
+  single-step monitor was disabled, and the guest then hung because Xen does
+  not inject interrupts into a single-stepping vCPU.
 
 ## [0.10.0] - 2026-09-09
 

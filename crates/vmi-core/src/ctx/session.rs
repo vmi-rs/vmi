@@ -177,6 +177,14 @@ where
                 Err(err) => return Err(err),
                 Ok(_) => {}
             }
+
+            // The responses to the drained events can re-enable single-step,
+            // either by toggling it or by requesting a fast single-step.
+            // With the monitor disabled, nothing would ever turn it off
+            // again, and Xen does not inject interrupts into a vCPU that is
+            // single-stepping, so the guest would hang. Reset again while
+            // the domain is still paused.
+            self.core.reset_state()?;
         }
 
         Ok(result)
