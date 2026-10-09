@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   events. A drained response could re-enable single-step on a vCPU after the
   single-step monitor was disabled, and the guest then hung because Xen does
   not inject interrupts into a single-stepping vCPU.
+- `vmi-os-windows` loads the Windows 10+ extended offsets on Windows 11 24H2
+  and later. 24H2 removed `_MMVAD_FLAGS1`, so the extended offsets were
+  not set and the VAD walk, region lookup and the WOW64 PEB read panicked with
+  "OffsetsExt not set". `_MMVAD_FLAGS1` is now optional, and on 24H2+
+  `WindowsRegion::commit_charge` reads `_MMVAD_SHORT.CommitCharge` and
+  `WindowsRegion::mem_commit` reads `_MM_PRIVATE_VAD_FLAGS.MemCommit`.
 
 ## [0.10.0] - 2026-09-09
 
