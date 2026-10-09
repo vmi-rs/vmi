@@ -2196,7 +2196,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vmi"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-arch-amd64"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -2232,7 +2232,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-core"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bitflags",
  "indexmap",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-kdmp"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kdmp-parser",
  "memmap2",
@@ -2262,7 +2262,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-mock"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "vmi-arch-amd64",
  "vmi-core",
@@ -2270,7 +2270,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "libc",
  "libxen",
@@ -2282,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen-core-dump"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "elf",
  "libxen",
@@ -2296,7 +2296,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-macros"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-linux"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "isr-core",
  "isr-macros",
@@ -2319,7 +2319,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-windows"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bitflags",
  "isr",
@@ -2339,7 +2339,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-utils"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "foldhash",
  "isr-cache",
