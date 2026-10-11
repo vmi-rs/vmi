@@ -170,6 +170,7 @@ impl ExceptionVector {
     ///  - #GP (13)
     ///  - #PF (14)
     ///  - #AC (17) - always 0
+    ///  - #CP (21)
     // (ref: Vol3A[6.3.1(External Interrupts)])
     pub fn requires_error_code(self) -> bool {
         matches!(
@@ -181,6 +182,7 @@ impl ExceptionVector {
                 | Self::GeneralProtectionFault
                 | Self::PageFault
                 | Self::AlignmentCheck
+                | Self::ControlFlowProtection
         )
     }
 }
