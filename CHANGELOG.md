@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Break`, the default, ends the event loop as before. `Continue` keeps the
   event loop running until `poll` returns the output, or until a second
   signal arrives.
+- **Breaking:** `Reactor` has no termination flag of its own. Its output is
+  the handler's output instead of an `Option`, and `with_termination_flag`
+  on a reactor now comes from `VmiHandlerExt`.
 - The user-mode shellcode recipes log the guest's last error code when the
   allocation or the thread creation fails.
 

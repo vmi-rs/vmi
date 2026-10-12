@@ -73,7 +73,7 @@ mod ntoskrnl;
 
 use anyhow::{Context as _, Error};
 use vmi::{
-    VmiContext, VmiError, VmiOs, VmiRead,
+    VmiContext, VmiError, VmiHandlerExt as _, VmiOs, VmiRead,
     os::{
         VmiOsProcess as _,
         windows::{ArchAdapter, WindowsOs, WindowsProcess},

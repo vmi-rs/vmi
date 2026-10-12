@@ -31,13 +31,7 @@ pub mod macros;
 mod module;
 mod profile;
 
-use std::{
-    cell::RefCell,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::cell::RefCell;
 
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
 use vmi_core::{
@@ -130,9 +124,6 @@ where
 
     /// Output produced by the handler.
     output: RefCell<Option<Handler::Output>>,
-
-    /// Optional flag that terminates the event loop once it becomes `true`.
-    termination_flag: Option<Arc<AtomicBool>>,
 }
 
 impl<Driver, Handler> Reactor<WindowsOs<Driver>, Handler>
@@ -193,16 +184,7 @@ where
             view,
             handler,
             output: RefCell::new(None),
-            termination_flag: None,
         })
-    }
-
-    /// Installs a flag that terminates the event loop once it becomes `true`.
-    pub fn with_termination_flag(self, termination_flag: Arc<AtomicBool>) -> Self {
-        Self {
-            termination_flag: Some(termination_flag),
-            ..self
-        }
     }
 
     /// Handles a memory access event on a watched page.
@@ -375,7 +357,7 @@ where
     Handler: ReactorHandler<WindowsOs<Driver>>,
     <Handler::Event as ReactorEvent>::Module: ReactorModule<WindowsOs<Driver>>,
 {
-    type Output = Option<Handler::Output>;
+    type Output = Handler::Output;
 
     fn handle_event(
         &mut self,
@@ -415,13 +397,6 @@ where
     }
 
     fn poll(&mut self) -> Option<Self::Output> {
-        if let Some(terminate_flag) = &self.termination_flag
-            && terminate_flag.load(Ordering::Relaxed)
-        {
-            Some(None)
-        }
-        else {
-            self.output.borrow_mut().take().map(Some)
-        }
+        self.output.borrow_mut().take()
     }
 }
