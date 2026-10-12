@@ -680,8 +680,14 @@ where
             }
         }
 
-        if destroy_view && let Err(err) = vmi.destroy_view(self.view) {
-            tracing::error!(%err, "failed to destroy view");
+        if destroy_view {
+            if let Err(err) = vmi.switch_to_view(vmi.default_view()) {
+                tracing::error!(%err, "failed to switch to default view");
+            }
+
+            if let Err(err) = vmi.destroy_view(self.view) {
+                tracing::error!(%err, "failed to destroy view");
+            }
         }
 
         if disable_write_msr

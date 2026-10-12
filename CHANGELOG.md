@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiSession::handle` and `handle_with_timeout` poll the handler after
   `handle_interrupted`. A handler that finishes on a signal now returns its
   output instead of `None`.
+- `InjectorHandler` forwards `handle_timeout`, `handle_interrupted` and
+  `cleanup` to the user-mode or kernel-mode handler, whose `cleanup` never
+  ran. That `cleanup` now switches to the default view before it destroys
+  the injector's view.
 
 ## [0.11.0] - 2026-10-09
 

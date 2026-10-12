@@ -604,6 +604,10 @@ where
 
             self.ptm.unmonitor_view(vmi, self.view);
 
+            if let Err(err) = vmi.switch_to_view(vmi.default_view()) {
+                tracing::error!(%err, "failed to switch to default view");
+            }
+
             if let Err(err) = vmi.destroy_view(self.view) {
                 tracing::error!(%err, "failed to destroy view");
             }

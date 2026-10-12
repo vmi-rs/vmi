@@ -240,6 +240,18 @@ where
         self.inner.handle_event(vmi)
     }
 
+    fn handle_timeout(&mut self, session: &VmiSession<Os>) {
+        self.inner.handle_timeout(session);
+    }
+
+    fn handle_interrupted(&mut self, session: &VmiSession<Os>) {
+        self.inner.handle_interrupted(session);
+    }
+
+    fn cleanup(&mut self, session: &VmiSession<Os>) {
+        self.inner.cleanup(session);
+    }
+
     fn poll(&mut self) -> Option<Self::Output> {
         self.inner.poll()
     }
