@@ -33,7 +33,7 @@ pub use self::{
     },
     error::VmiError,
     event::{VmiEvent, VmiEventAction, VmiEventFlags, VmiEventResponse},
-    handler::VmiHandler,
+    handler::{VmiHandler, VmiHandlerExt, VmiTerminationHandler},
     os::{VmiOs, VmiOsExt},
     page::VmiMappedPage,
 };

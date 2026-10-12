@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `shellcode::OsAdapter` take a `RetryPolicy`. `RetryPolicy::Unlimited`, the
   default, keeps the previous behaviour. `RetryState::begin_attempt` returns
   a `Result`.
+- **Breaking:** `VmiHandler::handle_interrupted` returns `ControlFlow<()>`.
+  `Break`, the default, ends the event loop as before. `Continue` keeps the
+  event loop running until `poll` returns the output, or until a second
+  signal arrives.
 - The user-mode shellcode recipes log the guest's last error code when the
   allocation or the thread creation fails.
 
@@ -35,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recoverable error.
 - `RetryState::new` creates a retry state with a policy, and
   `RetryState::abort_attempt` aborts the current attempt.
+- `VmiTerminationHandler` and `VmiHandlerExt` - interrupt a handler at a
+  deadline or once a termination flag is set, and end the event loop if the
+  handler does not finish within a termination timeout.
 
 ### Removed
 

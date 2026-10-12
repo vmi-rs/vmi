@@ -79,6 +79,8 @@
 //! # }
 //! ```
 
+use std::ops::ControlFlow;
+
 use vmi_core::{VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession, os::ProcessId};
 
 mod arch;
@@ -244,8 +246,8 @@ where
         self.inner.handle_timeout(session);
     }
 
-    fn handle_interrupted(&mut self, session: &VmiSession<Os>) {
-        self.inner.handle_interrupted(session);
+    fn handle_interrupted(&mut self, session: &VmiSession<Os>) -> ControlFlow<()> {
+        self.inner.handle_interrupted(session)
     }
 
     fn cleanup(&mut self, session: &VmiSession<Os>) {

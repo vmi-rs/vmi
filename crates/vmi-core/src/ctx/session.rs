@@ -139,6 +139,7 @@ where
         Handler: VmiHandler<Os>,
     {
         let mut result;
+        let mut interrupted = false;
         let mut handler = handler_factory(self)?;
 
         loop {
@@ -156,9 +157,19 @@ where
                 }
                 Err(VmiError::Io(err)) if err.kind() == ErrorKind::Interrupted => {
                     tracing::trace!("interrupted");
-                    handler.handle_interrupted(self);
-                    result = handler.poll();
-                    break;
+
+                    // A second signal ends the loop without waiting for the
+                    // handler.
+                    if interrupted {
+                        tracing::warn!("interrupted again");
+                    }
+
+                    if interrupted || handler.handle_interrupted(self).is_break() {
+                        result = handler.poll();
+                        break;
+                    }
+
+                    interrupted = true;
                 }
                 Err(err) => return Err(err),
             }
