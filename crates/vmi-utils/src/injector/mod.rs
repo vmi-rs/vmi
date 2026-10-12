@@ -172,8 +172,16 @@ where
 /// aliases. Start with [`InjectorHandler::new`], then attach a custom
 /// [`BridgeDispatch`] using [`InjectorHandler::with_bridge`] when needed.
 ///
-/// The output is `Err` if the injection failed. The hijacked thread then
-/// resumes with its original registers.
+/// The output is `Err` if the injection failed or was interrupted. The
+/// hijacked thread then resumes with its original registers.
+///
+/// # Notes
+///
+/// When an injection fails or is interrupted, the remaining recipe steps
+/// are skipped, so the recipe leaks the guest memory it allocated.
+///
+/// An interrupted injection ends with `Err`, even if the payload already
+/// produced an output.
 pub struct InjectorHandler<Os, Mode, T, Bridge = ()>
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,

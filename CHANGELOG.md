@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cleanup` to the user-mode or kernel-mode handler, whose `cleanup` never
   ran. That `cleanup` now switches to the default view before it destroys
   the injector's view.
+- An interrupted injection no longer leaves the hijacked thread inside the
+  injected code with the injector's registers. Before the hijack, the
+  injection ends at once. While the recipe is executing, it ends with an
+  error once the hijacked thread has its original registers back.
 
 ## [0.11.0] - 2026-10-09
 

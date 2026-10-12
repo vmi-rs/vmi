@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
 use vmi_core::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
@@ -568,6 +570,33 @@ where
             }
             Err(err) => self.on_error(&vmi, err),
         }
+    }
+
+    fn handle_interrupted(&mut self, _vmi: &VmiSession<WindowsOs<Driver>>) -> ControlFlow<()> {
+        let flow = match self.state {
+            InjectorState::Complete | InjectorState::Failed => return ControlFlow::Break(()),
+
+            // Nothing in the guest has changed yet.
+            InjectorState::PreHijack => {
+                self.state = InjectorState::Failed;
+                ControlFlow::Break(())
+            }
+
+            // The hijacked thread already runs with its original registers.
+            InjectorState::Bridge => {
+                self.state = InjectorState::Complete;
+                ControlFlow::Break(())
+            }
+
+            // The next return of the hijacked thread aborts the recipe.
+            InjectorState::Executing | InjectorState::Teardown(_) => ControlFlow::Continue(()),
+        };
+
+        if self.error.is_none() {
+            self.error = Some(VmiError::Other("injection interrupted"));
+        }
+
+        flow
     }
 
     fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
