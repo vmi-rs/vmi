@@ -2,7 +2,10 @@ use vmi_core::{Architecture, Registers as _, Va, driver::VmiMemory, trace::Hex};
 use vmi_os_windows::WindowsOs;
 
 use super::super::super::{
-    ParameterSource, arch::ArchAdapter, payload::Payload, recipe::RetryState,
+    ParameterSource,
+    arch::ArchAdapter,
+    payload::Payload,
+    recipe::{RetryPolicy, RetryState},
 };
 use crate::injector::{
     ArchAdapter as InjectorArchAdapter, OsAdapter as InjectorOsAdapter, Recipe, RecipeControlFlow,
@@ -35,11 +38,15 @@ impl<Arch> KernelRecipeData<Arch>
 where
     Arch: Architecture,
 {
-    /// Creates recipe data for the given shellcode and parameter.
-    fn new(shellcode: impl AsRef<[u8]>, parameter: impl ParameterSource) -> Self {
+    /// Creates recipe data for the given shellcode, parameter and retry policy.
+    fn new(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ParameterSource,
+        retry: RetryPolicy,
+    ) -> Self {
         Self {
             payload: Payload::new(shellcode, parameter),
-            retry: RetryState::default(),
+            retry: RetryState::new(retry),
             kernel_image_base: Va::null(),
             guest_address: Va::null(),
             thread_handle_ptr: Va::null(),
@@ -51,18 +58,20 @@ where
 fn prepare_kernel_shellcode_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, KernelRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
     WindowsOs<Driver>: InjectorOsAdapter<Architecture = Driver::Architecture, Driver = Driver>,
 {
-    let data = KernelRecipeData::<Driver::Architecture>::new(shellcode, parameter);
+    let data = KernelRecipeData::<Driver::Architecture>::new(shellcode, parameter, retry);
 
     recipe![
         Recipe::<WindowsOs<Driver>>::new(data),
         //
         // Step 1:
         // - Restore the original registers when retrying.
+        //   - If the retry policy allows no further attempt, return an error.
         // - Resolve the kernel image base.
         // - Allocate executable nonpaged memory for the payload.
         //
@@ -72,7 +81,7 @@ where
 
             let vmi = vmi!();
 
-            let attempt = data![retry].begin_attempt(registers!());
+            let attempt = data![retry].begin_attempt(registers!())?;
             let payload_size = data![payload].bytes.len();
 
             data![kernel_image_base] = vmi.os().kernel_image_base()?;
@@ -103,7 +112,8 @@ where
             let payload = &data![payload];
 
             if guest_address.is_null() {
-                tracing::warn!(attempt, "shellcode allocation failed, retrying");
+                tracing::warn!(attempt, "shellcode allocation failed");
+                data![retry].abort_attempt();
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
@@ -119,8 +129,10 @@ where
                     %err,
                     attempt,
                     %guest_address,
-                    "shellcode write failed, retrying"
+                    "shellcode write failed"
                 );
+
+                data![retry].abort_attempt();
 
                 inject! {
                     nt!ExFreePool(guest_address)    // P
@@ -141,7 +153,8 @@ where
 /// release it with `ExFreePool` before returning.
 ///
 /// If a recoverable error occurs before the shellcode is called, the recipe
-/// restores the original registers and retries from the allocation step.
+/// restores the original registers and retries from the allocation step, as
+/// long as the `retry` policy allows. Otherwise, the recipe returns an error.
 ///
 /// # Equivalent C pseudo-code
 ///
@@ -168,13 +181,14 @@ where
 pub fn kernel_shellcode_call_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, KernelRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
     WindowsOs<Driver>: InjectorOsAdapter<Architecture = Driver::Architecture, Driver = Driver>,
 {
     recipe![
-        prepare_kernel_shellcode_recipe::<Driver>(shellcode, parameter),
+        prepare_kernel_shellcode_recipe::<Driver>(shellcode, parameter, retry),
         //
         // Step 3:
         // - Resolve the parameter and call the shellcode.
@@ -208,7 +222,8 @@ where
 /// must release it with `ExFreePool` before returning.
 ///
 /// If a recoverable error occurs before the thread is created, the recipe
-/// restores the original registers and retries from the allocation step.
+/// restores the original registers and retries from the allocation step, as
+/// long as the `retry` policy allows. Otherwise, the recipe returns an error.
 ///
 /// # Payload entry
 ///
@@ -272,6 +287,7 @@ where
 pub fn kernel_shellcode_spawn_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, KernelRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
@@ -289,7 +305,7 @@ where
     payload.resize(thunk_offset + thunk_size, 0);
 
     recipe![
-        prepare_kernel_shellcode_recipe::<Driver>(payload, parameter),
+        prepare_kernel_shellcode_recipe::<Driver>(payload, parameter, retry),
         //
         // Step 3:
         // - Patch the entry thunk reserved after the payload.
@@ -322,8 +338,10 @@ where
                     %err,
                     attempt,
                     %start_routine,
-                    "shellcode thunk patch failed, retrying"
+                    "shellcode thunk patch failed"
                 );
+
+                data![retry].abort_attempt();
 
                 inject! {
                     nt!ExFreePool(guest_address)    // P
@@ -376,8 +394,10 @@ where
                     attempt,
                     status = %Hex(status),
                     %guest_address,
-                    "shellcode thread creation failed, retrying"
+                    "shellcode thread creation failed"
                 );
+
+                data![retry].abort_attempt();
 
                 inject! {
                     nt!ExFreePool(guest_address)    // P

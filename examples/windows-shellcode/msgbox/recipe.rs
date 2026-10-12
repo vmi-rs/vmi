@@ -2,7 +2,9 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::shellcode::{UserRecipe, user_shellcode_call_recipe, user_shellcode_spawn_recipe},
+    utils::shellcode::{
+        RetryPolicy, UserRecipe, user_shellcode_call_recipe, user_shellcode_spawn_recipe,
+    },
 };
 
 use super::parameters::MsgboxParameters;
@@ -21,7 +23,7 @@ pub fn msgbox_call_recipe<Driver>(parameters: &MsgboxParameters) -> UserRecipe<W
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    user_shellcode_call_recipe(MSGBOX_SHELLCODE, parameters)
+    user_shellcode_call_recipe(MSGBOX_SHELLCODE, parameters, RetryPolicy::default())
 }
 
 /// Builds a recipe that runs the `msgbox` shellcode on a guest thread.
@@ -33,5 +35,5 @@ pub fn msgbox_spawn_recipe<Driver>(parameters: &MsgboxParameters) -> UserRecipe<
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    user_shellcode_spawn_recipe(MSGBOX_SHELLCODE, parameters)
+    user_shellcode_spawn_recipe(MSGBOX_SHELLCODE, parameters, RetryPolicy::default())
 }

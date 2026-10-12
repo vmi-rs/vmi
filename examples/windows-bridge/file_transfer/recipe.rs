@@ -2,7 +2,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::shellcode::{KernelRecipe, ParameterValue, kernel_shellcode_call_recipe},
+    utils::shellcode::{KernelRecipe, ParameterValue, RetryPolicy, kernel_shellcode_call_recipe},
 };
 
 /// Compiled `file-transfer` shellcode.
@@ -28,5 +28,9 @@ pub fn file_transfer_recipe<Driver>(file_handle: u64) -> KernelRecipe<WindowsOs<
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    kernel_shellcode_call_recipe(FILE_TRANSFER_SHELLCODE, ParameterValue(file_handle))
+    kernel_shellcode_call_recipe(
+        FILE_TRANSFER_SHELLCODE,
+        ParameterValue(file_handle),
+        RetryPolicy::default(),
+    )
 }

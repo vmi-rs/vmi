@@ -2,7 +2,7 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::shellcode::{UserRecipe, user_shellcode_spawn_recipe},
+    utils::shellcode::{RetryPolicy, UserRecipe, user_shellcode_spawn_recipe},
 };
 
 use super::parameters::DeployParameters;
@@ -21,5 +21,5 @@ pub fn deploy_recipe<Driver>(parameters: &DeployParameters) -> UserRecipe<Window
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    user_shellcode_spawn_recipe(DEPLOY_SHELLCODE, parameters)
+    user_shellcode_spawn_recipe(DEPLOY_SHELLCODE, parameters, RetryPolicy::default())
 }

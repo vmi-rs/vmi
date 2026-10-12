@@ -137,7 +137,7 @@ pub use self::{
     os::OsAdapter,
     parameters::{Parameter, ParameterSource, ParameterValue, ParameterWriter, Parameters},
     payload::Payload,
-    recipe::RetryState,
+    recipe::{RetryPolicy, RetryState},
     status::{EncodedStatus, Stage, Status, StatusKind, impl_stage},
 };
 use crate::injector::Recipe;
@@ -157,55 +157,65 @@ pub type UserRecipe<Os> = Recipe<Os, UserRecipeData<Os>>;
 /// Builds a kernel-mode shellcode recipe that calls the payload on the
 /// hijacked thread.
 ///
-/// The recipe completes when the payload returns.
+/// The recipe completes when the payload returns. A recoverable error before
+/// the shellcode is called is retried as long as the `retry` policy allows.
 pub fn kernel_shellcode_call_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> KernelRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::kernel_shellcode_call_recipe(shellcode, parameter)
+    Os::kernel_shellcode_call_recipe(shellcode, parameter, retry)
 }
 
 /// Builds a kernel-mode shellcode recipe that spawns a system thread for
 /// the payload.
 ///
-/// The recipe completes when the thread has been created.
+/// The recipe completes when the thread has been created. A recoverable error
+/// before the thread is created is retried as long as the `retry` policy
+/// allows.
 pub fn kernel_shellcode_spawn_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> KernelRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::kernel_shellcode_spawn_recipe(shellcode, parameter)
+    Os::kernel_shellcode_spawn_recipe(shellcode, parameter, retry)
 }
 
 /// Builds a user-mode shellcode recipe that calls the payload on the
 /// hijacked thread.
 ///
-/// The recipe completes when the payload returns.
+/// The recipe completes when the payload returns. A recoverable error before
+/// the shellcode is called is retried as long as the `retry` policy allows.
 pub fn user_shellcode_call_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> UserRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::user_shellcode_call_recipe(shellcode, parameter)
+    Os::user_shellcode_call_recipe(shellcode, parameter, retry)
 }
 
 /// Builds a user-mode shellcode recipe that spawns a guest thread for
 /// the payload.
 ///
-/// The recipe completes when the thread has been created.
+/// The recipe completes when the thread has been created. A recoverable error
+/// before the thread is created is retried as long as the `retry` policy
+/// allows.
 pub fn user_shellcode_spawn_recipe<Os>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> UserRecipe<Os>
 where
     Os: OsAdapter,
 {
-    Os::user_shellcode_spawn_recipe(shellcode, parameter)
+    Os::user_shellcode_spawn_recipe(shellcode, parameter, retry)
 }

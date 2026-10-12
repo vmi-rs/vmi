@@ -1,7 +1,11 @@
 use vmi_core::{Architecture, Registers as _, Va, driver::VmiMemory, trace::Hex};
 use vmi_os_windows::WindowsOs;
 
-use super::super::super::{ParameterSource, payload::Payload, recipe::RetryState};
+use super::super::super::{
+    ParameterSource,
+    payload::Payload,
+    recipe::{RetryPolicy, RetryState},
+};
 use crate::injector::{OsAdapter as InjectorOsAdapter, Recipe, RecipeControlFlow, recipe};
 
 /// Data retained while the user-mode shellcode recipe executes.
@@ -27,11 +31,15 @@ impl<Arch> UserRecipeData<Arch>
 where
     Arch: Architecture,
 {
-    /// Creates recipe data for the given shellcode and parameter.
-    fn new(shellcode: impl AsRef<[u8]>, parameter: impl ParameterSource) -> Self {
+    /// Creates recipe data for the given shellcode, parameter and retry policy.
+    fn new(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ParameterSource,
+        retry: RetryPolicy,
+    ) -> Self {
         Self {
             payload: Payload::new(shellcode, parameter),
-            retry: RetryState::default(),
+            retry: RetryState::new(retry),
             guest_address: Va::null(),
             thread_handle: 0,
         }
@@ -42,18 +50,20 @@ where
 fn prepare_user_shellcode_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, UserRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
     WindowsOs<Driver>: InjectorOsAdapter<Architecture = Driver::Architecture, Driver = Driver>,
 {
-    let data = UserRecipeData::<Driver::Architecture>::new(shellcode, parameter);
+    let data = UserRecipeData::<Driver::Architecture>::new(shellcode, parameter, retry);
 
     recipe![
         Recipe::<WindowsOs<Driver>>::new(data),
         //
         // Step 1:
         // - Restore the original registers when retrying.
+        //   - If the retry policy allows no further attempt, return an error.
         // - Allocate executable memory for the payload.
         //
         {
@@ -61,7 +71,7 @@ where
             const MEM_RESERVE: u64 = 0x2000;
             const PAGE_EXECUTE_READWRITE: u64 = 0x40;
 
-            let attempt = data![retry].begin_attempt(registers!());
+            let attempt = data![retry].begin_attempt(registers!())?;
             let payload_size = data![payload].bytes.len();
 
             tracing::debug!(attempt, size = payload_size, "allocating shellcode memory");
@@ -91,7 +101,9 @@ where
             let payload_size = data![payload].bytes.len();
 
             if guest_address.is_null() {
-                tracing::warn!(attempt, "shellcode allocation failed, retrying");
+                let error = vmi.os().last_error()?.unwrap_or_default();
+                tracing::warn!(attempt, error, "shellcode allocation failed");
+                data![retry].abort_attempt();
                 return Ok(RecipeControlFlow::Goto(0));
             }
 
@@ -136,8 +148,10 @@ where
                     %err,
                     attempt,
                     %guest_address,
-                    "shellcode write failed, retrying"
+                    "shellcode write failed"
                 );
+
+                data![retry].abort_attempt();
 
                 inject! {
                     kernel32!VirtualFree(
@@ -161,7 +175,8 @@ where
 /// release it with `VirtualFree` before returning.
 ///
 /// If a recoverable error occurs before the shellcode is called, the recipe
-/// restores the original registers and retries from the allocation step.
+/// restores the original registers and retries from the allocation step, as
+/// long as the `retry` policy allows. Otherwise, the recipe returns an error.
 ///
 /// # Equivalent C pseudo-code
 ///
@@ -193,13 +208,14 @@ where
 pub fn user_shellcode_call_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, UserRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
     WindowsOs<Driver>: InjectorOsAdapter<Architecture = Driver::Architecture, Driver = Driver>,
 {
     recipe![
-        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter),
+        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter, retry),
         //
         // Step 4:
         // - Resolve the parameter and call the shellcode.
@@ -232,7 +248,8 @@ where
 /// release it with `VirtualFree` before completing.
 ///
 /// If a recoverable error occurs before the thread is created, the recipe
-/// restores the original registers and retries from the allocation step.
+/// restores the original registers and retries from the allocation step, as
+/// long as the `retry` policy allows. Otherwise, the recipe returns an error.
 ///
 /// # Equivalent C pseudo-code
 ///
@@ -276,13 +293,14 @@ where
 pub fn user_shellcode_spawn_recipe<Driver>(
     shellcode: impl AsRef<[u8]>,
     parameter: impl ParameterSource,
+    retry: RetryPolicy,
 ) -> Recipe<WindowsOs<Driver>, UserRecipeData<Driver::Architecture>>
 where
     Driver: VmiMemory,
     WindowsOs<Driver>: InjectorOsAdapter<Architecture = Driver::Architecture, Driver = Driver>,
 {
     recipe![
-        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter),
+        prepare_user_shellcode_recipe::<Driver>(shellcode, parameter, retry),
         //
         // Step 4:
         // - Resolve the parameter and create the shellcode thread.
@@ -328,12 +346,16 @@ where
 
             if thread_handle == 0 {
                 let guest_address = data![guest_address];
+                let error = vmi.os().last_error()?.unwrap_or_default();
 
                 tracing::warn!(
                     attempt,
+                    error,
                     %guest_address,
-                    "shellcode thread creation failed, retrying"
+                    "shellcode thread creation failed"
                 );
+
+                data![retry].abort_attempt();
 
                 inject! {
                     kernel32!VirtualFree(

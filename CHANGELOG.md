@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Result<Option<Result<Bridge::Output, BridgePacket>>, VmiError>`.
 - **Breaking:** the fields of `RetryState` are private. `RetryState::attempt`
   returns the number of attempts started.
+- **Breaking:** the shellcode recipe functions and the methods of
+  `shellcode::OsAdapter` take a `RetryPolicy`. `RetryPolicy::Unlimited`, the
+  default, keeps the previous behaviour. `RetryState::begin_attempt` returns
+  a `Result`.
+- The user-mode shellcode recipes log the guest's last error code when the
+  allocation or the thread creation fails.
 
 ### Added
 
@@ -25,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modules by predicate.
 - `RecipeExecutor::abort` - aborts the recipe and returns the original
   registers.
+- `RetryPolicy` - decides whether a shellcode recipe retries after a
+  recoverable error.
+- `RetryState::new` creates a retry state with a policy, and
+  `RetryState::abort_attempt` aborts the current attempt.
 
 ### Removed
 

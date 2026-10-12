@@ -3,7 +3,7 @@ mod windows;
 
 use vmi_core::VmiOs;
 
-use super::ParameterSource;
+use super::{ParameterSource, RetryPolicy};
 use crate::injector::Recipe;
 
 /// Operating system-specific shellcode injection functionality.
@@ -21,6 +21,7 @@ pub trait OsAdapter: VmiOs {
     fn kernel_shellcode_call_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ParameterSource,
+        retry: RetryPolicy,
     ) -> Recipe<Self, Self::KernelRecipeData>;
 
     /// Builds a kernel-mode shellcode recipe that spawns a system thread for
@@ -30,6 +31,7 @@ pub trait OsAdapter: VmiOs {
     fn kernel_shellcode_spawn_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ParameterSource,
+        retry: RetryPolicy,
     ) -> Recipe<Self, Self::KernelRecipeData>;
 
     /// Builds a user-mode shellcode recipe that calls the payload on the
@@ -39,6 +41,7 @@ pub trait OsAdapter: VmiOs {
     fn user_shellcode_call_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ParameterSource,
+        retry: RetryPolicy,
     ) -> Recipe<Self, Self::UserRecipeData>;
 
     /// Builds a user-mode shellcode recipe that spawns a guest thread for
@@ -48,5 +51,6 @@ pub trait OsAdapter: VmiOs {
     fn user_shellcode_spawn_recipe(
         shellcode: impl AsRef<[u8]>,
         parameter: impl ParameterSource,
+        retry: RetryPolicy,
     ) -> Recipe<Self, Self::UserRecipeData>;
 }

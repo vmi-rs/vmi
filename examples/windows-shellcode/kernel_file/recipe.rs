@@ -2,7 +2,9 @@ use vmi::{
     arch::amd64::Amd64,
     driver::VmiMemory,
     os::windows::WindowsOs,
-    utils::shellcode::{KernelRecipe, kernel_shellcode_call_recipe, kernel_shellcode_spawn_recipe},
+    utils::shellcode::{
+        KernelRecipe, RetryPolicy, kernel_shellcode_call_recipe, kernel_shellcode_spawn_recipe,
+    },
 };
 
 use super::parameters::KernelFileParameters;
@@ -23,7 +25,7 @@ pub fn kernel_file_call_recipe<Driver>(
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    kernel_shellcode_call_recipe(KERNEL_FILE_SHELLCODE, parameters)
+    kernel_shellcode_call_recipe(KERNEL_FILE_SHELLCODE, parameters, RetryPolicy::default())
 }
 
 /// Builds a recipe that runs the `kernel-file` shellcode on a system thread.
@@ -37,5 +39,5 @@ pub fn kernel_file_spawn_recipe<Driver>(
 where
     Driver: VmiMemory<Architecture = Amd64>,
 {
-    kernel_shellcode_spawn_recipe(KERNEL_FILE_SHELLCODE, parameters)
+    kernel_shellcode_spawn_recipe(KERNEL_FILE_SHELLCODE, parameters, RetryPolicy::default())
 }
