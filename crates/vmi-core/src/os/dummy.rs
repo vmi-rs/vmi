@@ -254,6 +254,25 @@ where
         unimplemented!()
     }
 
+    fn user_modules(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::UserModule<'a>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        #[allow(unreachable_code)]
+        {
+            unimplemented!() as Result<std::iter::Empty<_>, VmiError>
+        }
+    }
+
+    fn lookup_user_module(
+        &self,
+        _address: Va,
+    ) -> Result<Option<<Self::Os as VmiOs>::UserModule<'a>>, VmiError> {
+        unimplemented!()
+    }
+
     fn threads(
         &self,
     ) -> Result<

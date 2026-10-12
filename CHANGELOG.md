@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VmiOsProcess` has two new required methods: `user_modules`
+  lists the modules of the process's user-mode loader for the process's
+  architecture, and `lookup_user_module` returns the user module containing
+  an address. On Windows they walk `_PEB.Ldr`, from the 32-bit PEB for a
+  WoW64 process.
+
 ### Added
+
+- `VmiOsProcessExt::find_user_module` and `filter_user_modules` find user
+  modules by predicate.
 
 ### Removed
 

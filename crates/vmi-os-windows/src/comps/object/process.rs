@@ -1,11 +1,17 @@
 use vmi_core::{
     Architecture, Pa, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
-    os::{ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess},
+    os::{
+        ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess,
+        VmiOsUserModule as _,
+    },
 };
 
 use super::{
-    super::{WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsWow64Kind},
+    super::{
+        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsUserModule,
+        WindowsWow64Kind,
+    },
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread, WindowsToken,
 };
 use crate::{
@@ -123,8 +129,9 @@ where
     ///
     /// The function first reads the `_EPROCESS.WoW64Process` field to determine
     /// if the process is a 32-bit process. If the field is `NULL`, the process
-    /// is 64-bit. Otherwise, the function reads the `_EWOW64PROCESS.Peb` field
-    /// to get the 32-bit PEB.
+    /// is 64-bit. Otherwise, the 32-bit PEB corresponds to
+    /// `_EPROCESS.WoW64Process` for Windows 7 and `_EPROCESS.WoW64Process->Peb`
+    /// for Windows 10+.
     pub fn peb(&self) -> Result<Option<WindowsPeb<'a, Driver>>, VmiError> {
         let EPROCESS = offset!(self.vmi, _EPROCESS);
 
@@ -560,6 +567,60 @@ where
             }
             else {
                 return Ok(Some(vad));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns an iterator over the process's user modules.
+    ///
+    /// # Implementation Details
+    ///
+    /// The function iterates over `_PEB.Ldr.InLoadOrderModuleList` of the PEB
+    /// returned by [`peb`](Self::peb).
+    fn user_modules(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<WindowsUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
+        VmiError,
+    > {
+        let modules = match self.peb()? {
+            Some(peb) => {
+                let ldr = peb.ldr()?;
+                if ldr.va().is_null() {
+                    None
+                }
+                else {
+                    Some(ldr.in_load_order_modules()?)
+                }
+            }
+            None => None,
+        };
+
+        Ok(modules.into_iter().flatten())
+    }
+
+    /// Returns the user module containing the given address.
+    ///
+    /// Searches the user modules to find the module that covers the given
+    /// virtual address. Returns `None` if no module covers the address.
+    ///
+    /// # Implementation Details
+    ///
+    /// The function iterates over [`user_modules`](Self::user_modules) and
+    /// compares the address with `_LDR_DATA_TABLE_ENTRY.DllBase` and
+    /// `_LDR_DATA_TABLE_ENTRY.SizeOfImage`.
+    fn lookup_user_module(
+        &self,
+        address: Va,
+    ) -> Result<Option<WindowsUserModule<'a, Driver>>, VmiError> {
+        for module in self.user_modules()? {
+            let module = module?;
+
+            let base_address = module.base_address()?;
+            if address >= base_address && (address - base_address).0 < module.size()? {
+                return Ok(Some(module));
             }
         }
 

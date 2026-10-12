@@ -38,7 +38,7 @@ where
     /// - **Windows**: `LDR_DATA_TABLE_ENTRY.SizeOfImage`
     fn size(&self) -> Result<u64, VmiError>;
 
-    /// Returns the name of the module.
+    /// Returns the file name of the module.
     ///
     /// # Platform-specific
     ///

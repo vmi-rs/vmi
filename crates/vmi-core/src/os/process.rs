@@ -1,4 +1,6 @@
-use super::{RegionPredicate, VmiOs, VmiOsImageArchitecture, impl_ops, impl_predicate};
+use super::{
+    RegionPredicate, UserModulePredicate, VmiOs, VmiOsImageArchitecture, impl_ops, impl_predicate,
+};
 use crate::{Pa, Va, VmiDriver, VmiError, VmiVa};
 
 impl_ops! {
@@ -110,6 +112,29 @@ where
         address: Va,
     ) -> Result<Option<<Self::Os as VmiOs>::Region<'a>>, VmiError>;
 
+    /// Returns an iterator over the process's user modules.
+    ///
+    /// The list matches the process's [`architecture`](Self::architecture).
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `_PEB.Ldr.InLoadOrderModuleList` of the native PEB
+    ///   (`_EPROCESS.Peb`), and of the 32-bit PEB (from `_EPROCESS.WoW64Process`)
+    ///   for a WoW64 process.
+    fn user_modules(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = Result<<Self::Os as VmiOs>::UserModule<'a>, VmiError>>
+        + use<'a, Driver, Self>,
+        VmiError,
+    >;
+
+    /// Returns the user module containing the given address.
+    fn lookup_user_module(
+        &self,
+        address: Va,
+    ) -> Result<Option<<Self::Os as VmiOs>::UserModule<'a>>, VmiError>;
+
     /// Returns an iterator over the threads in the process.
     ///
     /// # Platform-specific
@@ -171,6 +196,49 @@ where
 
                 match predicate.matches(&region) {
                     Ok(true) => return Some(Ok(region)),
+                    Ok(false) => continue,
+                    Err(err) => return Some(Err(err)),
+                }
+            }
+
+            None
+        }))
+    }
+
+    /// Returns the first user module matching `predicate`, or
+    /// `Ok(None)` if no user module in the process matches.
+    fn find_user_module(
+        &self,
+        predicate: impl UserModulePredicate<Self::Os>,
+    ) -> Result<Option<<Self::Os as VmiOs>::UserModule<'a>>, VmiError> {
+        for module in self.user_modules()? {
+            let module = module?;
+
+            if predicate.matches(&module)? {
+                return Ok(Some(module));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns an iterator over the user modules matching `predicate`.
+    fn filter_user_modules(
+        &self,
+        predicate: impl UserModulePredicate<Self::Os>,
+    ) -> Result<impl Iterator<Item = Result<<Self::Os as VmiOs>::UserModule<'a>, VmiError>>, VmiError>
+    {
+        let mut modules = self.user_modules()?;
+
+        Ok(std::iter::from_fn(move || {
+            for module in modules.by_ref() {
+                let module = match module {
+                    Ok(module) => module,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                match predicate.matches(&module) {
+                    Ok(true) => return Some(Ok(module)),
                     Ok(false) => continue,
                     Err(err) => return Some(Err(err)),
                 }
