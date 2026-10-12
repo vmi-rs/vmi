@@ -157,6 +157,7 @@ where
                 Err(VmiError::Io(err)) if err.kind() == ErrorKind::Interrupted => {
                     tracing::trace!("interrupted");
                     handler.handle_interrupted(self);
+                    result = handler.poll();
                     break;
                 }
                 Err(err) => return Err(err),

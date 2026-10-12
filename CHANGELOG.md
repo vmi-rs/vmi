@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers.
 - `UserInjectorHandler` no longer calls into a 32-bit process with the x64
   calling convention. It ends the injection with an error instead.
+- `VmiSession::handle` and `handle_with_timeout` poll the handler after
+  `handle_interrupted`. A handler that finishes on a signal now returns its
+  output instead of `None`.
 
 ## [0.11.0] - 2026-10-09
 
