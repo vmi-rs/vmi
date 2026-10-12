@@ -1,16 +1,13 @@
 use std::{
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use anyhow::{Context as _, Error};
 use clap::Args;
 use isr::Profile;
 use vmi::{
-    VmiSession,
+    VmiHandlerExt as _, VmiSession,
     arch::amd64::Amd64,
     driver::VmiFullDriver,
     os::windows::WindowsOs,
@@ -246,23 +243,15 @@ where
     validate_deploy_waiting_output(output)?;
     tracing::info!("deploy injector parked at execute gate");
 
-    let monitor_terminate_flag = terminate_flag.clone();
     let output = session.handle(|session| {
-        Monitor::new(
-            session,
-            profile,
-            monitor_terminate_flag,
-            monitor.output_directory,
-        )
+        Ok(Monitor::new(session, profile, monitor.output_directory)?
+            .with_termination_flag(terminate_flag))
     })?;
 
     match output {
-        Some(Ok(Some(pid))) => tracing::info!(%pid, "deploy monitoring completed"),
-        Some(Ok(None)) => tracing::info!("deploy monitoring cancelled"),
-        Some(Err(err)) => anyhow::bail!("deploy failed during monitoring: {err:?}"),
-        None if terminate_flag.load(Ordering::Relaxed) => {
-            tracing::info!("deploy monitoring cancelled")
-        }
+        Some(Some(Ok(pid))) => tracing::info!(%pid, "deploy monitoring completed"),
+        Some(Some(Err(err))) => anyhow::bail!("deploy failed during monitoring: {err:?}"),
+        Some(None) => tracing::info!("deploy monitoring cancelled"),
         None => anyhow::bail!("deploy monitoring interrupted"),
     }
 

@@ -1,13 +1,6 @@
 mod hooks;
 
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use isr::{Profile, macros::symbols};
 use vmi::{
@@ -145,7 +138,6 @@ pub struct Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    terminate_flag: Arc<AtomicBool>,
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>, (), MonitorHook<Driver>>,
     ptm: PageTableMonitor<Driver, MonitorHook<Driver>>,
@@ -161,7 +153,6 @@ where
     pub fn new(
         session: &VmiSession<WindowsOs<Driver>>,
         profile: &Profile,
-        terminate_flag: Arc<AtomicBool>,
         output_directory: PathBuf,
     ) -> Result<Self, VmiError> {
         let paused = session.pause_guard()?;
@@ -214,7 +205,6 @@ where
         );
 
         Ok(Self {
-            terminate_flag,
             view,
             bpm,
             ptm,
@@ -383,7 +373,7 @@ impl<Driver> VmiHandler<WindowsOs<Driver>> for Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    type Output = Result<Option<ProcessId>, DeployStatus>;
+    type Output = Result<ProcessId, DeployStatus>;
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
@@ -427,10 +417,6 @@ where
     }
 
     fn poll(&mut self) -> Option<Self::Output> {
-        self.state.output.or_else(|| {
-            self.terminate_flag
-                .load(Ordering::Relaxed)
-                .then_some(Ok(None))
-        })
+        self.state.output
     }
 }

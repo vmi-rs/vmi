@@ -4,15 +4,11 @@
 
 mod common;
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-
 use anyhow::Error;
 use isr::{Profile, macros::symbols};
 use vmi::{
-    MemoryAccess, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession,
+    MemoryAccess, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse, VmiHandler,
+    VmiHandlerExt as _, VmiSession,
     arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
     driver::VmiFullDriver,
     os::{
@@ -52,7 +48,6 @@ pub struct Monitor<Driver>
 where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
-    terminate_flag: Arc<AtomicBool>,
     view: View,
     bpm: BreakpointManager<BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
@@ -68,7 +63,6 @@ where
     pub fn new(
         session: &VmiSession<WindowsOs<Driver>>,
         profile: &Profile,
-        terminate_flag: Arc<AtomicBool>,
     ) -> Result<Self, VmiError> {
         // Capture the current state of the vCPU and get the base address of
         // the kernel.
@@ -230,12 +224,7 @@ where
             "MmCleanProcessAddressSpace",
         )?;
 
-        Ok(Self {
-            terminate_flag,
-            view,
-            bpm,
-            ptm,
-        })
+        Ok(Self { view, bpm, ptm })
     }
 
     #[tracing::instrument(skip_all)]
@@ -512,10 +501,6 @@ where
 
         self.dispatch(&vmi).expect("dispatch")
     }
-
-    fn poll(&mut self) -> Option<Self::Output> {
-        self.terminate_flag.load(Ordering::Relaxed).then_some(())
-    }
 }
 
 fn main() -> Result<(), Error> {
@@ -523,7 +508,9 @@ fn main() -> Result<(), Error> {
     let session = setup.session();
     let profile = setup.profile();
 
-    session.handle(|session| Monitor::new(session, profile, setup.terminate_flag()))?;
+    session.handle(|session| {
+        Ok(Monitor::new(session, profile)?.with_termination_flag(setup.terminate_flag()))
+    })?;
 
     Ok(())
 }

@@ -176,7 +176,7 @@ where
     );
 
     if state.target_process == Some(Process) {
-        state.output = Some(Ok(Some(process.pid)));
+        state.output = Some(Ok(process.pid));
 
         tracing::info!(
             name = process.name,
