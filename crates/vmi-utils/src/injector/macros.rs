@@ -12,7 +12,7 @@ pub mod __private {
         Va, VmiError, VmiOs, VmiState,
         os::{
             VmiOsImage as _, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _,
-            VmiOsRegion as _, VmiOsRegionKind,
+            VmiOsProcessExt as _, VmiOsRegion as _, VmiOsRegionKind, VmiOsUserModule as _,
         },
     };
 
@@ -24,7 +24,8 @@ pub mod __private {
         /// Search in kernel modules.
         Module,
 
-        /// Search in mapped regions of the current process.
+        /// Search in mapped regions of the current process, then among the
+        /// modules listed by its user-mode loader.
         Region,
     }
 
@@ -47,7 +48,7 @@ pub mod __private {
 
     /// Finds a first mapped region with the specified filename in the current
     /// process. The filename is case-insensitive. Returns the base address of
-    /// the region if found.
+    /// the region if found. Regions whose path cannot be read are skipped.
     pub fn find_region<Os>(vmi: &VmiState<'_, Os>, filename: &str) -> Result<Option<Va>, VmiError>
     where
         Os: VmiOs,
@@ -79,6 +80,10 @@ pub mod __private {
     /// process and retrieves the exported symbols from the image. The filename
     /// is case-insensitive. Returns map of exported symbols and their virtual
     /// addresses.
+    ///
+    /// When no region path matches, the image is searched among the modules
+    /// listed by the process's user-mode loader. The OS can page a mapped
+    /// image's path out of memory, and the region search then skips it.
     pub fn exported_symbols<Os>(
         vmi: &VmiState<'_, Os>,
         filename: &str,
@@ -89,7 +94,19 @@ pub mod __private {
     {
         let image_base = match kind {
             SearchKind::Module => find_module(vmi, filename)?,
-            SearchKind::Region => find_region(vmi, filename)?,
+            SearchKind::Region => match find_region(vmi, filename)? {
+                Some(image_base) => Some(image_base),
+                None => {
+                    tracing::debug!(filename, "no region path matches, searching user modules");
+
+                    let current_process = vmi.os().current_process()?;
+
+                    match current_process.find_user_module(filename)? {
+                        Some(module) => Some(module.base_address()?),
+                        None => None,
+                    }
+                }
+            },
         };
 
         let image_base = match image_base {

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The injector finds a DLL for `inject!` among the user modules of the
+  process when no mapped region's path matches. Windows can page a mapped
+  image's file name out of memory, and the region lookup then skipped the
+  DLL, so the recipe failed with "<function> not found". The loader list
+  lives in user memory, which the injector already pages in on demand.
+
 ## [0.11.0] - 2026-10-09
 
 ### Changed
