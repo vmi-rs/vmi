@@ -99,7 +99,7 @@ where
             let guest_address = Va(vmi.registers().result());
             data![guest_address] = guest_address;
 
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let payload = &data![payload];
 
             if guest_address.is_null() {
@@ -181,7 +181,7 @@ where
         //
         {
             let guest_address = data![guest_address];
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
 
             tracing::debug!(
@@ -302,7 +302,7 @@ where
             let vmi = vmi!();
 
             let guest_address = data![guest_address];
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
             let kernel_image_base = data![kernel_image_base];
 
@@ -367,7 +367,7 @@ where
             let vmi = vmi!();
 
             let status = vmi.registers().result() as u32;
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
 
             if !NT_SUCCESS(status) {
                 let guest_address = data![guest_address];

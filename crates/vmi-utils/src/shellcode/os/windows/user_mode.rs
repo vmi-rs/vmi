@@ -87,7 +87,7 @@ where
             let guest_address = Va(vmi.registers().result());
             data![guest_address] = guest_address;
 
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let payload_size = data![payload].bytes.len();
 
             if guest_address.is_null() {
@@ -121,7 +121,7 @@ where
             let vmi = vmi!();
 
             let guest_address = data![guest_address];
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let payload = &data![payload];
 
             tracing::debug!(
@@ -206,7 +206,7 @@ where
         //
         {
             let guest_address = data![guest_address];
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
 
             tracing::debug!(
@@ -289,7 +289,7 @@ where
         //
         {
             let guest_address = data![guest_address];
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
 
             tracing::debug!(
@@ -324,7 +324,7 @@ where
             let thread_handle = vmi.registers().result();
             data![thread_handle] = thread_handle;
 
-            let attempt = data![retry].attempt;
+            let attempt = data![retry].attempt();
 
             if thread_handle == 0 {
                 let guest_address = data![guest_address];

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WoW64 process.
 - **Breaking:** `InjectorHandler` now outputs
   `Result<Option<Result<Bridge::Output, BridgePacket>>, VmiError>`.
+- **Breaking:** the fields of `RetryState` are private. `RetryState::attempt`
+  returns the number of attempts started.
 
 ### Added
 

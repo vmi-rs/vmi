@@ -7,16 +7,21 @@ where
     Arch: Architecture,
 {
     /// Number of attempts started.
-    pub attempt: u64,
+    attempt: u64,
 
     /// Registers captured before the first attempt.
-    pub original_registers: Option<Arch::Registers>,
+    original_registers: Option<Arch::Registers>,
 }
 
 impl<Arch> RetryState<Arch>
 where
     Arch: Architecture,
 {
+    /// Returns the number of attempts started.
+    pub fn attempt(&self) -> u64 {
+        self.attempt
+    }
+
     /// Starts an attempt and returns its number, starting at one.
     ///
     /// The first attempt captures the registers. Later attempts restore them
