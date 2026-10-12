@@ -14,11 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   architecture, and `lookup_user_module` returns the user module containing
   an address. On Windows they walk `_PEB.Ldr`, from the 32-bit PEB for a
   WoW64 process.
+- **Breaking:** `InjectorHandler` now outputs
+  `Result<Option<Result<Bridge::Output, BridgePacket>>, VmiError>`.
 
 ### Added
 
 - `VmiOsProcessExt::find_user_module` and `filter_user_modules` find user
   modules by predicate.
+- `RecipeExecutor::abort` - aborts the recipe and returns the original
+  registers.
 
 ### Removed
 
@@ -29,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image's file name out of memory, and the region lookup then skipped the
   DLL, so the recipe failed with "<function> not found". The loader list
   lives in user memory, which the injector already pages in on demand.
+- `InjectorHandler` no longer panics when a recipe step fails. The injection
+  ends with `Err`, and the hijacked thread resumes with its original
+  registers.
+- `UserInjectorHandler` no longer calls into a 32-bit process with the x64
+  calling convention. It ends the injection with an error instead.
 
 ## [0.11.0] - 2026-10-09
 

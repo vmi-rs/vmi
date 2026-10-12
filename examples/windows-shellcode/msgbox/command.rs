@@ -85,6 +85,7 @@ where
                 .with_pid(process_id)
         })?
         .context("msgbox injection interrupted")?
+        .context("msgbox injection failed")?
         .context("msgbox bridge completed without a result")?
         .map_err(|packet| anyhow::anyhow!("unhandled msgbox bridge packet: {packet:?}"))?;
 

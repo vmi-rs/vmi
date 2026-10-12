@@ -223,6 +223,7 @@ where
                 .with_pid(process_id)
         })?
         .context("deploy injection interrupted")?
+        .context("deploy injection failed")?
         .context("deploy bridge completed without an output")?
         .map_err(|packet| anyhow::anyhow!("unhandled deploy bridge packet: {packet:?}"))?;
 

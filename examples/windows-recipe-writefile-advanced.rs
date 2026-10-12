@@ -334,16 +334,18 @@ fn main() -> Result<(), Error> {
         content.extend((0..2049).map(|_| c as u8).collect::<Vec<_>>());
     }
 
-    session.handle(|session| {
-        UserInjectorHandler::new(
-            session,
-            recipe_factory(GuestFile::new(
-                "C:\\Users\\John\\Desktop\\test.txt",
-                content,
-            )),
-        )?
-        .with_pid(explorer_pid)
-    })?;
+    session
+        .handle(|session| {
+            UserInjectorHandler::new(
+                session,
+                recipe_factory(GuestFile::new(
+                    "C:\\Users\\John\\Desktop\\test.txt",
+                    content,
+                )),
+            )?
+            .with_pid(explorer_pid)
+        })?
+        .transpose()?;
 
     Ok(())
 }

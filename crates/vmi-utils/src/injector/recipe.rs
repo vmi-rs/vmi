@@ -216,6 +216,22 @@ where
         Ok(Some(original_registers))
     }
 
+    /// Aborts the recipe without executing its remaining steps.
+    ///
+    /// Returns the original registers.
+    /// If the recipe has not started, returns the current registers.
+    pub fn abort(
+        &mut self,
+        vmi: &VmiState<Os>,
+    ) -> Option<<Os::Architecture as Architecture>::Registers> {
+        if self.has_stack_pointer_decreased(vmi) {
+            return None;
+        }
+
+        self.index = None;
+        Some(self.original_registers.unwrap_or(*vmi.registers()))
+    }
+
     /// Returns whether the stack pointer has decreased since the last step.
     ///
     /// This is used to detect irrelevant reentrancy in the recipe,

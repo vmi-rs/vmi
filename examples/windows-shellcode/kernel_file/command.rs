@@ -87,6 +87,7 @@ where
             KernelInjectorHandler::new(session, recipe)?.with_bridge(KernelFileBridge)
         })?
         .context("kernel-file injection interrupted")?
+        .context("kernel-file injection failed")?
         .context("kernel-file bridge completed without an output")?
         .map_err(|packet| anyhow::anyhow!("unhandled kernel-file bridge packet: {packet:?}"))?;
 

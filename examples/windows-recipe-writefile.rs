@@ -231,16 +231,18 @@ fn main() -> Result<(), Error> {
         explorer.id()?
     };
 
-    session.handle(|session| {
-        UserInjectorHandler::new(
-            session,
-            recipe_factory(GuestFile::new(
-                "C:\\Users\\John\\Desktop\\test.txt",
-                "Hello, World!".as_bytes(),
-            )),
-        )?
-        .with_pid(explorer_pid)
-    })?;
+    session
+        .handle(|session| {
+            UserInjectorHandler::new(
+                session,
+                recipe_factory(GuestFile::new(
+                    "C:\\Users\\John\\Desktop\\test.txt",
+                    "Hello, World!".as_bytes(),
+                )),
+            )?
+            .with_pid(explorer_pid)
+        })?
+        .transpose()?;
 
     Ok(())
 }

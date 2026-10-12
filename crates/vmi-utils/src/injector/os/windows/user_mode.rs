@@ -6,7 +6,7 @@ use vmi_core::{
         VmiDriver, VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl,
         VmiWrite,
     },
-    os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
+    os::{ProcessId, ThreadId, VmiOsImageArchitecture, VmiOsProcess, VmiOsThread},
     trace::Hex,
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
@@ -31,7 +31,8 @@ enum InjectorState {
     /// Thread hijacked; executing the injection recipe.
     Executing,
 
-    /// Recipe finished; singlestepping to safely tear down monitoring.
+    /// Recipe finished or aborted; singlestepping to safely tear down
+    /// monitoring.
     ///
     /// The [`VcpuId`] identifies the vCPU that completed the recipe. Only a
     /// singlestep event from this specific vCPU signals that it has resumed
@@ -44,6 +45,9 @@ enum InjectorState {
 
     /// Injection complete; result is available.
     Complete,
+
+    /// Injection failed before the hijack; error is available.
+    Failed,
 }
 
 pub struct UserInjectorHandler<Driver, T, Bridge>
@@ -77,6 +81,9 @@ where
 
     /// Output produced by the bridge.
     output: Option<Result<Bridge::Output, BridgePacket>>,
+
+    /// Error that ended the injection.
+    error: Option<VmiError>,
 }
 
 impl<Driver, T> InjectorHandlerFactory<WindowsOs<Driver>, UserMode, T>
@@ -109,6 +116,7 @@ where
             bridge: (),
             state: InjectorState::PreHijack,
             output: None,
+            error: None,
         })
     }
 
@@ -132,6 +140,7 @@ where
             bridge,
             state: InjectorState::PreHijack,
             output: None,
+            error: None,
         })
     }
 }
@@ -330,6 +339,18 @@ where
         }
 
         //
+        // Early exit if the recipe is no longer executing. An error can end
+        // the injection before the view is destroyed.
+        //
+
+        if !matches!(
+            self.state,
+            InjectorState::PreHijack | InjectorState::Executing
+        ) {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+
+        //
         // Early exit if the current process is not the target process.
         // Note that some physical memory pages (especially those containing
         // mapped files, such as DLLs) are shared among multiple processes.
@@ -383,6 +404,19 @@ where
         }
 
         //
+        // Refuse 32-bit processes. The recipe calls functions with the x64
+        // calling convention.
+        //
+
+        if matches!(self.state, InjectorState::PreHijack)
+            && current_process.architecture()? != VmiOsImageArchitecture::Amd64
+        {
+            return Err(VmiError::Other(
+                "injection into 32-bit processes is not supported",
+            ));
+        }
+
+        //
         // Hijack the thread, save the current registers, and disable MSR monitoring.
         //
 
@@ -414,15 +448,30 @@ where
         }
 
         //
-        // Execute the next step in the recipe.
+        // Execute the next step in the recipe. After an error, abort the
+        // recipe instead. The hijacked thread then resumes with its original
+        // registers.
         //
 
-        let new_registers = match self.recipe.execute(vmi)? {
+        let new_registers = match &self.error {
+            Some(_) => self.recipe.abort(vmi),
+            None => match self.recipe.execute(vmi) {
+                Ok(registers) => registers,
+                Err(VmiError::Translation(pf)) => return Err(VmiError::Translation(pf)),
+                Err(err) => {
+                    tracing::error!(%err, "recipe failed");
+                    self.error = Some(err);
+                    self.recipe.abort(vmi)
+                }
+            },
+        };
+
+        let new_registers = match new_registers {
             Some(registers) => registers,
             None => return Ok(VmiEventResponse::fast_singlestep(vmi.default_view())),
         };
 
-        if !self.recipe.done() {
+        if self.error.is_none() && !self.recipe.done() {
             return Ok(VmiEventResponse::default().with_registers(new_registers.gp_registers()));
         }
 
@@ -446,7 +495,16 @@ where
         debug_assert_eq!(Some(gfn), self.ip_pa.map(Driver::Architecture::gfn_from_pa));
 
         self.state = InjectorState::Teardown(vmi.event().vcpu_id());
-        vmi.set_memory_access(gfn, self.view, MemoryAccess::RWX)?;
+
+        // The registers must be restored even if this fails. The view is
+        // destroyed in `on_singlestep` anyway.
+        if let Err(err) = vmi.set_memory_access(gfn, self.view, MemoryAccess::RWX) {
+            tracing::error!(%err, "failed to restore memory access");
+
+            if self.error.is_none() {
+                self.error = Some(err);
+            }
+        }
 
         Ok(VmiEventResponse::singlestep()
             .with_registers(new_registers.gp_registers())
@@ -477,7 +535,7 @@ where
         vmi.switch_to_view(vmi.default_view())?;
         vmi.destroy_view(self.view)?;
 
-        if Bridge::EMPTY || self.output.is_some() {
+        if Bridge::EMPTY || self.output.is_some() || self.error.is_some() {
             self.state = InjectorState::Complete;
         }
         else {
@@ -531,6 +589,30 @@ where
 
         Ok(VmiEventResponse::default().with_registers(registers))
     }
+
+    /// Records `err` as the error that ends the injection.
+    ///
+    /// Before the hijack, and while waiting for the bridge, the injection
+    /// ends at once. While the recipe is executing or tearing down, it ends
+    /// once the hijacked thread has its original registers back.
+    fn on_error(&mut self, err: VmiError) -> VmiEventResponse<Amd64> {
+        tracing::error!(%err, "injection failed");
+
+        if self.error.is_none() {
+            self.error = Some(err);
+        }
+
+        match self.state {
+            InjectorState::PreHijack => self.state = InjectorState::Failed,
+            InjectorState::Bridge => self.state = InjectorState::Complete,
+            InjectorState::Executing
+            | InjectorState::Teardown(_)
+            | InjectorState::Complete
+            | InjectorState::Failed => {}
+        }
+
+        VmiEventResponse::default()
+    }
 }
 
 impl<Driver, T, Bridge> VmiHandler<WindowsOs<Driver>> for UserInjectorHandler<Driver, T, Bridge>
@@ -543,7 +625,7 @@ where
         + VmiVmControl,
     Bridge: BridgeDispatch<WindowsOs<Driver>>,
 {
-    type Output = Option<Result<Bridge::Output, BridgePacket>>;
+    type Output = Result<Option<Result<Bridge::Output, BridgePacket>>, VmiError>;
 
     fn handle_event(&mut self, vmi: VmiContext<WindowsOs<Driver>>) -> VmiEventResponse<Amd64> {
         vmi.flush_v2p_cache();
@@ -557,7 +639,7 @@ where
 
                 VmiEventResponse::default()
             }
-            Err(err) => panic!("Unhandled error: {err:?}"),
+            Err(err) => self.on_error(err),
         }
     }
 
@@ -572,7 +654,7 @@ where
         let mut disable_hypercall = false;
 
         match self.state {
-            InjectorState::PreHijack => {
+            InjectorState::PreHijack | InjectorState::Failed => {
                 restore_memory_access = true;
                 destroy_view = true;
                 disable_write_msr = true;
@@ -623,7 +705,10 @@ where
 
     fn poll(&mut self) -> Option<Self::Output> {
         match self.state {
-            InjectorState::Complete => Some(self.output.take()),
+            InjectorState::Complete | InjectorState::Failed => match self.error.take() {
+                Some(err) => Some(Err(err)),
+                None => Some(Ok(self.output.take())),
+            },
             _ => None,
         }
     }

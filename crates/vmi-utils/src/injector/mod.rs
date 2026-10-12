@@ -169,6 +169,9 @@ where
 /// Prefer the [`KernelInjectorHandler`] and [`UserInjectorHandler`] type
 /// aliases. Start with [`InjectorHandler::new`], then attach a custom
 /// [`BridgeDispatch`] using [`InjectorHandler::with_bridge`] when needed.
+///
+/// The output is `Err` if the injection failed. The hijacked thread then
+/// resumes with its original registers.
 pub struct InjectorHandler<Os, Mode, T, Bridge = ()>
 where
     Os: InjectorExecutionAdapter<Mode, T, Bridge>,
