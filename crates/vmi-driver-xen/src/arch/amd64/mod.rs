@@ -40,18 +40,23 @@ impl ArchAdapter for Amd64 {
     ) -> Result<(), VmiError> {
         const ENABLE: bool = true;
         const SYNC: bool = true;
-        const ON_CHANGE_ONLY: bool = true;
 
         match option {
-            EventMonitor::Register(register) => {
+            EventMonitor::Register(monitor) => {
                 driver
                     .monitor
-                    .write_ctrlreg(register.into_ext(), ENABLE, SYNC, 0, ON_CHANGE_ONLY)
+                    .write_ctrlreg(
+                        monitor.register.into_ext(),
+                        ENABLE,
+                        SYNC,
+                        0,
+                        monitor.on_change_only,
+                    )
                     .map_err(VmiError::driver)?;
             }
-            EventMonitor::Msr(msr) => driver
+            EventMonitor::Msr(monitor) => driver
                 .monitor
-                .mov_to_msr(msr.into(), ENABLE, ON_CHANGE_ONLY)
+                .mov_to_msr(monitor.msr.into(), ENABLE, monitor.on_change_only)
                 .map_err(VmiError::driver)?,
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::DebugException => driver
@@ -68,9 +73,9 @@ impl ArchAdapter for Amd64 {
                 .monitor
                 .singlestep(ENABLE)
                 .map_err(VmiError::driver)?,
-            EventMonitor::Hypercall { allow_userspace } => driver
+            EventMonitor::Hypercall(monitor) => driver
                 .monitor
-                .guest_request(ENABLE, SYNC, allow_userspace)
+                .guest_request(ENABLE, SYNC, monitor.allow_userspace)
                 .map_err(VmiError::driver)?,
             EventMonitor::CpuId => driver.monitor.cpuid(ENABLE).map_err(VmiError::driver)?,
             EventMonitor::Io => driver.monitor.io(ENABLE).map_err(VmiError::driver)?,
@@ -85,18 +90,23 @@ impl ArchAdapter for Amd64 {
     ) -> Result<(), VmiError> {
         const DISABLE: bool = false;
         const SYNC: bool = true;
-        const ON_CHANGE_ONLY: bool = true;
 
         match option {
-            EventMonitor::Register(register) => {
+            EventMonitor::Register(monitor) => {
                 driver
                     .monitor
-                    .write_ctrlreg(register.into_ext(), DISABLE, SYNC, 0, ON_CHANGE_ONLY)
+                    .write_ctrlreg(
+                        monitor.register.into_ext(),
+                        DISABLE,
+                        SYNC,
+                        0,
+                        monitor.on_change_only,
+                    )
                     .map_err(VmiError::driver)?;
             }
-            EventMonitor::Msr(msr) => driver
+            EventMonitor::Msr(monitor) => driver
                 .monitor
-                .mov_to_msr(msr.into(), DISABLE, ON_CHANGE_ONLY)
+                .mov_to_msr(monitor.msr.into(), DISABLE, monitor.on_change_only)
                 .map_err(VmiError::driver)?,
             EventMonitor::Interrupt(vector) => match vector {
                 ExceptionVector::DebugException => driver
@@ -119,9 +129,9 @@ impl ArchAdapter for Amd64 {
                     .singlestep(DISABLE)
                     .map_err(VmiError::driver)?;
             }
-            EventMonitor::Hypercall { .. } => driver
+            EventMonitor::Hypercall(monitor) => driver
                 .monitor
-                .guest_request(DISABLE, SYNC, false)
+                .guest_request(DISABLE, SYNC, monitor.allow_userspace)
                 .map_err(VmiError::driver)?,
             EventMonitor::CpuId => driver.monitor.cpuid(DISABLE).map_err(VmiError::driver)?,
             EventMonitor::Io => driver.monitor.io(DISABLE).map_err(VmiError::driver)?,
@@ -280,14 +290,12 @@ impl ArchAdapter for Amd64 {
     }
 
     fn reset_state(driver: &VmiXenDriver<Self>) -> Result<(), VmiError> {
-        let _ = driver.monitor_disable(EventMonitor::Io);
-        let _ = driver.monitor_disable(EventMonitor::CpuId);
-        let _ = driver.monitor_disable(EventMonitor::Hypercall {
-            allow_userspace: false,
-        });
-        let _ = driver.monitor_disable(EventMonitor::Singlestep);
-        let _ = driver.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint));
-        let _ = driver.monitor_disable(EventMonitor::Interrupt(ExceptionVector::DebugException));
+        let _ = driver.monitor_disable(EventMonitor::io());
+        let _ = driver.monitor_disable(EventMonitor::cpuid());
+        let _ = driver.monitor_disable(EventMonitor::hypercall().into());
+        let _ = driver.monitor_disable(EventMonitor::singlestep());
+        let _ = driver.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint));
+        let _ = driver.monitor_disable(EventMonitor::interrupt(ExceptionVector::DebugException));
 
         // Try to disable all known MSR events.
         // Unfortunately, Xen does not provide a way to disable all MSR events
@@ -295,25 +303,32 @@ impl ArchAdapter for Amd64 {
         // about, those may remain enabled after reset.
         //
         // TODO: Track which MSR events have been enabled?
-        {
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::TSC_AUX));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::GS_BASE));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::FS_BASE));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::FMASK));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::CSTAR));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::LSTAR));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::STAR));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::EFER));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_EIP));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_ESP));
-            let _ = driver.monitor_disable(EventMonitor::Msr(Msr::SYSENTER_CS));
+        for msr in [
+            Msr::TSC_AUX,
+            Msr::KERNEL_GS_BASE,
+            Msr::GS_BASE,
+            Msr::FS_BASE,
+            Msr::FMASK,
+            Msr::CSTAR,
+            Msr::LSTAR,
+            Msr::STAR,
+            Msr::EFER,
+            Msr::SYSENTER_EIP,
+            Msr::SYSENTER_ESP,
+            Msr::SYSENTER_CS,
+        ] {
+            let _ = driver.monitor_disable(EventMonitor::msr(msr).into());
         }
 
-        let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Xcr0));
-        let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr4));
-        let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr3));
-        let _ = driver.monitor_disable(EventMonitor::Register(ControlRegister::Cr0));
+        for register in [
+            ControlRegister::Xcr0,
+            ControlRegister::Cr4,
+            ControlRegister::Cr3,
+            ControlRegister::Cr0,
+        ] {
+            let _ = driver.monitor_disable(EventMonitor::register(register).into());
+        }
+
         let _ = driver.altp2m.reset_view();
         driver.views.borrow_mut().clear();
 

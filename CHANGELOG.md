@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `Reactor` has no termination flag of its own. Its output is
   the handler's output instead of an `Option`, and `with_termination_flag`
   on a reactor now comes from `VmiHandlerExt`.
+- **Breaking:** `EventMonitor::Register`, `EventMonitor::Msr` and
+  `EventMonitor::Hypercall` now hold a `RegisterMonitor`, an `MsrMonitor`
+  and a `HypercallMonitor`. Create them with `EventMonitor::register`, `msr`
+  and `hypercall`. For a hypercall monitor, call `allow_userspace(true)`
+  instead of setting the old `allow_userspace` field. The default is `false`.
+- `VmiCore::monitor_enable` and `monitor_disable` accept anything that
+  converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
   allocation or the thread creation fails.
 
@@ -42,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recoverable error.
 - `RetryState::new` creates a retry state with a policy, and
   `RetryState::abort_attempt` aborts the current attempt.
+- `on_change_only(false)` on a `RegisterMonitor` or an `MsrMonitor` makes
+  every write generate an event, even a write of the value the register
+  already holds. The default, `true`, works as before.
+- `EventMonitor::interrupt`, `singlestep`, `cpuid` and `io`, so every kind
+  of monitor has a constructor.
 - `VmiTerminationHandler` and `VmiHandlerExt` - interrupt a handler at a
   deadline or once a termination flag is set, and end the event loop if the
   handler does not finish within a termination timeout.

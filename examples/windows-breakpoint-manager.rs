@@ -111,8 +111,8 @@ where
         // INT3 is used to monitor the execution of specific functions.
         // Singlestep is used to monitor the modifications of page table
         // entries.
-        vmi.monitor_enable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
-        vmi.monitor_enable(EventMonitor::Singlestep)?;
+        vmi.monitor_enable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
+        vmi.monitor_enable(EventMonitor::singlestep())?;
 
         // Create a new view for the monitor.
         // This view is used for monitoring function calls and memory accesses.

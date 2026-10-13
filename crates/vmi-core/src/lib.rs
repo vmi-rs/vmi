@@ -977,9 +977,9 @@ where
     /// for processing.
     pub fn monitor_enable(
         &self,
-        option: <Driver::Architecture as Architecture>::EventMonitor,
+        option: impl Into<<Driver::Architecture as Architecture>::EventMonitor>,
     ) -> Result<(), VmiError> {
-        self.driver.monitor_enable(option)
+        self.driver.monitor_enable(option.into())
     }
 
     /// Disables monitoring of specific events.
@@ -992,9 +992,9 @@ where
     /// [`Architecture::EventMonitor`] type.
     pub fn monitor_disable(
         &self,
-        option: <Driver::Architecture as Architecture>::EventMonitor,
+        option: impl Into<<Driver::Architecture as Architecture>::EventMonitor>,
     ) -> Result<(), VmiError> {
-        self.driver.monitor_disable(option)
+        self.driver.monitor_disable(option.into())
     }
 
     /// Returns the number of pending events.

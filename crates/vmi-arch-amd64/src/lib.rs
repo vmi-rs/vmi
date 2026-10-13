@@ -25,7 +25,8 @@ pub use self::{
     dr::{Dr0, Dr1, Dr2, Dr3, Dr6, Dr7},
     event::{
         EventCpuId, EventHypercall, EventInterrupt, EventIo, EventIoDirection, EventMemoryAccess,
-        EventMonitor, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, MemoryAccessFlags,
+        EventMonitor, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, HypercallMonitor,
+        MemoryAccessFlags, MsrMonitor, RegisterMonitor,
     },
     interrupt::{ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType},
     msr::{Msr, MsrEfer},

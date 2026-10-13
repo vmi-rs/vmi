@@ -115,8 +115,8 @@ where
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
 
-        vmi.monitor_enable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
-        vmi.monitor_enable(EventMonitor::Singlestep)?;
+        vmi.monitor_enable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
+        vmi.monitor_enable(EventMonitor::singlestep())?;
 
         let mut bpm = BreakpointManager::new();
         let mut ptm = PageTableMonitor::new();
@@ -355,9 +355,7 @@ where
             );
 
             if !Bridge::EMPTY {
-                vmi.monitor_enable(EventMonitor::Hypercall {
-                    allow_userspace: false,
-                })?;
+                vmi.monitor_enable(EventMonitor::hypercall())?;
             }
 
             self.state = InjectorState::Executing;
@@ -434,7 +432,7 @@ where
             // (returning without the SINGLESTEP flag), and the global monitor
             // is disabled later in `cleanup`.
             vmi.switch_to_view(vmi.default_view())?;
-            vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
+            vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
 
             self.bpm.remove_by_view(vmi, self.view)?;
             self.ptm.unmonitor_view(vmi, self.view);
@@ -622,7 +620,7 @@ where
         // have enabled the breakpoint monitor, so we must disable it.
         if disable_interrupt {
             if let Err(err) =
-                vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))
+                vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
             {
                 tracing::error!(%err, "failed to disable breakpoint monitor");
             }
@@ -644,17 +642,13 @@ where
 
         // After leaving `PreHijack` with a nonempty bridge, we are guaranteed to
         // have enabled the hypercall monitor, so we must disable it.
-        if disable_hypercall
-            && let Err(err) = vmi.monitor_disable(EventMonitor::Hypercall {
-                allow_userspace: false,
-            })
-        {
+        if disable_hypercall && let Err(err) = vmi.monitor_disable(EventMonitor::hypercall()) {
             tracing::error!(%err, "failed to disable hypercall monitor");
         }
 
         // In all states, we are guaranteed to have enabled the singlestep
         // monitor, so we must disable it.
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+        if let Err(err) = vmi.monitor_disable(EventMonitor::singlestep()) {
             tracing::error!(%err, "failed to disable singlestep monitor");
         }
     }

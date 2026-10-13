@@ -152,8 +152,8 @@ where
         let vmi = paused.state();
 
         // Enable the necessary monitors.
-        vmi.monitor_enable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
-        vmi.monitor_enable(EventMonitor::Singlestep)?;
+        vmi.monitor_enable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
+        vmi.monitor_enable(EventMonitor::singlestep())?;
 
         // Create a fresh RWX view and switch all vCPUs onto it.
         let view = vmi.create_view(MemoryAccess::RWX)?;
@@ -374,11 +374,11 @@ where
             tracing::error!(%err, "failed to switch to default view");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+        if let Err(err) = vmi.monitor_disable(EventMonitor::singlestep()) {
             tracing::error!(%err, "failed to disable singlestep");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))
+        if let Err(err) = vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
         {
             tracing::error!(%err, "failed to disable breakpoint interrupt");
         }

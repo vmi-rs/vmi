@@ -105,8 +105,8 @@ where
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
-        vmi.monitor_enable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
-        vmi.monitor_enable(EventMonitor::Singlestep)?;
+        vmi.monitor_enable(EventMonitor::msr(Msr::KERNEL_GS_BASE))?;
+        vmi.monitor_enable(EventMonitor::singlestep())?;
 
         Ok(Self {
             pid: None,
@@ -440,13 +440,11 @@ where
             );
 
             if !Bridge::EMPTY {
-                vmi.monitor_enable(EventMonitor::Hypercall {
-                    allow_userspace: true,
-                })?;
+                vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
             }
 
             self.state = InjectorState::Executing;
-            vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))?;
+            vmi.monitor_disable(EventMonitor::msr(Msr::KERNEL_GS_BASE))?;
         }
 
         //
@@ -720,20 +718,16 @@ where
         }
 
         if disable_write_msr
-            && let Err(err) = vmi.monitor_disable(EventMonitor::Msr(Msr::KERNEL_GS_BASE))
+            && let Err(err) = vmi.monitor_disable(EventMonitor::msr(Msr::KERNEL_GS_BASE))
         {
             tracing::error!(%err, "failed to disable MSR monitor");
         }
 
-        if disable_hypercall
-            && let Err(err) = vmi.monitor_disable(EventMonitor::Hypercall {
-                allow_userspace: true,
-            })
-        {
+        if disable_hypercall && let Err(err) = vmi.monitor_disable(EventMonitor::hypercall()) {
             tracing::error!(%err, "failed to disable hypercall monitor");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+        if let Err(err) = vmi.monitor_disable(EventMonitor::singlestep()) {
             tracing::error!(%err, "failed to disable singlestep monitor");
         }
     }

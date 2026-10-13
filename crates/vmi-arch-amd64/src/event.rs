@@ -264,19 +264,19 @@ pub enum EventMonitor {
     ///
     /// When enabled, relevant events will be passed to the event callback
     /// function.
-    Register(ControlRegister),
+    Register(RegisterMonitor),
 
     /// Monitor writes to a specific model-specific register (MSR).
     ///
-    /// When enabled, this method generates an event each time the specified
-    /// MSR is written to via the WRMSR instruction. This can be useful for
+    /// When enabled, this method generates an event when the specified MSR
+    /// is written to via the WRMSR instruction. This can be useful for
     /// detecting changes to system configuration, such as SYSCALL entry
     /// points ([`Msr::LSTAR`]), segment base addresses ([`Msr::FS_BASE`],
     /// [`Msr::GS_BASE`]), or extended feature settings ([`Msr::EFER`]).
     ///
     /// MSR write events will be passed to the event callback function when
     /// they occur.
-    Msr(Msr),
+    Msr(MsrMonitor),
 
     /// Monitor specific hardware interrupts or exception vectors.
     ///
@@ -308,10 +308,7 @@ pub enum EventMonitor {
     ///
     /// VMCALL events will be passed to the event callback function when they
     /// occur.
-    Hypercall {
-        /// Allow userspace to handle the VMCALL.
-        allow_userspace: bool,
-    },
+    Hypercall(HypercallMonitor),
 
     /// Monitor execution of CPUID instructions.
     ///
@@ -334,4 +331,150 @@ pub enum EventMonitor {
     /// I/O port events will be passed to the event callback function when they
     /// occur.
     Io,
+}
+
+impl EventMonitor {
+    /// Creates settings for monitoring writes to a control register.
+    ///
+    /// By default, only writes that change the register's value generate an
+    /// event. See [`RegisterMonitor::on_change_only()`].
+    pub const fn register(register: ControlRegister) -> RegisterMonitor {
+        RegisterMonitor {
+            register,
+            on_change_only: true,
+        }
+    }
+
+    /// Creates settings for monitoring writes to an MSR.
+    ///
+    /// By default, only writes that change the MSR's value generate an event.
+    /// See [`MsrMonitor::on_change_only()`].
+    pub const fn msr(msr: Msr) -> MsrMonitor {
+        MsrMonitor {
+            msr,
+            on_change_only: true,
+        }
+    }
+
+    /// Creates settings for monitoring an interrupt or exception.
+    pub const fn interrupt(vector: ExceptionVector) -> Self {
+        Self::Interrupt(vector)
+    }
+
+    /// Creates settings for monitoring singlestep execution.
+    pub const fn singlestep() -> Self {
+        Self::Singlestep
+    }
+
+    /// Creates settings for monitoring VMCALL instructions.
+    ///
+    /// By default, only VMCALLs from kernel mode generate an event. See
+    /// [`HypercallMonitor::allow_userspace()`].
+    pub const fn hypercall() -> HypercallMonitor {
+        HypercallMonitor {
+            allow_userspace: false,
+        }
+    }
+
+    /// Creates settings for monitoring CPUID instructions.
+    pub const fn cpuid() -> Self {
+        Self::CpuId
+    }
+
+    /// Creates settings for monitoring I/O port accesses.
+    pub const fn io() -> Self {
+        Self::Io
+    }
+}
+
+/// Settings for monitoring writes to a control register.
+///
+/// Create them with [`EventMonitor::register`].
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct RegisterMonitor {
+    /// The control register to monitor.
+    pub register: ControlRegister,
+
+    /// If `true`, only writes that change the value generate an event.
+    pub on_change_only: bool,
+}
+
+impl RegisterMonitor {
+    /// Sets whether only writes that change the value generate an event.
+    ///
+    /// The default is `true`. With `false`, every write generates an event,
+    /// even one that writes the value the register already holds. Disabling
+    /// the monitor ignores this setting.
+    pub const fn on_change_only(self, on_change_only: bool) -> Self {
+        Self {
+            on_change_only,
+            ..self
+        }
+    }
+}
+
+impl From<RegisterMonitor> for EventMonitor {
+    fn from(monitor: RegisterMonitor) -> Self {
+        Self::Register(monitor)
+    }
+}
+
+/// Settings for monitoring writes to an MSR.
+///
+/// Create them with [`EventMonitor::msr`].
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct MsrMonitor {
+    /// The MSR to monitor.
+    pub msr: Msr,
+
+    /// If `true`, only writes that change the value generate an event.
+    pub on_change_only: bool,
+}
+
+impl MsrMonitor {
+    /// Sets whether only writes that change the value generate an event.
+    ///
+    /// The default is `true`. With `false`, every write generates an event,
+    /// even one that writes the value the MSR already holds. Disabling the
+    /// monitor ignores this setting.
+    pub const fn on_change_only(self, on_change_only: bool) -> Self {
+        Self {
+            on_change_only,
+            ..self
+        }
+    }
+}
+
+impl From<MsrMonitor> for EventMonitor {
+    fn from(monitor: MsrMonitor) -> Self {
+        Self::Msr(monitor)
+    }
+}
+
+/// Settings for monitoring VMCALL instructions.
+///
+/// Create them with [`EventMonitor::hypercall`].
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct HypercallMonitor {
+    /// If `true`, VMCALLs from user mode generate an event too.
+    pub allow_userspace: bool,
+}
+
+impl HypercallMonitor {
+    /// Sets whether VMCALLs from user mode generate an event too.
+    ///
+    /// The default is `false`, so only VMCALLs from kernel mode generate an
+    /// event. Disabling the monitor ignores this setting.
+    pub const fn allow_userspace(self, allow_userspace: bool) -> Self {
+        Self { allow_userspace }
+    }
+}
+
+impl From<HypercallMonitor> for EventMonitor {
+    fn from(monitor: HypercallMonitor) -> Self {
+        Self::Hypercall(monitor)
+    }
 }

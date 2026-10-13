@@ -162,11 +162,9 @@ where
         let root = vmi.os().system_process()?.translation_root()?;
         let symbols = Symbols::new(profile)?;
 
-        vmi.monitor_enable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))?;
-        vmi.monitor_enable(EventMonitor::Singlestep)?;
-        vmi.monitor_enable(EventMonitor::Hypercall {
-            allow_userspace: true,
-        })?;
+        vmi.monitor_enable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
+        vmi.monitor_enable(EventMonitor::singlestep())?;
+        vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
 
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
@@ -389,18 +387,16 @@ where
             tracing::error!(%err, "failed to switch to the default view");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Singlestep) {
+        if let Err(err) = vmi.monitor_disable(EventMonitor::singlestep()) {
             tracing::error!(%err, "failed to disable singlestep monitoring");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Interrupt(ExceptionVector::Breakpoint))
+        if let Err(err) = vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
         {
             tracing::error!(%err, "failed to disable breakpoint monitoring");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::Hypercall {
-            allow_userspace: true,
-        }) {
+        if let Err(err) = vmi.monitor_disable(EventMonitor::hypercall()) {
             tracing::error!(%err, "failed to disable hypercall monitoring");
         }
 
