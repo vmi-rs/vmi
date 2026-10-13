@@ -105,7 +105,11 @@ where
     ) -> Result<Self, VmiError> {
         let view = vmi.create_view(MemoryAccess::RWX)?;
         vmi.switch_to_view(view)?;
-        vmi.monitor_enable(EventMonitor::msr(Msr::KERNEL_GS_BASE))?;
+
+        // A thread that runs again on the same CPU writes the same TEB to
+        // `KERNEL_GS_BASE`. We need to monitor all writes, not just changes,
+        // to detect that the thread has been scheduled.
+        vmi.monitor_enable(EventMonitor::msr(Msr::KERNEL_GS_BASE).on_change_only(false))?;
         vmi.monitor_enable(EventMonitor::singlestep())?;
 
         Ok(Self {

@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   injected code with the injector's registers. Before the hijack, the
   injection ends at once. While the recipe is executing, it ends with an
   error once the hijacked thread has its original registers back.
+- `UserInjectorHandler` no longer misses a thread that runs again on the same
+  CPU. Such a thread writes the same TEB to `KERNEL_GS_BASE`, so the injector
+  now monitors all writes of the MSR, not just changes.
 
 ## [0.11.0] - 2026-10-09
 
