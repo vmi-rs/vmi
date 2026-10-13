@@ -94,6 +94,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The kernel-mode injector follows the hijacked thread by its ID. While a
   recipe had the thread attached to another process, the injector skipped
   its breakpoint hits, and the thread went on with the recipe's registers.
+- The OS extension methods generated for `VmiOsState`, such as
+  `WindowsOsExt::symbols`, return an elided lifetime as the state's lifetime,
+  as the underlying OS functions do. `let symbols = vmi.os().symbols();` no
+  longer fails with "temporary value dropped while borrowed".
 
 ## [0.11.0] - 2026-10-09
 

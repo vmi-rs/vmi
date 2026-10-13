@@ -16,6 +16,11 @@ fn generate_impl_fns(item_fn: impl ItemFnExt) -> Option<TraitFn> {
     let mut sig = item_fn.sig().clone();
     transform::replace_self_with_os(&mut sig);
 
+    // The wrapper takes `&self`, so an elided lifetime in the return type
+    // would bind to that borrow. Bind it to the state's lifetime, as in the
+    // source method.
+    transform::replace_elided_lifetimes(&mut sig.output, &common::__vmi_lifetime());
+
     let ident = &sig.ident;
     let generics = &sig.generics;
     let return_type = &sig.output;

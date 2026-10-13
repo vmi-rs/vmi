@@ -25,11 +25,16 @@ fn generate_trait_fn(
     let sig = item_fn.sig();
     let ident = &sig.ident;
     let generics = &sig.generics;
-    let return_type = &sig.output;
     //let receiver = sig.receiver()?;
 
     let (args, arg_names) = common::build_args(sig)?;
     let where_clause = common::build_where_clause(sig);
+
+    // The wrapper takes `&self`, so an elided lifetime in the return type
+    // would bind to that borrow. Bind it to the state's lifetime, as in the
+    // source method.
+    let mut return_type = sig.output.clone();
+    transform::replace_elided_lifetimes(&mut return_type, &common::__vmi_lifetime());
 
     // The trait declaration and trait impl introduce in-scope generics
     // beyond the source method (`Self`, `'__vmi`) that Rust 2024 requires
@@ -38,7 +43,7 @@ fn generate_trait_fn(
     let mut trait_return_type = return_type.clone();
     transform::extend_precise_captures(&mut trait_return_type, trait_capture_extras);
 
-    let mut impl_return_type = return_type.clone();
+    let mut impl_return_type = return_type;
     transform::extend_precise_captures(&mut impl_return_type, impl_capture_extras);
 
     let doc = item_fn.doc();

@@ -1,7 +1,7 @@
 use syn::{
     AngleBracketedGenericArguments, CapturedParam, FnArg, GenericArgument, GenericParam, Ident,
-    Path, PathArguments, PreciseCapture, ReturnType, Signature, TraitBound, Type, TypeImplTrait,
-    TypeParamBound, TypePath, TypeReference, WherePredicate,
+    Lifetime, Path, PathArguments, PreciseCapture, ReturnType, Signature, TraitBound, Type,
+    TypeImplTrait, TypeParamBound, TypePath, TypeReference, WherePredicate,
 };
 
 /// Rewrites every occurrence of `Self` in `sig` to `Os`, both as a path
@@ -148,6 +148,84 @@ fn replace_in_precise_capture(capture: &mut PreciseCapture) {
         {
             *ident = Ident::new("Os", ident.span());
         }
+    }
+}
+
+/// Replaces every elided lifetime in `return_type` with `lifetime`. That
+/// covers a reference without a lifetime (`&T`) and `'_` in generic arguments
+/// and bounds, but not `use<...>` precise-capture bounds.
+///
+/// A source method takes `VmiState<'_, Self>` as its only argument with a
+/// lifetime, so an elided lifetime in its return type is the state's lifetime.
+/// The generated wrapper method takes `&self`, where the same elision would
+/// tie the result to the borrow of the wrapper. A caller then could not keep
+/// a result taken from a temporary wrapper, such as `vmi.os().symbols()`, in a
+/// variable. Naming the state's lifetime keeps the meaning of the source
+/// signature.
+pub fn replace_elided_lifetimes(return_type: &mut ReturnType, lifetime: &Lifetime) {
+    match return_type {
+        ReturnType::Type(_, ty) => replace_elided_in_type(ty, lifetime),
+        ReturnType::Default => {}
+    }
+}
+
+fn replace_elided_in_type(ty: &mut Type, lifetime: &Lifetime) {
+    match ty {
+        Type::Reference(ty_ref) => {
+            match &mut ty_ref.lifetime {
+                Some(ty_lifetime) => replace_elided_lifetime(ty_lifetime, lifetime),
+                None => ty_ref.lifetime = Some(lifetime.clone()),
+            }
+
+            replace_elided_in_type(&mut ty_ref.elem, lifetime);
+        }
+        Type::ImplTrait(impl_trait) => {
+            for bound in &mut impl_trait.bounds {
+                replace_elided_in_type_param_bound(bound, lifetime);
+            }
+        }
+        Type::Path(type_path) => replace_elided_in_path(&mut type_path.path, lifetime),
+        _ => {}
+    }
+}
+
+fn replace_elided_in_type_param_bound(bound: &mut TypeParamBound, lifetime: &Lifetime) {
+    match bound {
+        TypeParamBound::Trait(trait_bound) => {
+            replace_elided_in_path(&mut trait_bound.path, lifetime)
+        }
+        TypeParamBound::Lifetime(bound_lifetime) => {
+            replace_elided_lifetime(bound_lifetime, lifetime)
+        }
+        _ => {}
+    }
+}
+
+fn replace_elided_in_path(path: &mut Path, lifetime: &Lifetime) {
+    for segment in &mut path.segments {
+        let args = match &mut segment.arguments {
+            PathArguments::AngleBracketed(args) => args,
+            _ => continue,
+        };
+
+        for arg in &mut args.args {
+            match arg {
+                GenericArgument::Lifetime(arg_lifetime) => {
+                    replace_elided_lifetime(arg_lifetime, lifetime)
+                }
+                GenericArgument::Type(ty) => replace_elided_in_type(ty, lifetime),
+                GenericArgument::AssocType(assoc_type) => {
+                    replace_elided_in_type(&mut assoc_type.ty, lifetime)
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn replace_elided_lifetime(target: &mut Lifetime, lifetime: &Lifetime) {
+    if target.ident == "_" {
+        *target = lifetime.clone();
     }
 }
 
