@@ -1,4 +1,7 @@
-use vmi_core::Va;
+use vmi_core::{
+    Va,
+    os::{ProcessObject, ThreadObject},
+};
 
 /// A function argument that can be either a direct value or a reference to data.
 pub struct Argument {
@@ -62,6 +65,30 @@ impl From<Va> for Argument {
 impl From<&Va> for Argument {
     fn from(value: &Va) -> Self {
         Self::from(*value)
+    }
+}
+
+impl From<ProcessObject> for Argument {
+    fn from(value: ProcessObject) -> Self {
+        Self::from(value.0)
+    }
+}
+
+impl From<&ProcessObject> for Argument {
+    fn from(value: &ProcessObject) -> Self {
+        Self::from(value.0)
+    }
+}
+
+impl From<ThreadObject> for Argument {
+    fn from(value: ThreadObject) -> Self {
+        Self::from(value.0)
+    }
+}
+
+impl From<&ThreadObject> for Argument {
+    fn from(value: &ThreadObject) -> Self {
+        Self::from(value.0)
     }
 }
 
