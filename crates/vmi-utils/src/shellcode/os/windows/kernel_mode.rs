@@ -24,10 +24,10 @@ where
     /// Retry state for the shellcode execution.
     retry: RetryState<Arch>,
 
-    /// Guest virtual address of the payload allocation.
+    /// Address of the payload allocation.
     guest_address: Va,
 
-    /// Guest virtual address of the stack slot that receives the thread handle.
+    /// Stack slot where `PsCreateSystemThread` stores the thread handle.
     thread_handle_ptr: Va,
 }
 

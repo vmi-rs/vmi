@@ -20,7 +20,7 @@ where
     /// Retry state for the shellcode execution.
     retry: RetryState<Arch>,
 
-    /// Guest virtual address of the payload allocation.
+    /// Address of the payload allocation.
     guest_address: Va,
 
     /// Handle of the guest thread created for the payload.
