@@ -3,12 +3,6 @@ use vmi_arch_amd64::{
 };
 use zerocopy::{FromBytes, IntoBytes};
 
-macro_rules! static_assert_eq {
-    ($a:expr, $b:expr) => {
-        const _: () = [(); 1][($a == $b) as usize ^ 1];
-    };
-}
-
 #[allow(missing_docs)]
 pub const SIZE_OF_80387_REGISTERS: usize = 80;
 #[allow(missing_docs)]
@@ -29,7 +23,7 @@ pub struct FLOATING_SAVE_AREA {
     pub Spare0: u32,
 }
 
-static_assert_eq!(size_of::<FLOATING_SAVE_AREA>(), 112);
+const _: () = assert!(size_of::<FLOATING_SAVE_AREA>() == 0x70);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C)]
@@ -68,7 +62,7 @@ pub struct CONTEXT_X86 {
     pub ExtendedRegisters: [u8; MAXIMUM_SUPPORTED_EXTENSION],
 }
 
-static_assert_eq!(size_of::<CONTEXT_X86>(), 716);
+const _: () = assert!(size_of::<CONTEXT_X86>() == 0x2cc);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C, align(16))]
@@ -100,7 +94,7 @@ pub struct XSAVE_FORMAT {
     pub Reserved4: [u8; 96],
 }
 
-static_assert_eq!(size_of::<XSAVE_FORMAT>(), 512);
+const _: () = assert!(size_of::<XSAVE_FORMAT>() == 0x200);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C, align(16))]
@@ -184,7 +178,7 @@ pub struct CONTEXT_AMD64 {
     pub LastExceptionFromRip: u64,
 }
 
-static_assert_eq!(size_of::<CONTEXT_AMD64>(), 1232);
+const _: () = assert!(size_of::<CONTEXT_AMD64>() == 0x4d0);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C)]
@@ -195,7 +189,7 @@ pub struct KDESCRIPTOR_X86 {
     pub Base: u32,
 }
 
-static_assert_eq!(size_of::<KDESCRIPTOR_X86>(), 8);
+const _: () = assert!(size_of::<KDESCRIPTOR_X86>() == 0x8);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C)]
@@ -218,7 +212,7 @@ pub struct KSPECIAL_REGISTERS_X86 {
     pub Reserved: [u32; 6],
 }
 
-static_assert_eq!(size_of::<KSPECIAL_REGISTERS_X86>(), 84);
+const _: () = assert!(size_of::<KSPECIAL_REGISTERS_X86>() == 0x54);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C)]
@@ -229,7 +223,7 @@ pub struct KDESCRIPTOR_AMD64 {
     pub Base: u64,
 }
 
-static_assert_eq!(size_of::<KDESCRIPTOR_AMD64>(), 16);
+const _: () = assert!(size_of::<KDESCRIPTOR_AMD64>() == 0x10);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C)]
@@ -267,7 +261,7 @@ pub struct KSPECIAL_REGISTERS_AMD64 {
     //* 0x00e8 */ SpecialPadding0: u64,
 }
 
-static_assert_eq!(size_of::<KSPECIAL_REGISTERS_AMD64>(), 216);
+const _: () = assert!(size_of::<KSPECIAL_REGISTERS_AMD64>() == 0xd8);
 
 /// Accessor trait for Windows special registers (control, debug, descriptor tables).
 ///
