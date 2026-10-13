@@ -24,9 +24,6 @@ where
     /// Retry state for the shellcode execution.
     retry: RetryState<Arch>,
 
-    /// Kernel image base address.
-    kernel_image_base: Va,
-
     /// Guest virtual address of the payload allocation.
     guest_address: Va,
 
@@ -47,7 +44,6 @@ where
         Self {
             payload: Payload::new(shellcode, parameter),
             retry: RetryState::new(retry),
-            kernel_image_base: Va::null(),
             guest_address: Va::null(),
             thread_handle_ptr: Va::null(),
         }
@@ -72,19 +68,14 @@ where
         // Step 1:
         // - Restore the original registers when retrying.
         //   - If the retry policy allows no further attempt, return an error.
-        // - Resolve the kernel image base.
         // - Allocate executable nonpaged memory for the payload.
         //
         {
             #[expect(non_upper_case_globals)]
             const NonPagedPoolExecute: u64 = 0;
 
-            let vmi = vmi!();
-
             let attempt = data![retry].begin_attempt(registers!())?;
             let payload_size = data![payload].bytes.len();
-
-            data![kernel_image_base] = vmi.os().kernel_image_base()?;
 
             tracing::debug!(attempt, size = payload_size, "allocating shellcode memory");
 
@@ -194,9 +185,12 @@ where
         // - Resolve the parameter and call the shellcode.
         //
         {
+            let vmi = vmi!();
+
             let guest_address = data![guest_address];
             let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
+            let kernel_image_base = vmi.os().kernel_image_base()?;
 
             tracing::debug!(
                 attempt,
@@ -207,7 +201,7 @@ where
 
             inject! {
                 guest_address(
-                    data![kernel_image_base],       // argument1
+                    kernel_image_base,              // argument1
                     parameter                       // argument2
                 )
             }
@@ -320,7 +314,7 @@ where
             let guest_address = data![guest_address];
             let attempt = data![retry].attempt();
             let parameter = data![payload].parameter_value(guest_address);
-            let kernel_image_base = data![kernel_image_base];
+            let kernel_image_base = vmi.os().kernel_image_base()?;
 
             let start_routine = guest_address + thunk_offset as u64;
             let thunk =
