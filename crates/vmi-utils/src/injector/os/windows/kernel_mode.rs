@@ -377,8 +377,10 @@ where
                 "thread hijacked"
             );
 
+            // A payload that the recipe starts in a user process reports
+            // through the bridge from user mode.
             if !Bridge::EMPTY {
-                vmi.monitor_enable(EventMonitor::hypercall())?;
+                vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
             }
 
             self.state = InjectorState::Executing;

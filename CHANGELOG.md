@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The kernel-mode injector hijacks a thread at `KiSystemServiceCopyEnd` on a
   syscall from user mode, instead of at `SeAccessCheck`. On an idle guest such
   a syscall comes much sooner, and the thread holds no locks.
+- The kernel-mode injector with a bridge accepts `VMCALL`s from user mode too.
 
 ### Added
 
