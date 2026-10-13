@@ -11,7 +11,7 @@ use vmi_core::{
     os::{ProcessId, ThreadId, VmiOsProcess, VmiOsThread},
     trace::Hex,
 };
-use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
+use vmi_os_windows::{WindowsOs, WindowsOsExt as _, WindowsProcessorMode};
 
 use super::super::super::{
     InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, KernelMode, Recipe,
@@ -128,18 +128,28 @@ where
         let system_process = vmi.os().system_process()?;
         let root = system_process.translation_root()?;
 
-        // SeAccessCheck is chosen because it is one of the most frequently called
-        // functions in the Windows kernel, so a hijack breakpoint here is almost
-        // immediately hit. It also runs at PASSIVE_LEVEL, which means paged memory
-        // is accessible and we can safely read/write memory without worrying about
-        // IRQL issues.
-        let va_SeAccessCheck = kernel_image_base + vmi.os().symbols().SeAccessCheck.unwrap();
-        let cx_SeAccessCheck = (va_SeAccessCheck, root);
-        let bp_SeAccessCheck = Breakpoint::new(cx_SeAccessCheck, view)
+        // Every syscall passes KiSystemServiceCopyEnd right before its service
+        // routine is called. A thread making a syscall from user mode runs at
+        // PASSIVE_LEVEL, has APCs enabled and holds no locks, so it can safely
+        // call kernel functions. Syscalls from user mode are frequent, so the
+        // breakpoint is hit almost immediately.
+        let va_KiSystemServiceCopyEnd = kernel_image_base
+            + vmi
+                .os()
+                .symbols()
+                .KiSystemServiceCopyEnd
+                .ok_or(VmiError::Other("KiSystemServiceCopyEnd not found"))?;
+        let cx_KiSystemServiceCopyEnd = (va_KiSystemServiceCopyEnd, root);
+        let bp_KiSystemServiceCopyEnd = Breakpoint::new(cx_KiSystemServiceCopyEnd, view)
             .global()
-            .with_tag("SeAccessCheck");
-        bpm.insert(&vmi, bp_SeAccessCheck)?;
-        ptm.monitor(&vmi, cx_SeAccessCheck, view, "SeAccessCheck")?;
+            .with_tag("KiSystemServiceCopyEnd");
+        bpm.insert(&vmi, bp_KiSystemServiceCopyEnd)?;
+        ptm.monitor(
+            &vmi,
+            cx_KiSystemServiceCopyEnd,
+            view,
+            "KiSystemServiceCopyEnd",
+        )?;
 
         Ok(Self {
             pid: None,
@@ -278,7 +288,7 @@ where
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
         match self.bpm.get_by_event(vmi.event(), ()) {
             Some(breakpoint) => {
-                debug_assert_eq!(breakpoint.tag(), "SeAccessCheck");
+                debug_assert_eq!(breakpoint.tag(), "KiSystemServiceCopyEnd");
             }
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {
@@ -309,7 +319,21 @@ where
             return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
-        let current_process = vmi.os().current_process()?;
+        let current_thread = vmi.os().current_thread()?;
+
+        //
+        // Skip syscalls from kernel mode until a thread is hijacked.
+        //
+        // The kernel's own `Zw*` calls pass KiSystemServiceCopyEnd too, with
+        // the previous mode set to `KernelMode`, and their callers may hold
+        // locks.
+        //
+
+        if self.tid.is_none() && current_thread.previous_mode()? != WindowsProcessorMode::UserMode {
+            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+        }
+
+        let current_process = current_thread.current_process()?;
 
         //
         // Skip processes without a PEB.
@@ -333,7 +357,6 @@ where
             return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
         }
 
-        let current_thread = vmi.os().current_thread()?;
         let current_tid = current_thread.id()?;
 
         if self.tid.is_none() {

@@ -25,7 +25,7 @@
 //! DEBUG profile already exists profile_path=cache/windows/ntkrnlmp.pdb/68a17faf3012b7846079aeecdbe0a5831/profile.isr
 //!  INFO creating VMI session
 //!  INFO injecting kernel-file shellcode path="\\??\\C:\\Users\\John\\Desktop\\test-1789684125.txt" execution=Spawn
-//! DEBUG active breakpoint inserted active=1 gfn=0x0000000000002e35 ctx=0xfffff80016835000 @ 0x00000000001aa000 view=1 global=true key=() tag="SeAccessCheck"
+//! DEBUG active breakpoint inserted active=1 gfn=0x0000000000002e35 ctx=0xfffff80016835000 @ 0x00000000001aa000 view=1 global=true key=() tag="KiSystemServiceCopyEnd"
 //! DEBUG created shadow page address=0x0000000002e35000 original_gfn=0x0000000000002e35 shadow_gfn=0x00000000001100a4 view=1
 //! DEBUG injector{vcpu=0 rip=0xfffff80016835000}:interrupt: thread hijacked session_id=1 current_pid=6588 current_tid=1896 filename="procexp64.exe"
 //! DEBUG injector{vcpu=0 rip=0xfffff80016835000}:interrupt:recipe:step{index=0}: allocating shellcode memory attempt=1 size=1240
@@ -34,7 +34,7 @@
 //! DEBUG injector{vcpu=0 rip=0xfffff80016835000}:interrupt:recipe:step{index=2}: launching shellcode thread attempt=1 start_routine=0xffff86060f36846c
 //! DEBUG injector{vcpu=0 rip=0xfffff80016835000}:interrupt:recipe:step{index=3}: closing shellcode thread handle thread_handle=0xffffffff80001d4c
 //! DEBUG injector{vcpu=0 rip=0xfffff80016835000}:interrupt:recipe: finished result=0x0000000000000000
-//! DEBUG injector{vcpu=0 rip=0xfffff80016835004}:singlestep: active breakpoints removed active=0 gfn=0x0000000000002e35 view=1 breakpoints={((), AddressContext { va: 0xfffff80016835000, root: 0x00000000001aa000 }): Breakpoint { ctx: AddressContext { va: 0xfffff80016835000, root: 0x00000000001aa000 }, view: View(1), global: true, key: (), tag: "SeAccessCheck" }}
+//! DEBUG injector{vcpu=0 rip=0xfffff80016835004}:singlestep: active breakpoints removed active=0 gfn=0x0000000000002e35 view=1 breakpoints={((), AddressContext { va: 0xfffff80016835000, root: 0x00000000001aa000 }): Breakpoint { ctx: AddressContext { va: 0xfffff80016835000, root: 0x00000000001aa000 }, view: View(1), global: true, key: (), tag: "KiSystemServiceCopyEnd" }}
 //! DEBUG injector{vcpu=3 rip=0xffff86060f368094}:hypercall:kernel_file: shellcode completed status=Status { stage: Write, kind: Success, code: 0, native_code: 0 } native_code=0x00000000
 //!  INFO file written status=Status { stage: Write, kind: Success, code: 0, native_code: 0 } path="\\??\\C:\\Users\\John\\Desktop\\test-1789684125.txt"
 //! ```

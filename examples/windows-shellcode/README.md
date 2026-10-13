@@ -108,11 +108,11 @@ The shellcode creates or truncates the file, writes the eleven bytes of
 writing failed, including the native Windows status code. On success, the host
 logs `file written`.
 
-**`kernel-call` can deadlock the guest.** The injector hijacks a thread at
-`SeAccessCheck`. That thread may already hold file-system or object-manager
-locks, and the shellcode's file operations can try to acquire those locks again.
-Use `kernel-spawn` unless you specifically need call mode and understand that
-risk.
+**`kernel-call` runs on the hijacked thread.** The injector hijacks a thread at
+`KiSystemServiceCopyEnd` during a syscall from user mode, so the thread holds no
+locks. Normal kernel APCs stay enabled, though. If the thread's process is
+suspended or terminated meanwhile, the shellcode can stop or end before it
+finishes. Use `kernel-spawn` unless you specifically need call mode.
 
 `kernel-spawn` runs in the `System` process. A handle or user-mode address from
 the original process can refer to a different object or become unusable there.
