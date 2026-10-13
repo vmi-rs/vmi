@@ -1,7 +1,7 @@
 #[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
 mod windows;
 
-use vmi_core::VmiOs;
+use vmi_core::{VmiOs, os::ProcessId};
 
 use super::{ParameterSource, RetryPolicy};
 use crate::injector::Recipe;
@@ -53,4 +53,15 @@ pub trait OsAdapter: VmiOs {
         parameter: impl ParameterSource,
         retry: RetryPolicy,
     ) -> Recipe<Self, Self::UserRecipeData>;
+
+    /// Builds a kernel-mode recipe that spawns a user-mode thread for the
+    /// payload in the process that `pid` identifies.
+    ///
+    /// The recipe completes when the thread has been created.
+    fn user_shellcode_spawn_from_kernel_recipe(
+        shellcode: impl AsRef<[u8]>,
+        parameter: impl ParameterSource,
+        retry: RetryPolicy,
+        pid: ProcessId,
+    ) -> Recipe<Self, Self::KernelRecipeData>;
 }

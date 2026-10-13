@@ -76,6 +76,7 @@ symbols! {
 
         NtContinue: Option<u64>,
         NtClose: Option<u64>,
+        ZwCreateThreadEx: Option<u64>,
 
         ExNotifyCallback: Option<u64>,
         ExAllocatePool: u64,

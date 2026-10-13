@@ -33,12 +33,13 @@
 //!   the guest operating system's kernel.
 //! - **Call or spawn:** run on the hijacked thread or create a new thread.
 //!
-//! | Recipe                            | Payload runs on                 | Recipe finishes when    |
-//! | --------------------------------- | ------------------------------- | ----------------------- |
-//! | [`user_shellcode_call_recipe`]    | Hijacked user-mode thread       | Payload returns         |
-//! | [`user_shellcode_spawn_recipe`]   | New thread in the guest process | Thread has been created |
-//! | [`kernel_shellcode_call_recipe`]  | Hijacked thread in kernel mode  | Payload returns         |
-//! | [`kernel_shellcode_spawn_recipe`] | New system thread               | Thread has been created |
+//! | Recipe                                      | Payload runs on                 | Recipe finishes when    |
+//! | ------------------------------------------- | ------------------------------- | ----------------------- |
+//! | [`user_shellcode_call_recipe`]              | Hijacked user-mode thread       | Payload returns         |
+//! | [`user_shellcode_spawn_recipe`]             | New thread in the guest process | Thread has been created |
+//! | [`kernel_shellcode_call_recipe`]            | Hijacked thread in kernel mode  | Payload returns         |
+//! | [`kernel_shellcode_spawn_recipe`]           | New system thread               | Thread has been created |
+//! | [`user_shellcode_spawn_from_kernel_recipe`] | New thread in a given process   | Thread has been created |
 //!
 //! A finished spawn recipe does not mean the payload has finished.
 //!
@@ -48,6 +49,10 @@
 //!
 //! Kernel spawn mode runs in the `System` process. A handle or memory address
 //! that is valid in the original process may not be valid there.
+//!
+//! [`user_shellcode_spawn_from_kernel_recipe`] runs on the kernel-mode
+//! injector, but its payload runs in user mode in the given process. No thread
+//! of that process has to return to user mode first.
 //!
 //! # Passing parameters
 //!
@@ -130,6 +135,8 @@ mod parameters;
 mod payload;
 mod recipe;
 mod status;
+
+use vmi_core::os::ProcessId;
 
 pub use self::{
     arch::ArchAdapter,
@@ -218,4 +225,25 @@ where
     Os: OsAdapter,
 {
     Os::user_shellcode_spawn_recipe(shellcode, parameter, retry)
+}
+
+/// Builds a kernel-mode recipe that spawns a user-mode thread for the payload
+/// in the process that `pid` identifies.
+///
+/// The recipe runs on the kernel-mode injector, but the payload runs in user
+/// mode, as with [`user_shellcode_spawn_recipe`].
+///
+/// The recipe completes when the thread has been created. A recoverable error
+/// before the thread is created is retried as long as the `retry` policy
+/// allows.
+pub fn user_shellcode_spawn_from_kernel_recipe<Os>(
+    shellcode: impl AsRef<[u8]>,
+    parameter: impl ParameterSource,
+    retry: RetryPolicy,
+    pid: ProcessId,
+) -> KernelRecipe<Os>
+where
+    Os: OsAdapter,
+{
+    Os::user_shellcode_spawn_from_kernel_recipe(shellcode, parameter, retry, pid)
 }

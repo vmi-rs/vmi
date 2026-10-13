@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a `HypercallMonitor`. Create them with `EventMonitor::register`, `msr`
   and `hypercall`. For a hypercall monitor, call `allow_userspace(true)`
   instead of setting the old `allow_userspace` field. The default is `false`.
+- **Breaking:** `OsAdapter` has a new required method,
+  `user_shellcode_spawn_from_kernel_recipe`.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -62,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deadline or once a termination flag is set, and end the event loop if the
   handler does not finish within a termination timeout.
 - `WindowsThread::previous_mode` exposing `_KTHREAD.PreviousMode`.
+- `user_shellcode_spawn_from_kernel_recipe` spawns a user-mode payload thread
+  in a given process from the kernel-mode injector.
 
 ### Removed
 
