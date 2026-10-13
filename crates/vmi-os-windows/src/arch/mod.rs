@@ -1,5 +1,6 @@
 mod amd64;
 mod context;
+mod structs;
 
 use vmi_core::{
     AccessContext, Architecture, Pa, Va, VmiCore, VmiError, VmiState, driver::VmiRead,
@@ -13,6 +14,12 @@ pub use self::{
         KSPECIAL_REGISTERS_AMD64, KSPECIAL_REGISTERS_X86, M128A, MAXIMUM_SUPPORTED_EXTENSION,
         SIZE_OF_80387_REGISTERS, WindowsContext, WindowsRegistersAdapter, WindowsSpecialRegisters,
         XSAVE_FORMAT,
+    },
+    structs::{
+        CLIENT_ID64, KAPC_STATE64, LIST_ENTRY64, OBJ_AUDIT_OBJECT_CLOSE, OBJ_CASE_INSENSITIVE,
+        OBJ_DONT_REPARSE, OBJ_EXCLUSIVE, OBJ_FORCE_ACCESS_CHECK, OBJ_IGNORE_IMPERSONATED_DEVICEMAP,
+        OBJ_INHERIT, OBJ_KERNEL_HANDLE, OBJ_NO_RIGHTS_UPGRADE, OBJ_OPENIF, OBJ_OPENLINK,
+        OBJ_PERMANENT, OBJ_PROTECT_CLOSE, OBJ_VALID_ATTRIBUTES, OBJECT_ATTRIBUTES64,
     },
 };
 use crate::{PeImage as _, WindowsImage, WindowsKernelInformation, WindowsOs, WindowsOsExt};
