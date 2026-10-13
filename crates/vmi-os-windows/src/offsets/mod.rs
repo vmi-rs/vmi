@@ -29,6 +29,7 @@ symbols! {
         //KiSystemCall32Shadow: u64,
         //KiSystemCall64Shadow: u64,
         KiSystemServiceStart: Option<u64>,
+        KiSystemServiceCopyEnd: Option<u64>,
         KiSystemServiceExit: Option<u64>,
 
         KeInitThread: Option<u64>,
@@ -419,6 +420,7 @@ offsets! {
             ApcStateIndex: Field,
             SavedApcState: Field,
             NextProcessor: Field,           // ULONG
+            PreviousMode: Field,            // CCHAR - KPROCESSOR_MODE enum
             WaitMode: Field,                // CCHAR - KPROCESSOR_MODE enum
             WaitReason: Field,              // UCHAR - KWAIT_REASON enum
             Teb: Field,

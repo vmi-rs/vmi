@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiTerminationHandler` and `VmiHandlerExt` - interrupt a handler at a
   deadline or once a termination flag is set, and end the event loop if the
   handler does not finish within a termination timeout.
+- `WindowsThread::previous_mode` exposing `_KTHREAD.PreviousMode`.
 
 ### Removed
 

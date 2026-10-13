@@ -418,6 +418,22 @@ where
         Ok(VcpuId(next_processor as u16))
     }
 
+    /// Returns the thread's previous mode.
+    ///
+    /// The previous mode is the mode that the thread's current syscall came
+    /// from. The kernel's own `Zw*` calls set it to `KernelMode` while they
+    /// run.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.PreviousMode`.
+    pub fn previous_mode(&self) -> Result<WindowsProcessorMode, VmiError> {
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+
+        let value = self.vmi.read_u8(self.va + KTHREAD.PreviousMode.offset())?;
+        Ok(WindowsProcessorMode::from(value))
+    }
+
     /// Returns whether the thread is currently alertable.
     ///
     /// # Notes
