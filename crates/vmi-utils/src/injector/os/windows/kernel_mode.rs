@@ -320,73 +320,81 @@ where
         }
 
         let current_thread = vmi.os().current_thread()?;
-
-        //
-        // Skip syscalls from kernel mode until a thread is hijacked.
-        //
-        // The kernel's own `Zw*` calls pass KiSystemServiceCopyEnd too, with
-        // the previous mode set to `KernelMode`, and their callers may hold
-        // locks.
-        //
-
-        if self.tid.is_none() && current_thread.previous_mode()? != WindowsProcessorMode::UserMode {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-        }
-
-        let current_process = current_thread.current_process()?;
-
-        //
-        // Skip processes without a PEB.
-        //
-        // We want to avoid injecting into processes like "Registry" or
-        // "MemCompression", because the functions called in the shellcode
-        // would likely fail with access violations.
-        //
-
-        if current_process.peb()?.is_none() {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-        }
-
-        let current_pid = current_process.id()?;
-
-        if self.pid.is_none() {
-            tracing::trace!(%current_pid, "hijacking process");
-            self.pid = Some(current_pid);
-        }
-        else if Some(current_pid) != self.pid {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
-        }
-
         let current_tid = current_thread.id()?;
 
-        if self.tid.is_none() {
-            self.tid = Some(current_tid);
-            tracing::debug!(
-                session_id = current_process
-                    .session()
-                    .ok()
-                    .flatten()
-                    .and_then(|session| session.id().ok())
-                    .unwrap_or(0),
-                %current_pid,
-                %current_tid,
-                filename = current_process
-                    .name()
-                    .as_deref()
-                    .unwrap_or("<unknown>"),
-                "thread hijacked"
-            );
+        match self.tid {
+            Some(tid) => {
+                //
+                // Follow the hijacked thread by its ID. A recipe can attach
+                // it to another process, which changes its current process.
+                //
 
-            // A payload that the recipe starts in a user process reports
-            // through the bridge from user mode.
-            if !Bridge::EMPTY {
-                vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
+                if current_tid != tid {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
             }
+            None => {
+                //
+                // Skip syscalls from kernel mode.
+                //
+                // The kernel's own `Zw*` calls pass KiSystemServiceCopyEnd
+                // too, with the previous mode set to `KernelMode`, and their
+                // callers may hold locks.
+                //
 
-            self.state = InjectorState::Executing;
-        }
-        else if Some(current_tid) != self.tid {
-            return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                if current_thread.previous_mode()? != WindowsProcessorMode::UserMode {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
+                let current_process = current_thread.current_process()?;
+
+                //
+                // Skip processes without a PEB.
+                //
+                // We want to avoid injecting into processes like "Registry" or
+                // "MemCompression", because the functions called in the
+                // shellcode would likely fail with access violations.
+                //
+
+                if current_process.peb()?.is_none() {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
+                let current_pid = current_process.id()?;
+
+                if self.pid.is_none() {
+                    tracing::trace!(%current_pid, "hijacking process");
+                    self.pid = Some(current_pid);
+                }
+                else if Some(current_pid) != self.pid {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
+                self.tid = Some(current_tid);
+                tracing::debug!(
+                    session_id = current_process
+                        .session()
+                        .ok()
+                        .flatten()
+                        .and_then(|session| session.id().ok())
+                        .unwrap_or(0),
+                    %current_pid,
+                    %current_tid,
+                    filename = current_process
+                        .name()
+                        .as_deref()
+                        .unwrap_or("<unknown>"),
+                    "thread hijacked"
+                );
+
+                // A payload that the recipe starts in a user process reports
+                // through the bridge from user mode.
+                if !Bridge::EMPTY {
+                    vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
+                }
+
+                self.state = InjectorState::Executing;
+            }
         }
 
         //

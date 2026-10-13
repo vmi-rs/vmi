@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `UserInjectorHandler` no longer misses a thread that runs again on the same
   CPU. Such a thread writes the same TEB to `KERNEL_GS_BASE`, so the injector
   now monitors all writes of the MSR, not just changes.
+- The kernel-mode injector follows the hijacked thread by its ID. While a
+  recipe had the thread attached to another process, the injector skipped
+  its breakpoint hits, and the thread went on with the recipe's registers.
 
 ## [0.11.0] - 2026-10-09
 
