@@ -149,6 +149,15 @@ where
 
         Ok(None)
     }
+
+    /// Returns the port of the event channel that notifies the driver of
+    /// events.
+    ///
+    /// The port number belongs to the domain that runs the driver, usually
+    /// dom0.
+    pub fn event_channel_port(&self) -> u32 {
+        self.evtchn.local_port()
+    }
 }
 
 impl<Arch> VmiDriver for VmiXenDriver<Arch>

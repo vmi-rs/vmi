@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsThread::previous_mode` exposing `_KTHREAD.PreviousMode`.
 - `user_shellcode_spawn_from_kernel_recipe` spawns a user-mode payload thread
   in a given process from the kernel-mode injector.
+- `VmiXenDriver::event_channel_port` returns the port of the event channel
+  that notifies the driver of events. With the port number, a caller can ask
+  Xen which vCPU receives the events.
 
 ### Removed
 
