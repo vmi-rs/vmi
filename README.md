@@ -130,6 +130,7 @@ No features are enabled by default; opt in to what you need.
 | `os-macos` | macOS guest introspection on Apple silicon (`arch-arm64`). |
 | `os-windows` | Windows guest introspection. |
 | `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
+| `utils-bpm` | Breakpoint manager and page-table monitor without Windows-only utilities. |
 
 # Quick Start
 

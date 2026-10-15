@@ -180,6 +180,7 @@ utils = [
     "vmi-utils/shellcode",
     "vmi-utils/tracker",
 ]
+utils-bpm = ["vmi-utils", "vmi-utils/bpm"]
 
 [dev-dependencies]
 anyhow = { workspace = true }
