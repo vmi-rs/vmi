@@ -121,6 +121,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every view and frees every shadow frame.
 - `BreakpointManager::refresh_page`, which rebuilds the shadows of a page after
   the guest writes to the original page.
+- `vmi_utils::ptm` supports arm64 guests with the `Granule4KVa48` and
+  `Granule16KVa47` geometries through `PageTableMonitorArm64` (feature
+  `arch-arm64`).
 
 ### Removed
 
