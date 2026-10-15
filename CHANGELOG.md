@@ -135,6 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are not resident fail with `VmiError::Translation`.
 - `MacOsProcess::shared_cache_base`, the address of the dyld shared cache
   header of a process, from `dyld_all_image_infos.sharedCacheBaseAddress`.
+- `MacOsThread::attached_process`, which returns `None` for an exiting thread
+  whose process `proc_exit` has already detached, where `process` fails.
 
 ### Removed
 

@@ -89,10 +89,30 @@ where
 
     /// Returns the process that owns the thread.
     ///
+    /// Fails with [`MacOsError::CorruptedStruct`] when the thread has no
+    /// process, see [`attached_process`](Self::attached_process).
+    ///
     /// # Implementation Details
     ///
     /// Corresponds to `thread.t_tro->tro_proc`.
     pub fn process(&self) -> Result<MacOsProcess<'a, Driver>, VmiError> {
+        match self.attached_process()? {
+            Some(process) => Ok(process),
+            None => Err(MacOsError::CorruptedStruct("thread_ro.tro_proc").into()),
+        }
+    }
+
+    /// Returns the process that owns the thread, or `None` once the process
+    /// has been detached from it.
+    ///
+    /// The exiting thread keeps running kernel cleanup after `proc_exit`
+    /// detaches its process (xnu `bsd/kern/kern_exit.c`, `proc_set_task`,
+    /// `set_bsdtask_info` and `clear_thread_ro_proc`).
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `thread.t_tro->tro_proc`, which is `NULL` once cleared.
+    pub fn attached_process(&self) -> Result<Option<MacOsProcess<'a, Driver>>, VmiError> {
         let thread_ro = offset!(self.vmi, thread_ro);
 
         let process = self
@@ -101,10 +121,10 @@ where
             .read_pointer(self.thread_ro()? + thread_ro.tro_proc.offset())?;
 
         if process.is_null() {
-            return Err(MacOsError::CorruptedStruct("thread_ro.tro_proc").into());
+            return Ok(None);
         }
 
-        Ok(MacOsProcess::new(self.vmi, ProcessObject(process)))
+        Ok(Some(MacOsProcess::new(self.vmi, ProcessObject(process))))
     }
 }
 
