@@ -176,11 +176,22 @@ where
         }
 
         tracing::trace!("disabling monitor");
+
+        // Pause the guest before the handler cleans up, and keep it paused
+        // until all pending events are answered. If the guest kept running,
+        // a vCPU could hit a breakpoint that is still in memory after the
+        // breakpoint monitor is turned off. The guest would then handle the
+        // breakpoint itself and crash.
+        //
+        // If the pause fails, clean up anyway and return the error after
+        // the reset.
+        let pause_guard = self.core().pause_guard();
         handler.cleanup(self);
         self.core.reset_state()?;
+        let _pause_guard = pause_guard?;
+
         tracing::trace!(pending_events = self.events_pending());
 
-        let _pause_guard = self.core().pause_guard()?;
         if self.events_pending() > 0 {
             match self.wait_for_event(Duration::from_millis(0), &mut handler) {
                 Err(VmiError::Timeout) => {

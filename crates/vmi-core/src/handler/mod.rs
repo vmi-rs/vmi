@@ -51,6 +51,12 @@ where
     /// depend on the session (views, memory access permissions, event
     /// monitors) before the session calls [`reset_state`].
     ///
+    /// # Notes
+    ///
+    /// The guest is paused while this method runs. Do not wait here for the
+    /// guest to do something, because it cannot run until the cleanup is
+    /// done.
+    ///
     /// [`reset_state`]: crate::VmiCore::reset_state
     fn cleanup(&mut self, _session: &VmiSession<Os>) {}
 

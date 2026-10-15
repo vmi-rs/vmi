@@ -114,6 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WindowsOsExt::symbols`, return an elided lifetime as the state's lifetime,
   as the underlying OS functions do. `let symbols = vmi.os().symbols();` no
   longer fails with "temporary value dropped while borrowed".
+- `VmiSession::handle` and `handle_with_timeout` pause the guest before
+  `VmiHandler::cleanup` and keep it paused until all pending events are
+  answered. Before, a vCPU could hit a breakpoint that was still in memory
+  after the breakpoint monitor was turned off. The guest then handled the
+  breakpoint itself, and Windows crashed with a bugcheck.
 
 ## [0.11.0] - 2026-10-09
 
