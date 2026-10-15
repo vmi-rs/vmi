@@ -1,0 +1,4 @@
+# The sigmd signature database (assets/metadata.bin) is a machine-local asset
+# built from the macOS SDK, not source. Symlink or copy it here, or point
+# SIGMD_METADATA at it.
+/assets/

@@ -58,6 +58,55 @@ capabilities, from basic operations to more complex scenarios.
   Memory-mapped writes and non-vnode I/O are not covered. Paths follow the
   mount hierarchy, so data-volume files can appear under `/System/Volumes/Data`.
 
+- **[`macos-trace-kvm`]**
+
+  Traces semantic calls and XPC activity in a live macOS arm64 KVM guest.
+  Main-image/library view transitions provide C call coverage using [sigmd]
+  SDK declarations. Selected shadow breakpoints cover Objective-C dispatch
+  and `objc_opt_*` helpers, method mutations, XPC, dispatch handoffs and kernel
+  lifecycle boundaries. The original instruction view remains unmodified.
+
+  Objective-C output uses live method encodings and actual receiver classes,
+  for example `-[OrchardProbe<0x...> roundTrip:-41] returned -42`.
+  Entry snapshots and per-thread LR/SP matching capture scalar, pointer,
+  object and void returns. Floating-point-returning Objective-C methods and
+  `retain`/`release`/`autorelease` messages are excluded. Genuine variadic tails,
+  unavailable SIMD and unsupported aggregate arguments stay unknown.
+  Concrete heap, constant, mutable,
+  tagged and NSPathStore2 strings are read without guest getters.
+  `execve` prints bounded `argv` contents.
+
+  XPC output separates send intent, authoritative kernel transport and
+  delivery, decoded handlers, sync/async replies, dispatch continuations and
+  launch/exec lineage. Discovered peers are traced as well. Port names,
+  timing, payload equality and launchd ancestry alone are not causal proof.
+  Private layouts/hooks are UUID and instruction guarded for build 26A434.
+  Reads, strings, containers and recursion are bounded with explicit
+  unsupported, unreadable and truncated output.
+
+  ```sh
+  cargo run --release --example macos-trace-kvm \
+    --features arch-arm64,driver-kvm,os-macos,utils-bpm -- TARGET [QEMU-PID] [CACHE]
+  ```
+
+  `TARGET` is a process ID or name. To trace a short-lived command such as
+  `ls -als`, build `examples/macos-trace-kvm/spawn-suspended.c` in the guest
+  and run `./spawn-suspended ls -als`: it stops the command right after exec
+  and prints its pid. Attach the tracer to that pid, then press Enter in the
+  guest. Successful exec refreshes the primary image catalog and retires
+  old calls instead of inventing returns. Ordinary newly loaded exports and
+  library-to-library calls are not exhaustively traced, but selected semantic
+  hooks cover those boundaries. Allocation and Objective-C reference-counting
+  helper noise remains filtered (`IGNORED_MODULES` in `tracer.rs`).
+  Stop with Ctrl-C. When capturing with `tee`, use `tee --ignore-interrupts`
+  so the tracer can finish writing its cleanup diagnostics.
+
+  The tracer reads the database from
+  `examples/macos-trace-kvm/assets/metadata.bin` or from `SIGMD_METADATA`.
+  Build it in a [sigmd] checkout: copy the SDK from a Mac with
+  `scripts/fetch-macsdk.sh --host MAC`, then run
+  `cargo run --release -- -c sigmd-macos.yaml build -o metadata-macos.bin`.
+
 - **[`windows-breakpoint-manager.rs`]**
 
   Illustrates the usage of the [`BreakpointManager`] and
@@ -103,6 +152,7 @@ capabilities, from basic operations to more complex scenarios.
 [`basic-process-list-kvm-macos.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list-kvm-macos.rs
 [`macos-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-dump.rs
 [`macos-breakpoint-manager-kvm.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-breakpoint-manager-kvm.rs
+[`macos-trace-kvm`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-trace-kvm/main.rs
 [`windows-breakpoint-manager.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-breakpoint-manager.rs
 [`windows-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-dump.rs
 [`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs
@@ -110,3 +160,4 @@ capabilities, from basic operations to more complex scenarios.
 [`windows-recipe-writefile-advanced.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-writefile-advanced.rs
 [`windows-shellcode`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-shellcode
 [`windows-bridge`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-bridge
+[sigmd]: https://github.com/vmi-rs/sigmd

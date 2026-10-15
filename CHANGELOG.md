@@ -141,6 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile to its runtime address.
 - `macos-breakpoint-manager-kvm` example, which reports process lifecycle and
   file write events of a macOS guest running in KVM.
+- `macos-trace-kvm` example, which traces the library calls, Objective-C
+  messages and XPC traffic of a process in a macOS guest running in KVM.
 
 ### Removed
 

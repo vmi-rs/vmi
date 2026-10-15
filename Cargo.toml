@@ -187,7 +187,10 @@ anyhow = { workspace = true }
 bitflags = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 hex = { workspace = true }
+memmap2 = { workspace = true }
 signal-hook = { workspace = true }
+# The arm64 bucket used by `macos-trace-kvm` is not in a published sigmd yet.
+sigmd = { version = "0.1.0", path = "../../sigmd", default-features = false }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zerocopy = { workspace = true }
@@ -228,6 +231,11 @@ name = "macos-dump"
 path = "examples/macos-dump.rs"
 doc-scrape-examples = true
 required-features = ["arch-arm64", "driver-qemu-core-dump", "os-macos"]
+
+[[example]]
+name = "macos-trace-kvm"
+path = "examples/macos-trace-kvm/main.rs"
+required-features = ["arch-arm64", "driver-kvm", "os-macos", "utils-bpm"]
 
 [[example]]
 name = "windows-breakpoint-manager"
