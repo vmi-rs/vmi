@@ -5,11 +5,11 @@ use vmi_core::{
 };
 
 use crate::{
-    ArchAdapter, MacOs, MacOsError, MacOsSegment,
+    ArchAdapter, MacOs, MacOsError, MacOsImageSymbol, MacOsSegment,
     arch::read_macho,
     macho::{
         MachO, MachSegment, NLIST_64_SIZE, architecture_from_cpu_type, contiguous_size,
-        export_trie_symbols, exported_symbols,
+        defined_symbols, export_trie_symbols, exported_symbols, named_symbols, string_table_ranges,
     },
 };
 
@@ -21,6 +21,18 @@ const MAX_STRING_TABLE_SIZE: u32 = 64 * 1024 * 1024;
 
 /// Upper bound on the size of the dyld export trie, in bytes.
 const MAX_EXPORT_TRIE_SIZE: u32 = 16 * 1024 * 1024;
+
+/// Upper bound on the length of a symbol name read by
+/// [`MacOsImage::symbols`], including its NUL terminator, in bytes.
+const MAX_SYMBOL_NAME_LENGTH: u32 = 4096;
+
+/// Distance in the string table below which the names read by
+/// [`MacOsImage::symbols`] share one read, in bytes.
+const STRING_RANGE_GAP: u32 = 0x4000;
+
+/// Upper bound on the bytes of the string table read by
+/// [`MacOsImage::symbols`].
+const MAX_SYMBOL_STRINGS_SIZE: u64 = 32 * 1024 * 1024;
 
 /// Returns the runtime address of the `size` bytes at `file_offset` of the
 /// image, or `None` when they do not lie inside `linkedit`.
@@ -173,6 +185,110 @@ where
             Err(err) => Err(err),
         }
     }
+
+    /// Returns every symbol defined in a section of the image, local
+    /// symbols included.
+    ///
+    /// Unlike [`exports`], which reads the dyld export trie when there is
+    /// one, this reads the `LC_SYMTAB` symbol table, which also lists the
+    /// private functions and data of the image. Names are as stored in the
+    /// string table and addresses are runtime addresses.
+    ///
+    /// # Implementation Details
+    ///
+    /// Keeps the `nlist_64` entries of type `N_SECT` that are not debugging
+    /// (stab) entries and have a name. The string table of an image in the
+    /// dyld shared cache is shared by all images of the cache and spans
+    /// hundreds of megabytes, so only the clusters of it that hold the names
+    /// of this image are read, each name being at most 4096 bytes long
+    /// including its NUL terminator. A name without a NUL terminator in its
+    /// cluster is skipped.
+    ///
+    /// The result is empty when the image has no symbol table, when the
+    /// tables lie outside `__LINKEDIT` or guest memory, or when they exceed
+    /// the size limits of 4194304 symbols and 32 MiB of names. Tables that
+    /// are not resident fail with [`VmiError::Translation`], so the caller
+    /// can page them in and retry. The kernel reclaims its `__LINKEDIT`
+    /// after boot, so its tables cannot be read.
+    ///
+    /// [`exports`]: VmiOsImage::exports
+    pub fn symbols(&self) -> Result<Vec<MacOsImageSymbol>, VmiError> {
+        let data = self.header_bytes()?;
+        let macho = MachO::parse(&data)?;
+        let (segments, slide) = self.segments_and_slide(&macho)?;
+
+        let linkedit = match segments.iter().find(|segment| segment.name == "__LINKEDIT") {
+            Some(linkedit) => linkedit,
+            None => return Ok(Vec::new()),
+        };
+
+        let symtab = match macho.symtab()? {
+            Some(symtab) => symtab,
+            None => return Ok(Vec::new()),
+        };
+
+        if symtab.number_of_symbols > MAX_SYMBOLS {
+            return Ok(Vec::new());
+        }
+
+        let symbols_size = symtab.number_of_symbols as u64 * NLIST_64_SIZE as u64;
+
+        let (symbols_address, strings_address) = match (
+            linkedit_address(linkedit, slide, symtab.symbol_offset as u64, symbols_size),
+            linkedit_address(
+                linkedit,
+                slide,
+                symtab.string_offset as u64,
+                symtab.string_size as u64,
+            ),
+        ) {
+            (Some(symbols), Some(strings)) => (symbols, strings),
+            _ => return Ok(Vec::new()),
+        };
+
+        let mut nlists = vec![0u8; symbols_size as usize];
+        if !self.read_resident(symbols_address, &mut nlists)? {
+            return Ok(Vec::new());
+        }
+
+        let symbols = defined_symbols(&nlists);
+        let ranges = string_table_ranges(
+            &symbols,
+            symtab.string_size,
+            MAX_SYMBOL_NAME_LENGTH,
+            STRING_RANGE_GAP,
+        );
+
+        let strings_size = ranges
+            .iter()
+            .map(|range| (range.end - range.start) as u64)
+            .sum::<u64>();
+        if strings_size > MAX_SYMBOL_STRINGS_SIZE {
+            return Ok(Vec::new());
+        }
+
+        let mut strings = vec![0u8; strings_size as usize];
+        let mut position = 0;
+        for range in &ranges {
+            let size = (range.end - range.start) as usize;
+            let address = strings_address + range.start as u64;
+
+            if !self.read_resident(address, &mut strings[position..position + size])? {
+                return Ok(Vec::new());
+            }
+
+            position += size;
+        }
+
+        Ok(named_symbols(&symbols, &ranges, &strings)
+            .into_iter()
+            .map(|(name, symbol)| MacOsImageSymbol {
+                name,
+                address: Va(symbol.value.wrapping_add(slide)),
+                external: symbol.external,
+            })
+            .collect())
+    }
 }
 
 impl<'a, Driver> VmiOsImage<'a, Driver> for MacOsImage<'a, Driver>
@@ -208,7 +324,8 @@ where
     /// [`VmiError::Translation`], so the caller can page it in and retry.
     /// The string table of an image in the dyld shared cache is shared by
     /// all images of the cache and spans hundreds of megabytes, so its
-    /// `LC_SYMTAB` is not used here.
+    /// `LC_SYMTAB` is not used here. [`MacOsImage::symbols`] reads the
+    /// `LC_SYMTAB` of such images, local symbols included.
     ///
     /// Images without a trie, such as the kernel and its extensions, use
     /// the `LC_SYMTAB` symbol and string tables. The result is empty when

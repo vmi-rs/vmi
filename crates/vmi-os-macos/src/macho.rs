@@ -3,6 +3,8 @@
 //! The layouts follow `<mach-o/loader.h>` and `<mach-o/nlist.h>`. All values
 //! are little-endian.
 
+use std::ops::Range;
+
 use vmi_core::os::VmiOsImageArchitecture;
 
 use crate::MacOsError;
@@ -473,6 +475,138 @@ pub(crate) fn exported_symbols(symbols: &[u8], strings: &[u8]) -> Vec<(String, u
         .collect()
 }
 
+/// A symbol defined in a section, as described by an `nlist_64` entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DefinedSymbol {
+    /// Offset of the name in the string table, `n_strx`.
+    pub name_offset: u32,
+
+    /// Link-time address of the symbol, `n_value`.
+    pub value: u64,
+
+    /// Whether the symbol is external, `N_EXT` in `n_type`.
+    pub external: bool,
+}
+
+/// Returns the symbols defined in a section, external and local alike.
+///
+/// `symbols` holds the `nlist_64` array. Debugging (stab), undefined,
+/// absolute and indirect entries are skipped, as are entries without a name.
+pub(crate) fn defined_symbols(symbols: &[u8]) -> Vec<DefinedSymbol> {
+    symbols
+        .as_chunks::<NLIST_64_SIZE>()
+        .0
+        .iter()
+        .filter_map(|nlist| {
+            let name_offset = read_u32(nlist, 0)?;
+            let symbol_type = nlist[4];
+            let value = read_u64(nlist, 8)?;
+
+            if name_offset == 0 || symbol_type & N_STAB != 0 || symbol_type & N_TYPE != N_SECT {
+                return None;
+            }
+
+            Some(DefinedSymbol {
+                name_offset,
+                value,
+                external: symbol_type & N_EXT != 0,
+            })
+        })
+        .collect()
+}
+
+/// Returns the ranges of the string table that hold the names of `symbols`.
+///
+/// The string table of an image in the dyld shared cache is shared by all
+/// images of the cache, so the names of one image are scattered over a few
+/// clusters of a table that spans hundreds of megabytes. Each name is
+/// assumed to be at most `max_name_length` bytes long, including its NUL
+/// terminator. Names closer than `gap` bytes to the previous range extend
+/// that range, so the result is a short list of sorted, disjoint ranges
+/// that lie within the first `string_size` bytes of the table. Names that
+/// start outside the table are left out.
+pub(crate) fn string_table_ranges(
+    symbols: &[DefinedSymbol],
+    string_size: u32,
+    max_name_length: u32,
+    gap: u32,
+) -> Vec<Range<u32>> {
+    let mut offsets = symbols
+        .iter()
+        .map(|symbol| symbol.name_offset)
+        .filter(|&offset| offset < string_size)
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets.dedup();
+
+    let mut ranges = Vec::<Range<u32>>::new();
+    for offset in offsets {
+        let end = offset.saturating_add(max_name_length).min(string_size);
+
+        match ranges.last_mut() {
+            Some(range) if offset <= range.end.saturating_add(gap) => {
+                range.end = range.end.max(end);
+            }
+            _ => ranges.push(offset..end),
+        }
+    }
+
+    ranges
+}
+
+/// Returns the name of each symbol whose name lies in `ranges`, as
+/// `(name, symbol)` pairs in the order of `symbols`.
+///
+/// `ranges` comes from [`string_table_ranges`] and `strings` holds the
+/// bytes of those ranges of the string table, one after another. A name
+/// must end with its NUL terminator inside the range that holds its start,
+/// so a name cut off by the end of its range is skipped, as are empty names
+/// and names outside every range.
+pub(crate) fn named_symbols(
+    symbols: &[DefinedSymbol],
+    ranges: &[Range<u32>],
+    strings: &[u8],
+) -> Vec<(String, DefinedSymbol)> {
+    // Position of each range in `strings`.
+    let mut starts = Vec::with_capacity(ranges.len());
+    let mut position = 0usize;
+    for range in ranges {
+        starts.push(position);
+        position += range.len();
+    }
+
+    symbols
+        .iter()
+        .filter_map(|symbol| {
+            let offset = symbol.name_offset;
+            let index = ranges
+                .partition_point(|range| range.start <= offset)
+                .checked_sub(1)?;
+            let range = &ranges[index];
+            if offset >= range.end {
+                return None;
+            }
+
+            let start = starts[index];
+            let data = strings.get(start..start + range.len())?;
+            let name = terminated_string(data, (offset - range.start) as usize)?;
+            Some((name, *symbol))
+        })
+        .collect()
+}
+
+/// Decodes the C string at `offset` of `data`, or returns `None` when the
+/// offset is out of bounds, the string is empty or `data` ends before its
+/// NUL terminator.
+fn terminated_string(data: &[u8], offset: usize) -> Option<String> {
+    let data = data.get(offset..)?;
+
+    match memchr::memchr(0, data) {
+        Some(end) if end != 0 => Some(String::from_utf8_lossy(&data[..end]).into_owned()),
+        _ => None,
+    }
+}
+
 /// Returns the symbols of a dyld export trie as `(name, offset)` pairs.
 ///
 /// Offsets are relative to the Mach-O header of the image. Re-exports and
@@ -744,19 +878,29 @@ mod tests {
         assert!(macho.segments().is_err());
     }
 
+    /// Builds a `nlist_64` entry from its name offset, type and value.
+    fn nlist(name: u32, symbol_type: u8, value: u64) -> Vec<u8> {
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&name.to_le_bytes());
+        entry.push(symbol_type);
+        entry.push(1);
+        entry.extend_from_slice(&0u16.to_le_bytes());
+        entry.extend_from_slice(&value.to_le_bytes());
+        entry
+    }
+
+    /// Builds a defined symbol from its name offset, value and linkage.
+    fn defined(name_offset: u32, value: u64, external: bool) -> DefinedSymbol {
+        DefinedSymbol {
+            name_offset,
+            value,
+            external,
+        }
+    }
+
     #[test]
     fn filters_exported_symbols() {
         let strings = b"\0_exported\0_local\0_undefined\0";
-
-        let nlist = |name: u32, symbol_type: u8, value: u64| {
-            let mut entry = Vec::new();
-            entry.extend_from_slice(&name.to_le_bytes());
-            entry.push(symbol_type);
-            entry.push(1);
-            entry.extend_from_slice(&0u16.to_le_bytes());
-            entry.extend_from_slice(&value.to_le_bytes());
-            entry
-        };
 
         let symbols = [
             nlist(1, N_SECT | N_EXT, 0x1000),
@@ -770,6 +914,99 @@ mod tests {
         assert_eq!(
             exported_symbols(&symbols, strings),
             [(String::from("_exported"), 0x1000)]
+        );
+    }
+
+    #[test]
+    fn filters_defined_symbols() {
+        // `N_PEXT`, `N_ABS` and `N_INDR` from `<mach-o/nlist.h>`, and the
+        // `N_FUN` stab from `<mach-o/stab.h>`.
+        const N_PEXT: u8 = 0x10;
+        const N_ABS: u8 = 0x02;
+        const N_INDR: u8 = 0x0a;
+        const N_FUN: u8 = 0x24;
+
+        let symbols = [
+            nlist(1, N_SECT | N_EXT, 0x1000),
+            nlist(11, N_SECT, 0x2000),
+            nlist(18, N_PEXT | N_SECT, 0x2800),
+            nlist(18, N_EXT, 0),
+            nlist(18, N_ABS | N_EXT, 5),
+            nlist(18, N_INDR | N_EXT, 0),
+            nlist(1, N_FUN, 0x3000),
+            nlist(0, N_SECT, 0x4000),
+        ]
+        .concat();
+
+        assert_eq!(
+            defined_symbols(&symbols),
+            [
+                defined(1, 0x1000, true),
+                defined(11, 0x2000, false),
+                defined(18, 0x2800, false),
+            ]
+        );
+
+        // A trailing partial entry is ignored.
+        assert_eq!(defined_symbols(&symbols[..NLIST_64_SIZE + 8]).len(), 1);
+    }
+
+    #[test]
+    fn groups_string_table_ranges() {
+        let symbols = [
+            defined(0x30, 0, true),
+            defined(0x10, 0, false),
+            defined(0x10, 0, true),
+            // Exactly `gap` bytes after the end of the first range.
+            defined(0x1130, 0, false),
+            // One byte further than `gap` after the extended first range.
+            defined(0x2231, 0, false),
+            defined(0x5000, 0, true),
+            // Clamped to the end of the table.
+            defined(0x5ff0, 0, true),
+            // Outside the table.
+            defined(0x6000, 0, true),
+            defined(u32::MAX, 0, true),
+        ];
+
+        assert_eq!(
+            string_table_ranges(&symbols, 0x6000, 0x100, 0x1000),
+            [0x10..0x1230, 0x2231..0x2331, 0x5000..0x6000]
+        );
+        assert_eq!(string_table_ranges(&[], 0x6000, 0x100, 0x1000), []);
+    }
+
+    #[test]
+    fn names_symbols_within_ranges() {
+        // Bytes 4..10 and 20..26 of the string table.
+        let ranges = [4..10, 20..26];
+        let strings = b"_one\0__two\0\0";
+
+        let symbols = [
+            defined(4, 0x1000, true),
+            // The range ends before the NUL terminator.
+            defined(9, 0x2000, true),
+            defined(20, 0x3000, false),
+            // Empty name.
+            defined(24, 0x4000, false),
+            // Outside every range.
+            defined(2, 0x5000, true),
+            defined(12, 0x6000, true),
+            defined(30, 0x7000, true),
+        ];
+
+        assert_eq!(
+            named_symbols(&symbols, &ranges, strings),
+            [
+                (String::from("_one"), symbols[0]),
+                (String::from("_two"), symbols[2]),
+            ]
+        );
+
+        // Bytes missing for the last range reject its names.
+        assert_eq!(
+            named_symbols(&symbols, &ranges, &strings[..8]),
+            [(String::from("_one"), symbols[0])]
         );
     }
 

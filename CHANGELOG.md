@@ -128,6 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enabling Windows-only utilities.
 - `VmiKvmDriver::pause_vcpu` and `resume_vcpu`, which pause and resume a single
   vCPU.
+- `MacOsImage::symbols`, which returns every symbol defined in a section of
+  an image, local symbols included, as `MacOsImageSymbol` values read from
+  `LC_SYMTAB`. For images in the dyld shared cache only the parts of the
+  shared string table that hold the names of the image are read. Tables that
+  are not resident fail with `VmiError::Translation`.
 
 ### Removed
 

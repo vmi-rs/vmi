@@ -223,6 +223,23 @@ pub struct MacOsSegment {
     pub size: u64,
 }
 
+/// A symbol defined in a section of a Mach-O image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MacOsImageSymbol {
+    /// Name as stored in the string table, such as
+    /// `__dispatch_client_callout` for the C function
+    /// `_dispatch_client_callout`.
+    pub name: String,
+
+    /// Runtime address of the symbol.
+    pub address: Va,
+
+    /// Whether the symbol is external (`N_EXT`), as opposed to local to the
+    /// image. Private external symbols become local when the image is
+    /// linked, so they are not external.
+    pub external: bool,
+}
+
 macro_rules! offset {
     ($vmi:expr, $field:ident) => {
         &$vmi.underlying_os().offsets.$field
