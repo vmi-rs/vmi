@@ -180,6 +180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A page-out event removes only the breakpoints of the translation that was
   paged out. Other virtual aliases of the page and other owners of a global
   breakpoint stay active.
+- `MacOsImage::exports` reads the dyld export trie of images that have one.
+  Images in the dyld shared cache previously reported no exports, because
+  their shared string table exceeds the `LC_SYMTAB` size limit. A trie that is
+  not resident fails with `VmiError::Translation`.
 
 ## [0.11.0] - 2026-10-09
 

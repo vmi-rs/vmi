@@ -9,7 +9,7 @@ use crate::{
     arch::read_macho,
     macho::{
         MachO, MachSegment, NLIST_64_SIZE, architecture_from_cpu_type, contiguous_size,
-        exported_symbols,
+        export_trie_symbols, exported_symbols,
     },
 };
 
@@ -18,6 +18,23 @@ const MAX_SYMBOLS: u32 = 1 << 22;
 
 /// Upper bound on `symtab_command.strsize`, in bytes.
 const MAX_STRING_TABLE_SIZE: u32 = 64 * 1024 * 1024;
+
+/// Upper bound on the size of the dyld export trie, in bytes.
+const MAX_EXPORT_TRIE_SIZE: u32 = 16 * 1024 * 1024;
+
+/// Returns the runtime address of the `size` bytes at `file_offset` of the
+/// image, or `None` when they do not lie inside `linkedit`.
+fn linkedit_address(linkedit: &MachSegment, slide: u64, file_offset: u64, size: u64) -> Option<Va> {
+    let offset = file_offset.checked_sub(linkedit.file_offset)?;
+    if offset.checked_add(size)? > linkedit.file_size {
+        return None;
+    }
+
+    Some(Va(linkedit
+        .vm_address
+        .wrapping_add(slide)
+        .wrapping_add(offset)))
+}
 
 /// A 64-bit Mach-O image in memory.
 ///
@@ -144,6 +161,18 @@ where
             Err(err) => Err(err),
         }
     }
+
+    /// Reads `data` at `va` in the address space of the image.
+    ///
+    /// Returns `false` when the memory lies outside guest memory. Memory
+    /// that is not resident fails with [`VmiError::Translation`].
+    fn read_resident(&self, va: Va, data: &mut [u8]) -> Result<bool, VmiError> {
+        match self.vmi.read_in((va, self.root), data) {
+            Ok(()) => Ok(true),
+            Err(VmiError::OutOfBounds) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 impl<'a, Driver> VmiOsImage<'a, Driver> for MacOsImage<'a, Driver>
@@ -172,15 +201,54 @@ where
     ///
     /// # Implementation Details
     ///
-    /// Reads the `LC_SYMTAB` symbol and string tables through the
-    /// `__LINKEDIT` segment. The result is empty when the image has no
-    /// symbol table, when the tables lie outside `__LINKEDIT`, or when they
-    /// are not readable, as is the case for the kernel, whose `__LINKEDIT`
-    /// is reclaimed after boot. Symbols exported only through the dyld
-    /// export trie are not included.
+    /// Images loaded by dyld describe their exports with the dyld export trie
+    /// (`LC_DYLD_EXPORTS_TRIE` or `LC_DYLD_INFO`), which is read through the
+    /// `__LINKEDIT` segment. Re-exported and absolute symbols are not
+    /// included. A trie that is not resident fails with
+    /// [`VmiError::Translation`], so the caller can page it in and retry.
+    /// The string table of an image in the dyld shared cache is shared by
+    /// all images of the cache and spans hundreds of megabytes, so its
+    /// `LC_SYMTAB` is not used here.
+    ///
+    /// Images without a trie, such as the kernel and its extensions, use
+    /// the `LC_SYMTAB` symbol and string tables. The result is empty when
+    /// the image has no symbol table, when the tables lie outside
+    /// `__LINKEDIT`, or when they are not readable, as is the case for the
+    /// kernel, whose `__LINKEDIT` is reclaimed after boot.
     fn exports(&self) -> Result<Vec<VmiOsImageSymbol>, VmiError> {
         let data = self.header_bytes()?;
         let macho = MachO::parse(&data)?;
+        let (segments, slide) = self.segments_and_slide(&macho)?;
+
+        let linkedit = match segments.iter().find(|segment| segment.name == "__LINKEDIT") {
+            Some(linkedit) => linkedit,
+            None => return Ok(Vec::new()),
+        };
+
+        if let Some(trie) = macho.export_trie()? {
+            if trie.size > MAX_EXPORT_TRIE_SIZE {
+                return Ok(Vec::new());
+            }
+
+            let address =
+                match linkedit_address(linkedit, slide, trie.offset as u64, trie.size as u64) {
+                    Some(address) => address,
+                    None => return Ok(Vec::new()),
+                };
+
+            let mut trie = vec![0u8; trie.size as usize];
+            if !self.read_resident(address, &mut trie)? {
+                return Ok(Vec::new());
+            }
+
+            return Ok(export_trie_symbols(&trie)
+                .into_iter()
+                .map(|(name, offset)| VmiOsImageSymbol {
+                    name,
+                    address: Va(self.va.0.wrapping_add(offset)),
+                })
+                .collect());
+        }
 
         let symtab = match macho.symtab()? {
             Some(symtab) => symtab,
@@ -191,32 +259,12 @@ where
             return Ok(Vec::new());
         }
 
-        let (segments, slide) = self.segments_and_slide(&macho)?;
-
-        let linkedit = match segments.iter().find(|segment| segment.name == "__LINKEDIT") {
-            Some(linkedit) => linkedit,
-            None => return Ok(Vec::new()),
-        };
-
-        // Translates a file range to a runtime address inside `__LINKEDIT`.
-        let linkedit_address = |file_offset: u64, size: u64| {
-            let offset = file_offset.checked_sub(linkedit.file_offset)?;
-            if offset.checked_add(size)? > linkedit.file_size {
-                return None;
-            }
-
-            Some(Va(linkedit
-                .vm_address
-                .wrapping_add(slide)
-                .wrapping_add(offset)))
-        };
-
         let symbols_size = symtab.number_of_symbols as u64 * NLIST_64_SIZE as u64;
         let strings_size = symtab.string_size as u64;
 
         let (symbols, strings) = match (
-            linkedit_address(symtab.symbol_offset as u64, symbols_size),
-            linkedit_address(symtab.string_offset as u64, strings_size),
+            linkedit_address(linkedit, slide, symtab.symbol_offset as u64, symbols_size),
+            linkedit_address(linkedit, slide, symtab.string_offset as u64, strings_size),
         ) {
             (Some(symbols), Some(strings)) => (symbols, strings),
             _ => return Ok(Vec::new()),

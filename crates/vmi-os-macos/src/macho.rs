@@ -25,6 +25,16 @@ pub(crate) const LC_UUID: u32 = 0x1b;
 /// Load command describing one image of a kernel collection.
 pub(crate) const LC_FILESET_ENTRY: u32 = 0x8000_0035;
 
+/// Load command locating the compressed dyld information.
+pub(crate) const LC_DYLD_INFO: u32 = 0x22;
+
+/// Load command locating the compressed dyld information that dyld must
+/// understand to load the image.
+pub(crate) const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
+
+/// Load command locating the dyld export trie.
+pub(crate) const LC_DYLD_EXPORTS_TRIE: u32 = 0x8000_0033;
+
 /// CPU type of 32-bit Intel code.
 pub(crate) const CPU_TYPE_X86: i32 = 0x7;
 
@@ -54,6 +64,15 @@ const N_EXT: u8 = 0x01;
 
 /// Mask of the debugging (stab) bits in `nlist_64.n_type`.
 const N_STAB: u8 = 0xe0;
+
+/// Mask of the symbol kind in the flags of an export trie entry.
+const EXPORT_SYMBOL_FLAGS_KIND_MASK: u64 = 0x03;
+
+/// Symbol kind of an absolute export, whose address is not in the image.
+const EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE: u64 = 0x02;
+
+/// Flag of an export that is re-exported from another image.
+const EXPORT_SYMBOL_FLAGS_REEXPORT: u64 = 0x08;
 
 /// Reads a little-endian `u32` at `offset`, or `None` when out of bounds.
 pub(crate) fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
@@ -193,6 +212,16 @@ pub(crate) struct Symtab {
 
     /// Size of the string table in bytes, `strsize`.
     pub string_size: u32,
+}
+
+/// A range of `__LINKEDIT` data located by a load command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LinkeditData {
+    /// File offset of the data.
+    pub offset: u32,
+
+    /// Size of the data in bytes.
+    pub size: u32,
 }
 
 /// A 64-bit Mach-O header followed by its load commands.
@@ -384,6 +413,32 @@ impl<'a> MachO<'a> {
 
         Ok(None)
     }
+
+    /// Returns the location of the dyld export trie, if the image has one.
+    ///
+    /// The trie is located by `LC_DYLD_EXPORTS_TRIE` or by the export fields
+    /// of `LC_DYLD_INFO` and `LC_DYLD_INFO_ONLY`.
+    pub fn export_trie(&self) -> Result<Option<LinkeditData>, MacOsError> {
+        for command in self.load_commands() {
+            let command = command?;
+
+            // `linkedit_data_command.dataoff` and `datasize`, or
+            // `dyld_info_command.export_off` and `export_size`.
+            let (offset, size) = match command.command {
+                LC_DYLD_EXPORTS_TRIE => (8, 12),
+                LC_DYLD_INFO | LC_DYLD_INFO_ONLY => (40, 44),
+                _ => continue,
+            };
+
+            match (read_u32(command.data, offset), read_u32(command.data, size)) {
+                (Some(_), Some(0)) => continue,
+                (Some(offset), Some(size)) => return Ok(Some(LinkeditData { offset, size })),
+                _ => return Err(MacOsError::InvalidMachO("truncated export trie command")),
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 /// Returns the external symbols defined in a section, as `(name, n_value)`
@@ -416,6 +471,97 @@ pub(crate) fn exported_symbols(symbols: &[u8], strings: &[u8]) -> Vec<(String, u
             Some((name, value))
         })
         .collect()
+}
+
+/// Returns the symbols of a dyld export trie as `(name, offset)` pairs.
+///
+/// Offsets are relative to the Mach-O header of the image. Re-exports and
+/// absolute symbols have no address in the image and are skipped. A symbol
+/// with a resolver reports the address of its stub. Malformed nodes are
+/// skipped, and every node is visited at most once, so a cyclic trie
+/// terminates.
+pub(crate) fn export_trie_symbols(trie: &[u8]) -> Vec<(String, u64)> {
+    let mut symbols = Vec::new();
+    let mut visited = vec![false; trie.len()];
+    let mut pending = vec![(0, Vec::new())];
+
+    while let Some((offset, name)) = pending.pop() {
+        match visited.get_mut(offset) {
+            Some(visited) if !*visited => *visited = true,
+            _ => continue,
+        }
+
+        export_trie_node(trie, offset, name, &mut symbols, &mut pending);
+    }
+
+    symbols
+}
+
+/// Parses the export trie node at `offset`, reached by the edge labels that
+/// spell `name`.
+///
+/// Appends the symbol of a terminal node to `symbols` and queues the child
+/// nodes in `pending`. Returns `None` at the first malformed field.
+fn export_trie_node(
+    trie: &[u8],
+    offset: usize,
+    name: Vec<u8>,
+    symbols: &mut Vec<(String, u64)>,
+    pending: &mut Vec<(usize, Vec<u8>)>,
+) -> Option<()> {
+    let mut cursor = offset;
+    let terminal_size = usize::try_from(read_uleb128(trie, &mut cursor)?).ok()?;
+    let children = cursor.checked_add(terminal_size)?;
+
+    if terminal_size != 0 {
+        let flags = read_uleb128(trie, &mut cursor)?;
+        if flags & EXPORT_SYMBOL_FLAGS_REEXPORT == 0
+            && flags & EXPORT_SYMBOL_FLAGS_KIND_MASK != EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE
+        {
+            let address = read_uleb128(trie, &mut cursor)?;
+            symbols.push((String::from_utf8_lossy(&name).into_owned(), address));
+        }
+    }
+
+    let mut cursor = children;
+    let count = *trie.get(cursor)?;
+    cursor += 1;
+
+    for _ in 0..count {
+        let labels = trie.get(cursor..)?;
+        let length = memchr::memchr(0, labels)?;
+        let mut child = name.clone();
+        child.extend_from_slice(&labels[..length]);
+        cursor += length + 1;
+
+        let child_offset = usize::try_from(read_uleb128(trie, &mut cursor)?).ok()?;
+        pending.push((child_offset, child));
+    }
+
+    Some(())
+}
+
+/// Reads an unsigned LEB128 value at `cursor` and advances `cursor` past it,
+/// or returns `None` when the value is truncated or wider than 64 bits.
+fn read_uleb128(data: &[u8], cursor: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0;
+
+    loop {
+        let byte = *data.get(*cursor)?;
+        *cursor += 1;
+
+        if shift >= 64 {
+            return None;
+        }
+
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+
+        shift += 7;
+    }
 }
 
 /// Returns the size of the run of contiguous segments that starts at the
@@ -625,6 +771,75 @@ mod tests {
             exported_symbols(&symbols, strings),
             [(String::from("_exported"), 0x1000)]
         );
+    }
+
+    #[test]
+    fn locates_export_trie() {
+        let mut body = [0u8; 8];
+        body[..4].copy_from_slice(&0x8000u32.to_le_bytes());
+        body[4..].copy_from_slice(&0x40u32.to_le_bytes());
+        let data = image(6, &[command(LC_DYLD_EXPORTS_TRIE, &body)]);
+        assert_eq!(
+            MachO::parse(&data).unwrap().export_trie().unwrap(),
+            Some(LinkeditData {
+                offset: 0x8000,
+                size: 0x40,
+            })
+        );
+
+        // `dyld_info_command` keeps the trie after the rebase and bind ranges.
+        let mut body = [0u8; 40];
+        body[32..36].copy_from_slice(&0x9000u32.to_le_bytes());
+        body[36..].copy_from_slice(&0x80u32.to_le_bytes());
+        let data = image(6, &[command(LC_DYLD_INFO_ONLY, &body)]);
+        assert_eq!(
+            MachO::parse(&data).unwrap().export_trie().unwrap(),
+            Some(LinkeditData {
+                offset: 0x9000,
+                size: 0x80,
+            })
+        );
+
+        let data = image(6, &[segment("__TEXT", 0, 0x4000)]);
+        assert_eq!(MachO::parse(&data).unwrap().export_trie().unwrap(), None);
+    }
+
+    #[test]
+    fn walks_export_trie() {
+        #[rustfmt::skip]
+        let trie = [
+            // 0: root, edge "_" to 5.
+            0x00, 0x01, b'_', 0x00, 5,
+            // 5: "_", edges to the leaves and a cycle back to the root.
+            0x00, 0x05,
+            b'f', b'o', b'o', 0x00, 32,
+            b'b', b'a', b'r', 0x00, 37,
+            b'r', b'e', 0x00, 44,
+            b'a', b'b', b's', 0x00, 55,
+            b'l', b'o', b'o', b'p', 0x00, 0,
+            // 32: "_foo", regular at 0x1000.
+            0x03, 0x00, 0x80, 0x20, 0x00,
+            // 37: "_bar", stub at 0x2000 with resolver at 0x2100.
+            0x05, 0x10, 0x80, 0x40, 0x80, 0x42, 0x00,
+            // 44: "_re", re-exported from ordinal 1 as "_other".
+            0x09, 0x08, 0x01, b'_', b'o', b't', b'h', b'e', b'r', 0x00, 0x00,
+            // 55: "_abs", absolute value 5.
+            0x02, 0x02, 0x05, 0x00,
+        ];
+
+        let mut symbols = export_trie_symbols(&trie);
+        symbols.sort_unstable();
+        assert_eq!(
+            symbols,
+            [
+                (String::from("_bar"), 0x2000),
+                (String::from("_foo"), 0x1000)
+            ]
+        );
+
+        // A child offset past the end and a truncated edge are skipped.
+        assert_eq!(export_trie_symbols(&[0x00, 0x01, b'_', 0x00, 0x40]), []);
+        assert_eq!(export_trie_symbols(&[0x00, 0x01, b'_']), []);
     }
 
     #[test]
