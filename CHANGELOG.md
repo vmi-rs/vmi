@@ -133,6 +133,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LC_SYMTAB`. For images in the dyld shared cache only the parts of the
   shared string table that hold the names of the image are read. Tables that
   are not resident fail with `VmiError::Translation`.
+- `MacOsProcess::shared_cache_base`, the address of the dyld shared cache
+  header of a process, from `dyld_all_image_infos.sharedCacheBaseAddress`.
 
 ### Removed
 

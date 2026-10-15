@@ -50,6 +50,20 @@ pub(crate) const DYLD_IMAGE_INFO_SIZE: u64 = 24;
 /// at offset 4 and `const struct dyld_image_info *infoArray` at offset 8.
 const DYLD_ALL_IMAGE_INFOS_HEADER_SIZE: usize = 16;
 
+/// Offset of `uintptr_t sharedCacheBaseAddress` in the 64-bit layout of
+/// `struct dyld_all_image_infos`, in bytes.
+///
+/// The field follows `uintptr_t sharedCacheSlide` at offset 152 and
+/// `uint8_t sharedCacheUUID[16]` at offset 160 (macOS SDK
+/// `<mach-o/dyld_images.h>:162-166`, and `struct
+/// user64_dyld_all_image_infos` in xnu-12377.121.6
+/// `osfmk/kdp/kdp_dyld.h:131-135`).
+const DYLD_ALL_IMAGE_INFOS_SHARED_CACHE_BASE_ADDRESS: u64 = 176;
+
+/// First `dyld_all_image_infos.version` with `sharedCacheBaseAddress`
+/// (macOS SDK `<mach-o/dyld_images.h>:165`).
+const DYLD_ALL_IMAGE_INFOS_SHARED_CACHE_BASE_VERSION: u32 = 15;
+
 /// A macOS process.
 ///
 /// A process is a BSD `struct proc`. When the process has a Mach task, the
@@ -345,9 +359,52 @@ where
             .map(move |(fd, fileproc)| Ok(MacOsOpenFile::new(vmi, fd, fileproc))))
     }
 
-    /// Returns the `infoArray`, `infoArrayCount` and translation root of the
-    /// dyld image list, or `None` when there is no list.
-    fn dyld_image_info_array(&self) -> Result<Option<(Va, u32, Pa)>, VmiError> {
+    /// Returns the address of the dyld shared cache header in the address
+    /// space of the process.
+    ///
+    /// Returns `None` when the process has no task, when dyld has not
+    /// registered its image list, when the list predates the field, or when
+    /// the process does not use a shared cache.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `sharedCacheBaseAddress` of the
+    /// `struct dyld_all_image_infos` at `task.all_image_info_addr`, which
+    /// is present when its `version` is at least 15. The address includes
+    /// the slide of the shared cache.
+    pub fn shared_cache_base(&self) -> Result<Option<Va>, VmiError> {
+        let (all_image_infos, root) = match self.dyld_all_image_infos()? {
+            Some(result) => result,
+            None => return Ok(None),
+        };
+
+        let mut version = [0u8; 4];
+        self.vmi.read_in((all_image_infos, root), &mut version)?;
+        if u32::from_le_bytes(version) < DYLD_ALL_IMAGE_INFOS_SHARED_CACHE_BASE_VERSION {
+            return Ok(None);
+        }
+
+        let mut base = [0u8; 8];
+        self.vmi.read_in(
+            (
+                all_image_infos + DYLD_ALL_IMAGE_INFOS_SHARED_CACHE_BASE_ADDRESS,
+                root,
+            ),
+            &mut base,
+        )?;
+
+        let base = Driver::Architecture::canonical_address(u64::from_le_bytes(base));
+        if base.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(base))
+    }
+
+    /// Returns the address of the `struct dyld_all_image_infos` of the
+    /// process and the translation root of its address space, or `None`
+    /// when there is no task or dyld has not registered the structure.
+    fn dyld_all_image_infos(&self) -> Result<Option<(Va, Pa)>, VmiError> {
         let task = offset!(self.vmi, task);
 
         let task_va = match self.task()? {
@@ -362,9 +419,19 @@ where
             return Ok(None);
         }
 
-        let root = self.translation_root()?;
+        Ok(Some((Va(all_image_infos), self.translation_root()?)))
+    }
+
+    /// Returns the `infoArray`, `infoArrayCount` and translation root of the
+    /// dyld image list, or `None` when there is no list.
+    fn dyld_image_info_array(&self) -> Result<Option<(Va, u32, Pa)>, VmiError> {
+        let (all_image_infos, root) = match self.dyld_all_image_infos()? {
+            Some(result) => result,
+            None => return Ok(None),
+        };
+
         let mut header = [0u8; DYLD_ALL_IMAGE_INFOS_HEADER_SIZE];
-        self.vmi.read_in((Va(all_image_infos), root), &mut header)?;
+        self.vmi.read_in((all_image_infos, root), &mut header)?;
 
         let (count, info_array) = match (read_u32(&header, 4), read_u64(&header, 8)) {
             (Some(count), Some(info_array)) => {
