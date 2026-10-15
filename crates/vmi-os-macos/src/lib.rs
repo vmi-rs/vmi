@@ -171,6 +171,9 @@ where
     /// Symbols relocated to their runtime addresses.
     symbols: Symbols,
 
+    /// Maps profile addresses to the corresponding runtime kernel segments.
+    relocations: KernelRelocations,
+
     /// Address of the kernel `MH_EXECUTE` header.
     kernel_image_base: Va,
 
@@ -283,6 +286,7 @@ where
         Ok(Self {
             offsets: Offsets::new(profile)?,
             symbols: relocate_symbols(Symbols::new(profile)?, &relocations)?,
+            relocations,
             kernel_image_base: kernel_info.base_address,
             kernel_collection_base: kernel_info.kernel_collection_base,
             kernel_uuid: kernel_info.uuid,
@@ -313,6 +317,11 @@ where
     /// Returns the `LC_UUID` of the kernel.
     pub fn kernel_uuid(vmi: VmiState<Self>) -> [u8; 16] {
         this!(vmi).kernel_uuid
+    }
+
+    /// Relocates a kernel profile address using its containing segment.
+    pub fn relocate_kernel_address(vmi: VmiState<Self>, address: u64) -> Result<Va, VmiError> {
+        Ok(this!(vmi).relocations.relocate(address)?)
     }
 
     /// Reads a pointer from kernel memory and strips its tag bits.
