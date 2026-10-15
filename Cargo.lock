@@ -233,6 +233,7 @@ dependencies = [
  "ptr_meta",
  "rancor",
  "simdutf8",
+ "uuid",
 ]
 
 [[package]]
@@ -2219,6 +2220,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sigmd"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "bon",
+ "rkyv",
+ "uuid",
+]
+
+[[package]]
 name = "signal-hook"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2704,6 +2715,9 @@ dependencies = [
  "isr",
  "isr-core",
  "isr-macros",
+ "libkvm",
+ "memmap2",
+ "sigmd",
  "signal-hook",
  "tracing",
  "tracing-subscriber",
@@ -2900,6 +2914,7 @@ dependencies = [
  "tracing",
  "vmi",
  "vmi-arch-amd64",
+ "vmi-arch-arm64",
  "vmi-core",
  "vmi-driver-mock",
  "vmi-os-windows",
