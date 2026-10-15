@@ -15,10 +15,11 @@
 //!
 //! # Consistency on error
 //!
-//! Callers must pause guest execution while modifying breakpoints. A shadow is
-//! unmapped before it is edited and remapped only after all patches are
-//! written. Failed operations retain their allocated frames, so a retry reuses
-//! them. Errors must be handled before guest execution resumes.
+//! Callers must pause guest execution while modifying breakpoints or refreshing
+//! pages. A shadow is unmapped before it is edited and remapped only after all
+//! patches are written. Failed operations retain their allocated frames for
+//! retry or explicit [`Interceptor::clear`] cleanup. Errors must be handled
+//! before guest execution resumes.
 //!
 //! [`BreakpointController`]: crate::bpm::BreakpointController
 
@@ -218,6 +219,48 @@ where
         view: View,
     ) -> Result<Option<bool>, VmiError> {
         self.remove_breakpoint_internal(vmi, address, view, true)
+    }
+
+    /// Refreshes original bytes and reapplies every owned patch on a page.
+    ///
+    /// Returns `false` when the page has no owned breakpoint. Callers must keep
+    /// guest execution paused until the refresh succeeds or cleanup completes.
+    pub fn refresh_page(
+        &mut self,
+        vmi: &VmiCore<Driver>,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<bool, VmiError> {
+        let page = match self.pages.get_mut(&(view, gfn)) {
+            Some(page) if !page.breakpoints.is_empty() => page,
+            Some(_) | None => return Ok(false),
+        };
+        drop(vmi.flush_gfn_cache_entry(gfn));
+        let mut content = vmi.driver().read_page(gfn)?.to_vec();
+        deactivate_shadow_page(vmi, page)?;
+        for (&offset, breakpoint) in &mut page.breakpoints {
+            let offset = offset as usize;
+            let instruction = &mut content[offset..offset + Driver::Architecture::BREAKPOINT.len()];
+            breakpoint.original_content.copy_from_slice(instruction);
+            instruction.copy_from_slice(Driver::Architecture::BREAKPOINT);
+        }
+        vmi.driver().write_page(page.shadow_gfn, 0, &content)?;
+        activate_shadow_page(vmi, page)?;
+        Ok(true)
+    }
+
+    /// Restores original mappings and frees every allocated shadow.
+    ///
+    /// Stops on the first error and retains unreclaimed frames for retry.
+    pub fn clear(&mut self, vmi: &VmiCore<Driver>) -> Result<(), VmiError> {
+        let locations = self.pages.keys().copied().collect::<Vec<_>>();
+        for location in locations {
+            let page = self.pages.get_mut(&location).expect("tracked shadow page");
+            deactivate_shadow_page(vmi, page)?;
+            vmi.free_gfn(page.shadow_gfn)?;
+            self.pages.remove(&location);
+        }
+        Ok(())
     }
 
     /// Releases an ownership reference and reclaims an empty shadow.

@@ -109,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `macos-dump` example, which analyzes a macOS QEMU ELF core dump.
 - `basic-process-list-kvm-macos` example, which lists the processes of a
   macOS guest running in KVM.
+- `Interceptor::refresh_page`, which rebuilds the shadow of a page after the
+  guest writes to the original page, and `Interceptor::clear`, which restores
+  every view and frees every shadow frame.
 
 ### Removed
 

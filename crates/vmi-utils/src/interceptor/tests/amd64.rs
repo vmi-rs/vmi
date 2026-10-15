@@ -1,13 +1,104 @@
+use std::cell::Cell;
+
 use vmi_arch_amd64::{
     Amd64, EventInterrupt, EventReason, EventSinglestep, ExceptionVector, Interrupt, InterruptType,
     Registers,
 };
 use vmi_core::{
-    Architecture as _, Gfn, Pa, VcpuId, View, VmiCore, VmiError, VmiEvent, VmiEventFlags, VmiRead,
+    Architecture as _, Gfn, MemoryAccess, Pa, VcpuId, View, VmiCore, VmiDriver, VmiError, VmiEvent,
+    VmiEventFlags, VmiInfo, VmiMappedPage, VmiRead, VmiViewControl, VmiVmControl, VmiWrite,
 };
 use vmi_driver_mock::arch::amd64::{Call, MockDriver, Op};
 
 use super::super::Interceptor;
+
+/// Adds a one-shot reclamation fault to the real in-memory driver.
+struct ReclamationDriver {
+    /// Stores pages and mappings with the usual mock-driver semantics.
+    driver: MockDriver,
+
+    /// Makes the next frame release fail without freeing its storage.
+    fail_free: Cell<bool>,
+}
+
+impl VmiDriver for ReclamationDriver {
+    type Architecture = Amd64;
+
+    fn info(&self) -> Result<VmiInfo, VmiError> {
+        self.driver.info()
+    }
+}
+
+impl VmiRead for ReclamationDriver {
+    fn read_page(&self, gfn: Gfn) -> Result<VmiMappedPage, VmiError> {
+        self.driver.read_page(gfn)
+    }
+}
+
+impl VmiWrite for ReclamationDriver {
+    fn write_page(&self, gfn: Gfn, offset: u64, content: &[u8]) -> Result<VmiMappedPage, VmiError> {
+        self.driver.write_page(gfn, offset, content)
+    }
+}
+
+impl VmiViewControl for ReclamationDriver {
+    fn default_view(&self) -> View {
+        self.driver.default_view()
+    }
+
+    fn create_view(&self, default_access: MemoryAccess) -> Result<View, VmiError> {
+        self.driver.create_view(default_access)
+    }
+
+    fn destroy_view(&self, view: View) -> Result<(), VmiError> {
+        self.driver.destroy_view(view)
+    }
+
+    fn switch_to_view(&self, view: View) -> Result<(), VmiError> {
+        self.driver.switch_to_view(view)
+    }
+
+    fn change_view_gfn(&self, view: View, old_gfn: Gfn, new_gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.change_view_gfn(view, old_gfn, new_gfn)
+    }
+
+    fn reset_view_gfn(&self, view: View, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.reset_view_gfn(view, gfn)
+    }
+}
+
+impl VmiVmControl for ReclamationDriver {
+    fn pause(&self) -> Result<(), VmiError> {
+        self.driver.pause()
+    }
+
+    fn resume(&self) -> Result<(), VmiError> {
+        self.driver.resume()
+    }
+
+    fn allocate_gfn(&self) -> Result<Gfn, VmiError> {
+        self.driver.allocate_gfn()
+    }
+
+    fn allocate_gfn_at(&self, gfn: Gfn) -> Result<(), VmiError> {
+        self.driver.allocate_gfn_at(gfn)
+    }
+
+    fn free_gfn(&self, gfn: Gfn) -> Result<(), VmiError> {
+        if self.fail_free.replace(false) {
+            return Err(VmiError::Other("injected frame reclamation fault"));
+        }
+        self.driver.free_gfn(gfn)
+    }
+
+    fn inject_interrupt(&self, vcpu: VcpuId, interrupt: Interrupt) -> Result<(), VmiError> {
+        self.driver.inject_interrupt(vcpu, interrupt)
+    }
+
+    fn reset_state(&self) -> Result<(), VmiError> {
+        self.driver.reset_state()
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test Helpers
@@ -659,6 +750,40 @@ fn force_remove_unknown_returns_none() -> Result<(), VmiError> {
     Ok(())
 }
 
+/// Refreshes saved instructions while preserving patches and ownership counts.
+#[test]
+fn refresh_updates_original_bytes_and_preserves_remaining_patches() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+    let first = bp_address(CODE_GFN, 0x100);
+    let second = bp_address(CODE_GFN, 0x200);
+    let shadow = interceptor.insert_breakpoint(&vmi, first, VIEW)?;
+    interceptor.insert_breakpoint(&vmi, first, VIEW)?;
+    interceptor.insert_breakpoint(&vmi, second, VIEW)?;
+    vmi.driver().fill_page(CODE_GFN, 0x5a);
+    assert!(interceptor.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    assert_eq!(vmi.driver().byte(shadow, 0x300), 0x5a);
+    assert_eq!(vmi.driver().byte(shadow, 0x100), 0xcc);
+    assert_eq!(vmi.driver().byte(shadow, 0x200), 0xcc);
+    assert_eq!(
+        interceptor.remove_breakpoint(&vmi, first, VIEW)?,
+        Some(false)
+    );
+    assert_eq!(
+        interceptor.remove_breakpoint(&vmi, first, VIEW)?,
+        Some(true)
+    );
+    assert_eq!(vmi.driver().byte(shadow, 0x100), 0x5a);
+    assert_eq!(vmi.driver().byte(shadow, 0x200), 0xcc);
+    interceptor.remove_breakpoint(&vmi, second, VIEW)?;
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    assert!(vmi.driver().read_page(shadow).is_err());
+    assert!(!interceptor.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    Ok(())
+}
+
 /// Reclaims successful removals and uses current original bytes on reinsertion.
 #[test]
 fn reinsert_after_removal_uses_current_code() -> Result<(), VmiError> {
@@ -674,6 +799,8 @@ fn reinsert_after_removal_uses_current_code() -> Result<(), VmiError> {
     let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
     assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
     assert_eq!(vmi.driver().byte(shadow, 0), 0x5a);
+    interceptor.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
     assert_eq!(vmi.driver().byte(CODE_GFN, OFFSET as usize), 0x5a);
     Ok(())
 }
@@ -949,7 +1076,7 @@ fn insert_propagates_breakpoint_write_error() -> Result<(), VmiError> {
     Ok(())
 }
 
-/// Keeps patches tracked when an edit fails.
+/// Keeps patches tracked when an edit fails and allows cleanup to reclaim them.
 #[test]
 fn remove_propagates_restore_write_error() -> Result<(), VmiError> {
     let driver = MockDriver::new();
@@ -957,12 +1084,14 @@ fn remove_propagates_restore_write_error() -> Result<(), VmiError> {
     let vmi = make_vmi(driver)?;
     let mut interceptor = Interceptor::<MockDriver>::new();
     let address = bp_address(CODE_GFN, OFFSET);
-    interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
     interceptor.insert_breakpoint(&vmi, bp_address(CODE_GFN, OFFSET + 1), VIEW)?;
     vmi.driver().arm_fault(Op::WritePage, 3);
     assert!(interceptor.remove_breakpoint(&vmi, address, VIEW).is_err());
     assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
     assert!(interceptor.contains_breakpoint(&breakpoint_event(Some(VIEW), CODE_GFN, OFFSET)));
+    interceptor.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
     Ok(())
 }
 
@@ -998,4 +1127,134 @@ fn validates_multibyte_alignment_and_page_containment() {
     }
     assert!(super::super::validate_breakpoint(4092, 4, 4096).is_ok());
     assert!(super::super::validate_breakpoint(4095, 1, 4096).is_ok());
+}
+
+/// Propagates cleanup faults without losing the resources needed for retry.
+#[test]
+fn clear_retries_failed_unmapping_and_reclaims_all_shadows() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+    let shadow = interceptor.insert_breakpoint(&vmi, bp_address(CODE_GFN, OFFSET), VIEW)?;
+    vmi.driver().arm_fault(Op::ResetView, 1);
+    assert!(interceptor.clear(&vmi).is_err());
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    interceptor.clear(&vmi)?;
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    assert!(vmi.driver().read_page(shadow).is_err());
+    interceptor.clear(&vmi)?;
+    Ok(())
+}
+
+/// Reclaims frames retained by failed installation without exposing them.
+#[test]
+fn clear_reclaims_failed_installation() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    driver.arm_fault(Op::WritePage, 1);
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+    assert!(
+        interceptor
+            .insert_breakpoint(&vmi, bp_address(CODE_GFN, OFFSET), VIEW)
+            .is_err()
+    );
+    let shadow = vmi
+        .driver()
+        .calls()
+        .into_iter()
+        .find_map(|call| match call {
+            Call::AllocateGfn { gfn } => Some(gfn),
+            _ => None,
+        })
+        .expect("allocated shadow");
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    interceptor.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
+    Ok(())
+}
+
+/// Retains a frame and its ownership until failed reclamation can be retried.
+#[test]
+fn last_removal_and_clear_retain_failed_reclamation() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = VmiCore::new(ReclamationDriver {
+        driver,
+        fail_free: Cell::new(false),
+    })?;
+    let mut interceptor = Interceptor::<ReclamationDriver>::new();
+    let address = bp_address(CODE_GFN, OFFSET);
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    vmi.driver().fail_free.set(true);
+    assert!(interceptor.remove_breakpoint(&vmi, address, VIEW).is_err());
+    assert_eq!(vmi.driver().driver.view_target(VIEW, CODE_GFN), None);
+    assert!(vmi.driver().read_page(shadow).is_ok());
+    assert!(interceptor.contains_breakpoint(&breakpoint_event(Some(VIEW), CODE_GFN, OFFSET)));
+    assert_eq!(
+        interceptor.remove_breakpoint(&vmi, address, VIEW)?,
+        Some(true)
+    );
+    assert!(vmi.driver().read_page(shadow).is_err());
+
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    vmi.driver().fail_free.set(true);
+    assert!(interceptor.clear(&vmi).is_err());
+    assert!(vmi.driver().read_page(shadow).is_ok());
+    interceptor.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
+    assert!(!interceptor.contains_breakpoint(&breakpoint_event(Some(VIEW), CODE_GFN, OFFSET)));
+    Ok(())
+}
+
+/// Requires executable remapping after refreshing code and retains failed
+/// edits.
+#[test]
+fn refresh_propagates_remap_error_and_can_recover() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut interceptor = Interceptor::<MockDriver>::new();
+    let address = bp_address(CODE_GFN, OFFSET);
+    let shadow = interceptor.insert_breakpoint(&vmi, address, VIEW)?;
+    vmi.driver().fill_page(CODE_GFN, 0x5a);
+    vmi.driver().arm_fault(Op::ChangeView, 2);
+    assert!(interceptor.refresh_page(&vmi, CODE_GFN, VIEW).is_err());
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    assert!(interceptor.contains_breakpoint(&breakpoint_event(Some(VIEW), CODE_GFN, OFFSET)));
+    assert!(interceptor.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+    assert_eq!(vmi.driver().byte(shadow, 0), 0x5a);
+    interceptor.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
+    Ok(())
+}
+
+/// Invalidates cached page snapshots on refresh, patch removal, and
+/// reclamation.
+#[test]
+fn refresh_and_removal_invalidate_cached_pages() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let mut vmi = VmiCore::new(driver)?;
+    vmi.enable_gfn_cache();
+    let mut interceptor = Interceptor::<MockDriver>::new();
+    let first = bp_address(CODE_GFN, 0x100);
+    let second = bp_address(CODE_GFN, 0x200);
+    let shadow = interceptor.insert_breakpoint(&vmi, first, VIEW)?;
+    interceptor.insert_breakpoint(&vmi, second, VIEW)?;
+    assert_eq!(vmi.read_page(CODE_GFN)?[0], 0xab);
+    assert_eq!(vmi.read_page(shadow)?[0], 0xab);
+    vmi.driver().fill_page(CODE_GFN, 0x5a);
+    interceptor.refresh_page(&vmi, CODE_GFN, VIEW)?;
+    assert_eq!(vmi.read_page(CODE_GFN)?[0], 0x5a);
+    assert_eq!(vmi.read_page(shadow)?[0], 0x5a);
+    assert_eq!(vmi.read_page(shadow)?[0x100], 0xcc);
+    interceptor.remove_breakpoint(&vmi, first, VIEW)?;
+    assert_eq!(vmi.read_page(shadow)?[0x100], 0x5a);
+    interceptor.remove_breakpoint(&vmi, second, VIEW)?;
+    assert!(vmi.read_page(shadow).is_err());
+    Ok(())
 }
