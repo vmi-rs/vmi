@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   syscall from user mode, instead of at `SeAccessCheck`. On an idle guest such
   a syscall comes much sooner, and the thread holds no locks.
 - The kernel-mode injector with a bridge accepts `VMCALL`s from user mode too.
+- After an answer, `VmiXenDriver` checks the vm_event ring for a while before
+  it sleeps, when requests come in quick succession. A request that arrives
+  in that time costs no interrupt in dom0 and three syscalls less. The time
+  adapts to the gaps between requests, from 10 to 50 microseconds, and stays
+  at zero while events are rare. It keeps a CPU busy while it runs.
 
 ### Added
 
@@ -70,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiXenDriver::event_channel_port` returns the port of the event channel
   that notifies the driver of events. With the port number, a caller can ask
   Xen which vCPU receives the events.
+- `VmiXenBusyWait` and `VmiXenDriver::with_busy_wait` choose how the Xen
+  driver waits for the next request, `Off` or `Adaptive` with its own start
+  and maximum time.
 
 ### Removed
 

@@ -1,11 +1,12 @@
 //! VMI driver for Xen hypervisor.
 
 mod arch;
+mod busy_wait;
 mod convert;
 mod core;
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     os::fd::AsRawFd as _,
     time::{Duration, Instant},
@@ -26,8 +27,8 @@ use xen::{
     ctrl::VmEventRing,
 };
 
-pub use self::arch::ArchAdapter;
 use self::convert::{FromExt, IntoExt, TryFromExt};
+pub use self::{arch::ArchAdapter, busy_wait::VmiXenBusyWait};
 
 struct XenView {
     view: XenAltP2MView,
@@ -57,6 +58,11 @@ where
     pub(crate) ring: RefCell<VmEventRing>,
     pub(crate) views: RefCell<HashMap<u16, XenView>>,
     pub(crate) event_processing_overhead: RefCell<Duration>,
+
+    pub(crate) busy_wait: VmiXenBusyWait,
+    pub(crate) busy_window: Cell<Duration>,
+    pub(crate) masked: Cell<bool>,
+    pub(crate) answered: Cell<Option<Instant>>,
 }
 
 impl<Arch> Drop for VmiXenDriver<Arch>
@@ -103,6 +109,10 @@ where
             ring: RefCell::new(ring),
             views: RefCell::new(HashMap::new()),
             event_processing_overhead: RefCell::new(Duration::ZERO),
+            busy_wait: VmiXenBusyWait::default(),
+            busy_window: Cell::new(Duration::ZERO),
+            masked: Cell::new(false),
+            answered: Cell::new(None),
         })
     }
 
@@ -150,6 +160,15 @@ where
         Ok(None)
     }
 
+    /// Sets how the driver waits for the next request after an answer.
+    ///
+    /// The default is [`VmiXenBusyWait::Adaptive`] with a `start` of 10
+    /// microseconds and a `max` of 50 microseconds.
+    pub fn with_busy_wait(mut self, busy_wait: VmiXenBusyWait) -> Self {
+        self.busy_wait = busy_wait;
+        self
+    }
+
     /// Returns the port of the event channel that notifies the driver of
     /// events.
     ///
@@ -157,6 +176,97 @@ where
     /// dom0.
     pub fn event_channel_port(&self) -> u32 {
         self.evtchn.local_port()
+    }
+
+    /// Checks the ring until a request arrives or the busy-wait time ends.
+    ///
+    /// Returns whether a request arrived. Unmasks the event channel when none
+    /// did.
+    fn busy_wait_for_request(&self) -> Result<bool, VmiError> {
+        if !self.masked.get() {
+            return Ok(false);
+        }
+
+        let end = Instant::now() + self.busy_window.get();
+        loop {
+            if self.ring.borrow().has_unconsumed_requests() {
+                return Ok(true);
+            }
+
+            if Instant::now() >= end {
+                break;
+            }
+
+            std::hint::spin_loop();
+        }
+
+        self.evtchn.unmask().map_err(VmiError::driver)?;
+        self.masked.set(false);
+        Ok(false)
+    }
+
+    /// Sleeps until Xen notifies the driver of a request or the deadline
+    /// passes.
+    ///
+    /// Afterwards the event channel stays masked while the busy-wait time is
+    /// not zero.
+    fn sleep_for_request(&self, deadline: Instant) -> Result<(), VmiError> {
+        let mut fds = [libc::pollfd {
+            fd: self.evtchn.as_raw_fd(),
+            events: libc::POLLIN | libc::POLLERR,
+            revents: 0,
+        }];
+
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let timeout = remaining
+                .as_micros()
+                .div_ceil(1000)
+                .try_into()
+                .map_err(|_| VmiError::InvalidTimeout)?;
+
+            #[rustfmt::skip]
+            let poll_result = unsafe {
+                libc::poll(
+                    fds.as_mut_ptr() as _,
+                    fds.len() as _,
+                    timeout
+                )
+            };
+
+            match poll_result {
+                0 => return Err(VmiError::Timeout),
+                -1 => return Err(VmiError::Io(std::io::Error::last_os_error())),
+                _ => (),
+            }
+
+            let port = self.evtchn.pending().map_err(VmiError::driver)?;
+            assert_eq!(port, self.evtchn.local_port());
+
+            if self.ring.borrow().has_unconsumed_requests() {
+                break;
+            }
+
+            // Xen notified the port while it was masked, for a request that
+            // the busy wait already handled.
+            self.evtchn.unmask().map_err(VmiError::driver)?;
+        }
+
+        if let Some(answered) = self.answered.get() {
+            let window = self
+                .busy_wait
+                .next_window(self.busy_window.get(), answered.elapsed());
+            self.busy_window.set(window);
+        }
+
+        if self.busy_window.get().is_zero() {
+            self.evtchn.unmask().map_err(VmiError::driver)?;
+        }
+        else {
+            self.masked.set(true);
+        }
+
+        Ok(())
     }
 }
 
@@ -481,30 +591,11 @@ where
         timeout: Duration,
         mut handler: impl FnMut(&VmiEvent<Arch>) -> VmiEventResponse<Arch>,
     ) -> Result<(), VmiError> {
-        let mut fds = [libc::pollfd {
-            fd: self.evtchn.as_raw_fd(),
-            events: libc::POLLIN | libc::POLLERR,
-            revents: 0,
-        }];
+        i32::try_from(timeout.as_millis()).map_err(|_| VmiError::InvalidTimeout)?;
+        let deadline = Instant::now() + timeout;
 
-        let timeout = timeout
-            .as_millis()
-            .try_into()
-            .map_err(|_| VmiError::InvalidTimeout)?;
-
-        #[rustfmt::skip]
-        let poll_result = unsafe {
-            libc::poll(
-                fds.as_mut_ptr() as _,
-                fds.len() as _,
-                timeout
-            )
-        };
-
-        match poll_result {
-            0 => return Err(VmiError::Timeout),
-            -1 => return Err(VmiError::Io(std::io::Error::last_os_error())),
-            _ => (),
+        if !self.busy_wait_for_request()? {
+            self.sleep_for_request(deadline)?;
         }
 
         struct OverheadGuard<'a, Arch>
@@ -537,8 +628,6 @@ where
             }
         }
 
-        self.evtchn.wait().map_err(VmiError::driver)?;
-
         {
             let _overhead_guard = OverheadGuard::new(self);
 
@@ -550,6 +639,7 @@ where
         }
 
         self.evtchn.notify().map_err(VmiError::driver)?;
+        self.answered.set(Some(Instant::now()));
 
         Ok(())
     }
