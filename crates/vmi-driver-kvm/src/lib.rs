@@ -141,6 +141,31 @@ where
         })
     }
 
+    /// Pauses a vCPU until a matching call to
+    /// [`resume_vcpu`](Self::resume_vcpu).
+    ///
+    /// Use a VM pause guard when all selected vCPUs must already have left
+    /// guest execution before changing shared memory.
+    pub fn pause_vcpu(&self, vcpu: VcpuId) -> Result<(), VmiError> {
+        if usize::from(vcpu.0) >= self.vcpus.len() {
+            return Err(VmiError::OutOfBounds);
+        }
+        self.session
+            .pause_vcpu(u32::from(vcpu.0))
+            .map_err(VmiError::driver)
+    }
+
+    /// Releases one pause reference acquired by
+    /// [`pause_vcpu`](Self::pause_vcpu).
+    pub fn resume_vcpu(&self, vcpu: VcpuId) -> Result<(), VmiError> {
+        if usize::from(vcpu.0) >= self.vcpus.len() {
+            return Err(VmiError::OutOfBounds);
+        }
+        self.session
+            .unpause_vcpu(u32::from(vcpu.0))
+            .map_err(VmiError::driver)
+    }
+
     /// Returns the host frame (KVM gfn) that holds a guest frame.
     ///
     /// A frame allocated by [`VmiVmControl::allocate_gfn`] maps back to the

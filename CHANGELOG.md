@@ -126,6 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `arch-arm64`).
 - `utils-bpm` feature for the breakpoint manager and page table monitor without
   enabling Windows-only utilities.
+- `VmiKvmDriver::pause_vcpu` and `resume_vcpu`, which pause and resume a single
+  vCPU.
 
 ### Removed
 
