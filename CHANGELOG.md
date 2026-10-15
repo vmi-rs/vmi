@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of setting the old `allow_userspace` field. The default is `false`.
 - **Breaking:** `OsAdapter` has a new required method,
   `user_shellcode_spawn_from_kernel_recipe`.
+- **Breaking:** `libxen` dependency updated to 0.7.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
