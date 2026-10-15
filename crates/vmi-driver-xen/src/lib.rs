@@ -57,7 +57,7 @@ where
 
     pub(crate) ring: RefCell<VmEventRing>,
     pub(crate) views: RefCell<HashMap<u16, XenView>>,
-    pub(crate) event_processing_overhead: RefCell<Duration>,
+    pub(crate) event_processing_overhead: Cell<Duration>,
 
     pub(crate) busy_wait: VmiXenBusyWait,
     pub(crate) busy_window: Cell<Duration>,
@@ -108,7 +108,7 @@ where
             info,
             ring: RefCell::new(ring),
             views: RefCell::new(HashMap::new()),
-            event_processing_overhead: RefCell::new(Duration::ZERO),
+            event_processing_overhead: Cell::new(Duration::ZERO),
             busy_wait: VmiXenBusyWait::default(),
             busy_window: Cell::new(Duration::ZERO),
             masked: Cell::new(false),
@@ -583,7 +583,7 @@ where
     }
 
     fn event_processing_overhead(&self) -> Duration {
-        *self.event_processing_overhead.borrow()
+        self.event_processing_overhead.get()
     }
 
     fn wait_for_event(
@@ -624,7 +624,8 @@ where
         {
             fn drop(&mut self) {
                 let elapsed = Instant::now().duration_since(self.start);
-                *self.driver.event_processing_overhead.borrow_mut() += elapsed;
+                let overhead = &self.driver.event_processing_overhead;
+                overhead.set(overhead.get() + elapsed);
             }
         }
 
