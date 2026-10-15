@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at zero while events are rare. It keeps a CPU busy while it runs.
 - `Interceptor` frees the shadow frame of a page when its last breakpoint is
   removed.
+- `BreakpointManager::clear` returns the first error instead of logging it and
+  continuing, and keeps the breakpoints it could not remove so that a later call
+  can retry.
+- Removing a breakpoint from `BreakpointManager` reports
+  `VmiError::ViewNotFound` from the controller instead of ignoring it.
 
 ### Added
 
@@ -161,6 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inserting a breakpoint on a page that already has breakpoints rebuilds the
   shadow from the current original page instead of patching a shadow that may
   hold stale code.
+- A page-out event removes only the breakpoints of the translation that was
+  paged out. Other virtual aliases of the page and other owners of a global
+  breakpoint stay active.
 
 ## [0.11.0] - 2026-10-09
 

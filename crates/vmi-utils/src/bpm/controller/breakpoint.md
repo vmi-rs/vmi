@@ -21,7 +21,15 @@ Write exceptions need careful consideration as they could overwrite breakpoint
 instructions - you can either ignore them or remove the affected breakpoint
 from the manager.
 
+All breakpoint mutations require paused guest execution. Multi-byte breakpoint
+instructions must be aligned to their instruction size and fit within a page.
+Removing the last owner restores the original mapping and frees its shadow.
+Call [`BreakpointManager::clear`] before destroying the view. Cleanup propagates
+errors and retains unreclaimed frames and permissions for retry. Do not resume
+guest execution after a mutation error until recovery or cleanup succeeds.
+
 [software breakpoint]: vmi_core::arch::EventReason::as_software_breakpoint
 [memory access]: vmi_core::arch::EventReason::as_memory_access
 [`BreakpointManager::contains_by_event`]: crate::bpm::BreakpointManager::contains_by_event
 [`BreakpointManager::get_by_event`]: crate::bpm::BreakpointManager::get_by_event
+[`BreakpointManager::clear`]: crate::bpm::BreakpointManager::clear

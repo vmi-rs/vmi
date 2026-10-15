@@ -1671,17 +1671,23 @@ fn remove_tolerates_view_not_found_on_unmonitor() -> Result<(), VmiError> {
     Ok(())
 }
 
+/// Preserves ownership when a controller cannot complete resource teardown.
 #[test]
-fn remove_tolerates_view_not_found_on_uninstall() -> Result<(), VmiError> {
+fn remove_propagates_view_not_found_from_uninstall() -> Result<(), VmiError> {
     let vmi = make_vmi(MockDriver::new())?;
     let mut manager = RecManager::new();
-
+    let breakpoint = bp(OFFSET, ROOT1, VIEW);
     let pa = pa_at(CODE_GFN, OFFSET);
-    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?;
-
+    manager.insert_with_hint(&vmi, breakpoint, Some(pa))?;
     rec_arm_fault(ControllerOp::Remove, 1, FaultKind::ViewNotFound);
-    assert!(manager.remove_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?);
-
+    assert!(
+        manager
+            .remove_with_hint(&vmi, breakpoint, Some(pa))
+            .is_err()
+    );
+    assert!(manager.contains_by_address(breakpoint.ctx(), ()));
+    manager.clear(&vmi)?;
+    assert!(!manager.contains_by_address(breakpoint.ctx(), ()));
     Ok(())
 }
 
@@ -2064,8 +2070,7 @@ fn breakpoint_controller_release_shared_reference_does_not_panic() -> Result<(),
 
 #[test]
 fn manager_page_out_of_shared_return_site_does_not_panic() -> Result<(), VmiError> {
-    // Two address contexts share one physical breakpoint; paging out the page
-    // releases the references one at a time through the interceptor.
+    // Removing one translation must leave the other physical owner installed.
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
     let vmi = make_vmi(driver)?;
@@ -2081,6 +2086,134 @@ fn manager_page_out_of_shared_return_site_does_not_panic() -> Result<(), VmiErro
         pa,
     };
     manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageOut(update))?;
+    assert!(!manager.contains_by_address(ctx_at(OFFSET, ROOT1), ()));
+    assert!(manager.contains_by_address(ctx_at(OFFSET, ROOT2), ()));
+    let shadow = vmi
+        .driver()
+        .view_target(VIEW, CODE_GFN)
+        .expect("alias still active");
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+    manager.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
 
+    Ok(())
+}
+
+/// Preserves a different virtual alias and its patch during page-out.
+#[test]
+fn page_out_keeps_other_virtual_alias_active() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut manager = BreakpointManager::<BreakpointController<MockDriver>>::new();
+    let first = bp(OFFSET, ROOT1, VIEW);
+    let second = bp(OFFSET2, ROOT1, VIEW);
+    manager.insert_with_hint(&vmi, first, Some(pa_at(CODE_GFN, OFFSET)))?;
+    manager.insert_with_hint(&vmi, second, Some(pa_at(CODE_GFN, OFFSET2)))?;
+    let shadow = vmi.driver().view_target(VIEW, CODE_GFN).expect("mapped");
+    manager.handle_ptm_event(
+        &vmi,
+        &PageTableMonitorEvent::PageOut(PageEntryUpdate {
+            view: VIEW,
+            ctx: first.ctx(),
+            pa: pa_at(CODE_GFN, OFFSET),
+        }),
+    )?;
+    assert!(!manager.contains_by_address(first.ctx(), ()));
+    assert!(manager.contains_by_address(second.ctx(), ()));
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xab);
+    assert_eq!(vmi.driver().byte(shadow, OFFSET2 as usize), 0xcc);
+    assert_eq!(vmi.driver().access(CODE_GFN, VIEW), MemoryAccess::X);
+    manager.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
+    Ok(())
+}
+
+/// Keeps global translation ownership distinct from canonical lookup roots.
+#[test]
+fn page_out_matches_global_owner_and_preserves_other_keys() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+    let first = Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW)
+        .global()
+        .with_key(1u32);
+    let second = Breakpoint::new(ctx_at(OFFSET, ROOT2), VIEW)
+        .global()
+        .with_key(2u32);
+    manager.insert_with_hint(&vmi, first, Some(pa_at(CODE_GFN, OFFSET)))?;
+    manager.insert_with_hint(&vmi, second, Some(pa_at(OTHER_GFN, OFFSET)))?;
+    let update = PageEntryUpdate {
+        view: VIEW,
+        ctx: ctx_at(OFFSET, ROOT2),
+        pa: pa_at(OTHER_GFN, OFFSET),
+    };
+    assert!(manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageOut(update))?);
+    assert!(manager.contains_by_event(&bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2), 1));
+    assert!(!manager.contains_by_event(&bp_event(Some(VIEW), OTHER_GFN, va_at(OFFSET), ROOT2), 2));
+    assert!(manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageIn(update))?);
+    assert!(manager.contains_by_event(&bp_event(Some(VIEW), OTHER_GFN, va_at(OFFSET), ROOT1), 2));
+    manager.clear(&vmi)?;
+    Ok(())
+}
+
+/// Reports failed cleanup and keeps installed resources reachable for retry.
+#[test]
+fn manager_clear_propagates_shadow_cleanup_error_and_retries() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut manager = BreakpointManager::<BreakpointController<MockDriver>>::new();
+    let breakpoint = bp(OFFSET, ROOT1, VIEW);
+    manager.insert_with_hint(&vmi, breakpoint, Some(pa_at(CODE_GFN, OFFSET)))?;
+    let shadow = vmi.driver().view_target(VIEW, CODE_GFN).expect("mapped");
+    vmi.driver().arm_fault(Op::ResetView, 1);
+    assert!(manager.clear(&vmi).is_err());
+    assert!(manager.contains_by_address(breakpoint.ctx(), ()));
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    manager.clear(&vmi)?;
+    assert!(!manager.contains_by_address(breakpoint.ctx(), ()));
+    assert!(vmi.driver().read_page(shadow).is_err());
+    assert_eq!(vmi.driver().access(CODE_GFN, VIEW), MemoryAccess::RWX);
+    Ok(())
+}
+
+/// Retries permission cleanup after the last physical patch has been removed.
+#[test]
+fn manager_clear_retries_failed_unmonitor() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+    let breakpoint = bp(OFFSET, ROOT1, VIEW);
+    manager.insert_with_hint(&vmi, breakpoint, Some(pa_at(CODE_GFN, OFFSET)))?;
+    rec_arm_fault(ControllerOp::Unmonitor, 1, FaultKind::Other);
+    assert!(manager.clear(&vmi).is_err());
+    assert!(!manager.contains_by_address(breakpoint.ctx(), ()));
+    manager.clear(&vmi)?;
+    assert!(manager.active_gfns_by_view.is_empty());
+    Ok(())
+}
+
+/// Retains a page-out claim when permission cleanup fails after patch removal.
+#[test]
+fn page_out_unmonitor_error_preserves_pending_claim() -> Result<(), VmiError> {
+    let vmi = make_vmi(MockDriver::new())?;
+    let mut manager = RecManager::new();
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW), Some(pa))?;
+    rec_arm_fault(ControllerOp::Unmonitor, 1, FaultKind::Other);
+    let update = PageEntryUpdate {
+        view: VIEW,
+        ctx,
+        pa,
+    };
+    assert!(
+        manager
+            .handle_ptm_event(&vmi, &PageTableMonitorEvent::PageOut(update))
+            .is_err()
+    );
+    assert!(!manager.contains_by_address(ctx, ()));
+    assert!(manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageIn(update))?);
+    assert!(manager.contains_by_address(ctx, ()));
+    manager.clear(&vmi)?;
     Ok(())
 }
