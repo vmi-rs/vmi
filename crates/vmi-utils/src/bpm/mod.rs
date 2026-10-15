@@ -485,6 +485,7 @@ where
         for (view, gfn) in monitored {
             self.unmonitor_page_for_changes(vmi, gfn, view)?;
         }
+        self.controller.clear(vmi)?;
 
         debug_assert!(self.active_breakpoints.is_empty());
         debug_assert!(self.active_global_breakpoints.is_empty());
@@ -494,6 +495,19 @@ where
         debug_assert!(self.pending_ctx_by_view.is_empty());
 
         Ok(())
+    }
+
+    /// Refreshes owned breakpoint patches after the original page changes.
+    ///
+    /// Returns `false` when the controller owns no shadow for this location.
+    /// Callers must pause guest execution while refreshing executable pages.
+    pub fn refresh_page(
+        &mut self,
+        vmi: &VmiCore<Interface::Driver>,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<bool, VmiError> {
+        self.controller.refresh_page(vmi, gfn, view)
     }
 
     /// Handles a page table monitor event.

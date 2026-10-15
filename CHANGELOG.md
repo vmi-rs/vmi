@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `user_shellcode_spawn_from_kernel_recipe`.
 - **Breaking:** `libxen` dependency updated to 0.8.
 - **Breaking:** `VmiOsImageArchitecture` is now `#[non_exhaustive]`.
+- **Breaking:** `TapController` implementations must provide `refresh_page` and
+  `clear`.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -117,6 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Interceptor::refresh_page`, which rebuilds the shadow of a page after the
   guest writes to the original page, and `Interceptor::clear`, which restores
   every view and frees every shadow frame.
+- `BreakpointManager::refresh_page`, which rebuilds the shadows of a page after
+  the guest writes to the original page.
 
 ### Removed
 

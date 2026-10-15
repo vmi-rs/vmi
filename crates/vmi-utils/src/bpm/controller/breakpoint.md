@@ -17,9 +17,11 @@ If a vCPU tries to read from or write to a page containing breakpoints, a
 Read access exceptions can typically be handled by (fast-)single-stepping
 the instruction in an unmodified [`default_view`](VmiCore::default_view).
 
-Write exceptions need careful consideration as they could overwrite breakpoint
-instructions - you can either ignore them or remove the affected breakpoint
-from the manager.
+Write exceptions must be single-stepped in the default view with other vCPUs
+paused. Before allowing execution in the breakpoint view again, call
+[`BreakpointManager::refresh_page`] for the modified original frame. This
+refreshes saved instructions, reapplies every owned breakpoint, and remaps the
+fully patched shadow to synchronize instruction visibility.
 
 All breakpoint mutations require paused guest execution. Multi-byte breakpoint
 instructions must be aligned to their instruction size and fit within a page.
@@ -32,4 +34,5 @@ guest execution after a mutation error until recovery or cleanup succeeds.
 [memory access]: vmi_core::arch::EventReason::as_memory_access
 [`BreakpointManager::contains_by_event`]: crate::bpm::BreakpointManager::contains_by_event
 [`BreakpointManager::get_by_event`]: crate::bpm::BreakpointManager::get_by_event
+[`BreakpointManager::refresh_page`]: crate::bpm::BreakpointManager::refresh_page
 [`BreakpointManager::clear`]: crate::bpm::BreakpointManager::clear

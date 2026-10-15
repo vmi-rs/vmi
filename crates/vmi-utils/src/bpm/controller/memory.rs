@@ -57,6 +57,19 @@ where
         Ok(())
     }
 
+    fn refresh_page(
+        &mut self,
+        _vmi: &VmiCore<Driver>,
+        _gfn: Gfn,
+        _view: View,
+    ) -> Result<bool, VmiError> {
+        Ok(false)
+    }
+
+    fn clear(&mut self, _vmi: &VmiCore<Driver>) -> Result<(), VmiError> {
+        Ok(())
+    }
+
     fn monitor(&mut self, vmi: &VmiCore<Driver>, gfn: Gfn, view: View) -> Result<(), VmiError> {
         vmi.set_memory_access(gfn, view, MemoryAccess::RW)
     }

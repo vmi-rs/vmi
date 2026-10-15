@@ -177,6 +177,19 @@ impl TapController for RecordingController {
         Ok(())
     }
 
+    fn refresh_page(
+        &mut self,
+        _vmi: &VmiCore<MockDriver>,
+        _gfn: Gfn,
+        _view: View,
+    ) -> Result<bool, VmiError> {
+        Ok(false)
+    }
+
+    fn clear(&mut self, _vmi: &VmiCore<MockDriver>) -> Result<(), VmiError> {
+        Ok(())
+    }
+
     fn monitor(
         &mut self,
         _vmi: &VmiCore<MockDriver>,
@@ -2099,6 +2112,35 @@ fn manager_page_out_of_shared_return_site_does_not_panic() -> Result<(), VmiErro
     Ok(())
 }
 
+/// Refreshes code through the public manager API without losing shared owners.
+#[test]
+fn manager_refreshes_code_and_releases_duplicate_owners() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut manager = BreakpointManager::<BreakpointController<MockDriver>, u32>::new();
+    let ctx = ctx_at(OFFSET, ROOT1);
+    let pa = pa_at(CODE_GFN, OFFSET);
+    let first = Breakpoint::<u32, &'static str>::from(Breakpoint::new(ctx, VIEW).with_key(1u32));
+    let second = Breakpoint::<u32, &'static str>::from(Breakpoint::new(ctx, VIEW).with_key(2u32));
+    assert!(manager.insert_with_hint(&vmi, first, Some(pa))?);
+    assert!(!manager.insert_with_hint(&vmi, first, Some(pa))?);
+    assert!(manager.insert_with_hint(&vmi, second, Some(pa))?);
+    let shadow = vmi.driver().view_target(VIEW, CODE_GFN).expect("mapped");
+    vmi.driver().fill_page(CODE_GFN, 0x5a);
+    assert!(manager.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xcc);
+    assert_eq!(vmi.driver().byte(shadow, 0), 0x5a);
+    assert!(manager.remove_with_hint(&vmi, first, Some(pa))?);
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), Some(shadow));
+    assert!(manager.contains_by_address(ctx, 2));
+    manager.clear(&vmi)?;
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    assert!(vmi.driver().read_page(shadow).is_err());
+    assert!(!manager.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    Ok(())
+}
+
 /// Preserves a different virtual alias and its patch during page-out.
 #[test]
 fn page_out_keeps_other_virtual_alias_active() -> Result<(), VmiError> {
@@ -2189,6 +2231,52 @@ fn manager_clear_retries_failed_unmonitor() -> Result<(), VmiError> {
     assert!(!manager.contains_by_address(breakpoint.ctx(), ()));
     manager.clear(&vmi)?;
     assert!(manager.active_gfns_by_view.is_empty());
+    Ok(())
+}
+
+/// Returns no shadow ownership for execution-permission breakpoints.
+#[test]
+fn memory_manager_refresh_returns_false() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    let vmi = make_vmi(driver)?;
+    let mut manager = BreakpointManager::<MemoryController<MockDriver>>::new();
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
+    assert!(!manager.refresh_page(&vmi, CODE_GFN, VIEW)?);
+    assert_eq!(vmi.driver().access(CODE_GFN, VIEW), MemoryAccess::RW);
+    assert_eq!(vmi.driver().byte(CODE_GFN, OFFSET as usize), 0xab);
+    manager.clear(&vmi)?;
+    assert_eq!(vmi.driver().access(CODE_GFN, VIEW), MemoryAccess::RWX);
+    Ok(())
+}
+
+/// Reclaims frames retained by an installation that never became active.
+#[test]
+fn manager_clear_reclaims_failed_installation_resources() -> Result<(), VmiError> {
+    let driver = MockDriver::new();
+    driver.fill_page(CODE_GFN, 0xab);
+    driver.arm_fault(Op::WritePage, 1);
+    let vmi = make_vmi(driver)?;
+    let mut manager = BreakpointManager::<BreakpointController<MockDriver>>::new();
+    let breakpoint = bp(OFFSET, ROOT1, VIEW);
+    assert!(
+        manager
+            .insert_with_hint(&vmi, breakpoint, Some(pa_at(CODE_GFN, OFFSET)))
+            .is_err()
+    );
+    assert!(!manager.contains_by_address(breakpoint.ctx(), ()));
+    let shadow = vmi
+        .driver()
+        .calls()
+        .into_iter()
+        .find_map(|call| match call {
+            Call::AllocateGfn { gfn } => Some(gfn),
+            _ => None,
+        })
+        .expect("allocated shadow");
+    assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
+    manager.clear(&vmi)?;
+    assert!(vmi.driver().read_page(shadow).is_err());
     Ok(())
 }
 

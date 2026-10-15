@@ -34,6 +34,21 @@ pub trait TapController {
         view: View,
     ) -> Result<(), VmiError>;
 
+    /// Refreshes owned patches after a write to the original page.
+    ///
+    /// Returns `false` when this controller owns no shadow for the page.
+    fn refresh_page(
+        &mut self,
+        vmi: &VmiCore<Self::Driver>,
+        gfn: Gfn,
+        view: View,
+    ) -> Result<bool, VmiError>;
+
+    /// Releases residual resources retained after failed operations.
+    ///
+    /// The manager removes active patches and monitoring before calling this.
+    fn clear(&mut self, vmi: &VmiCore<Self::Driver>) -> Result<(), VmiError>;
+
     /// Monitors the given guest frame number.
     fn monitor(
         &mut self,
