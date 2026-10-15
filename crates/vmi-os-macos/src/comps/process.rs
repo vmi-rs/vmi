@@ -330,8 +330,8 @@ where
             let mut data = vec![0u8; count as usize * 8];
             vmi.read(files, &mut data)?;
 
-            for (fd, entry) in data.chunks_exact(8).enumerate() {
-                let raw = u64::from_le_bytes(entry.try_into().expect("8-byte chunk"));
+            for (fd, entry) in data.as_chunks::<8>().0.iter().enumerate() {
+                let raw = u64::from_le_bytes(*entry);
                 let fileproc = Driver::Architecture::canonical_address(raw);
 
                 if !fileproc.is_null() {

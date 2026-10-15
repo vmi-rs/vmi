@@ -393,7 +393,9 @@ impl<'a> MachO<'a> {
 /// Entries whose name lies outside the string table are skipped.
 pub(crate) fn exported_symbols(symbols: &[u8], strings: &[u8]) -> Vec<(String, u64)> {
     symbols
-        .chunks_exact(NLIST_64_SIZE)
+        .as_chunks::<NLIST_64_SIZE>()
+        .0
+        .iter()
         .filter_map(|nlist| {
             let name_offset = read_u32(nlist, 0)? as usize;
             let symbol_type = nlist[4];
