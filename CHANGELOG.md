@@ -139,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose process `proc_exit` has already detached, where `process` fails.
 - `MacOs::relocate_kernel_address`, which relocates an address of the kernel
   profile to its runtime address.
+- `macos-breakpoint-manager-kvm` example, which reports process lifecycle and
+  file write events of a macOS guest running in KVM.
 
 ### Removed
 

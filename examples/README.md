@@ -23,6 +23,41 @@ capabilities, from basic operations to more complex scenarios.
   Demonstrates how to use the VMI library to analyze a macOS memory dump
   created by the QEMU `dump-guest-memory` command.
 
+- **[`macos-breakpoint-manager-kvm.rs`]**
+
+  Demonstrates the [`BreakpointManager`] and [`PageTableMonitor`] on a live
+  macOS KVM guest, following the structure of the Windows example. A fixed
+  symbol table supplies tagged breakpoints, and separate handlers report
+  process lifecycle and vnode file operations. Original-instruction stepping,
+  mapping tracking, shadow refresh, and Ctrl-C cleanup remain enabled.
+
+  Run as root on an aarch64 host with matching 16KB host and guest pages:
+
+  ```sh
+  cargo run --release \
+    --example macos-breakpoint-manager-kvm \
+    --features arch-arm64,driver-kvm,os-macos,utils-bpm
+  ```
+
+  Optional arguments after `--` are `PID CACHE HITS`. Defaults are the first
+  QEMU process, `cache`, and unlimited hits (`0`). Only one VMI client can
+  attach to the VM at a time.
+
+  | Kernel hook | Observation |
+  | --- | --- |
+  | `dtrace_proc_fork` | An initialized fork/spawn child, its parent PID, and its inherited name. |
+  | `mac_proc_notify_exec_complete` | Exec-completion notification with the current name and image path. |
+  | `mac_proc_notify_exit` | Final process cleanup, excluding exec's old shadow-proc teardown. |
+  | `mac_vnode_notify_create` | Creation notification with the initialized result vnode's path. |
+  | `vn_write` | Vnode write requests from `write`, `pwrite`, and `writev`, including requested bytes and positional offsets. |
+
+  These private kernel hook signatures were checked in IDA against macOS
+  27.0.1 (26A434). A creation notification is not an unconditional successful
+  create: compound opens can notify for an existing vnode, and later policy
+  checks can fail. Write lengths are requested bytes, not completed transfers.
+  Memory-mapped writes and non-vnode I/O are not covered. Paths follow the
+  mount hierarchy, so data-volume files can appear under `/System/Volumes/Data`.
+
 - **[`windows-breakpoint-manager.rs`]**
 
   Illustrates the usage of the [`BreakpointManager`] and
@@ -67,6 +102,7 @@ capabilities, from basic operations to more complex scenarios.
 [`basic-process-list.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list.rs
 [`basic-process-list-kvm-macos.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/basic-process-list-kvm-macos.rs
 [`macos-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-dump.rs
+[`macos-breakpoint-manager-kvm.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/macos-breakpoint-manager-kvm.rs
 [`windows-breakpoint-manager.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-breakpoint-manager.rs
 [`windows-dump.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-dump.rs
 [`windows-recipe-messagebox.rs`]: https://github.com/vmi-rs/vmi/blob/master/examples/windows-recipe-messagebox.rs
