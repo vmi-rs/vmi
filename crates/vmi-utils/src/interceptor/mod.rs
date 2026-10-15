@@ -15,14 +15,10 @@
 //!
 //! # Consistency on error
 //!
-//! Inserting and removing a breakpoint each perform several distinct VMI
-//! operations - allocating a shadow frame, copying the page, remapping the
-//! guest view, and writing or restoring the breakpoint byte - and these are
-//! not applied as a single transaction. If one step fails, the steps that
-//! already succeeded are not undone. When a method returns an error, treat the
-//! VM as being in an undefined state. The breakpoint may be partially installed
-//! or partially removed, and the guest view may still point at the shadow page.
-//! Callers must not assume a failed call had no effect.
+//! Callers must pause guest execution while modifying breakpoints. A shadow is
+//! unmapped before it is edited and remapped only after all patches are
+//! written. Failed operations retain their allocated frames, so a retry reuses
+//! them. Errors must be handled before guest execution resumes.
 //!
 //! [`BreakpointController`]: crate::bpm::BreakpointController
 
@@ -39,10 +35,6 @@ mod tests;
 
 /// A single software breakpoint installed at one offset within a page.
 struct Breakpoint {
-    /// In-page byte offset of the breakpoint.
-    #[expect(unused)]
-    offset: u16,
-
     /// Original bytes replaced by the breakpoint instruction, restored on
     /// removal.
     original_content: Vec<u8>, // until [u8; Arch::BREAKPOINT.len()] is allowed
@@ -65,19 +57,47 @@ struct Page {
 
     /// Breakpoints on this page, indexed by in-page offset.
     breakpoints: HashMap<u16, Breakpoint>,
+
+    /// Records whether the view may currently expose the shadow.
+    mapped: bool,
 }
 
-/// Refreshes the shadow from the current original page and maps it into the
-/// configured view.
-fn activate_shadow_page<Driver>(vmi: &VmiCore<Driver>, page: &Page) -> Result<(), VmiError>
-where
-    Driver: VmiRead + VmiWrite + VmiViewControl,
-{
-    // Copy the content of the original page to the shadow page.
-    let content = vmi.driver().read_page(page.original_gfn)?;
-    vmi.driver().write_page(page.shadow_gfn, 0, &content)?;
+/// Validates instruction alignment and containment before any guest mutation.
+fn validate_breakpoint(offset: usize, length: usize, page_size: usize) -> Result<(), VmiError> {
+    if length == 0
+        || offset.checked_add(length).is_none_or(|end| end > page_size)
+        || !offset.is_multiple_of(length)
+        || offset > u16::MAX as usize
+    {
+        return Err(VmiError::OutOfBounds);
+    }
+    Ok(())
+}
 
-    // Change the view of the original page to the shadow page.
+/// Unmaps an executable shadow before modifying or reclaiming its contents.
+fn deactivate_shadow_page<Driver>(vmi: &VmiCore<Driver>, page: &mut Page) -> Result<(), VmiError>
+where
+    Driver: VmiRead + VmiViewControl,
+{
+    if page.mapped {
+        match vmi.reset_view_gfn(page.view, page.original_gfn) {
+            Ok(()) => {}
+            Err(VmiError::ViewNotFound) => {}
+            Err(err) => return Err(err),
+        }
+        page.mapped = false;
+    }
+    // Cached mappings must be dropped before a shadow is edited or freed.
+    drop(vmi.flush_gfn_cache_entry(page.shadow_gfn));
+    Ok(())
+}
+
+/// Publishes a fully patched shadow and synchronizes executable mappings.
+fn activate_shadow_page<Driver>(vmi: &VmiCore<Driver>, page: &mut Page) -> Result<(), VmiError>
+where
+    Driver: VmiViewControl,
+{
+    page.mapped = true;
     vmi.change_view_gfn(page.view, page.original_gfn, page.shadow_gfn)
 }
 
@@ -126,99 +146,57 @@ where
     ) -> Result<Gfn, VmiError> {
         let original_gfn = Driver::Architecture::gfn_from_pa(address);
         let offset = Driver::Architecture::pa_offset(address) as usize;
-
-        debug_assert!(offset < Driver::Architecture::PAGE_SIZE as usize);
-
-        // Reject a breakpoint whose bytes would run past the end of the page.
-        if offset + Driver::Architecture::BREAKPOINT.len()
-            > Driver::Architecture::PAGE_SIZE as usize
-        {
-            return Err(VmiError::OutOfBounds);
-        }
-
-        // Check if the page already has a breakpoint.
-        let page = match self.pages.entry((view, original_gfn)) {
-            Entry::Occupied(entry) => {
-                let page = entry.into_mut();
-
-                if let Some(breakpoint) = page.breakpoints.get_mut(&(offset as u16)) {
-                    breakpoint.references += 1;
-
-                    tracing::debug!(
-                        %address,
-                        current_count = breakpoint.references,
-                        "breakpoint already exists"
-                    );
-
-                    return Ok(page.shadow_gfn);
-                }
-
-                if page.breakpoints.is_empty() {
-                    // The view was reset when the last breakpoint was removed,
-                    // but the shadow page is retained for reuse. Refresh it in
-                    // case the original page changed, then reactivate its view
-                    // mapping before inserting the new breakpoint.
-                    activate_shadow_page(vmi, page)?;
-
-                    tracing::debug!(
-                        %address,
-                        %original_gfn,
-                        shadow_gfn = %page.shadow_gfn,
-                        %view,
-                        "reactivated shadow page"
-                    );
-                }
-
-                page
-            }
-            Entry::Vacant(entry) => {
-                // Track the shadow page before activating it. If activation
-                // fails, the page and its allocated GFN stay recorded so a later
-                // insertion reuses them through the reactivation path above,
-                // instead of leaking the frame and allocating a new one.
-                let page = entry.insert(Page {
-                    original_gfn,
-                    shadow_gfn: vmi.allocate_gfn()?,
-                    view,
-                    breakpoints: HashMap::new(),
-                });
-
-                activate_shadow_page(vmi, page)?;
-
-                tracing::debug!(
-                    %address,
-                    %original_gfn,
-                    shadow_gfn = %page.shadow_gfn,
-                    %view,
-                    "created shadow page"
-                );
-
-                page
-            }
-        };
-
-        // Replace the original content with a breakpoint instruction.
-        let shadow = vmi.driver().read_page(page.shadow_gfn)?;
-        let original_content =
-            shadow[offset..offset + Driver::Architecture::BREAKPOINT.len()].to_vec();
-
-        vmi.driver().write_page(
-            page.shadow_gfn,
-            offset as u64,
-            Driver::Architecture::BREAKPOINT,
+        validate_breakpoint(
+            offset,
+            Driver::Architecture::BREAKPOINT.len(),
+            Driver::Architecture::PAGE_SIZE as usize,
         )?;
 
-        // Save the original content of the breakpoint.
-        let offset = offset as u16;
+        let page = match self.pages.entry((view, original_gfn)) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(Page {
+                original_gfn,
+                shadow_gfn: vmi.allocate_gfn()?,
+                view,
+                breakpoints: HashMap::new(),
+                mapped: false,
+            }),
+        };
+        if let Some(breakpoint) = page.breakpoints.get_mut(&(offset as u16)) {
+            breakpoint.references = breakpoint
+                .references
+                .checked_add(1)
+                .ok_or(VmiError::OutOfBounds)?;
+            return Ok(page.shadow_gfn);
+        }
+
+        let original = vmi.driver().read_page(page.original_gfn)?;
+        let mut content = original.to_vec();
+        let original_content =
+            content[offset..offset + Driver::Architecture::BREAKPOINT.len()].to_vec();
+        for &patch_offset in page.breakpoints.keys() {
+            let patch_offset = patch_offset as usize;
+            content[patch_offset..patch_offset + Driver::Architecture::BREAKPOINT.len()]
+                .copy_from_slice(Driver::Architecture::BREAKPOINT);
+        }
+        content[offset..offset + Driver::Architecture::BREAKPOINT.len()]
+            .copy_from_slice(Driver::Architecture::BREAKPOINT);
+        deactivate_shadow_page(vmi, page)?;
+        vmi.driver().write_page(page.shadow_gfn, 0, &content)?;
+        activate_shadow_page(vmi, page)?;
+        for (&patch_offset, breakpoint) in &mut page.breakpoints {
+            let patch_offset = patch_offset as usize;
+            breakpoint.original_content.copy_from_slice(
+                &original[patch_offset..patch_offset + Driver::Architecture::BREAKPOINT.len()],
+            );
+        }
         page.breakpoints.insert(
-            offset,
+            offset as u16,
             Breakpoint {
-                offset,
                 original_content,
                 references: 1,
             },
         );
-
         Ok(page.shadow_gfn)
     }
 
@@ -242,6 +220,7 @@ where
         self.remove_breakpoint_internal(vmi, address, view, true)
     }
 
+    /// Releases an ownership reference and reclaims an empty shadow.
     fn remove_breakpoint_internal(
         &mut self,
         vmi: &VmiCore<Driver>,
@@ -276,22 +255,20 @@ where
             return Ok(Some(false));
         }
 
-        // Restore the original content of the shadow page at the given offset.
-        vmi.driver()
-            .write_page(page.shadow_gfn, offset as u64, &breakpoint.original_content)?;
-
-        // Remove the breakpoint from the page.
-        page.breakpoints.remove(&offset);
-
-        // If the page has no more breakpoints, reset the view of the page to
-        // the original page.
-        if page.breakpoints.is_empty() {
-            vmi.reset_view_gfn(page.view, page.original_gfn)?;
-
-            // Free the shadow page.
-            // TODO: figure out why it's not working
-            //vmi.free_gfn(page.shadow_gfn)?;
-            //self.pages.remove(&(view, gfn));
+        if page.breakpoints.len() == 1 {
+            deactivate_shadow_page(vmi, page)?;
+            vmi.free_gfn(page.shadow_gfn)?;
+            self.pages.remove(&(view, gfn));
+        }
+        else {
+            deactivate_shadow_page(vmi, page)?;
+            vmi.driver().write_page(
+                page.shadow_gfn,
+                offset as u64,
+                &page.breakpoints[&offset].original_content,
+            )?;
+            activate_shadow_page(vmi, page)?;
+            page.breakpoints.remove(&offset);
         }
 
         Ok(Some(true))

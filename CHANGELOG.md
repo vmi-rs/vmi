@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in that time costs no interrupt in dom0 and three syscalls less. The time
   adapts to the gaps between requests, from 10 to 50 microseconds, and stays
   at zero while events are rare. It keeps a CPU busy while it runs.
+- `Interceptor` frees the shadow frame of a page when its last breakpoint is
+  removed.
 
 ### Added
 
@@ -150,6 +152,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breakpoint itself, and Windows crashed with a bugcheck.
 - `read_string*` methods read in chunks of the architecture page size instead
   of a fixed 4096 bytes.
+- Breakpoints that are not aligned to the size of the breakpoint instruction or
+  that cross a page boundary are rejected with `VmiError::OutOfBounds` before
+  the guest is modified.
+- Inserting a breakpoint on a page that already has breakpoints rebuilds the
+  shadow from the current original page instead of patching a shadow that may
+  hold stale code.
 
 ## [0.11.0] - 2026-10-09
 

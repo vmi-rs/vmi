@@ -6,7 +6,7 @@ use vmi_arch_amd64::{
 };
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, Va, VcpuId, View, VmiCore, VmiError,
-    VmiEvent, VmiEventFlags,
+    VmiEvent, VmiEventFlags, VmiRead,
     arch::{EventInterrupt as _, EventReason as _},
 };
 use vmi_driver_mock::arch::amd64::{Call, MockDriver, Op};
@@ -1762,7 +1762,7 @@ fn breakpoint_controller_remove_restores_and_resets_view() -> Result<(), VmiErro
 
     controller.remove_breakpoint(&vmi, pa, VIEW)?;
     assert_eq!(vmi.driver().view_target(VIEW, CODE_GFN), None);
-    assert_eq!(vmi.driver().byte(shadow, OFFSET as usize), 0xab);
+    assert!(vmi.driver().read_page(shadow).is_err());
 
     Ok(())
 }
