@@ -127,6 +127,9 @@ impl<Geometry> Arm64<Geometry>
 where
     Geometry: PagingGeometry,
 {
+    /// Size of an A64 instruction, in bytes.
+    pub const INSTRUCTION_SIZE: u64 = 4;
+
     /// Strips pointer authentication codes and top-byte tags from `raw`.
     ///
     /// Bit 55 selects the half of the address space and survives both PAC

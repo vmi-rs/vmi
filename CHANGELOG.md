@@ -98,6 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EventReason::WriteSystemRegister`. `Interrupt` builds `BRK` and page-fault
   exceptions and decodes the abort kind, fault status code and access
   direction of a syndrome.
+- `Arm64::INSTRUCTION_SIZE`, the size of an A64 instruction, and
+  `Interrupt::breakpoint_comment`, the immediate of a `BRK`.
 - `vmi-driver-kvm` crate (feature `driver-kvm`, module `vmi::driver::kvm`)
   with `VmiKvmDriver`, which introspects a running VM through the KVM VMI
   interface of the host kernel. It supports amd64 guests on x86_64 hosts and

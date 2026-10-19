@@ -26,6 +26,9 @@ const ESR_WNR: u64 = 1 << 6;
 /// Fault status code field (`ESR_ELx.ISS.xFSC`) of an abort.
 const ESR_FSC_MASK: u64 = 0x3f;
 
+/// Comment field (`ESR_ELx.ISS.Comment`) of a `BRK` exception.
+const ESR_COMMENT_MASK: u64 = 0xffff;
+
 /// Fault status code of a level 3 translation fault.
 ///
 /// An access to a valid but non-resident final-level page raises this fault,
@@ -102,6 +105,19 @@ impl Interrupt {
         self.typ == InterruptType::Synchronous && self.exception_class() == EC_BRK64
     }
 
+    /// Returns the comment (`ESR_ELx.ISS.Comment`) of a `BRK`, or `None` for
+    /// another entry.
+    ///
+    /// The comment is the immediate of the instruction, such as 0 for
+    /// `BRK #0`.
+    pub fn breakpoint_comment(&self) -> Option<u16> {
+        if !self.is_software_breakpoint() {
+            return None;
+        }
+
+        Some((self.esr & ESR_COMMENT_MASK) as u16)
+    }
+
     /// Checks whether the entry is an instruction abort.
     pub fn is_instruction_abort(&self) -> bool {
         self.typ == InterruptType::Synchronous
@@ -133,7 +149,7 @@ mod tests {
     fn software_breakpoint_carries_the_comment() {
         let interrupt = Interrupt::software_breakpoint(0xf000);
         assert!(interrupt.is_software_breakpoint());
-        assert_eq!(interrupt.esr & 0xffff, 0xf000);
+        assert_eq!(interrupt.breakpoint_comment(), Some(0xf000));
         assert!(!interrupt.is_instruction_abort());
     }
 
@@ -146,6 +162,7 @@ mod tests {
         assert!(!interrupt.is_instruction_abort());
         assert!(!interrupt.is_write_fault());
         assert!(!interrupt.is_software_breakpoint());
+        assert_eq!(interrupt.breakpoint_comment(), None);
     }
 
     #[test]
