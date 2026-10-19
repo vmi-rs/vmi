@@ -1,21 +1,25 @@
+mod kernel_mode;
 mod user_mode;
 
 use vmi_arch_arm64::{Arm64, Granule16KVa47, Registers};
 use vmi_core::{
     Registers as _, Va, VmiCore, VmiError,
     driver::{
-        VmiDriver, VmiEventControl, VmiRead, VmiSetProtection, VmiViewControl, VmiVmControl,
-        VmiWrite,
+        VmiDriver, VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead,
+        VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite,
     },
     trace::Hex,
 };
 use vmi_os_macos::MacOs;
 
-use self::user_mode::UserInjectorHandler;
+use self::{kernel_mode::KernelInjectorHandler, user_mode::UserInjectorHandler};
 use super::{
-    super::{CallBuilder, InjectorExecutionAdapter, UserMode, arch::ArchAdapter as _},
+    super::{CallBuilder, InjectorExecutionAdapter, KernelMode, UserMode, arch::ArchAdapter as _},
     OsAdapter,
 };
+
+/// Architecture of a macOS guest.
+type Arch = Arm64<Granule16KVa47>;
 
 /// Number of arguments passed in the registers `x0` to `x7`.
 const REGISTER_ARGUMENTS: usize = 8;
@@ -23,9 +27,24 @@ const REGISTER_ARGUMENTS: usize = 8;
 /// Index of the link register, `x30`, which holds the return address.
 const LINK_REGISTER: usize = 30;
 
+impl<Driver, T> InjectorExecutionAdapter<KernelMode, T, ()> for MacOs<Driver>
+where
+    Driver: VmiDriver<Architecture = Arch>
+        + VmiRead
+        + VmiWrite
+        + VmiQueryProtection
+        + VmiSetProtection
+        + VmiQueryRegisters
+        + VmiEventControl
+        + VmiViewControl
+        + VmiVmControl,
+{
+    type Handler = KernelInjectorHandler<Driver, T>;
+}
+
 impl<Driver, T> InjectorExecutionAdapter<UserMode, T, ()> for MacOs<Driver>
 where
-    Driver: VmiDriver<Architecture = Arm64<Granule16KVa47>>
+    Driver: VmiDriver<Architecture = Arch>
         + VmiRead
         + VmiWrite
         + VmiSetProtection
@@ -38,7 +57,7 @@ where
 
 impl<Driver> OsAdapter for MacOs<Driver>
 where
-    Driver: VmiDriver<Architecture = Arm64<Granule16KVa47>> + VmiRead + VmiWrite,
+    Driver: VmiDriver<Architecture = Arch> + VmiRead + VmiWrite,
 {
     /// Prepares a call as the arm64 procedure call standard of Apple
     /// platforms lays it out.
@@ -65,8 +84,7 @@ where
             "preparing function call"
         );
 
-        let arguments =
-            Arm64::<Granule16KVa47>::push_arguments(vmi, registers, &builder.arguments)?;
+        let arguments = Arch::push_arguments(vmi, registers, &builder.arguments)?;
 
         tracing::trace!(
             sp = %Hex(registers.stack_pointer()),

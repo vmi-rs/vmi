@@ -270,17 +270,22 @@ where
 
 /// Kernel-mode injector handler.
 ///
-/// On Windows, the injector hijacks the first thread that makes a syscall from
-/// user mode, at `KiSystemServiceCopyEnd`. Such a thread runs at `PASSIVE_LEVEL`
-/// and holds no locks.
-///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
+///
+/// # Platform-specific
+///
+/// - **Windows**: Hijacks the first thread that makes a syscall from user
+///   mode, at `KiSystemServiceCopyEnd`. Such a thread runs at `PASSIVE_LEVEL`
+///   and holds no locks.
+/// - **macOS**: Hijacks the first thread that enters `unix_syscall`, which
+///   every BSD syscall from user mode enters. Such a thread runs with
+///   interrupts enabled and holds no locks.
 ///
 /// # Notes
 ///
-/// Normal kernel APCs stay enabled while the recipe runs. If the hijacked
-/// thread's process is suspended or terminated meanwhile, the thread can stop
-/// or end inside the recipe, and the injection does not finish.
+/// On Windows, normal kernel APCs stay enabled while the recipe runs. If the
+/// hijacked thread's process is suspended or terminated meanwhile, the thread
+/// can stop or end inside the recipe, and the injection does not finish.
 pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
 /// User-mode injector handler.

@@ -1,4 +1,9 @@
-#[cfg(all(feature = "arch-arm64", feature = "os-macos"))]
+#[cfg(all(
+    feature = "arch-arm64",
+    feature = "os-macos",
+    feature = "bpm",
+    feature = "ptm"
+))]
 mod macos;
 #[cfg(all(
     feature = "arch-amd64",
