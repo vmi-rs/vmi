@@ -268,6 +268,11 @@ macro_rules! _private_recipe {
                     /// on the stack if needed, and sets up the registers (including
                     /// the instruction pointer) for the function call.
                     ///
+                    /// The function is named as `image!function`, where `.dll` is
+                    /// appended to `image` to form the file name of the image, or
+                    /// as `"file"!symbol` with the file name of the image and the
+                    /// symbol exactly as the image exports it.
+                    ///
                     /// Returns [`RecipeControlFlow::Continue`] if the function call
                     /// was successfully prepared.
                     ///
@@ -288,10 +293,20 @@ macro_rules! _private_recipe {
                     ///         0                           // uType
                     ///     )
                     /// }
+                    ///
+                    /// inject! {
+                    ///     "libsystem_kernel.dylib"!_close(
+                    ///         data![fd]                   // fildes
+                    ///     )
+                    /// }
                     /// ```
                     #[allow(unused_macros)]
                     macro_rules! inject {
                         ($image:ident!$function:ident($d($d arg:expr),*)) => {
+                            $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
+                        };
+
+                        ($image:literal!$function:ident($d($d arg:expr),*)) => {
                             $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
                         };
 
@@ -430,6 +445,47 @@ macro_rules! _private_recipe {
             let function = match __private::lookup_symbol(
                 $ctx,
                 concat!(stringify!($image), ".dll"),
+                stringify!($function),
+                __private::SearchKind::Region,
+            ) {
+                Ok(Some(function)) => function,
+                Ok(None) => break 'm Err(VmiError::Other(concat!(stringify!($function), " not found"))),
+                Err(err) => break 'm Err(err),
+            };
+
+            tracing::trace!(
+                function = stringify!($function),
+                $(arg = ?$arg,)*
+                "preparing function call"
+            );
+
+            $crate::_private_recipe!(@inject $ctx, function($($arg),*))
+        }
+    };
+
+    (@inject $ctx:expr, $image:literal!$function:ident($($arg:expr),*)) => {
+        'm: {
+            use $crate::injector::macros::__private::{self, vmi_core::VmiError};
+
+            //
+            // The parent macro can be invoked as follows:
+            // ```
+            // inject! {
+            //     "libsystem_kernel.dylib"!_close(
+            //         fd                          // fildes
+            //     )
+            // }
+            // ```
+            // In this case, the `$image` is the filename of the image, the
+            // `$function` is the exported symbol `_close`, and the `$($arg),*`
+            // are the arguments to the function.
+            //
+            // Note that the lookup can return a [`VmiError::Translation`].
+            //
+
+            let function = match __private::lookup_symbol(
+                $ctx,
+                $image,
                 stringify!($function),
                 __private::SearchKind::Region,
             ) {
