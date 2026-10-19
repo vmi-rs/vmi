@@ -155,6 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers that the kernel saved for a thread.
 - `os-macos` feature of `vmi-utils`, which the `os-macos` feature of `vmi`
   enables.
+- `macos-recipe-deploy-kvm` example, which copies a file into a macOS guest
+  running in KVM and can launch it.
 
 ### Removed
 

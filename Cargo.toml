@@ -233,6 +233,12 @@ doc-scrape-examples = true
 required-features = ["arch-arm64", "driver-qemu-core-dump", "os-macos"]
 
 [[example]]
+name = "macos-recipe-deploy-kvm"
+path = "examples/macos-recipe-deploy-kvm.rs"
+doc-scrape-examples = true
+required-features = ["arch-arm64", "driver-kvm", "os-macos", "utils"]
+
+[[example]]
 name = "macos-trace-kvm"
 path = "examples/macos-trace-kvm/main.rs"
 required-features = ["arch-arm64", "driver-kvm", "os-macos", "utils-bpm"]
