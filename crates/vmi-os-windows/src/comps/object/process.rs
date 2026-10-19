@@ -544,7 +544,10 @@ where
     /// # Implementation Details
     ///
     /// The functionality is similar to the Windows kernel's internal
-    /// `MiLocateAddress()` function.
+    /// `MiLocateAddress()` function. On Windows 7 the search starts at the
+    /// right child of `_MM_AVL_TABLE.BalancedRoot`, as `MiLocateAddress()`
+    /// does. `BalancedRoot` is a sentinel node inside `_EPROCESS` and not a
+    /// VAD.
     fn lookup_region(&self, address: Va) -> Result<Option<WindowsRegion<'a, Driver>>, VmiError> {
         let vad = match self.vad_hint()? {
             Some(vad) => vad,
@@ -557,7 +560,15 @@ where
             return Ok(Some(vad));
         }
 
-        let mut next = self.vad_root()?;
+        let mut next = match &self.vmi.underlying_os().offsets.ext() {
+            // On Windows 7, `_MM_AVL_TABLE::BalancedRoot` is not a VAD, but a
+            // sentinel node. The root of the tree is its right child.
+            Some(OffsetsExt::V1(_)) => match self.vad_root()? {
+                Some(sentinel) => sentinel.right_child()?,
+                None => None,
+            },
+            _ => self.vad_root()?,
+        };
         while let Some(vad) = next {
             if vpn < vad.starting_vpn()? {
                 next = vad.left_child()?;

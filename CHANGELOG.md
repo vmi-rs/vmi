@@ -119,6 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answered. Before, a vCPU could hit a breakpoint that was still in memory
   after the breakpoint monitor was turned off. The guest then handled the
   breakpoint itself, and Windows crashed with a bugcheck.
+- `WindowsProcess::lookup_region` on Windows 7 starts its search at the right
+  child of `_MM_AVL_TABLE.BalancedRoot`, as `MiLocateAddress` does. Before, it
+  compared the `BalancedRoot` sentinel itself, whose starting VPN is 0, and
+  returned it as the VAD of an address in the first page. The sentinel lies
+  inside `_EPROCESS`, so its fields read as a VAD were garbage.
 
 ## [0.11.0] - 2026-10-09
 
