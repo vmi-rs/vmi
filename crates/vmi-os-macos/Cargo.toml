@@ -18,6 +18,7 @@ keywords = [
 workspace = true
 
 [dependencies]
+bitflags = { workspace = true }
 memchr = { workspace = true }
 thiserror = { workspace = true }
 

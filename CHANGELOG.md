@@ -159,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"libsystem_kernel.dylib"!_close(fd)`.
 - `MacOsThread::user_saved_state` and `MacOsSavedState`, the user-mode
   registers that the kernel saved for a thread.
+- `MacOsThread::state` and `MacOsThreadState`, the `TH_*` flags of
+  `thread.state`.
+- `MacOsThread::at_safe_point`, which returns whether a thread waits where
+  `thread_abort_safely` can end its wait.
+- `MacOsThread::waits_for_message`, which returns whether a thread waits to
+  receive a Mach message. It compares `thread.block_hint` with block hints
+  that `MacOs::new` finds by name in the profile.
 - `os-macos` feature of `vmi-utils`, which the `os-macos` feature of `vmi`
   enables.
 - `macos-recipe-deploy-kvm` example, which copies a file into a macOS guest

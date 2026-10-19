@@ -7,6 +7,79 @@ use vmi_core::{
 use super::{MacOsProcess, MacOsSavedState};
 use crate::{ArchAdapter, MacOs, MacOsError, MacOsExt as _, offset};
 
+bitflags::bitflags! {
+    /// State bitmask stored in `thread.state`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the `TH_*` flags in `osfmk/kern/thread.h`.
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub struct MacOsThreadState: u32 {
+        /// Queued for waiting.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_WAIT`.
+        const WAIT          = 0x0000_0001;
+
+        /// Stopped or asked to stop.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_SUSP`.
+        const SUSP          = 0x0000_0002;
+
+        /// Running or on a run queue.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_RUN`.
+        const RUN           = 0x0000_0004;
+
+        /// Waiting uninterruptibly.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_UNINT`.
+        const UNINT         = 0x0000_0008;
+
+        /// Halted at termination.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_TERMINATE`.
+        const TERMINATE     = 0x0000_0010;
+
+        /// Added to the termination queue.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_TERMINATE2`.
+        const TERMINATE2    = 0x0000_0020;
+
+        /// Waiting with calls to the `sched_call` hook of the thread.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_WAIT_REPORT`.
+        const WAIT_REPORT   = 0x0000_0040;
+
+        /// The idle thread of a processor.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_IDLE`.
+        const IDLE          = 0x0000_0080;
+
+        /// Removed from its wait queue but not yet runnable.
+        ///
+        /// # Implementation Details
+        ///
+        /// Corresponds to `TH_WAKING`.
+        const WAKING        = 0x0000_0100;
+    }
+}
+
 /// A macOS thread.
 ///
 /// # Implementation Details
@@ -148,6 +221,71 @@ where
         }
 
         Ok(Some(MacOsSavedState::new(self.vmi, saved_state)))
+    }
+
+    /// Returns the state of the thread.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `thread.state`.
+    pub fn state(&self) -> Result<MacOsThreadState, VmiError> {
+        let thread = offset!(self.vmi, thread);
+
+        let state = self.vmi.read_u32(self.va + thread.state.offset())?;
+        Ok(MacOsThreadState::from_bits_retain(state))
+    }
+
+    /// Returns whether the thread waits at a safe point.
+    ///
+    /// A safe point is a wait that `thread_abort_safely` may end. The receive
+    /// of a Mach message is one, and it then returns `MACH_RCV_INTERRUPTED`.
+    /// A BSD syscall can wait again instead, as `sigsuspend` does when no
+    /// signal is pending.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `thread.at_safe_point` of a thread whose state holds
+    /// [`MacOsThreadState::WAIT`]. The kernel sets the field at each wait.
+    pub fn at_safe_point(&self) -> Result<bool, VmiError> {
+        if !self.state()?.contains(MacOsThreadState::WAIT) {
+            return Ok(false);
+        }
+
+        let thread = offset!(self.vmi, thread);
+
+        let at_safe_point = self.vmi.read_field(self.va, &thread.at_safe_point)?;
+        Ok(at_safe_point != 0)
+    }
+
+    /// Returns whether the thread waits to receive a Mach message.
+    ///
+    /// Fails when the profile lacks the block hints of such a wait.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `thread.block_hint` of a thread whose state holds
+    /// [`MacOsThreadState::WAIT`]. The kernel sets the hint at each wait. The
+    /// hint is compared with `kThreadWaitPortReceive` and
+    /// `kThreadWaitPortSetReceive`, whose values come from the enum
+    /// `thread_snapshot_wait_flags` of the profile.
+    pub fn waits_for_message(&self) -> Result<bool, VmiError> {
+        let receive_block_hints = match self.vmi.underlying_os().receive_block_hints {
+            Some(receive_block_hints) => receive_block_hints,
+            None => {
+                return Err(VmiError::Other(
+                    "profile lacks the block hints of a Mach message receive",
+                ));
+            }
+        };
+
+        if !self.state()?.contains(MacOsThreadState::WAIT) {
+            return Ok(false);
+        }
+
+        let thread = offset!(self.vmi, thread);
+
+        let block_hint = self.vmi.read_field(self.va, &thread.block_hint)?;
+        Ok(receive_block_hints.contains(&block_hint))
     }
 }
 

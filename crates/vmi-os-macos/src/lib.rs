@@ -78,7 +78,7 @@
 
 use std::cell::OnceCell;
 
-use isr_core::Profile;
+use isr_core::{Profile, Variant};
 use vmi_core::{
     AccessContext, Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiState,
     driver::VmiRead,
@@ -92,7 +92,8 @@ pub use self::arch::ArchAdapter;
 mod comps;
 pub use self::comps::{
     MacOsFileKind, MacOsImage, MacOsMapped, MacOsModule, MacOsOpenFile, MacOsProcess,
-    MacOsProcessArguments, MacOsRegion, MacOsSavedState, MacOsThread, MacOsUserModule, MacOsVnode,
+    MacOsProcessArguments, MacOsRegion, MacOsSavedState, MacOsThread, MacOsThreadState,
+    MacOsUserModule, MacOsVnode,
 };
 
 mod error;
@@ -115,6 +116,13 @@ const MAX_KEXT_SUMMARIES: u32 = 4096;
 
 /// Upper bound on the size of `struct proc`, in bytes.
 const MAX_PROC_STRUCT_SIZE: u64 = 0x10000;
+
+/// Enum of the reasons why a thread waits, which `thread.block_hint` holds.
+const BLOCK_HINT_ENUM: &str = "thread_snapshot_wait_flags";
+
+/// Variants of the block hint of a thread that waits to receive a Mach
+/// message.
+const RECEIVE_BLOCK_HINTS: [&str; 2] = ["kThreadWaitPortReceive", "kThreadWaitPortSetReceive"];
 
 /// VMI operations for the macOS operating system.
 ///
@@ -171,6 +179,10 @@ where
 
     /// Symbols relocated to their runtime addresses.
     symbols: Symbols,
+
+    /// Values of `thread.block_hint` for a thread that waits to receive a
+    /// Mach message, or `None` when the profile lacks them.
+    receive_block_hints: Option<[u64; 2]>,
 
     /// Maps profile addresses to the corresponding runtime kernel segments.
     relocations: KernelRelocations,
@@ -287,6 +299,7 @@ where
         Ok(Self {
             offsets: Offsets::new(profile)?,
             symbols: relocate_symbols(Symbols::new(profile)?, &relocations)?,
+            receive_block_hints: receive_block_hints(profile),
             relocations,
             kernel_image_base: kernel_info.base_address,
             kernel_collection_base: kernel_info.kernel_collection_base,
@@ -590,4 +603,40 @@ fn relocate_symbols(
         thread_abort_safely: relocate_optional(symbols.thread_abort_safely)?,
         thread_deallocate: relocate_optional(symbols.thread_deallocate)?,
     })
+}
+
+/// Returns the values of the block hints of a thread that waits to receive a
+/// Mach message, from the profile.
+///
+/// Returns `None` when the profile lacks the enum or one of its variants.
+fn receive_block_hints(profile: &Profile) -> Option<[u64; 2]> {
+    let block_hints = profile.find_enum(BLOCK_HINT_ENUM)?;
+    let value = |name: &str| {
+        block_hints
+            .fields()
+            .find(|(variant_name, _)| *variant_name == name)
+            .and_then(|(_, variant)| variant_value(variant))
+    };
+
+    Some([
+        value(RECEIVE_BLOCK_HINTS[0])?,
+        value(RECEIVE_BLOCK_HINTS[1])?,
+    ])
+}
+
+/// Returns the value of an enum variant, or `None` when it is negative or
+/// does not fit into 64 bits.
+fn variant_value(variant: Variant) -> Option<u64> {
+    match variant {
+        Variant::U8(value) => Some(u64::from(value)),
+        Variant::U16(value) => Some(u64::from(value)),
+        Variant::U32(value) => Some(u64::from(value)),
+        Variant::U64(value) => Some(value),
+        Variant::U128(value) => u64::try_from(value).ok(),
+        Variant::I8(value) => u64::try_from(value).ok(),
+        Variant::I16(value) => u64::try_from(value).ok(),
+        Variant::I32(value) => u64::try_from(value).ok(),
+        Variant::I64(value) => u64::try_from(value).ok(),
+        Variant::I128(value) => u64::try_from(value).ok(),
+    }
 }

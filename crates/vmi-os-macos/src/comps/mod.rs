@@ -19,7 +19,7 @@ pub use self::{
     process::{MacOsProcess, MacOsProcessArguments},
     region::MacOsRegion,
     saved_state::MacOsSavedState,
-    thread::MacOsThread,
+    thread::{MacOsThread, MacOsThreadState},
     user_module::MacOsUserModule,
     vnode::MacOsVnode,
 };

@@ -83,6 +83,9 @@ offsets! {
             t_tro: Field,                   // struct thread_ro *
             thread_id: Field,               // uint64_t
             machine: Field,                 // struct machine_thread
+            state: Field,                   // int
+            at_safe_point: Field,           // _Bool
+            block_hint: Field,              // block_hint_t
         }
 
         struct thread_ro {
