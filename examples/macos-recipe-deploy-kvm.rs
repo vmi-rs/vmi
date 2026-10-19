@@ -11,8 +11,9 @@
 //! environment.
 //!
 //! The injector hijacks a thread of the process when the thread returns from
-//! a syscall. An idle process waits for that, and activity such as a file that
-//! appears on the desktop wakes `Finder`.
+//! a syscall. When the process is idle, the injector wakes the first of its
+//! threads that waits to receive a Mach message, such as the main thread of
+//! `Finder` in its run loop.
 //!
 //! The guest is a QEMU `vmapple` machine, as in the
 //! `basic-process-list-kvm-macos` example. The kernel profile is built from
@@ -30,17 +31,21 @@
 //!  INFO kernel information version=Darwin Kernel Version 27.0.0: Tue Aug 11 21:00:07 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_VMAPPLE
 //!  INFO creating VMI session
 //!  INFO found process pid=434 object=0xfffffe2520e23190 name="Finder"
-//! DEBUG injector{vcpu=2 pc=0x000000019708cc20}:memory_access: thread hijacked current_pid=434 thread_id=2653 name="Finder"
-//!  INFO injector{vcpu=2 pc=0x000000019708cc20}:memory_access:recipe:step{index=0}: step 1: mmap() size=104
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=1}: step 2: mlock() buffer=0x0000000106470000
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=2}: step 3: creat() path="/Users/john/vmi-deploy-test.sh" mode=755
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=3}: step 4: write() fd=10
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=4}: step 5: close() written=104
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=5}: step 6: munmap() buffer=0x0000000106470000
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=6}: step 7: _NSGetEnviron()
-//!  INFO injector{vcpu=1 pc=0x000000019708cc20}:memory_access:recipe:step{index=7}: step 8: posix_spawn() path="/Users/john/vmi-deploy-test.sh"
-//!  INFO injector{vcpu=2 pc=0x000000019708cc20}:memory_access:recipe:step{index=8}: step 9: launched pid=1507
-//! DEBUG injector{vcpu=2 pc=0x000000019708cc20}:memory_access:recipe: finished result=0x0000000000000000
+//! DEBUG injector{vcpu=1 pc=0xfffffe0013afd244}: waking thread pid=434 thread=0xfffffe1e5170dec0 ip_va=0x000000019708cc20
+//! DEBUG injector{vcpu=0 pc=0xfffffe0014277430}:kernel_injector{vcpu=0 pc=0xfffffe0014277430}:breakpoint: kernel thread hijacked current_pid=1074 thread=0xfffffe1e50066710 name="XProtectRemediat"
+//! DEBUG injector{vcpu=0 pc=0xfffffe0014277430}:kernel_injector{vcpu=0 pc=0xfffffe0014277430}:breakpoint:recipe:step{index=5}: wake: thread_abort_safely thread_id=2653 result=0x0000000000000000
+//! DEBUG injector{vcpu=0 pc=0xfffffe0014277430}:kernel_injector{vcpu=0 pc=0xfffffe0014277430}:breakpoint:recipe: finished result=0xfffffe1e5170dec0
+//! DEBUG injector{vcpu=3 pc=0x000000019708cc20}:memory_access: thread hijacked current_pid=434 thread_id=2653 name="Finder"
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=0}: step 1: mmap() size=104
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=1}: step 2: mlock() buffer=0x0000000106094000
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=2}: step 3: creat() path="/Users/john/vmi-deploy-test.sh" mode=755
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=3}: step 4: write() fd=3
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=4}: step 5: close() written=104
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=5}: step 6: munmap() buffer=0x0000000106094000
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=6}: step 7: _NSGetEnviron()
+//!  INFO injector{vcpu=3 pc=0x000000019708cc20}:memory_access:recipe:step{index=7}: step 8: posix_spawn() path="/Users/john/vmi-deploy-test.sh"
+//!  INFO injector{vcpu=0 pc=0x000000019708cc20}:memory_access:recipe:step{index=8}: step 9: launched pid=1076
+//! DEBUG injector{vcpu=0 pc=0x000000019708cc20}:memory_access:recipe: finished result=0x0000000000000000
 //! ```
 
 // The KVM driver introspects arm64 guests only on aarch64 hosts. On other

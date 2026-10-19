@@ -290,9 +290,12 @@ pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelM
 
 /// User-mode injector handler.
 ///
-/// On macOS, the injector hijacks a thread of the target process where the
-/// thread returns from a syscall, and an idle process is not injected until
-/// one of its threads runs.
-///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
+///
+/// # Platform-specific
+///
+/// - **macOS**: Hijacks a thread of the target process where the thread
+///   returns from a syscall. With a process ID, the injector also wakes an
+///   idle process whose thread waits to receive a Mach message, such as an
+///   app in its run loop.
 pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;

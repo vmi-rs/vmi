@@ -60,6 +60,9 @@ enum InjectorState {
 /// and single-steps the original instruction in the default view, and the
 /// injector removes the `BRK`.
 ///
+/// The user-mode injector runs one in its own view to wake a thread of an
+/// idle process.
+///
 /// # Notes
 ///
 /// The injected calls may block, and the hijacked thread can then go on on
@@ -78,11 +81,20 @@ where
     /// Process ID whose thread runs the recipe, or `None` for any process.
     pid: Option<ProcessId>,
 
+    /// Thread that must not run the recipe, because the recipe acts on it.
+    excluded: Option<ThreadObject>,
+
     /// Thread that runs the recipe, once a thread hits the breakpoint.
     thread: Option<ThreadObject>,
 
     /// Memory view that holds the breakpoint.
     view: View,
+
+    /// Whether the injector created the view.
+    ///
+    /// The injector destroys a view of its own at the end. The view of the
+    /// user-mode injector stays, because that injector still uses it.
+    owns_view: bool,
 
     /// Whether the view is destroyed.
     ///
@@ -139,7 +151,7 @@ where
 
         vmi.monitor_enable(EventMonitor::Singlestep)?;
 
-        let mut injector = Self::create(view, recipe);
+        let mut injector = Self::create(view, true, recipe);
         if let Err(err) = injector.install(vmi, ctx) {
             injector.cleanup(vmi);
             return Err(err);
@@ -193,12 +205,37 @@ where
         + VmiViewControl
         + VmiVmControl,
 {
+    /// Creates an injector whose breakpoint lives in `view`, the view of the
+    /// user-mode injector, and that never hijacks the thread `excluded`.
+    ///
+    /// The user-mode injector keeps the view and the single-step monitor.
+    pub(super) fn in_view(
+        vmi: &VmiState<MacOs<Driver>>,
+        view: View,
+        recipe: Recipe<MacOs<Driver>, T>,
+        excluded: ThreadObject,
+    ) -> Result<Self, VmiError> {
+        let ctx = unix_syscall_context(vmi)?;
+
+        let mut injector = Self::create(view, false, recipe);
+        injector.excluded = Some(excluded);
+
+        if let Err(err) = injector.install(vmi, ctx) {
+            injector.cleanup(vmi);
+            return Err(err);
+        }
+
+        Ok(injector)
+    }
+
     /// Creates an injector in `view` before its breakpoint is installed.
-    fn create(view: View, recipe: Recipe<MacOs<Driver>, T>) -> Self {
+    fn create(view: View, owns_view: bool, recipe: Recipe<MacOs<Driver>, T>) -> Self {
         Self {
             pid: None,
+            excluded: None,
             thread: None,
             view,
+            owns_view,
             view_destroyed: false,
             installed: false,
             bpm: BreakpointManager::new(),
@@ -238,15 +275,28 @@ where
     /// The view must stay in place until the injector is no longer busy. A
     /// hijacked thread that returns to an entry without the breakpoint runs
     /// `unix_syscall` with the registers of an injected call.
-    fn is_busy(&self) -> bool {
+    pub(super) fn is_busy(&self) -> bool {
         matches!(
             self.state,
             InjectorState::Executing | InjectorState::Teardown(_)
         )
     }
 
+    /// Removes the breakpoint if no thread has hit it yet.
+    pub(super) fn cancel(&mut self, vmi: &VmiCore<Driver>) -> Result<(), VmiError> {
+        if !matches!(self.state, InjectorState::PreHijack) {
+            return Ok(());
+        }
+
+        self.state = InjectorState::Complete;
+        self.remove(vmi)
+    }
+
     /// Handles an event of the injector.
-    fn handle(&mut self, vmi: &VmiContext<MacOs<Driver>>) -> VmiEventResponse<Arch> {
+    ///
+    /// The user-mode injector passes on the events of the injector that runs
+    /// in its view.
+    pub(super) fn handle(&mut self, vmi: &VmiContext<MacOs<Driver>>) -> VmiEventResponse<Arch> {
         match self.dispatch(vmi) {
             Ok(response) => response,
             Err(err) => self.on_error(vmi, err),
@@ -334,6 +384,10 @@ where
                 }
             }
             None => {
+                if Some(current_thread_object) == self.excluded {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
                 // An exiting thread whose process is already detached does
                 // not run the recipe.
                 let current_process = match current_thread.attached_process()? {
@@ -428,7 +482,8 @@ where
     ///
     /// Removes the breakpoint once the hijacked thread is past it, and
     /// otherwise processes the page table writes of the vCPU. The vCPU then
-    /// returns to the view of the injector, unless the injector is done.
+    /// returns to the view of the injector, unless the injector is done with
+    /// a view of its own.
     #[tracing::instrument(name = "singlestep", skip_all)]
     fn on_singlestep(
         &mut self,
@@ -439,6 +494,11 @@ where
         {
             self.state = InjectorState::Complete;
             self.remove(vmi)?;
+
+            // The view of the user-mode injector stays in use.
+            if !self.owns_view {
+                return Ok(VmiEventResponse::default().with_view(self.view));
+            }
 
             // Single-step monitoring stays enabled until `cleanup`. The
             // response without the single-step action stops stepping this
@@ -485,7 +545,7 @@ where
 
         // A single-step runs in the default view. The vCPU returns to the
         // view of the injector, which still holds the breakpoint for a
-        // hijacked thread.
+        // hijacked thread, or the trap of the user-mode injector.
         match vmi.event().reason() {
             EventReason::Singlestep(_) if !self.view_destroyed => {
                 VmiEventResponse::default().with_view(self.view)
@@ -560,6 +620,11 @@ where
 
         if let Err(err) = self.remove(vmi) {
             tracing::error!(%err, "failed to remove the kernel breakpoint");
+        }
+
+        // The user-mode injector keeps its view and its single-step monitor.
+        if !self.owns_view {
+            return;
         }
 
         if !self.view_destroyed {

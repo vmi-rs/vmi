@@ -153,7 +153,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `arch-arm64`, `os-macos`, `injector`, `bpm` and `ptm`). It hijacks a thread
   of the target process where the thread returns from a syscall, and lays out
   calls as the arm64 calling convention of Apple platforms does, with data
-  copied to the stack below its 128-byte red zone. It takes no bridge.
+  copied to the stack below its 128-byte red zone. With a process ID, it also
+  wakes an idle process. The kernel-mode injector then calls
+  `thread_abort_safely` on a thread of the target that waits to receive a Mach
+  message at a safe point. It takes no bridge.
 - `KernelInjectorHandler` injects into macOS on arm64, with the same features.
   It hijacks the first thread that enters `unix_syscall`, the entry of every
   BSD syscall from user mode, and takes no bridge.

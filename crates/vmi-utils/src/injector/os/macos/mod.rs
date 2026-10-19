@@ -1,5 +1,6 @@
 mod kernel_mode;
 mod user_mode;
+mod wake;
 
 use vmi_arch_arm64::{Arm64, Granule16KVa47, Registers};
 use vmi_core::{
@@ -47,6 +48,7 @@ where
     Driver: VmiDriver<Architecture = Arch>
         + VmiRead
         + VmiWrite
+        + VmiQueryProtection
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl
