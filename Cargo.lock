@@ -2727,6 +2727,7 @@ dependencies = [
  "vmi-driver-kdmp",
  "vmi-driver-kvm",
  "vmi-driver-qemu-core-dump",
+ "vmi-driver-qemu-migration",
  "vmi-driver-xen",
  "vmi-driver-xen-core-dump",
  "vmi-os-linux",
@@ -2815,6 +2816,20 @@ dependencies = [
  "thiserror",
  "vmi-arch-arm64",
  "vmi-core",
+]
+
+[[package]]
+name = "vmi-driver-qemu-migration"
+version = "0.11.0"
+dependencies = [
+ "memmap2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "vmi-arch-amd64",
+ "vmi-arch-arm64",
+ "vmi-core",
+ "zerocopy",
 ]
 
 [[package]]

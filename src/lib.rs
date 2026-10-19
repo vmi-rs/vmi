@@ -118,6 +118,7 @@
 //! | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
 //! | `driver-kvm` | KVM driver (live introspection through the KVM VMI interface of the host kernel). |
 //! | `driver-qemu-core-dump` | QEMU ELF core dump (`dump-guest-memory`) driver. |
+//! | `driver-qemu-migration` | QEMU migration stream (`migrate` to a file) driver. |
 //! | `driver-xen` | Xen hypervisor driver (live introspection). |
 //! | `driver-xen-core-dump` | Xen core dump file driver. |
 //! | `os-linux` | Linux guest introspection. |
@@ -774,6 +775,13 @@ pub mod driver {
         #![doc = include_str!("../docs/vmi-driver-qemu-core-dump.md")]
 
         pub use vmi_driver_qemu_core_dump::*;
+    }
+
+    #[cfg(feature = "driver-qemu-migration")]
+    pub mod qemu_migration {
+        #![doc = include_str!("../docs/vmi-driver-qemu-migration.md")]
+
+        pub use vmi_driver_qemu_migration::*;
     }
 
     #[cfg(feature = "driver-xen")]

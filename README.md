@@ -124,6 +124,7 @@ No features are enabled by default; opt in to what you need.
 | `driver-kdmp` | Windows kernel memory dump (`.dmp`) driver. |
 | `driver-kvm` | KVM driver (live introspection through the KVM VMI interface of the host kernel). |
 | `driver-qemu-core-dump` | QEMU ELF core dump (`dump-guest-memory`) driver. |
+| `driver-qemu-migration` | QEMU migration stream (`migrate` to a file) driver. |
 | `driver-xen` | Xen hypervisor driver (live introspection). |
 | `driver-xen-core-dump` | Xen core dump file driver. |
 | `os-linux` | Linux guest introspection. |

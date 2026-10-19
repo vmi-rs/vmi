@@ -109,6 +109,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vmi::driver::qemu_core_dump`) with `VmiQemuCoreDumpDriver`, which reads
   QEMU `dump-guest-memory` ELF dumps together with a JSON file of system
   registers.
+- `vmi-driver-qemu-migration` crate (feature `driver-qemu-migration`, module
+  `vmi::driver::qemu_migration`) with `VmiQemuMigrationDriver`, which reads
+  an uncompressed QEMU migration stream that `migrate` wrote to a file. The
+  driver walks the device sections with the JSON VM description at the end of
+  the stream. It maps the main RAM of the `pc-i440fx-*` and `pc-q35-*`
+  machines for amd64 guests, from qemu-system-x86_64 and qemu-system-i386,
+  and of the `virt` and `vmapple` machines for arm64 guests. `CpuState` and
+  `RamRange` let an `ArchAdapter` read the `cpu` sections and place the RAM
+  blocks.
 - `vmi-os-macos` crate (feature `os-macos`, module `vmi::os::macos`) with
   `MacOs`, macOS support for XNU on Apple silicon (arm64, 16KB pages). It finds
   the kernel collection from `VBAR_EL1`, relocates profile symbols per kernel
