@@ -175,7 +175,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `os-macos` feature of `vmi-utils`, which the `os-macos` feature of `vmi`
   enables.
 - `macos-recipe-deploy-kvm` example, which copies a file into a macOS guest
-  running in KVM and can launch it.
+  running in KVM and can launch it. Ctrl-C ends it. A recipe that runs is
+  aborted first, and the hijacked thread gets its registers back.
 
 ### Removed
 

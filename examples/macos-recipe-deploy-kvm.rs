@@ -62,7 +62,7 @@ use anyhow::{Context as _, Error};
 use clap::Parser;
 use isr::cache::IsrCache;
 use vmi::{
-    Registers as _, Va, VcpuId, VmiCore, VmiSession,
+    Registers as _, Va, VcpuId, VmiCore, VmiHandlerExt as _, VmiSession,
     arch::arm64::{Arm64, Granule16KVa47},
     driver::{VmiFullDriver, kvm::VmiKvmDriver},
     os::{VmiOsProcess as _, macos::MacOs},
@@ -465,11 +465,11 @@ fn main() -> Result<(), Error> {
         None => find_qemu_pid().context("no qemu-system process found")?,
     };
 
-    // Ctrl-C makes the session abort the recipe and restore the hijacked
-    // thread instead of ending the program at once.
+    // Ctrl-C and SIGTERM make the injector abort the recipe and restore the
+    // hijacked thread instead of ending the program at once.
     let terminate = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, terminate.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, terminate)?;
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, terminate.clone())?;
 
     // Duplicate QEMU's KVM fds and create the VMI driver.
     let fds = kvm::attach::from_pid(qemu_pid)?;
@@ -512,14 +512,19 @@ fn main() -> Result<(), Error> {
         process.id()?
     };
 
+    // The session notices a signal only while it waits for an event. The
+    // termination flag also interrupts the injector when the signal arrives
+    // while the session handles an event.
     session
         .handle(|session| {
-            UserInjectorHandler::new(
+            Ok(UserInjectorHandler::new(
                 session,
                 recipe_factory(GuestFile::new(&cli.destination, content, cli.launch)),
             )?
-            .with_pid(pid)
+            .with_pid(pid)?
+            .with_termination_flag(terminate))
         })?
+        .flatten()
         .transpose()?;
 
     Ok(())
