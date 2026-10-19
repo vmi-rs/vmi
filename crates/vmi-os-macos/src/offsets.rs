@@ -74,11 +74,25 @@ offsets! {
             task_threads: Field,            // queue_chain_t
             t_tro: Field,                   // struct thread_ro *
             thread_id: Field,               // uint64_t
+            machine: Field,                 // struct machine_thread
         }
 
         struct thread_ro {
             tro_proc: Field,                // struct proc *
             tro_task: Field,                // struct task *
+        }
+
+        struct machine_thread {
+            upcb: Field,                    // arm_saved_state_t *
+        }
+
+        struct arm_saved_state {
+            uss: Field,                     // union of arm_saved_state32 and arm_saved_state64
+        }
+
+        struct arm_saved_state64 {
+            sp: Field,                      // uint64_t
+            pc: Field,                      // uint64_t
         }
 
         struct _vm_map {

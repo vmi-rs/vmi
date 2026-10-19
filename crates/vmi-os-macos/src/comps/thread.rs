@@ -4,7 +4,7 @@ use vmi_core::{
     os::{ProcessObject, ThreadId, ThreadObject, VmiOsThread},
 };
 
-use super::MacOsProcess;
+use super::{MacOsProcess, MacOsSavedState};
 use crate::{ArchAdapter, MacOs, MacOsError, MacOsExt as _, offset};
 
 /// A macOS thread.
@@ -125,6 +125,29 @@ where
         }
 
         Ok(Some(MacOsProcess::new(self.vmi, ProcessObject(process))))
+    }
+
+    /// Returns the user-mode register state of the thread.
+    ///
+    /// Returns `None` when the thread has no user-mode register state.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `thread.machine.upcb`.
+    pub fn user_saved_state(&self) -> Result<Option<MacOsSavedState<'a, Driver>>, VmiError> {
+        let thread = offset!(self.vmi, thread);
+        let machine_thread = offset!(self.vmi, machine_thread);
+
+        let saved_state = self
+            .vmi
+            .os()
+            .read_pointer(self.va + thread.machine.offset() + machine_thread.upcb.offset())?;
+
+        if saved_state.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(MacOsSavedState::new(self.vmi, saved_state)))
     }
 }
 

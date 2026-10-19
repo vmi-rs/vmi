@@ -92,7 +92,7 @@ pub use self::arch::ArchAdapter;
 mod comps;
 pub use self::comps::{
     MacOsFileKind, MacOsImage, MacOsMapped, MacOsModule, MacOsOpenFile, MacOsProcess,
-    MacOsProcessArguments, MacOsRegion, MacOsThread, MacOsUserModule, MacOsVnode,
+    MacOsProcessArguments, MacOsRegion, MacOsSavedState, MacOsThread, MacOsUserModule, MacOsVnode,
 };
 
 mod error;

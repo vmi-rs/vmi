@@ -4,6 +4,7 @@ mod mapped;
 mod module;
 mod process;
 mod region;
+mod saved_state;
 mod thread;
 mod user_module;
 mod vnode;
@@ -17,6 +18,7 @@ pub use self::{
     module::MacOsModule,
     process::{MacOsProcess, MacOsProcessArguments},
     region::MacOsRegion,
+    saved_state::MacOsSavedState,
     thread::MacOsThread,
     user_module::MacOsUserModule,
     vnode::MacOsVnode,

@@ -143,6 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file write events of a macOS guest running in KVM.
 - `macos-trace-kvm` example, which traces the library calls, Objective-C
   messages and XPC traffic of a process in a macOS guest running in KVM.
+- `MacOsThread::user_saved_state` and `MacOsSavedState`, the user-mode
+  registers that the kernel saved for a thread.
 
 ### Removed
 
