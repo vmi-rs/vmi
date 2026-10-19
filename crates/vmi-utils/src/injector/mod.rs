@@ -8,8 +8,9 @@
 //!
 //! # Limitations
 //!
-//! The injector currently only supports Windows OS and AMD64 architecture.
-//! Injections into 32-bit processes are not currently supported.
+//! The injector supports Windows on AMD64, in kernel and user mode, and macOS
+//! on arm64 in user mode. Injections into 32-bit processes are not supported,
+//! and a bridge is not supported on macOS.
 //!
 //! # Examples
 //!
@@ -283,6 +284,10 @@ where
 pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
 /// User-mode injector handler.
+///
+/// On macOS, the injector hijacks a thread of the target process where the
+/// thread returns from a syscall, and an idle process is not injected until
+/// one of its threads runs.
 ///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;

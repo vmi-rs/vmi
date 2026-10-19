@@ -31,6 +31,7 @@ isr-macros = { workspace = true }
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
 vmi-arch-arm64 = { workspace = true, optional = true }
+vmi-os-macos = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -42,6 +43,7 @@ default = []
 
 arch-amd64 = ["vmi-arch-amd64"]
 arch-arm64 = ["vmi-arch-arm64"]
+os-macos = ["vmi-os-macos"]
 os-windows = ["vmi-os-windows", "isr-cache/windows", "isr-dl-windows"]
 
 bpm = ["interceptor", "ptm"]

@@ -1,5 +1,7 @@
 #[cfg(feature = "arch-amd64")]
 pub mod amd64;
+#[cfg(feature = "arch-arm64")]
+pub mod arm64;
 
 use vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError};
 use zerocopy::{Immutable, IntoBytes};

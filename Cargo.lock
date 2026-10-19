@@ -2917,6 +2917,7 @@ dependencies = [
  "vmi-arch-arm64",
  "vmi-core",
  "vmi-driver-mock",
+ "vmi-os-macos",
  "vmi-os-windows",
  "zerocopy",
 ]

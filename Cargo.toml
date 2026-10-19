@@ -163,7 +163,7 @@ driver-qemu-core-dump = ["vmi-driver-qemu-core-dump"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
 os-linux = ["vmi-os-linux"]
-os-macos = ["vmi-os-macos"]
+os-macos = ["vmi-os-macos", "vmi-utils?/os-macos"]
 os-windows = [
     "vmi-os-windows",
     "vmi-utils?/os-windows"

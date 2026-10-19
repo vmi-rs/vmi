@@ -143,11 +143,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file write events of a macOS guest running in KVM.
 - `macos-trace-kvm` example, which traces the library calls, Objective-C
   messages and XPC traffic of a process in a macOS guest running in KVM.
+- `UserInjectorHandler` injects into macOS on arm64 (`vmi-utils` features
+  `arch-arm64`, `os-macos` and `injector`). It hijacks a thread of the target
+  process where the thread returns from a syscall, and lays out calls as the
+  arm64 calling convention of Apple platforms does, with data copied to the
+  stack below its 128-byte red zone. It takes no bridge.
 - `inject!` also names a function by the file name of its image as a string
   literal and its symbol as the image exports it, as in
   `"libsystem_kernel.dylib"!_close(fd)`.
 - `MacOsThread::user_saved_state` and `MacOsSavedState`, the user-mode
   registers that the kernel saved for a thread.
+- `os-macos` feature of `vmi-utils`, which the `os-macos` feature of `vmi`
+  enables.
 
 ### Removed
 
