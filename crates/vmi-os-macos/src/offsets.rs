@@ -1,12 +1,11 @@
 use isr_macros::{Bitfield, Field, offsets, symbols};
 
 symbols! {
-    /// XNU kernel symbols used by the [`MacOs`] implementation.
+    /// XNU kernel symbols at their runtime addresses.
     ///
     /// The profile stores the addresses of the unslid kernel. [`MacOs::new`]
     /// relocates them to their runtime addresses.
     ///
-    /// [`MacOs`]: crate::MacOs
     /// [`MacOs::new`]: crate::MacOs::new
     #[derive(Debug)]
     pub struct Symbols {
@@ -19,6 +18,15 @@ symbols! {
         dyld_pager_ops: Option<u64>,
         shared_region_pager_ops: Option<u64>,
         apple_protect_pager_ops: Option<u64>,
+
+        // Functions that the macOS injectors of vmi-utils call.
+        unix_syscall: Option<u64>,
+        proc_find: Option<u64>,
+        proc_task: Option<u64>,
+        proc_rele: Option<u64>,
+        task_findtid: Option<u64>,
+        thread_abort_safely: Option<u64>,
+        thread_deallocate: Option<u64>,
     }
 }
 

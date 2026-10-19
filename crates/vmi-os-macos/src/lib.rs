@@ -104,7 +104,8 @@ pub use self::iter::{ListIterator, MapEntryIterator, QueueIterator};
 mod macho;
 
 mod offsets;
-use self::offsets::{Offsets, Symbols};
+use self::offsets::Offsets;
+pub use self::offsets::Symbols;
 
 mod relocation;
 use self::relocation::KernelRelocations;
@@ -317,6 +318,11 @@ where
     /// Returns the `LC_UUID` of the kernel.
     pub fn kernel_uuid(vmi: VmiState<Self>) -> [u8; 16] {
         this!(vmi).kernel_uuid
+    }
+
+    /// Returns the kernel symbols at their runtime addresses.
+    pub fn symbols(vmi: VmiState<'_, Self>) -> &Symbols {
+        &this!(vmi).symbols
     }
 
     /// Relocates a kernel profile address using its containing segment.
@@ -576,5 +582,12 @@ fn relocate_symbols(
         dyld_pager_ops: relocate_optional(symbols.dyld_pager_ops)?,
         shared_region_pager_ops: relocate_optional(symbols.shared_region_pager_ops)?,
         apple_protect_pager_ops: relocate_optional(symbols.apple_protect_pager_ops)?,
+        unix_syscall: relocate_optional(symbols.unix_syscall)?,
+        proc_find: relocate_optional(symbols.proc_find)?,
+        proc_task: relocate_optional(symbols.proc_task)?,
+        proc_rele: relocate_optional(symbols.proc_rele)?,
+        task_findtid: relocate_optional(symbols.task_findtid)?,
+        thread_abort_safely: relocate_optional(symbols.thread_abort_safely)?,
+        thread_deallocate: relocate_optional(symbols.thread_deallocate)?,
     })
 }
