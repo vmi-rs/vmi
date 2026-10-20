@@ -175,7 +175,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zerocopy = { workspace = true }
 
-isr = { workspace = true, features = ["cache", "pdb", "dl-windows"] }
+isr = { workspace = true, features = ["cache", "pdb", "dl-linux", "dl-windows"] }
 
 # vmi = { workspace = true }
 
@@ -190,6 +190,12 @@ name = "basic-process-list"
 path = "examples/basic-process-list.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-windows"]
+
+[[example]]
+name = "linux-process-list"
+path = "examples/linux-process-list.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-linux"]
 
 [[example]]
 name = "windows-breakpoint-manager"
