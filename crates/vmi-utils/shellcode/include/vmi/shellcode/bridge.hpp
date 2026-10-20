@@ -34,6 +34,36 @@ struct bridge_response {            // ----|---------|-----|--------
     uint64_t value4;                // rdx | -       | rdx | -
 };
 
+//
+// AArch64 register mappings of the BRK transport. The request and the method
+// share w1, the request in bits 15:0 and the method in bits 31:16.
+//
+//   bridge_packet          bridge_response
+//   magic     w0           value1    x0
+//   request   w1           value2    x1
+//   method    w1           value3    x2
+//   value1    x2           value4    x3
+//   value2    x3
+//   value3    x4
+//   value4    x5
+//
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+
+using bridge_transport = uint64_t(*)(
+    const bridge_packet*,
+    bridge_response*
+    );
+
+extern "C"
+uint64_t
+bridge_brk(
+    const bridge_packet* packet,
+    bridge_response* response
+    );
+
+#else
+
 using bridge_transport = uint64_t(__fastcall*)(
     _In_ const bridge_packet*,
     _Out_opt_ bridge_response*
@@ -55,8 +85,14 @@ bridge_xen_vmcall(
     _Out_opt_ bridge_response* response
     );
 
+#endif
+
 struct default_bridge_traits {
+#if defined(__aarch64__) || defined(_M_ARM64)
+    static constexpr bridge_transport transport = &bridge_brk;
+#else
     static constexpr bridge_transport transport = &bridge_xen_vmcall;
+#endif
     static constexpr uint32_t magic = 0x42494d56;                 // "VMIB"
     static constexpr uint64_t verify_value3 = 0x213353522d494d56; // "VMI-RS3!"
     static constexpr uint64_t verify_value4 = 0x213453522d494d56; // "VMI-RS4!"

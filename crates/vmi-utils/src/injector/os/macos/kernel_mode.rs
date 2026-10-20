@@ -160,7 +160,8 @@ where
         Ok(injector)
     }
 
-    /// Fails with [`VmiError::NotSupported`], because macOS has no bridge.
+    /// Fails with [`VmiError::NotSupported`], because the macOS injector
+    /// does not dispatch bridge calls.
     fn with_bridge<Bridge>(
         self,
         _bridge: Bridge,

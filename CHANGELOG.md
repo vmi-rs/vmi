@@ -186,6 +186,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `macos-recipe-deploy-kvm` example, which copies a file into a macOS guest
   running in KVM and can launch it. Ctrl-C ends it. A recipe that runs is
   aborted first, and the hijacked thread gets its registers back.
+- `vmi_utils::bridge` supports arm64 guests (feature `arch-arm64`). The guest
+  makes a bridge call with `BRK #0x4d56`, whose comment is
+  `bridge::BREAKPOINT_COMMENT`. `W0` holds the magic, `X1` the request and
+  the method, `X2` to `X5` the values, and the response goes to `X0` to `X3`.
+  The monitor resumes the guest after the `BRK`. Without a monitor, the guest
+  kernel handles the exception, and a user-mode caller has to handle the
+  signal, such as `SIGTRAP` on macOS.
+- `bridge_brk`, the AArch64 transport of the guest-side shellcode support,
+  and `bridge.hpp` makes it the default transport when it is built for
+  AArch64.
 
 ### Removed
 

@@ -3,9 +3,13 @@
 
 #[cfg(feature = "arch-amd64")]
 mod amd64;
+#[cfg(feature = "arch-arm64")]
+mod arm64;
 
 use vmi_core::{Architecture, VmiEvent, arch::GpRegisters};
 
+#[cfg(feature = "arch-arm64")]
+pub use self::arm64::BREAKPOINT_COMMENT;
 use super::BridgePacket;
 
 /// Architecture-specific adapter for the bridge protocol.
@@ -26,6 +30,8 @@ pub trait ArchAdapter: Architecture + Sized + 'static {
     ///   `subleaf` (ECX), values from `R8`-`R11`.
     /// - **AMD64 (x86, CPUID)**: magic from `leaf` (EAX), request+method from
     ///   `subleaf` (ECX), values from `EBX`, `EDX`, `ESI`, `EDI`.
+    /// - **AArch64 (BRK)**: magic from `W0`, request+method from `X1`, values
+    ///   from `X2`-`X5`.
     fn read_packet(event: &VmiEvent<Self>) -> BridgePacket;
 }
 
@@ -36,7 +42,8 @@ pub trait ArchAdapter: Architecture + Sized + 'static {
 ///
 /// # Architecture-specific
 ///
-/// **AMD64**: `RAX`, `RBX`, `RCX` and `RDX`.
+/// - **AMD64**: `RAX`, `RBX`, `RCX` and `RDX`.
+/// - **AArch64**: `X0`, `X1`, `X2` and `X3`.
 pub trait GpRegistersAdapter: GpRegisters + Sized + 'static {
     /// Writes response values into the register set.
     ///

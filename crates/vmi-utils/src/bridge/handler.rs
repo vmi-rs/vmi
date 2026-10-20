@@ -25,6 +25,7 @@ pub trait BridgeContract {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RAX`
+    /// - **AArch64**: `X0`
     const VERIFY_VALUE1: Option<u64> = None;
 
     /// Second verification value written into the response.
@@ -32,6 +33,7 @@ pub trait BridgeContract {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RBX`
+    /// - **AArch64**: `X1`
     const VERIFY_VALUE2: Option<u64> = None;
 
     /// Third verification value written into the response.
@@ -39,6 +41,7 @@ pub trait BridgeContract {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RCX`
+    /// - **AArch64**: `X2`
     const VERIFY_VALUE3: Option<u64> = None;
 
     /// Fourth verification value written into the response.
@@ -46,6 +49,7 @@ pub trait BridgeContract {
     /// # Architecture-specific
     ///
     /// - **AMD64**: `RDX`
+    /// - **AArch64**: `X3`
     const VERIFY_VALUE4: Option<u64> = None;
 }
 

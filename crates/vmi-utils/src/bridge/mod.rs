@@ -3,11 +3,11 @@
 //! The bridge provides a structured IPC mechanism between code running
 //! inside a guest VM (typically injected shellcode) and the host-side
 //! VMI monitor. Communication happens through CPU registers: the guest
-//! executes a VMCALL (or CPUID) instruction, the hypervisor delivers
-//! the event to the monitor, which reads a [`BridgePacket`] from the
-//! registers, dispatches it to the appropriate handler, and writes
-//! the values from [`BridgeResponse`] into guest registers.
-//! The optional output is returned to the caller (not the guest).
+//! executes a VMCALL (or CPUID) instruction on AMD64, or `BRK #0x4d56` on
+//! AArch64, the hypervisor delivers the event to the monitor, which reads a
+//! [`BridgePacket`] from the registers, dispatches it to the appropriate
+//! handler, and writes the values from [`BridgeResponse`] into guest
+//! registers. The optional output is returned to the caller (not the guest).
 //!
 //! # Traits
 //!
@@ -81,6 +81,8 @@ mod response;
 
 use vmi_core::{VmiContext, VmiOs};
 
+#[cfg(feature = "arch-arm64")]
+pub use self::arch::BREAKPOINT_COMMENT;
 pub use self::{
     arch::ArchAdapter,
     dispatch::BridgeDispatch,

@@ -1,6 +1,14 @@
 # Guest-side support for shellcodes used with vmi-utils.
 
-add_library(vmi_shellcode STATIC src/arch/x64/transport.S)
+# The transport makes the bridge call, with BRK on AArch64 and with VMCALL or
+# CPUID on x64.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+    set(VMI_SHELLCODE_TRANSPORT src/arch/arm64/transport.S)
+else()
+    set(VMI_SHELLCODE_TRANSPORT src/arch/x64/transport.S)
+endif()
+
+add_library(vmi_shellcode STATIC ${VMI_SHELLCODE_TRANSPORT})
 add_library(vmi::shellcode ALIAS vmi_shellcode)
 
 target_include_directories(vmi_shellcode PUBLIC include)
