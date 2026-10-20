@@ -15,7 +15,7 @@ If a vCPU tries to read from or write to a page containing breakpoints, a
 [`VmiEvent`] is generated with a [memory access] reason.
 
 Read access exceptions can typically be handled by (fast-)single-stepping
-the instruction in an unmodified [`default_view`](VmiCore::default_view).
+the instruction in an unmodified [`default_view`](vmi_core::VmiCore::default_view).
 
 Write exceptions need careful consideration as they could overwrite breakpoint
 instructions - you can either ignore them or remove the affected breakpoint

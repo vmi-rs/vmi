@@ -51,11 +51,14 @@ pub use self::breakpoint::{
 
 mod controller;
 
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::{
+    collections::{HashMap, HashSet, hash_map::Entry},
+    marker::PhantomData,
+};
 
 use vmi_core::{
-    AddressContext, Architecture as _, Gfn, Pa, Registers as _, Va, View, VmiCore, VmiDriver,
-    VmiError, VmiEvent, driver::VmiRead,
+    AddressContext, Architecture as _, Gfn, Pa, Registers as _, Va, View, VmiDriver, VmiError,
+    VmiEvent, VmiSession, driver::VmiRead, os::VmiOs,
 };
 
 pub use self::controller::{BreakpointController, MemoryController, TapController};
@@ -65,10 +68,14 @@ use crate::ptm::{PageEntryUpdate, PageTableMonitorEvent};
 mod tests;
 
 /// Breakpoint manager.
-pub struct BreakpointManager<Controller, Key = (), Tag = &'static str>
+///
+/// `Os` is the operating system of the guest. It picks the root under which
+/// an event looks up a breakpoint that is not global.
+pub struct BreakpointManager<Os, Controller, Key = (), Tag = &'static str>
 where
-    Controller: TapController,
-    Controller::Driver: VmiRead,
+    Os: VmiOs,
+    Os::Driver: VmiRead,
+    Controller: TapController<Driver = Os::Driver>,
     Key: KeyType,
     Tag: TagType,
 {
@@ -134,6 +141,9 @@ where
 
     /// Controller used to insert and remove breakpoints.
     controller: Controller,
+
+    /// Ties the manager to the operating system of its sessions.
+    _marker: PhantomData<Os>,
 }
 
 #[derive(Debug)]
@@ -174,10 +184,11 @@ where
 }
 */
 
-impl<Interface, Key, Tag> BreakpointManager<Interface, Key, Tag>
+impl<Os, Interface, Key, Tag> BreakpointManager<Os, Interface, Key, Tag>
 where
-    Interface: TapController,
-    Interface::Driver: VmiRead,
+    Os: VmiOs,
+    Os::Driver: VmiRead,
+    Interface: TapController<Driver = Os::Driver>,
     Key: KeyType,
     Tag: TagType,
 {
@@ -192,6 +203,7 @@ where
             pending_breakpoints: HashMap::new(),
             pending_ctx_by_view: HashMap::new(),
             controller: Interface::new(),
+            _marker: PhantomData,
         }
     }
 
@@ -209,7 +221,7 @@ where
     /// [`insert_with_hint`]: Self::insert_with_hint
     pub fn insert(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         breakpoint: impl Into<Breakpoint<Key, Tag>>,
     ) -> Result<bool, VmiError> {
         let breakpoint = breakpoint.into();
@@ -242,7 +254,7 @@ where
     /// already present.
     pub fn insert_with_hint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         breakpoint: impl Into<Breakpoint<Key, Tag>>,
         pa: Option<Pa>,
     ) -> Result<bool, VmiError> {
@@ -272,7 +284,7 @@ where
     /// found.
     pub fn remove(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         breakpoint: impl Into<Breakpoint<Key, Tag>>,
     ) -> Result<bool, VmiError> {
         let breakpoint = breakpoint.into();
@@ -298,7 +310,7 @@ where
     /// found.
     pub fn remove_with_hint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         breakpoint: impl Into<Breakpoint<Key, Tag>>,
         pa: Option<Pa>,
     ) -> Result<bool, VmiError> {
@@ -349,19 +361,23 @@ where
 
     /// Removes a breakpoint by event that caused the breakpoint.
     ///
+    /// The root comes from the operating system, as in [`get_by_event`].
+    ///
     /// Returns either:
     /// - `Some(true)` if the breakpoint was removed and it was the last
     ///   breakpoint for the `(view, GFN)` pair.
     /// - `Some(false)` if the breakpoint was removed but there are still
     ///   other breakpoints for the `(view, GFN)` pair.
     /// - `None` if the breakpoint was not found.
+    ///
+    /// [`get_by_event`]: Self::get_by_event
     pub fn remove_by_event(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> Result<Option<bool>, VmiError> {
-        let (ctx, pa, view) = match self.address_for_event(event) {
+        let (ctx, pa, view) = match self.address_for_event(vmi, event) {
             Some((ctx, pa, view)) => (ctx, pa, view),
             None => return Ok(None),
         };
@@ -396,11 +412,7 @@ where
     /// Removes all breakpoints for a given view.
     ///
     /// Returns `true` if any breakpoints were removed, `false` otherwise.
-    pub fn remove_by_view(
-        &mut self,
-        vmi: &VmiCore<Interface::Driver>,
-        view: View,
-    ) -> Result<bool, VmiError> {
+    pub fn remove_by_view(&mut self, vmi: &VmiSession<Os>, view: View) -> Result<bool, VmiError> {
         //
         // First remove all pending breakpoints for this view (if any).
         //
@@ -438,12 +450,18 @@ where
     }
 
     /// Returns the breakpoint registered under `key` for the given event.
+    ///
+    /// For a breakpoint that is not global, the operating system picks the
+    /// root from the registers of the event ([`VmiOs::translation_root`]). It
+    /// can differ from the root in the registers, such as under KPTI on Linux,
+    /// where a vCPU in user mode runs on the user page tables.
     pub fn get_by_event(
         &self,
+        vmi: &VmiSession<Os>,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> Option<Breakpoint<Key, Tag>> {
-        let (ctx, pa, view) = self.address_for_event(event)?;
+        let (ctx, pa, view) = self.address_for_event(vmi, event)?;
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
         let breakpoints_by_ctx = self.active_breakpoints.get(&(view, gfn))?;
@@ -453,12 +471,17 @@ where
     }
 
     /// Checks if the given event was caused by a breakpoint.
+    ///
+    /// The root comes from the operating system, as in [`get_by_event`].
+    ///
+    /// [`get_by_event`]: Self::get_by_event
     pub fn contains_by_event(
         &self,
+        vmi: &VmiSession<Os>,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> bool {
-        let (ctx, pa, view) = match self.address_for_event(event) {
+        let (ctx, pa, view) = match self.address_for_event(vmi, event) {
             Some((ctx, pa, view)) => (ctx, pa, view),
             None => return false,
         };
@@ -482,7 +505,7 @@ where
     /// Clears all breakpoints.
     ///
     /// This function removes all active and pending breakpoints.
-    pub fn clear(&mut self, vmi: &VmiCore<Interface::Driver>) -> Result<(), VmiError> {
+    pub fn clear(&mut self, vmi: &VmiSession<Os>) -> Result<(), VmiError> {
         let mut to_remove = Vec::new();
 
         for (&(view, gfn), breakpoints) in &self.active_breakpoints {
@@ -529,7 +552,7 @@ where
     /// Returns `true` if any breakpoints were updated, `false` otherwise.
     pub fn handle_ptm_event(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         event: &PageTableMonitorEvent,
     ) -> Result<bool, VmiError> {
         match event {
@@ -547,7 +570,7 @@ where
     /// Short-circuits on the first error.
     pub fn handle_ptm_events(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         events: impl IntoIterator<Item = PageTableMonitorEvent>,
     ) -> Result<bool, VmiError> {
         let mut updated = false;
@@ -568,7 +591,7 @@ where
     /// Returns `true` if any breakpoints were updated, `false` otherwise.
     fn handle_page_in(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         update: &PageEntryUpdate,
     ) -> Result<bool, VmiError> {
         tracing::trace!(?update, "page-in");
@@ -598,7 +621,7 @@ where
     /// Returns `true` if any breakpoints were updated, `false` otherwise.
     fn handle_page_out(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         update: &PageEntryUpdate,
     ) -> Result<bool, VmiError> {
         tracing::trace!(?update, "page-out");
@@ -628,7 +651,7 @@ where
     /// already present.
     fn insert_active_breakpoint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         breakpoint: Breakpoint<Key, Tag>,
         pa: Pa,
     ) -> Result<bool, VmiError> {
@@ -785,7 +808,7 @@ where
     /// - `None` if the breakpoint was not found.
     fn remove_active_breakpoint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         ctx: impl Into<AddressContext>,
         pa: Pa,
         key: Key,
@@ -905,7 +928,7 @@ where
     /// Removes all active breakpoints for a given `(view, GFN)` pair.
     fn remove_active_breakpoints_by_location(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         gfn: Gfn,
         view: View,
     ) -> Result<Option<ActiveBreakpoints<Key, Tag>>, VmiError> {
@@ -1186,7 +1209,7 @@ where
 
     fn monitor_page_for_changes(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         gfn: Gfn,
         view: View,
     ) -> Result<(), VmiError> {
@@ -1196,7 +1219,7 @@ where
 
     fn unmonitor_page_for_changes(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         gfn: Gfn,
         view: View,
     ) -> Result<(), VmiError> {
@@ -1218,7 +1241,7 @@ where
 
     fn install_breakpoint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         pa: Pa,
         view: View,
         key: Key,
@@ -1241,7 +1264,7 @@ where
 
     fn uninstall_breakpoint(
         &mut self,
-        vmi: &VmiCore<Interface::Driver>,
+        vmi: &VmiSession<Os>,
         pa: Pa,
         view: View,
         key: Key,
@@ -1323,8 +1346,11 @@ where
         Ok(())
     }
 
+    /// Returns the address context, the physical address and the view of the
+    /// breakpoint that caused an event.
     fn address_for_event(
         &self,
+        vmi: &VmiSession<Os>,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
     ) -> Option<(AddressContext, Pa, View)> {
         let (view, gfn) = match self.controller.check_event(event) {
@@ -1337,12 +1363,14 @@ where
 
         //
         // If there is a global breakpoint for this address, fix the root
-        // with the one it was registered with.
+        // with the one it was registered with. Otherwise, the operating
+        // system picks the root for the registers of the event, which need
+        // not be the root that the registers hold.
         //
 
         let root = match self.active_global_breakpoints.get(&(view, ip)) {
             Some(global_breakpoint) => global_breakpoint.root,
-            None => event.registers().translation_root(ip),
+            None => vmi.with_registers(event.registers()).translation_root(ip),
         };
 
         let ctx = AddressContext::new(ip, root);

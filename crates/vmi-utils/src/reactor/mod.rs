@@ -111,7 +111,7 @@ where
     <Handler::Event as ReactorEvent>::Module: ReactorModule<Os>,
 {
     /// Breakpoint manager that maintains our breakpoints.
-    bpm: BreakpointManager<BreakpointController<Os::Driver>, (), Handler::Event>,
+    bpm: BreakpointManager<Os, BreakpointController<Os::Driver>, (), Handler::Event>,
 
     /// Page table monitor that monitors the pages containing our breakpoints.
     ptm: PageTableMonitor<Os::Driver, Handler::Event>,
@@ -254,7 +254,7 @@ where
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
-        let tag = match self.bpm.get_by_event(vmi.event(), ()) {
+        let tag = match self.bpm.get_by_event(vmi, vmi.event(), ()) {
             Some(breakpoint) => breakpoint.tag(),
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {

@@ -72,7 +72,7 @@ where
     view: View,
 
     /// Breakpoint manager for setting and tracking hijack breakpoints.
-    bpm: BreakpointManager<BreakpointController<Driver>>,
+    bpm: BreakpointManager<WindowsOs<Driver>, BreakpointController<Driver>>,
 
     /// Page table monitor for tracking page table modifications.
     ptm: PageTableMonitor<Driver>,
@@ -286,7 +286,7 @@ where
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        match self.bpm.get_by_event(vmi.event(), ()) {
+        match self.bpm.get_by_event(vmi, vmi.event(), ()) {
             Some(breakpoint) => {
                 debug_assert_eq!(breakpoint.tag(), "KiSystemServiceCopyEnd");
             }

@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MSR_LSTAR`. The types follow the names of the Windows crate, such as
   `LinuxProcess`, `LinuxThread`, `LinuxRegion` and `LinuxModule`. Images,
   user-mode modules and `last_error` return `VmiError::NotSupported`.
+- **Breaking:** `BreakpointManager` takes the operating system as its first
+  type parameter, as in `BreakpointManager<Os, Controller, Key, Tag>`. Its
+  methods take a `VmiSession` instead of a `VmiCore`, and `get_by_event` and
+  `contains_by_event` take one too. A `VmiState` or a `VmiContext` derefs to
+  it. For a breakpoint that is not global, the event methods take the root
+  that the OS picks for the registers of the event (`VmiOs::translation_root`),
+  not the root in the registers. Under KPTI on Linux, a user-mode breakpoint
+  inserted with the root of its process thus matches when it fires.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the

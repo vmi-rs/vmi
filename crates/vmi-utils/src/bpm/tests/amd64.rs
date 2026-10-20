@@ -6,8 +6,9 @@ use vmi_arch_amd64::{
 };
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, Va, VcpuId, View, VmiCore, VmiError,
-    VmiEvent, VmiEventFlags,
+    VmiEvent, VmiEventFlags, VmiSession,
     arch::{EventInterrupt as _, EventReason as _},
+    os::NoOS,
 };
 use vmi_driver_mock::arch::amd64::{Call, MockDriver, Op};
 
@@ -205,7 +206,7 @@ impl TapController for RecordingController {
 ///////////////////////////////////////////////////////////////////////////////
 
 /// A manager driven by the recording controller with unit key and string tag.
-type RecManager = BreakpointManager<RecordingController>;
+type RecManager = BreakpointManager<NoOS<MockDriver>, RecordingController>;
 
 /// Primary view used by most tests.
 const VIEW: View = View(0);
@@ -272,6 +273,10 @@ fn make_vmi(driver: MockDriver) -> Result<VmiCore<MockDriver>, VmiError> {
     vmi.disable_v2p_cache();
     Ok(vmi)
 }
+
+/// The operating system of the test sessions. It leaves the root of an event
+/// as the registers hold it.
+const NO_OS: NoOS<MockDriver> = NoOS(PhantomData);
 
 /// Builds a software-breakpoint event whose faulting page is `gfn`, whose
 /// instruction pointer is `va`, and whose translation root is `root`.
@@ -369,7 +374,8 @@ fn is_unmonitor(call: &ControllerCall) -> bool {
 
 #[test]
 fn insert_active_installs_then_monitors() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -394,7 +400,8 @@ fn insert_active_installs_then_monitors() -> Result<(), VmiError> {
 
 #[test]
 fn duplicate_active_insert_returns_false_without_calls() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -412,7 +419,8 @@ fn duplicate_active_insert_returns_false_without_calls() -> Result<(), VmiError>
 
 #[test]
 fn two_breakpoints_same_page_insert_twice_monitor_once() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(
@@ -435,7 +443,8 @@ fn two_breakpoints_same_page_insert_twice_monitor_once() -> Result<(), VmiError>
 
 #[test]
 fn two_breakpoints_different_pages_monitor_each() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(
@@ -461,7 +470,8 @@ fn two_breakpoints_different_pages_monitor_each() -> Result<(), VmiError> {
 
 #[test]
 fn insert_pending_records_no_controller_calls() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -477,7 +487,8 @@ fn insert_pending_records_no_controller_calls() -> Result<(), VmiError> {
 
 #[test]
 fn duplicate_pending_insert_returns_false() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let breakpoint = bp(OFFSET, ROOT1, VIEW);
@@ -489,7 +500,8 @@ fn duplicate_pending_insert_returns_false() -> Result<(), VmiError> {
 
 #[test]
 fn pending_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -508,7 +520,7 @@ fn pending_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> 
     assert!(manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageIn(update))?);
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    let breakpoint = manager.get_by_event(&event, ()).expect("breakpoint");
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
     assert_eq!(breakpoint.tag(), "a");
 
     Ok(())
@@ -516,7 +528,8 @@ fn pending_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> 
 
 #[test]
 fn pending_global_conflict_is_rejected() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -543,12 +556,14 @@ fn pending_global_conflict_is_rejected() -> Result<(), VmiError> {
     assert!(manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageIn(update))?);
 
     let own_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    let breakpoint = manager.get_by_event(&own_root, ()).expect("breakpoint");
+    let breakpoint = manager
+        .get_by_event(&vmi, &own_root, ())
+        .expect("breakpoint");
     assert_eq!(breakpoint.tag(), "a");
     assert!(!breakpoint.global());
 
     let foreign_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(!manager.contains_by_event(&foreign_root, ()));
+    assert!(!manager.contains_by_event(&vmi, &foreign_root, ()));
 
     Ok(())
 }
@@ -559,7 +574,8 @@ fn pending_global_conflict_is_rejected() -> Result<(), VmiError> {
 
 #[test]
 fn active_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -573,7 +589,7 @@ fn active_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> {
     assert!(rec_calls().is_empty());
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    let breakpoint = manager.get_by_event(&event, ()).expect("breakpoint");
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
     assert_eq!(breakpoint.tag(), "a");
 
     Ok(())
@@ -581,7 +597,8 @@ fn active_same_ctx_different_tag_keeps_the_first_tag() -> Result<(), VmiError> {
 
 #[test]
 fn shared_physical_page_two_contexts_install_twice_monitor_once() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // Same VA in two processes (roots) backed by one physical page.
@@ -614,7 +631,8 @@ fn insert_translates_and_activates_when_mapped() -> Result<(), VmiError> {
     let va = Va(0x1_0100);
     map_translation(&driver, pml4, va, data);
 
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let root = Amd64::pa_from_gfn(pml4);
@@ -647,7 +665,8 @@ fn insert_registers_pending_when_translation_absent() -> Result<(), VmiError> {
     // surfaces as a translation error rather than a read failure.
     driver.insert_page(pml4);
 
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let va = Va(0x1_0100);
@@ -664,7 +683,8 @@ fn insert_registers_pending_when_translation_absent() -> Result<(), VmiError> {
 #[test]
 fn insert_propagates_non_translation_error() -> Result<(), VmiError> {
     // No page backs the root at all, so the page-table read fails outright.
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = AddressContext::new(Va(0x1_0100), Amd64::pa_from_gfn(Gfn(0x40)));
@@ -681,7 +701,8 @@ fn remove_translates_and_removes_when_mapped() -> Result<(), VmiError> {
     let va = Va(0x1_0100);
     map_translation(&driver, pml4, va, data);
 
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = AddressContext::new(va, Amd64::pa_from_gfn(pml4));
@@ -699,7 +720,8 @@ fn remove_without_translation_removes_pending() -> Result<(), VmiError> {
     let pml4 = Gfn(0x40);
     driver.insert_page(pml4);
 
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = AddressContext::new(Va(0x1_0100), Amd64::pa_from_gfn(pml4));
@@ -719,7 +741,8 @@ fn remove_without_translation_removes_pending() -> Result<(), VmiError> {
 
 #[test]
 fn remove_active_last_removes_then_unmonitors() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -744,7 +767,8 @@ fn remove_active_last_removes_then_unmonitors() -> Result<(), VmiError> {
 
 #[test]
 fn remove_pending_returns_true_without_calls() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), None)?;
@@ -758,7 +782,8 @@ fn remove_pending_returns_true_without_calls() -> Result<(), VmiError> {
 
 #[test]
 fn activating_a_pending_breakpoint_drops_the_pending_copy() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -781,7 +806,8 @@ fn activating_a_pending_breakpoint_drops_the_pending_copy() -> Result<(), VmiErr
 
 #[test]
 fn remove_tears_down_active_when_a_pending_copy_shares_the_va() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // ROOT1 becomes the canonical root for the global VA and is installed.
@@ -800,14 +826,15 @@ fn remove_tears_down_active_when_a_pending_copy_shares_the_va() -> Result<(), Vm
     assert_eq!(rec_count(is_remove), 1);
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    assert!(!manager.contains_by_event(&event, ()));
+    assert!(!manager.contains_by_event(&vmi, &event, ()));
 
     Ok(())
 }
 
 #[test]
 fn remove_unknown_returns_false() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     assert!(!manager.remove_with_hint(
@@ -822,7 +849,8 @@ fn remove_unknown_returns_false() -> Result<(), VmiError> {
 
 #[test]
 fn remove_absent_context_on_populated_page_returns_false() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // One breakpoint occupies the page.
@@ -845,7 +873,8 @@ fn remove_absent_context_on_populated_page_returns_false() -> Result<(), VmiErro
 
 #[test]
 fn remove_by_event_last_returns_some_true() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -870,7 +899,8 @@ fn remove_by_event_last_returns_some_true() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_event_not_last_returns_some_false() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -890,7 +920,8 @@ fn remove_by_event_not_last_returns_some_false() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_event_unmatched_returns_none() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // Nothing is installed, so a well-formed event finds no breakpoint.
@@ -907,7 +938,8 @@ fn remove_by_event_unmatched_returns_none() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_event_removes_across_views() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // The same key and context installed in two views.
@@ -932,7 +964,8 @@ fn remove_by_event_removes_across_views() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_view_removes_only_target_view() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
@@ -954,7 +987,8 @@ fn remove_by_view_removes_only_target_view() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_view_empty_returns_false() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     assert!(!manager.remove_by_view(&vmi, VIEW)?);
@@ -964,7 +998,8 @@ fn remove_by_view_empty_returns_false() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_view_with_only_pending_returns_true() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // The view holds only a pending breakpoint, no active one.
@@ -980,7 +1015,8 @@ fn remove_by_view_with_only_pending_returns_true() -> Result<(), VmiError> {
 
 #[test]
 fn remove_by_view_also_clears_pending() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
@@ -1000,7 +1036,8 @@ fn remove_by_view_also_clears_pending() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_activates_pending_breakpoint() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1032,7 +1069,8 @@ fn page_in_activates_pending_breakpoint() -> Result<(), VmiError> {
 
 #[test]
 fn page_in_without_pending_reports_no_change() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let update = PageEntryUpdate {
@@ -1048,7 +1086,8 @@ fn page_in_without_pending_reports_no_change() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_moves_active_to_pending() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1081,7 +1120,8 @@ fn page_out_moves_active_to_pending() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_without_active_reports_no_change() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let update = PageEntryUpdate {
@@ -1096,7 +1136,8 @@ fn page_out_without_active_reports_no_change() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1119,7 +1160,8 @@ fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
 
 #[test]
 fn page_out_then_page_in_keeps_the_claim() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1141,7 +1183,9 @@ fn page_out_then_page_in_keeps_the_claim() -> Result<(), VmiError> {
     // The restored breakpoint is the one that was claimed, tag and global flag
     // included, so a foreign root matches it again.
     let foreign_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    let breakpoint = manager.get_by_event(&foreign_root, ()).expect("breakpoint");
+    let breakpoint = manager
+        .get_by_event(&vmi, &foreign_root, ())
+        .expect("breakpoint");
     assert_eq!(breakpoint.tag(), "a");
     assert!(breakpoint.global());
 
@@ -1150,7 +1194,8 @@ fn page_out_then_page_in_keeps_the_claim() -> Result<(), VmiError> {
 
 #[test]
 fn handle_ptm_events_processes_batch() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx_a = ctx_at(OFFSET, ROOT1);
@@ -1183,7 +1228,8 @@ fn handle_ptm_events_processes_batch() -> Result<(), VmiError> {
 
 #[test]
 fn clear_removes_all_active_breakpoints() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
@@ -1211,7 +1257,8 @@ fn clear_removes_all_active_breakpoints() -> Result<(), VmiError> {
 
 #[test]
 fn clear_on_empty_manager_is_ok() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.clear(&vmi)?;
@@ -1222,7 +1269,8 @@ fn clear_on_empty_manager_is_ok() -> Result<(), VmiError> {
 
 #[test]
 fn clear_after_pending_insert_does_not_panic() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // A pending breakpoint populates the per-view pending index, which clear()
@@ -1242,23 +1290,37 @@ fn clear_after_pending_insert_does_not_panic() -> Result<(), VmiError> {
 
 #[test]
 fn contains_by_event_distinguishes_installed_breakpoints() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
 
-    assert!(manager.contains_by_event(&bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1), ()));
+    assert!(manager.contains_by_event(
+        &vmi,
+        &bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1),
+        ()
+    ));
     // Different page.
-    assert!(!manager.contains_by_event(&bp_event(Some(VIEW), OTHER_GFN, va_at(OFFSET), ROOT1), ()));
+    assert!(!manager.contains_by_event(
+        &vmi,
+        &bp_event(Some(VIEW), OTHER_GFN, va_at(OFFSET), ROOT1),
+        ()
+    ));
     // Not a software breakpoint.
-    assert!(!manager.contains_by_event(&singlestep_event(Some(VIEW), CODE_GFN, va_at(OFFSET)), ()));
+    assert!(!manager.contains_by_event(
+        &vmi,
+        &singlestep_event(Some(VIEW), CODE_GFN, va_at(OFFSET)),
+        ()
+    ));
 
     Ok(())
 }
 
 #[test]
 fn contains_by_address_is_active_only() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let active = ctx_at(OFFSET, ROOT1);
@@ -1278,14 +1340,15 @@ fn contains_by_address_is_active_only() -> Result<(), VmiError> {
 
 #[test]
 fn get_by_event_returns_the_matching_breakpoint() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    let breakpoint = manager.get_by_event(&event, ()).expect("breakpoint");
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
     assert_eq!(breakpoint.ctx(), ctx);
     assert_eq!(breakpoint.view(), VIEW);
 
@@ -1293,11 +1356,15 @@ fn get_by_event_returns_the_matching_breakpoint() -> Result<(), VmiError> {
 }
 
 #[test]
-fn get_by_event_none_when_unmatched() {
+fn get_by_event_none_when_unmatched() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let manager = RecManager::new();
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    assert!(manager.get_by_event(&event, ()).is_none());
+    assert!(manager.get_by_event(&vmi, &event, ()).is_none());
+
+    Ok(())
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1306,8 +1373,9 @@ fn get_by_event_none_when_unmatched() {
 
 #[test]
 fn different_keys_are_independent() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
-    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = BreakpointManager::<NoOS<MockDriver>, RecordingController, u32>::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1327,8 +1395,9 @@ fn different_keys_are_independent() -> Result<(), VmiError> {
 
 #[test]
 fn remove_pending_only_affects_requested_key() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
-    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = BreakpointManager::<NoOS<MockDriver>, RecordingController, u32>::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
     manager.insert_with_hint(&vmi, Breakpoint::new(ctx, VIEW).with_key(1u32), None)?;
@@ -1350,7 +1419,8 @@ fn remove_pending_only_affects_requested_key() -> Result<(), VmiError> {
 
 #[test]
 fn global_breakpoint_matches_any_root() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(
@@ -1361,27 +1431,29 @@ fn global_breakpoint_matches_any_root() -> Result<(), VmiError> {
 
     // A different translation root still matches a global breakpoint.
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(manager.contains_by_event(&event, ()));
+    assert!(manager.contains_by_event(&vmi, &event, ()));
 
     Ok(())
 }
 
 #[test]
 fn non_global_breakpoint_requires_matching_root() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(!manager.contains_by_event(&event, ()));
+    assert!(!manager.contains_by_event(&vmi, &event, ()));
 
     Ok(())
 }
 
 #[test]
 fn global_breakpoint_spans_pages_and_remove_by_event_clears_all() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // The same global VA in two roots resolves to two different physical pages.
@@ -1411,7 +1483,8 @@ fn global_breakpoint_spans_pages_and_remove_by_event_clears_all() -> Result<(), 
 
 #[test]
 fn global_breakpoint_duplicate_insert_is_idempotent() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1425,7 +1498,8 @@ fn global_breakpoint_duplicate_insert_is_idempotent() -> Result<(), VmiError> {
 
 #[test]
 fn global_breakpoint_second_root_same_page_is_idempotent() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // Two roots that map the same VA to the same physical page collapse onto a
@@ -1440,7 +1514,8 @@ fn global_breakpoint_second_root_same_page_is_idempotent() -> Result<(), VmiErro
 
 #[test]
 fn global_breakpoint_is_removed_by_a_non_canonical_root() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // The first root registered for the VA becomes the canonical one.
@@ -1456,15 +1531,16 @@ fn global_breakpoint_is_removed_by_a_non_canonical_root() -> Result<(), VmiError
     assert_eq!(rec_count(is_unmonitor), 1);
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
-    assert!(!manager.contains_by_event(&event, ()));
+    assert!(!manager.contains_by_event(&vmi, &event, ()));
 
     Ok(())
 }
 
 #[test]
 fn global_breakpoints_with_distinct_keys_share_a_page() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
-    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = BreakpointManager::<NoOS<MockDriver>, RecordingController, u32>::new();
 
     // Two owners install a global breakpoint at the same VA on the same page.
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1487,8 +1563,8 @@ fn global_breakpoints_with_distinct_keys_share_a_page() -> Result<(), VmiError> 
         Some(pa),
     )?;
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(manager.contains_by_event(&event, 2u32));
-    assert!(!manager.contains_by_event(&event, 1u32));
+    assert!(manager.contains_by_event(&vmi, &event, 2u32));
+    assert!(!manager.contains_by_event(&vmi, &event, 1u32));
 
     // Removing the second owner tears the page down and stops matching.
     manager.remove_with_hint(
@@ -1496,15 +1572,16 @@ fn global_breakpoints_with_distinct_keys_share_a_page() -> Result<(), VmiError> 
         Breakpoint::new(ctx, VIEW).global().with_key(2u32),
         Some(pa),
     )?;
-    assert!(!manager.contains_by_event(&event, 2u32));
+    assert!(!manager.contains_by_event(&vmi, &event, 2u32));
 
     Ok(())
 }
 
 #[test]
 fn distinct_keys_at_one_address_are_independent() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
-    let mut manager = BreakpointManager::<RecordingController, u32>::new();
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = BreakpointManager::<NoOS<MockDriver>, RecordingController, u32>::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1533,7 +1610,8 @@ fn distinct_keys_at_one_address_are_independent() -> Result<(), VmiError> {
 
 #[test]
 fn removing_nonglobal_leaves_global_at_same_va_intact() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     // A global breakpoint and a non-global breakpoint share a VA but sit on
@@ -1558,14 +1636,15 @@ fn removing_nonglobal_leaves_global_at_same_va_intact() -> Result<(), VmiError> 
 
     // The global breakpoint still matches regardless of root.
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(manager.contains_by_event(&event, ()));
+    assert!(manager.contains_by_event(&vmi, &event, ()));
 
     Ok(())
 }
 
 #[test]
 fn global_breakpoint_onto_a_non_global_context_is_rejected() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1588,15 +1667,16 @@ fn global_breakpoint_onto_a_non_global_context_is_rejected() -> Result<(), VmiEr
     assert!(rec_calls().is_empty());
     let own_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
     let foreign_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(manager.contains_by_event(&own_root, ()));
-    assert!(!manager.contains_by_event(&foreign_root, ()));
+    assert!(manager.contains_by_event(&vmi, &own_root, ()));
+    assert!(!manager.contains_by_event(&vmi, &foreign_root, ()));
 
     Ok(())
 }
 
 #[test]
 fn non_global_breakpoint_onto_a_global_context_is_rejected() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let ctx = ctx_at(OFFSET, ROOT1);
@@ -1616,7 +1696,7 @@ fn non_global_breakpoint_onto_a_global_context_is_rejected() -> Result<(), VmiEr
     // The global claim survives, so a foreign root still matches.
     assert!(rec_calls().is_empty());
     let foreign_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
-    assert!(manager.contains_by_event(&foreign_root, ()));
+    assert!(manager.contains_by_event(&vmi, &foreign_root, ()));
 
     Ok(())
 }
@@ -1627,7 +1707,8 @@ fn non_global_breakpoint_onto_a_global_context_is_rejected() -> Result<(), VmiEr
 
 #[test]
 fn insert_propagates_controller_install_error() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     rec_arm_fault(ControllerOp::Insert, 1, FaultKind::Other);
@@ -1642,7 +1723,8 @@ fn insert_propagates_controller_install_error() -> Result<(), VmiError> {
 
 #[test]
 fn insert_propagates_monitor_error() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     rec_arm_fault(ControllerOp::Monitor, 1, FaultKind::Other);
@@ -1657,7 +1739,8 @@ fn insert_propagates_monitor_error() -> Result<(), VmiError> {
 
 #[test]
 fn remove_tolerates_view_not_found_on_unmonitor() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1673,7 +1756,8 @@ fn remove_tolerates_view_not_found_on_unmonitor() -> Result<(), VmiError> {
 
 #[test]
 fn remove_tolerates_view_not_found_on_uninstall() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1687,7 +1771,8 @@ fn remove_tolerates_view_not_found_on_uninstall() -> Result<(), VmiError> {
 
 #[test]
 fn remove_propagates_other_error_from_uninstall() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut manager = RecManager::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1735,7 +1820,8 @@ fn breakpoint_controller_check_event_rejects_non_breakpoint_and_viewless() {
 fn breakpoint_controller_insert_creates_shadow_breakpoint() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1753,7 +1839,8 @@ fn breakpoint_controller_insert_creates_shadow_breakpoint() -> Result<(), VmiErr
 fn breakpoint_controller_remove_restores_and_resets_view() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1769,7 +1856,8 @@ fn breakpoint_controller_remove_restores_and_resets_view() -> Result<(), VmiErro
 
 #[test]
 fn breakpoint_controller_monitor_sets_execute_only() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     controller.monitor(&vmi, CODE_GFN, VIEW)?;
@@ -1780,7 +1868,8 @@ fn breakpoint_controller_monitor_sets_execute_only() -> Result<(), VmiError> {
 
 #[test]
 fn breakpoint_controller_unmonitor_restores_rwx() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     controller.monitor(&vmi, CODE_GFN, VIEW)?;
@@ -1794,7 +1883,8 @@ fn breakpoint_controller_unmonitor_restores_rwx() -> Result<(), VmiError> {
 fn breakpoint_controller_insert_then_monitor_issue_expected_driver_calls() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -1831,7 +1921,8 @@ fn breakpoint_controller_insert_propagates_driver_error() -> Result<(), VmiError
     driver.fill_page(CODE_GFN, 0xab);
     // Fail the shadow-frame allocation the interceptor performs first.
     driver.arm_fault(Op::AllocateGfn, 1);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     assert!(
@@ -1848,7 +1939,8 @@ fn breakpoint_controller_is_breakpoint_detects_int3() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0x90);
     driver.write_original(CODE_GFN, OFFSET as usize, &[0xcc]);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
     assert!(BreakpointController::<MockDriver>::is_breakpoint(
@@ -1862,7 +1954,8 @@ fn breakpoint_controller_is_breakpoint_detects_int3() -> Result<(), VmiError> {
 fn breakpoint_controller_is_breakpoint_false_without_int3() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0x90);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
 
     let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
     assert!(!BreakpointController::<MockDriver>::is_breakpoint(
@@ -1876,7 +1969,8 @@ fn breakpoint_controller_is_breakpoint_false_without_int3() -> Result<(), VmiErr
 fn breakpoint_controller_is_breakpoint_false_for_non_breakpoint_event() -> Result<(), VmiError> {
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xcc);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
 
     let event = singlestep_event(Some(VIEW), CODE_GFN, va_at(OFFSET));
     assert!(!BreakpointController::<MockDriver>::is_breakpoint(
@@ -1942,7 +2036,8 @@ fn memory_controller_check_event_ignores_non_execute_and_non_memory() {
 
 #[test]
 fn memory_controller_monitor_sets_read_write() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = MemoryController::<MockDriver>::new();
 
     controller.monitor(&vmi, CODE_GFN, VIEW)?;
@@ -1953,7 +2048,8 @@ fn memory_controller_monitor_sets_read_write() -> Result<(), VmiError> {
 
 #[test]
 fn memory_controller_unmonitor_restores_rwx() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = MemoryController::<MockDriver>::new();
 
     controller.monitor(&vmi, CODE_GFN, VIEW)?;
@@ -1965,7 +2061,8 @@ fn memory_controller_unmonitor_restores_rwx() -> Result<(), VmiError> {
 
 #[test]
 fn memory_controller_breakpoint_operations_are_noops() -> Result<(), VmiError> {
-    let vmi = make_vmi(MockDriver::new())?;
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = MemoryController::<MockDriver>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -2050,7 +2147,8 @@ fn breakpoint_controller_release_shared_reference_does_not_panic() -> Result<(),
     // not trip the controller's debug assertion.
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
-    let vmi = make_vmi(driver)?;
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
     let mut controller = BreakpointController::<MockDriver>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
@@ -2068,8 +2166,10 @@ fn manager_page_out_of_shared_return_site_does_not_panic() -> Result<(), VmiErro
     // releases the references one at a time through the interceptor.
     let driver = MockDriver::new();
     driver.fill_page(CODE_GFN, 0xab);
-    let vmi = make_vmi(driver)?;
-    let mut manager = BreakpointManager::<BreakpointController<MockDriver>>::new();
+    let core = make_vmi(driver)?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager =
+        BreakpointManager::<NoOS<MockDriver>, BreakpointController<MockDriver>>::new();
 
     let pa = pa_at(CODE_GFN, OFFSET);
     manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?;

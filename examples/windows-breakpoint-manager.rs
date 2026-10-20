@@ -49,7 +49,7 @@ where
     Driver: VmiFullDriver<Architecture = Amd64>,
 {
     view: View,
-    bpm: BreakpointManager<BreakpointController<Driver>>,
+    bpm: BreakpointManager<WindowsOs<Driver>, BreakpointController<Driver>>,
     ptm: PageTableMonitor<Driver>,
 }
 
@@ -268,7 +268,7 @@ where
         &mut self,
         vmi: &VmiContext<WindowsOs<Driver>>,
     ) -> Result<VmiEventResponse<Amd64>, VmiError> {
-        let tag = match self.bpm.get_by_event(vmi.event(), ()) {
+        let tag = match self.bpm.get_by_event(vmi, vmi.event(), ()) {
             Some(breakpoint) => breakpoint.tag(),
             None => {
                 if BreakpointController::is_breakpoint(vmi, vmi.event())? {
