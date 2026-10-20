@@ -27,12 +27,6 @@ fn banner_release(banner: &str) -> &str {
         .unwrap_or_default()
 }
 
-/// Checks whether an address lies in the upper half of the address space,
-/// where Linux keeps the kernel.
-fn is_kernel_address(va: Va) -> bool {
-    va.0 & (1 << 63) != 0
-}
-
 /// Scans the memory after `MSR_LSTAR` for the kernel banner, through the page
 /// tables in the given registers.
 fn find_banner<Driver>(
@@ -286,15 +280,16 @@ where
     fn translation_root(vmi: VmiState<LinuxOs<Driver>>, va: Va) -> Pa {
         let root = vmi.registers().translation_root(va);
 
-        // Only a kernel address through a root with the user bit can need the
-        // kernel page tables.
-        if !is_kernel_address(va) || root.0 & PTI_USER_PGTABLE_BIT == 0 {
+        // Only a root with the user bit can be the user half of a KPTI pair.
+        if root.0 & PTI_USER_PGTABLE_BIT == 0 {
             return root;
         }
 
-        // Without KPTI, the bit belongs to an ordinary root. When the check
-        // fails, the root in CR3 is the best guess left, since this function
-        // cannot fail.
+        // Under KPTI, every address goes through the kernel half instead. It
+        // maps the user space to the same frames, and the process reports it
+        // as its root. Without KPTI, the bit belongs to an ordinary root. When
+        // the check fails, the root in CR3 is the best guess left, since this
+        // function cannot fail.
         if vmi.os().kpti_enabled().unwrap_or(false) {
             return Pa(root.0 & !PTI_USER_PGTABLE_BIT);
         }

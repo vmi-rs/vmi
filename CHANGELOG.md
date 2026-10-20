@@ -92,10 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiOs::translation_root` picks the page table root through which
   `VmiState` translates a virtual address. The default is the root in the
   CPU registers.
-- `LinuxOs` reads the kernel through the kernel page tables of a process
-  while a vCPU runs in user mode under KPTI. The user page tables there map
-  almost none of the kernel. `LinuxOs::find_kernel` scans through the kernel
-  page tables too when the user page tables hold no banner.
+- `LinuxOs` translates every virtual address through the kernel page tables
+  of a process while a vCPU runs in user mode under KPTI. The user page
+  tables there map almost none of the kernel, and the kernel page tables map
+  the user space to the same frames. `LinuxOs::find_kernel` scans through the
+  kernel page tables too when the user page tables hold no banner.
 
 ### Removed
 

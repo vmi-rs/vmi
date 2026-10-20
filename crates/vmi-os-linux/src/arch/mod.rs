@@ -91,8 +91,9 @@ where
     ///
     /// - **AMD64**: Under KPTI, a vCPU in user mode has the user page tables in
     ///   CR3 (`PTI_USER_PGTABLE_BIT` set), which map almost none of the kernel.
-    ///   For a kernel address, the root then becomes the kernel page tables of
-    ///   the same process, with the bit cleared.
+    ///   The root then becomes the kernel page tables of the same process, with
+    ///   the bit cleared. They map the user space to the same frames, and the
+    ///   process reports them as its root.
     fn translation_root(vmi: VmiState<LinuxOs<Driver>>, va: Va) -> Pa;
 
     /// Returns the page table root of user mode under page table isolation.

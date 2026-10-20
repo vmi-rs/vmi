@@ -11,9 +11,10 @@
 //! in the profile, not from the version string.
 //!
 //! Under page table isolation (KPTI), a vCPU in user mode runs on page tables
-//! that map almost none of the kernel. The crate then reads the kernel through
-//! the kernel page tables of the same process. Its methods therefore work with
-//! any vCPU's registers.
+//! that map almost none of the kernel. The crate then translates every address
+//! through the kernel page tables of the same process, which map the user
+//! space to the same frames. Its methods therefore work with any vCPU's
+//! registers, and event roots match process roots.
 //!
 //! ## Features
 //!
@@ -525,9 +526,12 @@ where
     /// Returns the page table root that translates a virtual address.
     ///
     /// Under KPTI, a vCPU in user mode runs on the user page tables, which map
-    /// almost none of the kernel. For a kernel address, the root then becomes
-    /// the kernel page tables of the same process. Every kernel read thus
-    /// works with any vCPU's registers.
+    /// almost none of the kernel. The root then becomes the kernel page tables
+    /// of the same process, which map the user space to the same frames. Every
+    /// read thus works with any vCPU's registers. The root also equals the one
+    /// that [`LinuxProcess::translation_root`] reports.
+    ///
+    /// [`LinuxProcess::translation_root`]: vmi_core::os::VmiOsProcess::translation_root
     fn translation_root(vmi: VmiState<Self>, va: Va) -> Pa {
         Driver::Architecture::translation_root(vmi, va)
     }

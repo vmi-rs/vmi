@@ -118,13 +118,16 @@ pub trait VmiOs: Sized {
     ///
     /// [`VmiState`] calls this for every access through a virtual address.
     /// The default returns the root in the CPU registers. An operating system
-    /// overrides it to translate through another root.
+    /// overrides it to translate through another root. The root also names
+    /// the address space of an event. It should therefore equal the root that
+    /// [`VmiOsProcess::translation_root`] reports for the current process.
     ///
     /// # Platform-specific
     ///
     /// - **Linux**: Under KPTI, a CPU in user mode runs on the user page
-    ///   tables, which map almost none of the kernel. For a kernel address,
-    ///   the root becomes the kernel page tables of the same process.
+    ///   tables, which map almost none of the kernel. The root then becomes
+    ///   the kernel page tables of the same process, which map the user space
+    ///   to the same frames.
     fn translation_root(vmi: VmiState<Self>, va: Va) -> Pa {
         vmi.registers().translation_root(va)
     }
