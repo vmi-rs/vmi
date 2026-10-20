@@ -184,6 +184,7 @@ utils = [
     "vmi-utils/tracker",
 ]
 utils-bpm = ["vmi-utils", "vmi-utils/bpm"]
+utils-injector = ["vmi-utils", "vmi-utils/bpm", "vmi-utils/injector"]
 
 [dev-dependencies]
 anyhow = { workspace = true }

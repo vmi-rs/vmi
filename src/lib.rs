@@ -126,6 +126,7 @@
 //! | `os-windows` | Windows guest introspection. |
 //! | `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
 //! | `utils-bpm` | Breakpoint manager and page-table monitor without Windows-only utilities. |
+//! | `utils-injector` | Injector and bridge, with the breakpoint manager and page-table monitor they need, without Windows-only utilities. |
 //!
 //! # Quick Start
 //!
@@ -826,7 +827,7 @@ pub mod os {
     }
 }
 
-#[cfg(any(feature = "utils", feature = "utils-bpm"))]
+#[cfg(any(feature = "utils", feature = "utils-bpm", feature = "utils-injector"))]
 pub mod utils {
     #![doc = include_str!("../docs/vmi-utils.md")]
 

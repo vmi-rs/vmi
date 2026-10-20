@@ -132,6 +132,7 @@ No features are enabled by default; opt in to what you need.
 | `os-windows` | Windows guest introspection. |
 | `utils` | Built-in utilities: breakpoint manager, page table monitor, injector, bridge. |
 | `utils-bpm` | Breakpoint manager and page-table monitor without Windows-only utilities. |
+| `utils-injector` | Injector and bridge, with the breakpoint manager and page-table monitor they need, without Windows-only utilities. |
 
 # Quick Start
 

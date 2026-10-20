@@ -196,6 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bridge_brk`, the AArch64 transport of the guest-side shellcode support,
   and `bridge.hpp` makes it the default transport when it is built for
   AArch64.
+- `utils-injector` feature for the injector and the bridge without enabling
+  Windows-only utilities.
 
 ### Removed
 
