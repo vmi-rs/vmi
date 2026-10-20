@@ -27,7 +27,7 @@ pub use self::{
     thread::{ThreadId, ThreadObject, VmiOsThread},
     user_module::{AnyUserModule, UserModulePredicate, VmiOsUserModule},
 };
-use crate::{Architecture, Pa, Va, VmiDriver, VmiError, VmiOsState, VmiState};
+use crate::{Architecture, Pa, Registers as _, Va, VmiDriver, VmiError, VmiOsState, VmiState};
 
 /// Operating system trait.
 #[derive_os_wrapper(VmiOsState)]
@@ -112,6 +112,22 @@ pub trait VmiOs: Sized {
     ///
     /// - **Windows**: Retrieves the `KiKvaShadow` global variable, if it exists.
     fn kpti_enabled(vmi: VmiState<Self>) -> Result<bool, VmiError>;
+
+    /// Returns the physical address of the page table root that translates a
+    /// given virtual address.
+    ///
+    /// [`VmiState`] calls this for every access through a virtual address.
+    /// The default returns the root in the CPU registers. An operating system
+    /// overrides it to translate through another root.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Linux**: Under KPTI, a CPU in user mode runs on the user page
+    ///   tables, which map almost none of the kernel. For a kernel address,
+    ///   the root becomes the kernel page tables of the same process.
+    fn translation_root(vmi: VmiState<Self>, va: Va) -> Pa {
+        vmi.registers().translation_root(va)
+    }
 
     /// Returns an iterator over the loaded kernel modules.
     ///

@@ -35,7 +35,10 @@ cases where an OS-specific implementation is not available or required.
 
   In addition to these, it provides methods to retrieve critical OS-specific
   information, such as the kernel image base, and whether Kernel Page Table
-  Isolation (KPTI) is enabled.
+  Isolation (KPTI) is enabled. It also picks the page table root through which
+  `VmiState` translates each virtual address (`VmiOs::translation_root`). An
+  operating system can thus read its kernel from a CPU that runs on page
+  tables without it, such as the user page tables of KPTI.
 
 ### Process and Thread Introspection
 

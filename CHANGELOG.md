@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `linux-process-list` example lists the processes, threads, memory
   regions and kernel modules of a Linux guest, in the formats of `ps`,
   `/proc/<pid>/maps` and `/proc/modules`.
+- `VmiOs::translation_root` picks the page table root through which
+  `VmiState` translates a virtual address. The default is the root in the
+  CPU registers.
 
 ### Removed
 

@@ -1,7 +1,7 @@
 use isr_macros::Field;
 
 use super::VmiOs;
-use crate::{AccessContext, Registers, Va, VmiCore, VmiError, VmiRead, VmiState};
+use crate::{AccessContext, Va, VmiCore, VmiError, VmiRead, VmiState};
 
 /// A handler for reading structured data from guest memory.
 ///
@@ -62,7 +62,7 @@ impl StructReader {
         Os: VmiOs,
         Os::Driver: VmiRead,
     {
-        Self::new_in(vmi, vmi.registers().address_context(va), len)
+        Self::new_in(vmi, vmi.address_context(va), len)
     }
 
     /// Creates a new structure reader.

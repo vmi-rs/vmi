@@ -98,20 +98,28 @@ where
         VmiOsState(*self)
     }
 
-    /// Creates an address context for a given virtual address.
+    /// Creates an access context for a given virtual address.
+    ///
+    /// The translation root comes from [`VmiOs::translation_root`].
     pub fn access_context(&self, address: Va) -> AccessContext {
-        self.registers().access_context(address)
+        self.address_context(address).into()
     }
 
     /// Creates an address context for a given virtual address.
+    ///
+    /// The translation root comes from [`VmiOs::translation_root`].
     pub fn address_context(&self, address: Va) -> AddressContext {
-        self.registers().address_context(address)
+        (address, self.translation_root(address)).into()
     }
 
-    /// Returns the physical address of the root of the current page table
-    /// hierarchy for a given virtual address.
+    /// Returns the physical address of the page table root that translates a
+    /// given virtual address.
+    ///
+    /// The operating system picks the root through
+    /// [`VmiOs::translation_root`]. By default, it is the root in the CPU
+    /// registers.
     pub fn translation_root(&self, va: Va) -> Pa {
-        self.registers().translation_root(va)
+        Os::translation_root(*self, va)
     }
 }
 
