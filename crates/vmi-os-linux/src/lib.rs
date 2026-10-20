@@ -10,6 +10,11 @@
 //! to the current task in 6.15, and the crate picks the layout from the symbols
 //! in the profile, not from the version string.
 //!
+//! Under page table isolation (KPTI), a vCPU in user mode runs on page tables
+//! that map almost none of the kernel. The crate then reads the kernel through
+//! the kernel page tables of the same process. Its methods therefore work with
+//! any vCPU's registers.
+//!
 //! ## Features
 //!
 //! - Kernel discovery: the banner, the KASLR offset, the kernel image base and
@@ -503,31 +508,28 @@ where
     ///
     /// # Notes
     ///
-    /// This value is cached after the first read.
+    /// This value is cached after the first read. The read works with any
+    /// vCPU state, also in user mode under KPTI.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to the CPU feature `X86_FEATURE_PTI` in
     /// `boot_cpu_data.x86_capability`, bit 11 of word 7.
     fn kpti_enabled(vmi: VmiState<Self>) -> Result<bool, VmiError> {
-        /// `X86_FEATURE_PTI`, the same at Linux 6.8 and 7.0.
-        const X86_FEATURE_PTI: u64 = 7 * 32 + 11;
-
         this!(vmi)
             .kpti_enabled
-            .get_or_try_init(|| {
-                let CPUINFO_X86 = offset!(vmi, cpuinfo_x86);
-
-                let boot_cpu_data = Self::symbol_address(vmi, symbol!(vmi, boot_cpu_data))?;
-                let word = vmi.read_u32(
-                    boot_cpu_data
-                        + CPUINFO_X86.x86_capability.offset()
-                        + X86_FEATURE_PTI / 32 * size_of::<u32>() as u64,
-                )?;
-
-                Ok(word & (1 << (X86_FEATURE_PTI % 32)) != 0)
-            })
+            .get_or_try_init(|| Driver::Architecture::kpti_enabled(vmi))
             .copied()
+    }
+
+    /// Returns the page table root that translates a virtual address.
+    ///
+    /// Under KPTI, a vCPU in user mode runs on the user page tables, which map
+    /// almost none of the kernel. For a kernel address, the root then becomes
+    /// the kernel page tables of the same process. Every kernel read thus
+    /// works with any vCPU's registers.
+    fn translation_root(vmi: VmiState<Self>, va: Va) -> Pa {
+        Driver::Architecture::translation_root(vmi, va)
     }
 
     /// Returns an iterator over the loaded kernel modules.

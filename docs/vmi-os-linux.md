@@ -11,6 +11,11 @@ Linux 6.8 and later on AMD64. The kernel changed where it keeps the pointer
 to the current task in 6.15, and the crate picks the layout from the symbols
 in the profile, not from the version string.
 
+Under page table isolation (KPTI), a vCPU in user mode runs on page tables
+that map almost none of the kernel. The crate then reads the kernel through
+the kernel page tables of the same process. Its methods therefore work with
+any vCPU's registers.
+
 ## Features
 
 - Kernel discovery: the banner, the KASLR offset, the kernel image base and
