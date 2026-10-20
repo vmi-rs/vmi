@@ -1,716 +1,791 @@
-//! A MapleTree implementation based on the Linux kernel's data structure.
+//! Walks over maple trees.
 //!
-//! The Maple Tree is a data structure used in the Linux kernel for efficiently storing
-//! and searching ranges of values. It's particularly used for managing virtual memory
-//! areas (VMAs) in the memory management subsystem.
-//!
-//! # References
-//!
-//! - [Linux Kernel Source - maple_tree.c](https://elixir.bootlin.com/linux/v6.10.5/source/lib/maple_tree.c)
-//! - [Linux Kernel Source - maple_tree.h](https://elixir.bootlin.com/linux/v6.10.5/source/include/linux/maple_tree.h)
-//! - [Process Address Space Documentation](https://students.mimuw.edu.pl/ZSO/Wyklady/04_processes2/ProcessAddressSpace.pdf)
-//! - [Maple Tree: Storing Ranges](https://blogs.oracle.com/linux/post/maple-tree-storing-ranges)
-//! - [Kernel Documentation - Maple Tree](https://docs.kernel.org/core-api/maple_tree.html)
+//! The maple tree is the B-tree variant that holds the memory regions of a
+//! process since Linux 6.1, in `mm_struct.mm_mt`. Its nodes are 256 bytes and
+//! aligned to 256 bytes, and the low byte of a pointer to a node encodes the
+//! node's type. The constants and rules here follow
+//! `include/linux/maple_tree.h` and `lib/maple_tree.c`, which agree in Linux
+//! 6.8 and 7.0.
 
-#![allow(dead_code)]
-use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use std::iter::FusedIterator;
 
-use crate::{LinuxOs, Offsets, arch::ArchAdapter};
+use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 
-/// Represents different node types in a Maple Tree.
-#[derive(Debug)]
-enum MapleType {
-    /// Dense nodes contain directly addressable slots.
-    Dense,
+use crate::{ArchAdapter, LinuxError, LinuxOs, offset};
 
-    /// Leaf nodes.
+/// Bits of an encoded node pointer below the node's address
+/// (`MAPLE_NODE_MASK`).
+const MAPLE_NODE_MASK: u64 = 0xff;
+
+/// Position of the node type in an encoded node pointer
+/// (`MAPLE_NODE_TYPE_SHIFT`).
+const MAPLE_NODE_TYPE_SHIFT: u64 = 3;
+
+/// Mask of the node type after the shift (`MAPLE_NODE_TYPE_MASK`).
+const MAPLE_NODE_TYPE_MASK: u64 = 0x0f;
+
+/// Size and alignment of a node.
+const MAPLE_NODE_SIZE: usize = 256;
+
+/// Pivots in a `maple_range_64` node, which shares its layout with
+/// `maple_leaf_64`.
+const MAPLE_RANGE64_PIVOTS: usize = 15;
+
+/// Number of slots of a `maple_range_64` node (`MAPLE_RANGE64_SLOTS`).
+const MAPLE_RANGE64_SLOTS: usize = 16;
+
+/// Number of pivots of a `maple_arange_64` node.
+const MAPLE_ARANGE64_PIVOTS: usize = 9;
+
+/// Number of slots of a `maple_arange_64` node (`MAPLE_ARANGE64_SLOTS`).
+const MAPLE_ARANGE64_SLOTS: usize = 10;
+
+/// Maximum tree height that the height bits of `maple_tree.ma_flags`
+/// (`MT_FLAGS_HEIGHT_MASK`) can hold.
+const MAPLE_HEIGHT_MAX: usize = 31;
+
+/// Upper limit of the nodes that one walk reads, a guard against a corrupt
+/// tree.
+const MAPLE_NODES_MAX: usize = 1 << 20;
+
+/// Type of a maple tree node.
+///
+/// Corresponds to `enum maple_type`, without `maple_dense`, which the trees
+/// of memory regions do not use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MapleType {
+    /// `maple_leaf_64`, a leaf with 64-bit pivots.
     Leaf64,
 
-    /// Range nodes.
+    /// `maple_range_64`, an inner node with 64-bit pivots.
     Range64,
 
-    /// Allocation range nodes.
+    /// `maple_arange_64`, an inner node of an allocation tree, which also
+    /// tracks the gaps below it.
     Arange64,
 }
 
-/// Create an internal entry.
-/// @v: Value to turn into an internal entry.
-///
-/// Internal entries are used for a number of purposes.  Entries 0-255 are
-/// used for sibling entries (only 0-62 are used by the current code).  256
-/// is used for the retry entry.  257 is used for the reserved / zero entry.
-/// Negative internal entries are used to represent errnos.  Node pointers
-/// are also tagged as internal entries in some situations.
-///
-/// Context: Any context.
-/// Return: An XArray internal entry corresponding to this value.
-const fn xa_mk_internal(v: u64) -> Va {
-    Va::new((v << 2) | 2)
-}
+impl MapleType {
+    /// Decodes the type of an encoded node pointer.
+    fn from_encoded(entry: u64) -> Result<Self, VmiError> {
+        match (entry >> MAPLE_NODE_TYPE_SHIFT) & MAPLE_NODE_TYPE_MASK {
+            1 => Ok(Self::Leaf64),
+            2 => Ok(Self::Range64),
+            3 => Ok(Self::Arange64),
+            _ => Err(LinuxError::CorruptedStruct("maple node type").into()),
+        }
+    }
 
-/// Extract the value from an internal entry.
-/// @entry: XArray entry.
-///
-/// Context: Any context.
-/// Return: The value which was stored in the internal entry.
-const fn xa_to_internal(entry: Va) -> u64 {
-    entry.0 >> 2
-}
+    /// Checks if the slots of the node hold entries rather than child nodes.
+    fn is_leaf(self) -> bool {
+        matches!(self, Self::Leaf64)
+    }
 
-/// Is the entry an internal entry?
-/// @entry: XArray entry.
-///
-/// Context: Any context.
-/// Return: %true if the entry is an internal entry.
-const fn xa_is_internal(entry: Va) -> bool {
-    (entry.0 & 3) == 2
-}
+    /// Returns the number of pivots of the node type (`mt_pivots`).
+    pub(crate) fn pivots(self) -> usize {
+        match self {
+            Self::Leaf64 | Self::Range64 => MAPLE_RANGE64_PIVOTS,
+            Self::Arange64 => MAPLE_ARANGE64_PIVOTS,
+        }
+    }
 
-/// Is the entry a zero entry?
-/// @entry: Entry retrieved from the XArray
-///
-/// The normal API will return NULL as the contents of a slot containing
-/// a zero entry.  You can only see zero entries by using the advanced API.
-///
-/// Return: %true if the entry is a zero entry.
-const fn xa_is_zero(entry: Va) -> bool {
-    const XA_ZERO_ENTRY: Va = xa_mk_internal(257);
-    entry.0 == XA_ZERO_ENTRY.0
-}
-
-/// Get value stored in an XArray entry.
-/// @entry: XArray entry.
-///
-/// Context: Any context.
-/// Return: The value stored in the XArray entry.
-const fn xa_to_value(entry: Va) -> u64 {
-    entry.0 >> 1
-}
-
-/// Determine if an entry is a value.
-/// @entry: XArray entry.
-///
-/// Context: Any context.
-/// Return: True if the entry is a value, false if it is a pointer.
-const fn xa_is_value(entry: Va) -> bool {
-    (entry.0 & 1) == 1
-}
-
-const fn xa_is_node(entry: Va) -> bool {
-    xa_is_internal(entry) && entry.0 > 4096
-}
-
-const fn mt_flags_height(ma_flags: u32) -> u32 {
-    const MT_FLAGS_HEIGHT_OFFSET: u32 = 0x02;
-    const MT_FLAGS_HEIGHT_MASK: u32 = 0x7C;
-
-    (ma_flags & MT_FLAGS_HEIGHT_MASK) >> MT_FLAGS_HEIGHT_OFFSET
-}
-
-/// We also reserve values with the bottom two bits set to '10' which are
-/// below 4096
-const fn mt_is_reserved(entry: Va /* void* */) -> bool {
-    const MAPLE_RESERVED_RANGE: u64 = 4096;
-    (entry.0 < MAPLE_RESERVED_RANGE) && xa_is_internal(entry)
-}
-
-const fn mt_node_max(entry: Va) -> Option<u64> {
-    match mte_node_type(entry) {
-        Some(MapleType::Dense) => Some(31),
-        Some(MapleType::Leaf64) => Some(u64::MAX),
-        Some(MapleType::Range64) => Some(u64::MAX),
-        Some(MapleType::Arange64) => Some(u64::MAX),
-        None => None,
+    /// Returns the number of slots of the node type (`mt_slots`).
+    pub(crate) fn slots(self) -> usize {
+        match self {
+            Self::Leaf64 | Self::Range64 => MAPLE_RANGE64_SLOTS,
+            Self::Arange64 => MAPLE_ARANGE64_SLOTS,
+        }
     }
 }
 
-const fn mte_node_type(entry: Va /* maple_enode */) -> Option<MapleType> {
-    const MAPLE_NODE_TYPE_MASK: u64 = 0x0F;
-    const MAPLE_NODE_TYPE_SHIFT: u64 = 0x03;
-    match (entry.0 >> MAPLE_NODE_TYPE_SHIFT) & MAPLE_NODE_TYPE_MASK {
-        0x00 => Some(MapleType::Dense),
-        0x01 => Some(MapleType::Leaf64),
-        0x02 => Some(MapleType::Range64),
-        0x03 => Some(MapleType::Arange64),
-        _ => None,
-    }
+/// The parts of a maple tree node that a walk reads.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct MapleNode {
+    /// Inclusive upper bounds of the slots. The node type tells how many are
+    /// used.
+    pub(crate) pivots: [u64; MAPLE_RANGE64_PIVOTS],
+
+    /// Child nodes or entries. The node type tells how many are used.
+    pub(crate) slots: [u64; MAPLE_RANGE64_SLOTS],
+
+    /// `meta.end`, the last used slot when the last pivot is zero.
+    pub(crate) meta_end: u8,
 }
 
-const fn ma_is_leaf(typ: MapleType) -> bool {
-    matches!(typ, MapleType::Dense | MapleType::Leaf64)
+/// Source of maple tree nodes.
+pub(crate) trait MapleNodeReader {
+    /// Reads the node at the given address.
+    fn read_node(&self, node: Va, ty: MapleType) -> Result<MapleNode, VmiError>;
 }
 
-const fn mte_to_node(entry: Va /* maple_enode */) -> Va {
-    const MAPLE_NODE_MASK: u64 = 255;
-    Va::new(entry.0 & !MAPLE_NODE_MASK)
+/// Checks if an entry is internal to the tree, such as a node pointer or
+/// `XA_ZERO_ENTRY` (`xa_is_internal`).
+fn xa_is_internal(entry: u64) -> bool {
+    (entry & 3) == 2
 }
 
-const fn mte_is_leaf(entry: Va /* maple_enode */) -> bool {
-    match mte_node_type(entry) {
-        Some(typ) => ma_is_leaf(typ),
-        None => false,
-    }
+/// Checks if a root entry points to a node (`xa_is_node`).
+fn xa_is_node(entry: u64) -> bool {
+    xa_is_internal(entry) && entry > 4096
 }
 
-/// A MapleTree traversal and manipulation implementation.
+/// Returns the address of the node that an encoded node pointer points to
+/// (`mte_to_node`).
+fn node_address(entry: u64) -> Va {
+    Va(entry & !MAPLE_NODE_MASK)
+}
+
+/// Returns the last used slot of a node, as `ma_data_end` computes it.
 ///
-/// This struct provides methods for traversing and inspecting Linux kernel
-/// Maple Trees, which are used primarily for managing virtual memory areas.
-pub struct MapleTree<'a, Driver>
+/// An allocation tree node keeps it in `meta.end`. Other nodes keep it there
+/// only when their last pivot is zero. A last pivot equal to the node's
+/// maximum ends the node one slot early, and any other value means that all
+/// slots are used.
+fn data_end(node: &MapleNode, ty: MapleType, max: u64) -> Result<usize, VmiError> {
+    let end = match ty {
+        MapleType::Arange64 => usize::from(node.meta_end),
+        MapleType::Leaf64 | MapleType::Range64 => {
+            let last = ty.pivots() - 1;
+
+            if node.pivots[last] == 0 {
+                usize::from(node.meta_end)
+            }
+            else if node.pivots[last] == max {
+                last
+            }
+            else {
+                ty.pivots()
+            }
+        }
+    };
+
+    if end >= ty.slots() {
+        return Err(LinuxError::CorruptedStruct("maple node end").into());
+    }
+
+    Ok(end)
+}
+
+/// One node on the path from the root to the current entry.
+struct MapleFrame {
+    /// The node.
+    node: MapleNode,
+
+    /// The node's type.
+    ty: MapleType,
+
+    /// The highest index that the node covers.
+    max: u64,
+
+    /// The next slot to visit.
+    offset: usize,
+
+    /// The last used slot.
+    end: usize,
+}
+
+impl MapleFrame {
+    /// Returns the highest index that a slot covers.
+    ///
+    /// The last used slot and the slots without a pivot reach up to the
+    /// node's maximum.
+    fn slot_max(&self, offset: usize) -> u64 {
+        if offset < self.ty.pivots() && self.node.pivots[offset] != 0 {
+            self.node.pivots[offset]
+        }
+        else {
+            self.max
+        }
+    }
+}
+
+/// Depth-first walk over the entries of a maple tree.
+pub(crate) struct MapleWalk<Reader> {
+    /// Source of the nodes.
+    reader: Reader,
+
+    /// The root entry, until the walk starts.
+    root: Option<u64>,
+
+    /// The path from the root to the current node.
+    stack: Vec<MapleFrame>,
+
+    /// Number of nodes read so far.
+    nodes: usize,
+}
+
+impl<Reader> MapleWalk<Reader>
+where
+    Reader: MapleNodeReader,
+{
+    /// Creates a walk over the tree with the given root entry
+    /// (`maple_tree.ma_root`).
+    pub(crate) fn new(reader: Reader, root: u64) -> Self {
+        Self {
+            reader,
+            root: Some(root),
+            stack: Vec::new(),
+            nodes: 0,
+        }
+    }
+
+    /// Reads a node and puts it on top of the path.
+    fn push(&mut self, entry: u64, max: u64) -> Result<(), VmiError> {
+        if self.stack.len() >= MAPLE_HEIGHT_MAX {
+            return Err(LinuxError::CorruptedStruct("maple tree height").into());
+        }
+
+        self.nodes += 1;
+        if self.nodes > MAPLE_NODES_MAX {
+            return Err(LinuxError::CorruptedStruct("maple tree size").into());
+        }
+
+        let ty = MapleType::from_encoded(entry)?;
+        let node = self.reader.read_node(node_address(entry), ty)?;
+        let end = data_end(&node, ty, max)?;
+
+        self.stack.push(MapleFrame {
+            node,
+            ty,
+            max,
+            offset: 0,
+            end,
+        });
+
+        Ok(())
+    }
+
+    /// Returns the next entry in index order.
+    ///
+    /// Gaps (`NULL`) and internal entries are skipped.
+    pub(crate) fn next_entry(&mut self) -> Result<Option<Va>, VmiError> {
+        if let Some(root) = self.root.take() {
+            if xa_is_node(root) {
+                self.push(root, u64::MAX)?;
+            }
+            else if root != 0 && !xa_is_internal(root) {
+                // A tree with a single entry at index 0 keeps it in the root.
+                return Ok(Some(Va(root)));
+            }
+        }
+
+        loop {
+            let frame = match self.stack.last_mut() {
+                Some(frame) => frame,
+                None => return Ok(None),
+            };
+
+            if frame.offset > frame.end {
+                self.stack.pop();
+                continue;
+            }
+
+            let offset = frame.offset;
+            frame.offset += 1;
+
+            let entry = frame.node.slots[offset];
+
+            if frame.ty.is_leaf() {
+                if entry == 0 || xa_is_internal(entry) {
+                    continue;
+                }
+
+                return Ok(Some(Va(entry)));
+            }
+
+            if entry == 0 {
+                return Err(LinuxError::CorruptedStruct("maple node slot").into());
+            }
+
+            let max = frame.slot_max(offset);
+            self.push(entry, max)?;
+        }
+    }
+}
+
+/// Returns the entry that covers an index, as `mtree_lookup_walk` finds it.
+///
+/// Returns `None` for an index in a gap.
+pub(crate) fn maple_tree_lookup<Reader>(
+    reader: &Reader,
+    root: u64,
+    index: u64,
+) -> Result<Option<Va>, VmiError>
+where
+    Reader: MapleNodeReader,
+{
+    if !xa_is_node(root) {
+        if index == 0 && root != 0 && !xa_is_internal(root) {
+            return Ok(Some(Va(root)));
+        }
+
+        return Ok(None);
+    }
+
+    let mut entry = root;
+
+    for _ in 0..MAPLE_HEIGHT_MAX {
+        let ty = MapleType::from_encoded(entry)?;
+        let node = reader.read_node(node_address(entry), ty)?;
+
+        // Unused pivots are zero, so the first pivot at or above the index
+        // marks the slot. Without one, the index falls into the last slot.
+        let offset = node.pivots[..ty.pivots()]
+            .iter()
+            .position(|pivot| *pivot >= index)
+            .unwrap_or(ty.pivots());
+
+        let next = node.slots[offset];
+
+        if ty.is_leaf() {
+            if next == 0 || xa_is_internal(next) {
+                return Ok(None);
+            }
+
+            return Ok(Some(Va(next)));
+        }
+
+        if next == 0 {
+            return Err(LinuxError::CorruptedStruct("maple node slot").into());
+        }
+
+        entry = next;
+    }
+
+    Err(LinuxError::CorruptedStruct("maple tree height").into())
+}
+
+/// Reads maple tree nodes from guest memory.
+pub(crate) struct GuestMapleNodeReader<'a, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    /// The VMI state.
+    /// VMI state.
+    vmi: VmiState<'a, LinuxOs<Driver>>,
+}
+
+impl<'a, Driver> GuestMapleNodeReader<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    /// Creates a reader of the guest's maple tree nodes.
+    pub(crate) fn new(vmi: VmiState<'a, LinuxOs<Driver>>) -> Self {
+        Self { vmi }
+    }
+}
+
+impl<Driver> MapleNodeReader for GuestMapleNodeReader<'_, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    fn read_node(&self, node: Va, ty: MapleType) -> Result<MapleNode, VmiError> {
+        let MAPLE_RANGE_64 = offset!(self.vmi, maple_range_64);
+        let MAPLE_ARANGE_64 = offset!(self.vmi, maple_arange_64);
+        let MAPLE_METADATA = offset!(self.vmi, maple_metadata);
+
+        let (pivot, slot, meta) = match ty {
+            MapleType::Leaf64 | MapleType::Range64 => (
+                &MAPLE_RANGE_64.pivot,
+                &MAPLE_RANGE_64.slot,
+                &MAPLE_RANGE_64.meta,
+            ),
+            MapleType::Arange64 => (
+                &MAPLE_ARANGE_64.pivot,
+                &MAPLE_ARANGE_64.slot,
+                &MAPLE_ARANGE_64.meta,
+            ),
+        };
+
+        // A node never crosses a page, so one read gets all of it.
+        let mut buffer = [0u8; MAPLE_NODE_SIZE];
+        self.vmi.read(node, &mut buffer)?;
+
+        let mut result = MapleNode::default();
+
+        for (index, value) in result.pivots.iter_mut().take(ty.pivots()).enumerate() {
+            *value = node_u64(&buffer, pivot.offset() as usize + index * size_of::<u64>())?;
+        }
+
+        for (index, value) in result.slots.iter_mut().take(ty.slots()).enumerate() {
+            *value = node_u64(&buffer, slot.offset() as usize + index * size_of::<u64>())?;
+        }
+
+        let meta_end = meta.offset() as usize + MAPLE_METADATA.end.offset() as usize;
+        result.meta_end = match buffer.get(meta_end) {
+            Some(meta_end) => *meta_end,
+            None => return Err(LinuxError::UnsupportedProfile("maple node layout").into()),
+        };
+
+        Ok(result)
+    }
+}
+
+/// Reads a 64-bit value at an offset of a node buffer.
+fn node_u64(buffer: &[u8], offset: usize) -> Result<u64, VmiError> {
+    match buffer.get(offset..offset + size_of::<u64>()) {
+        Some(bytes) => {
+            let mut value = [0u8; size_of::<u64>()];
+            value.copy_from_slice(bytes);
+            Ok(u64::from_le_bytes(value))
+        }
+        None => Err(LinuxError::UnsupportedProfile("maple node layout").into()),
+    }
+}
+
+/// Iterator over the entries of a maple tree in guest memory.
+///
+/// The iterator yields the entries in the order of their indexes and skips
+/// gaps (`NULL`) and the tree's internal entries. For `mm_struct.mm_mt`, the
+/// entries are `vm_area_struct` pointers in the order of their addresses.
+///
+/// The iterator ends after the first error.
+pub struct MapleTreeIterator<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    /// VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
 
-    /// The virtual address of the Maple Tree root.
-    root: Va,
+    /// Address of the `maple_tree` structure.
+    tree: Va,
+
+    /// The walk, from the first call to `next` on.
+    walk: Option<MapleWalk<GuestMapleNodeReader<'a, Driver>>>,
+
+    /// Whether the iteration is over.
+    done: bool,
 }
 
-impl<Driver> VmiVa for MapleTree<'_, Driver>
+impl<'a, Driver> MapleTreeIterator<'a, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    fn va(&self) -> Va {
-        self.root
-    }
-}
-
-impl<'a, Driver> MapleTree<'a, Driver>
-where
-    Driver: VmiRead,
-    Driver::Architecture: ArchAdapter<Driver>,
-{
-    /// Creates a new MapleTree instance.
-    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, root: Va) -> Self {
-        Self { vmi, root }
+    /// Creates a new iterator over the maple tree at the given address.
+    pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, tree: Va) -> Self {
+        Self {
+            vmi,
+            tree,
+            walk: None,
+            done: false,
+        }
     }
 
-    fn offsets(&self) -> &Offsets {
-        &self.vmi.underlying_os().offsets
-    }
-
-    // region: Enumerate
-
-    /// Enumerates all entries in the Maple Tree.
+    /// Reads the root entry of the tree.
     ///
-    /// Traverses the tree structure and calls the provided callback for each entry found.
-    pub fn enumerate(&self, mut callback: impl FnMut(Va) -> bool) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_tree = &offsets.maple_tree;
+    /// Corresponds to `maple_tree.ma_root`.
+    fn root(&self) -> Result<u64, VmiError> {
+        let MAPLE_TREE = offset!(self.vmi, maple_tree);
 
-        let entry = self
-            .vmi
-            .read_va_native(self.root + __maple_tree.ma_root.offset())?;
+        self.vmi.read_u64(self.tree + MAPLE_TREE.ma_root.offset())
+    }
 
-        if !xa_is_node(entry) {
-            self.enumerate_entry(entry, &mut callback);
-        }
-        else if !entry.is_null() {
-            self.enumerate_node(self.root, entry, 0, u64::MAX, &mut callback)?;
+    /// Walks to the next entry.
+    fn walk_next(&mut self) -> Result<Option<Va>, VmiError> {
+        if self.walk.is_none() {
+            let root = self.root()?;
+            self.walk = Some(MapleWalk::new(GuestMapleNodeReader::new(self.vmi), root));
         }
 
+        match &mut self.walk {
+            Some(walk) => walk.next_entry(),
+            None => Ok(None),
+        }
+    }
+}
+
+impl<Driver> Iterator for MapleTreeIterator<'_, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    type Item = Result<Va, VmiError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        match self.walk_next() {
+            Ok(Some(entry)) => Some(Ok(entry)),
+            Ok(None) => {
+                self.done = true;
+                None
+            }
+            Err(err) => {
+                self.done = true;
+                Some(Err(err))
+            }
+        }
+    }
+}
+
+impl<Driver> FusedIterator for MapleTreeIterator<'_, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    /// `XA_ZERO_ENTRY`, the internal entry `xa_mk_internal(257)`.
+    const XA_ZERO_ENTRY: u64 = (257 << 2) | 2;
+
+    /// Nodes of a tree built by hand, indexed by their addresses.
+    #[derive(Default)]
+    struct Tree {
+        /// The nodes and their types.
+        nodes: HashMap<u64, (MapleType, MapleNode)>,
+    }
+
+    impl Tree {
+        /// Adds a node and returns its encoded pointer, as `mt_mk_node`
+        /// builds it.
+        fn add(
+            &mut self,
+            address: u64,
+            ty: MapleType,
+            pivots: &[u64],
+            slots: &[u64],
+            meta_end: u8,
+        ) -> u64 {
+            let mut node = MapleNode {
+                meta_end,
+                ..MapleNode::default()
+            };
+            node.pivots[..pivots.len()].copy_from_slice(pivots);
+            node.slots[..slots.len()].copy_from_slice(slots);
+            self.nodes.insert(address, (ty, node));
+
+            let ty_bits = match ty {
+                MapleType::Leaf64 => 1,
+                MapleType::Range64 => 2,
+                MapleType::Arange64 => 3,
+            };
+
+            address | (ty_bits << MAPLE_NODE_TYPE_SHIFT) | 0x04
+        }
+
+        /// Returns all entries of a walk from the given root.
+        fn walk(&self, root: u64) -> Result<Vec<u64>, VmiError> {
+            let mut walk = MapleWalk::new(self, root);
+            let mut entries = Vec::new();
+
+            while let Some(entry) = walk.next_entry()? {
+                entries.push(entry.0);
+            }
+
+            Ok(entries)
+        }
+
+        /// Looks an index up from the given root.
+        fn lookup(&self, root: u64, index: u64) -> Result<Option<u64>, VmiError> {
+            Ok(maple_tree_lookup(&self, root, index)?.map(|entry| entry.0))
+        }
+    }
+
+    impl MapleNodeReader for &Tree {
+        fn read_node(&self, node: Va, ty: MapleType) -> Result<MapleNode, VmiError> {
+            match self.nodes.get(&node.0) {
+                Some((node_ty, node)) if *node_ty == ty => Ok(node.clone()),
+                Some(_) => Err(VmiError::Other("node type mismatch")),
+                None => Err(VmiError::Other("no such node")),
+            }
+        }
+    }
+
+    /// Turns an encoded node pointer into a root entry (`mte_mk_root`).
+    fn root(node: u64) -> u64 {
+        node | 0x02
+    }
+
+    #[test]
+    fn empty_tree_has_no_entries() -> Result<(), VmiError> {
+        let tree = Tree::default();
+
+        assert_eq!(tree.walk(0)?, Vec::<u64>::new());
+        assert_eq!(tree.lookup(0, 0x1000)?, None);
         Ok(())
     }
 
-    fn enumerate_entry(&self, entry: Va, callback: &mut impl FnMut(Va) -> bool) {
-        if xa_is_value(entry) {
-            callback(Va(xa_to_value(entry)));
-        }
-        else if xa_is_zero(entry) {
-            callback(Va(xa_to_internal(entry)));
-        }
-        else {
-            callback(entry);
-        }
-    }
+    #[test]
+    fn single_entry_lives_in_the_root() -> Result<(), VmiError> {
+        let tree = Tree::default();
 
-    fn enumerate_node(
-        &self,
-        mt: Va,
-        entry: Va,
-        min: u64,
-        max: u64,
-        callback: &mut impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_tree = &offsets.maple_tree;
-        let __maple_node = &offsets.maple_node;
-
-        let node = mte_to_node(entry);
-        let typ = mte_node_type(entry);
-
-        match typ {
-            Some(MapleType::Dense) => {
-                // const MAPLE_NODE_SLOTS: u64 = 63;   // 32 bit OS
-                const MAPLE_NODE_SLOTS: u64 = 31; // 64 bit OS
-                for i in 0..MAPLE_NODE_SLOTS {
-                    let slot = self
-                        .vmi
-                        .read_va_native(node + __maple_node.slot.offset() + i * 8)?;
-
-                    if !slot.is_null() {
-                        self.enumerate_entry(slot, callback);
-                    }
-                }
-            }
-            Some(MapleType::Leaf64 | MapleType::Range64) => {
-                self.enumerate_range64(mt, entry, min, max, callback)?;
-            }
-            Some(MapleType::Arange64) => {
-                self.enumerate_arange64(mt, entry, min, max, callback)?;
-            }
-            None => tracing::warn!(?typ, "unknown node type"),
-        }
-
+        assert_eq!(tree.walk(0xa000)?, vec![0xa000]);
+        assert_eq!(tree.lookup(0xa000, 0)?, Some(0xa000));
+        assert_eq!(tree.lookup(0xa000, 1)?, None);
         Ok(())
     }
 
-    fn enumerate_range64(
-        &self,
-        mt: Va,
-        entry: Va,
-        min: u64,
-        max: u64,
-        callback: &mut impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_node = &offsets.maple_node;
-        let __maple_range_64 = &offsets.maple_range_64;
+    #[test]
+    fn leaf_root_skips_gaps() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
 
-        let node = mte_to_node(entry) + __maple_node.mr64.offset();
-        let leaf = mte_is_leaf(entry);
-        let mut first = min;
+        // Slots 0, 2 and 4 are gaps. The last pivot is zero, so meta.end
+        // tells the last used slot.
+        let leaf = tree.add(
+            0x10000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff, 0x2fff, 0x3fff, u64::MAX],
+            &[0, 0xa000, 0, 0xb000, 0],
+            4,
+        );
+        let root = root(leaf);
 
-        const MAPLE_RANGE64_SLOTS_32: u64 = 32; // 32 bit OS
-        const MAPLE_RANGE64_SLOTS_64: u64 = 16; // 64 bit OS
-
-        #[expect(non_snake_case)]
-        let MAPLE_RANGE64_SLOTS = match self.vmi.registers().address_width() {
-            4 => MAPLE_RANGE64_SLOTS_32,
-            8 => MAPLE_RANGE64_SLOTS_64,
-            _ => 0,
-        };
-
-        let __pivot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_range_64.pivot.offset() + offset)
-                .map(u64::from)
-        };
-
-        let __slot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_range_64.slot.offset() + offset)
-        };
-
-        for i in 0..MAPLE_RANGE64_SLOTS {
-            let mut last = max;
-
-            if i < (MAPLE_RANGE64_SLOTS - 1) {
-                last = __pivot(i)?;
-            }
-            else {
-                let slot = __slot(i)?;
-                if slot.is_null() && Some(max) != mt_node_max(entry) {
-                    break;
-                }
-            }
-
-            if last == 0 && i > 0 {
-                break;
-            }
-
-            let slot = __slot(i)?;
-
-            if leaf {
-                self.enumerate_entry(slot, callback)
-            }
-            else if !slot.is_null() {
-                self.enumerate_node(mt, slot, first, last, callback)?;
-            }
-
-            if last == max {
-                break;
-            }
-
-            first = last + 1;
-        }
-
+        assert_eq!(tree.walk(root)?, vec![0xa000, 0xb000]);
+        assert_eq!(tree.lookup(root, 0x0800)?, None);
+        assert_eq!(tree.lookup(root, 0x1000)?, Some(0xa000));
+        assert_eq!(tree.lookup(root, 0x1fff)?, Some(0xa000));
+        assert_eq!(tree.lookup(root, 0x2000)?, None);
+        assert_eq!(tree.lookup(root, 0x3abc)?, Some(0xb000));
+        assert_eq!(tree.lookup(root, 0x7fff_0000)?, None);
         Ok(())
     }
 
-    fn enumerate_arange64(
-        &self,
-        mt: Va,
-        entry: Va,
-        min: u64,
-        max: u64,
-        callback: &mut impl FnMut(Va) -> bool,
-    ) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_node = &offsets.maple_node;
-        let __maple_arange_64 = &offsets.maple_arange_64;
+    #[test]
+    fn allocation_tree_visits_leaves_in_order() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
 
-        let node = mte_to_node(entry) + __maple_node.ma64.offset();
-        let leaf = mte_is_leaf(entry);
-        let mut first = min;
+        let left = tree.add(
+            0x21000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff, 0x4fff],
+            &[0, 0xa000, 0xb000],
+            2,
+        );
+        let right = tree.add(
+            0x22000,
+            MapleType::Leaf64,
+            &[0x5fff, 0x6fff, u64::MAX],
+            &[0xc000, 0, 0xd000],
+            2,
+        );
+        let inner = tree.add(
+            0x20000,
+            MapleType::Arange64,
+            &[0x4fff, u64::MAX],
+            &[left, right],
+            1,
+        );
+        let root = root(inner);
 
-        const MAPLE_ARANGE64_SLOTS_32: u64 = 21; // 32 bit OS
-        const MAPLE_ARANGE64_SLOTS_64: u64 = 10; // 64 bit OS
-
-        #[expect(non_snake_case)]
-        let MAPLE_ARANGE64_SLOTS = match self.vmi.registers().address_width() {
-            4 => MAPLE_ARANGE64_SLOTS_32,
-            8 => MAPLE_ARANGE64_SLOTS_64,
-            _ => 0,
-        };
-
-        let __pivot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_arange_64.pivot.offset() + offset)
-                .map(u64::from)
-        };
-
-        let __slot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_arange_64.slot.offset() + offset)
-        };
-
-        for i in 0..MAPLE_ARANGE64_SLOTS {
-            let mut last = max;
-
-            if i < (MAPLE_ARANGE64_SLOTS - 1) {
-                last = __pivot(i)?;
-            }
-            else {
-                let slot = __slot(i)?;
-                if slot.is_null() {
-                    break;
-                }
-            }
-
-            if last == 0 && i > 0 {
-                break;
-            }
-
-            let slot = __slot(i)?;
-
-            if leaf {
-                self.enumerate_entry(slot, callback)
-            }
-            else if !slot.is_null() {
-                self.enumerate_node(mt, slot, first, last, callback)?;
-            }
-
-            if last == max {
-                break;
-            }
-
-            first = last + 1;
-        }
-
+        assert_eq!(tree.walk(root)?, vec![0xa000, 0xb000, 0xc000, 0xd000]);
+        assert_eq!(tree.lookup(root, 0x1800)?, Some(0xa000));
+        assert_eq!(tree.lookup(root, 0x4fff)?, Some(0xb000));
+        assert_eq!(tree.lookup(root, 0x5000)?, Some(0xc000));
+        assert_eq!(tree.lookup(root, 0x6800)?, None);
+        assert_eq!(tree.lookup(root, 0x9000_0000)?, Some(0xd000));
         Ok(())
     }
 
-    // endregion
+    #[test]
+    fn full_leaf_uses_its_last_slot() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
 
-    // region: Dump
-
-    /// Dumps the entire Maple Tree structure for debugging.
-    pub fn dump(&self) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_tree = &offsets.maple_tree;
-
-        let flags = self
-            .vmi
-            .read_u32(self.root + __maple_tree.ma_flags.offset())?;
-        let entry = self
-            .vmi
-            .read_va_native(self.root + __maple_tree.ma_root.offset())?;
-
-        println!(
-            "maple_tree({}) flags {:X}, height {} root {:X}",
-            self.root,
-            flags,
-            mt_flags_height(flags),
-            entry
+        // A full leaf below a parent that limits it to 0x10ffff. Its last
+        // pivot is neither zero nor the maximum, so all 16 slots are used.
+        let pivots = (0..15)
+            .map(|index| 0x1000 * index + 0xfff)
+            .collect::<Vec<_>>();
+        let slots = (0..16)
+            .map(|index| 0x100_0000 + 0x100 * index)
+            .collect::<Vec<_>>();
+        let leaf = tree.add(0x31000, MapleType::Leaf64, &pivots, &slots, 0);
+        let other = tree.add(0x32000, MapleType::Leaf64, &[u64::MAX], &[0xe000], 0);
+        let inner = tree.add(
+            0x30000,
+            MapleType::Arange64,
+            &[0x10_ffff, u64::MAX],
+            &[leaf, other],
+            1,
         );
 
-        if !xa_is_node(entry) {
-            self.dump_entry(entry, 0, 0, 0);
-        }
-        else if !entry.is_null() {
-            self.dump_node(self.root, entry, 0, u64::MAX, 0)?;
-        }
+        let mut expected = slots.clone();
+        expected.push(0xe000);
 
+        assert_eq!(tree.walk(root(inner))?, expected);
+        assert_eq!(tree.lookup(root(inner), 0x10_0000)?, Some(slots[15]));
         Ok(())
     }
 
-    fn dump_range(&self, min: u64, max: u64, depth: u64) {
-        if min == max {
-            println!("{:width$}{:X}: ", "", min, width = (depth * 2) as usize);
-        }
-        else {
-            println!(
-                "{:width$}{:X}-{:X}: ",
-                "",
-                min,
-                max,
-                width = (depth * 2) as usize
-            );
-        }
-    }
+    #[test]
+    fn last_pivot_at_the_maximum_ends_a_node_early() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
 
-    fn dump_entry(&self, entry: Va, _min: u64, _max: u64, depth: u64) {
-        print!("{:width$}", "", width = (depth * 2) as usize);
-
-        if xa_is_value(entry) {
-            println!("Value: {:#x}", xa_to_value(entry));
-        }
-        else if xa_is_zero(entry) {
-            println!("Zero: {:?}", xa_to_internal(entry));
-        }
-        else if mt_is_reserved(entry) {
-            println!("Reserved: {:?}", entry);
-        }
-        else {
-            println!("{:?}", entry);
-            if entry.is_null() {
-                return;
-            }
-
-            let offsets = self.offsets();
-            let __vm_area_struct = &offsets.vm_area_struct;
-
-            let start = self
-                .vmi
-                .read_u64(entry + __vm_area_struct.vm_start.offset());
-            let end = self.vmi.read_u64(entry + __vm_area_struct.vm_end.offset());
-            let file = self
-                .vmi
-                .read_va_native(entry + __vm_area_struct.vm_file.offset());
-            println!("Range: {:X?}-{:X?}", start, end);
-
-            if let Ok(file) = file
-                && !file.is_null()
-            {
-                let __dentry = &offsets.dentry;
-                let __file = &offsets.file;
-                let __path = &offsets.path;
-                let __qstr = &offsets.qstr;
-
-                let f_path = file + __file.f_path.offset();
-
-                if let Ok(dentry) = self.vmi.read_va_native(f_path + __path.dentry.offset())
-                    && let Ok(d_name) = self
-                        .vmi
-                        .read_va_native(dentry + __dentry.d_name.offset() + __qstr.name.offset())
-                {
-                    let name = self.vmi.read_string(d_name);
-                    println!("    File: {:?}", name);
-                }
-            }
-        }
-    }
-
-    fn dump_node(&self, mt: Va, entry: Va, min: u64, max: u64, depth: u64) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_tree = &offsets.maple_tree;
-        let __maple_node = &offsets.maple_node;
-
-        let node = mte_to_node(entry);
-        let typ = mte_node_type(entry);
-
-        self.dump_range(min, max, depth);
-
-        println!(
-            "node {:X} depth {} type {:?} parent {:?}",
-            node,
-            depth,
-            mte_node_type(entry),
-            if !node.is_null() {
-                self.vmi.read_va_native(node + __maple_node.parent.offset())
-            }
-            else {
-                Ok(Va::default())
-            }
+        // The last pivot equals the node's maximum, so slot 15 is unused
+        // even though it is not zero.
+        let mut pivots = (0..14)
+            .map(|index| 0x1000 * index + 0xfff)
+            .collect::<Vec<_>>();
+        pivots.push(0x10_ffff);
+        let mut slots = (0..15)
+            .map(|index| 0x100_0000 + 0x100 * index)
+            .collect::<Vec<_>>();
+        slots.push(0xdead_0000);
+        let leaf = tree.add(0x41000, MapleType::Leaf64, &pivots, &slots, 0);
+        let other = tree.add(0x42000, MapleType::Leaf64, &[u64::MAX], &[0xe000], 0);
+        let inner = tree.add(
+            0x40000,
+            MapleType::Arange64,
+            &[0x10_ffff, u64::MAX],
+            &[leaf, other],
+            1,
         );
 
-        match typ {
-            Some(MapleType::Dense) => {
-                // const MAPLE_NODE_SLOTS: u64 = 63;   // 32 bit OS
-                const MAPLE_NODE_SLOTS: u64 = 31; // 64 bit OS
-                for i in 0..MAPLE_NODE_SLOTS {
-                    let slot = self
-                        .vmi
-                        .read_va_native(node + __maple_node.slot.offset() + i * 8)?;
-
-                    if !slot.is_null() {
-                        self.dump_entry(slot, min, max, depth);
-                    }
-                }
-            }
-            Some(MapleType::Leaf64 | MapleType::Range64) => {
-                self.dump_range64(mt, entry, min, max, depth)?;
-            }
-            Some(MapleType::Arange64) => {
-                self.dump_arange64(mt, entry, min, max, depth)?;
-            }
-            None => tracing::warn!(?typ, "unknown node type"),
-        }
-
+        let entries = tree.walk(root(inner))?;
+        assert!(!entries.contains(&0xdead_0000));
+        assert_eq!(entries.len(), 16);
         Ok(())
     }
 
-    fn dump_range64(
-        &self,
-        mt: Va,
-        entry: Va,
-        min: u64,
-        max: u64,
-        depth: u64,
-    ) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_node = &offsets.maple_node;
-        let __maple_range_64 = &offsets.maple_range_64;
+    #[test]
+    fn zero_entries_are_skipped() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
 
-        let node = mte_to_node(entry) + __maple_node.mr64.offset();
-        let leaf = mte_is_leaf(entry);
-        let mut first = min;
+        let leaf = tree.add(
+            0x50000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff, u64::MAX],
+            &[0xa000, XA_ZERO_ENTRY, 0xb000],
+            2,
+        );
+        let root = root(leaf);
 
-        // const MAPLE_RANGE64_SLOTS: u64 = 32;   // 32 bit OS
-        const MAPLE_RANGE64_SLOTS: u64 = 16; // 64 bit OS
-
-        let __pivot = |i: u64| {
-            let offset = i * size_of::<u64>() as u64;
-            self.vmi
-                .read_u64(node + __maple_range_64.pivot.offset() + offset)
-        };
-
-        let __slot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_range_64.slot.offset() + offset)
-        };
-
-        for i in 0..MAPLE_RANGE64_SLOTS - 1 {
-            println!("pivot {:X} slot {:X}", __pivot(i)?, __slot(i)?);
-        }
-        println!("slot {:X}", __slot(MAPLE_RANGE64_SLOTS - 1)?);
-
-        for i in 0..MAPLE_RANGE64_SLOTS {
-            let mut last = max;
-
-            if i < (MAPLE_RANGE64_SLOTS - 1) {
-                last = __pivot(i)?;
-            }
-            else {
-                let slot = __slot(i)?;
-                if slot.is_null() && Some(max) != mt_node_max(entry) {
-                    break;
-                }
-            }
-
-            if last == 0 && i > 0 {
-                break;
-            }
-
-            let slot = __slot(i)?;
-
-            if leaf {
-                self.dump_entry(slot, first, last, depth + 1)
-            }
-            else if !slot.is_null() {
-                self.dump_node(mt, slot, first, last, depth + 1)?;
-            }
-
-            if last == max {
-                break;
-            }
-
-            first = last + 1;
-        }
-
+        assert_eq!(tree.walk(root)?, vec![0xa000, 0xb000]);
+        assert_eq!(tree.lookup(root, 0x1800)?, None);
         Ok(())
     }
 
-    fn dump_arange64(
-        &self,
-        mt: Va,
-        entry: Va,
-        min: u64,
-        max: u64,
-        depth: u64,
-    ) -> Result<(), VmiError> {
-        let offsets = self.offsets();
-        let __maple_node = &offsets.maple_node;
-        let __maple_arange_64 = &offsets.maple_arange_64;
+    #[test]
+    fn node_that_points_to_itself_ends_with_an_error() {
+        let mut tree = Tree::default();
 
-        let node = mte_to_node(entry) + __maple_node.ma64.offset();
-        let leaf = mte_is_leaf(entry);
-        let mut first = min;
+        // The inner node's first slot points back to the node itself.
+        let encoded = 0x60000 | (3 << MAPLE_NODE_TYPE_SHIFT) | 0x04;
+        tree.add(0x60000, MapleType::Arange64, &[u64::MAX], &[encoded], 0);
 
-        // const MAPLE_ARANGE64_SLOTS: u64 = 21;   // 32 bit OS
-        const MAPLE_ARANGE64_SLOTS: u64 = 10; // 64 bit OS
-
-        let __pivot = |i: u64| {
-            let offset = i * size_of::<u64>() as u64;
-            self.vmi
-                .read_u64(node + __maple_arange_64.pivot.offset() + offset)
-        };
-
-        let __slot = |i: u64| {
-            let offset = i * self.vmi.registers().address_width() as u64;
-            self.vmi
-                .read_va_native(node + __maple_arange_64.slot.offset() + offset)
-        };
-
-        for i in 0..MAPLE_ARANGE64_SLOTS - 1 {
-            println!("pivot {:X} slot {:X}", __pivot(i)?, __slot(i)?);
-        }
-        println!("slot {:X}", __slot(MAPLE_ARANGE64_SLOTS - 1)?);
-
-        for i in 0..MAPLE_ARANGE64_SLOTS {
-            let mut last = max;
-
-            if i < (MAPLE_ARANGE64_SLOTS - 1) {
-                last = __pivot(i)?;
-            }
-            else {
-                let slot = __slot(i)?;
-                if slot.is_null() {
-                    break;
-                }
-            }
-
-            if last == 0 && i > 0 {
-                break;
-            }
-
-            let slot = __slot(i)?;
-
-            if leaf {
-                self.dump_entry(slot, first, last, depth + 1)
-            }
-            else if !slot.is_null() {
-                self.dump_node(mt, slot, first, last, depth + 1)?;
-            }
-
-            if last == max {
-                break;
-            }
-
-            first = last + 1;
-        }
-
-        Ok(())
+        assert!(tree.walk(root(encoded)).is_err());
+        assert!(tree.lookup(root(encoded), 0x1000).is_err());
     }
 
-    // endregion
+    #[test]
+    fn unknown_node_type_is_an_error() {
+        let tree = Tree::default();
+
+        // Type 0 is `maple_dense`, which memory region trees never use.
+        let dense = root(0x70000 | 0x04);
+
+        assert!(tree.walk(dense).is_err());
+        assert!(tree.lookup(dense, 0).is_err());
+    }
 }

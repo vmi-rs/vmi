@@ -1,24 +1,25 @@
-mod _dummy;
 mod dentry;
 mod file;
-mod fs_struct;
-pub(crate) mod macros;
+mod image;
 mod mm_struct;
+mod module;
+mod mount;
 mod path;
-mod qstr;
-mod task_struct;
-mod vfsmount;
-mod vm_area_struct;
+mod process;
+mod region;
+mod thread;
+mod user_module;
 
 pub use self::{
-    _dummy::{LinuxImage, LinuxMapped, LinuxModule, LinuxThread, LinuxUserModule},
-    dentry::LinuxDEntry,
+    dentry::LinuxDentry,
     file::LinuxFile,
-    fs_struct::LinuxFsStruct,
+    image::LinuxImage,
     mm_struct::LinuxMmStruct,
+    module::LinuxModule,
+    mount::{LinuxMount, LinuxVfsMount},
     path::LinuxPath,
-    qstr::LinuxQStr,
-    task_struct::LinuxTaskStruct,
-    vfsmount::LinuxVFSMount,
-    vm_area_struct::LinuxVmAreaStruct,
+    process::LinuxProcess,
+    region::LinuxRegion,
+    thread::LinuxThread,
+    user_module::LinuxUserModule,
 };

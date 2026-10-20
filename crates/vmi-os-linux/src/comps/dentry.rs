@@ -1,17 +1,15 @@
 use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
-use super::{LinuxQStr, macros::impl_offsets};
-use crate::{ArchAdapter, LinuxOs};
+use crate::{ArchAdapter, LinuxOs, offset};
 
-/// A Linux dentry struct.
+/// A Linux directory entry.
 ///
-/// A `dentry` is a directory entry in the Linux kernel. It represents a file
-/// or directory in the filesystem.
+/// A directory entry gives a file its name within its parent directory.
 ///
 /// # Implementation Details
 ///
 /// Corresponds to `dentry`.
-pub struct LinuxDEntry<'a, Driver>
+pub struct LinuxDentry<'a, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
@@ -19,11 +17,11 @@ where
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
 
-    /// The virtual address of the `dentry` structure.
+    /// Address of the `dentry` structure.
     va: Va,
 }
 
-impl<Driver> VmiVa for LinuxDEntry<'_, Driver>
+impl<Driver> VmiVa for LinuxDentry<'_, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
@@ -33,47 +31,46 @@ where
     }
 }
 
-impl<'a, Driver> LinuxDEntry<'a, Driver>
+impl<'a, Driver> LinuxDentry<'a, Driver>
 where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
-    /// Creates a new `dentry`.
+    /// Creates a new Linux directory entry.
     pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
-    /// Returns the name of the dentry.
+    /// Returns the name of the entry.
     ///
     /// # Implementation Details
     ///
-    /// Corresponds to `dentry.d_name`.
-    pub fn name(&self) -> Result<Option<String>, VmiError> {
-        let offsets = self.offsets();
-        let __dentry = &offsets.dentry;
+    /// Corresponds to `dentry.d_name`, a `qstr` with the name and its length.
+    pub fn name(&self) -> Result<String, VmiError> {
+        let DENTRY = offset!(self.vmi, dentry);
+        let QSTR = offset!(self.vmi, qstr);
 
-        LinuxQStr::new(self.vmi, self.va + __dentry.d_name.offset()).name()
+        let d_name = self.va + DENTRY.d_name.offset();
+        let len = self.vmi.read_u32(d_name + QSTR.len.offset())?;
+        let name = self.vmi.read_va_native(d_name + QSTR.name.offset())?;
+
+        self.vmi.read_string_limited(name, len as usize)
     }
 
-    /// Returns the parent dentry.
+    /// Returns the parent directory.
+    ///
+    /// The root of a file system is its own parent.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `dentry.d_parent`.
-    pub fn parent(&self) -> Result<Option<LinuxDEntry<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let __dentry = &offsets.dentry;
+    pub fn parent(&self) -> Result<LinuxDentry<'a, Driver>, VmiError> {
+        let DENTRY = offset!(self.vmi, dentry);
 
-        let parent = self
+        let d_parent = self
             .vmi
-            .read_va_native(self.va + __dentry.d_parent.offset())?;
+            .read_va_native(self.va + DENTRY.d_parent.offset())?;
 
-        if parent.is_null() {
-            return Ok(None);
-        }
-
-        Ok(Some(LinuxDEntry::new(self.vmi, parent)))
+        Ok(LinuxDentry::new(self.vmi, d_parent))
     }
 }

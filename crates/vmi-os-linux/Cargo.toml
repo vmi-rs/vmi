@@ -28,3 +28,8 @@ isr-macros = { workspace = true }
 
 vmi-arch-amd64 = { workspace = true }
 vmi-core = { workspace = true }
+vmi-macros = { workspace = true }
+
+[dev-dependencies]
+isr = { workspace = true, features = ["cache", "dl-linux"] }
+vmi = { workspace = true, features = ["arch-amd64", "os-linux"] }

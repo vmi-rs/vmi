@@ -565,8 +565,10 @@ offsets and makes the code adaptable to different OS versions.
 
 - **Operating System Support**:
     - **Windows**: Good support for Windows 7 and later.
-    - **Linux**: Limited functionality. Many features are still under
-      development.
+    - **Linux**: Linux 6.8 and later. Processes, threads, memory regions
+      with the paths of mapped files, kernel modules and syscall
+      arguments. Images, user-mode modules and the last error are not
+      supported yet.
     - No other operating systems are currently supported.
 
 # See Also

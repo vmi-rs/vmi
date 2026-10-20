@@ -1,13 +1,16 @@
-use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsRegion as _};
 
-use super::{LinuxFile, macros::impl_offsets};
-use crate::{ArchAdapter, LinuxOs, MapleTree};
+use super::{LinuxFile, LinuxRegion};
+use crate::{
+    ArchAdapter, LinuxOs, MapleTreeIterator,
+    iter::{GuestMapleNodeReader, maple_tree_lookup},
+    offset,
+};
 
-/// A Linux mm struct.
+/// A Linux memory descriptor.
 ///
-/// The `mm_struct` structure is responsible for memory management information
-/// of a process. It is responsible for tracking virtual memory mappings,
-/// memory regions, page tables, and other crucial memory-related data.
+/// The memory descriptor describes the address space of a process: its page
+/// tables and its memory regions.
 ///
 /// # Implementation Details
 ///
@@ -20,7 +23,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
 
-    /// The virtual address of the `mm_struct` structure.
+    /// Address of the `mm_struct` structure.
     va: Va,
 }
 
@@ -39,23 +42,31 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
-    /// Creates a new `mm_struct`.
+    /// Creates a new Linux memory descriptor.
     pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
 
-    /// Returns the page global directory (PGD) of the process.
+    /// Returns the virtual address of the page global directory.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `mm_struct.pgd`.
-    pub fn pgd(&self) -> Result<u64, VmiError> {
-        let offsets = self.offsets();
-        let __mm_struct = &offsets.mm_struct;
+    pub fn pgd(&self) -> Result<Va, VmiError> {
+        let MM_STRUCT = offset!(self.vmi, mm_struct);
 
-        self.vmi.read_field(self.va, &__mm_struct.pgd)
+        self.vmi.read_va_native(self.va + MM_STRUCT.pgd.offset())
+    }
+
+    /// Returns the size of the user address space.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `mm_struct.task_size`.
+    pub fn task_size(&self) -> Result<u64, VmiError> {
+        let MM_STRUCT = offset!(self.vmi, mm_struct);
+
+        self.vmi.read_u64(self.va + MM_STRUCT.task_size.offset())
     }
 
     /// Returns the executable file of the process.
@@ -64,12 +75,11 @@ where
     ///
     /// Corresponds to `mm_struct.exe_file`.
     pub fn exe_file(&self) -> Result<Option<LinuxFile<'a, Driver>>, VmiError> {
-        let offsets = self.offsets();
-        let __mm_struct = &offsets.mm_struct;
+        let MM_STRUCT = offset!(self.vmi, mm_struct);
 
         let exe_file = self
             .vmi
-            .read_va_native(self.va + __mm_struct.exe_file.offset())?;
+            .read_va_native(self.va + MM_STRUCT.exe_file.offset())?;
 
         if exe_file.is_null() {
             return Ok(None);
@@ -78,28 +88,56 @@ where
         Ok(Some(LinuxFile::new(self.vmi, exe_file)))
     }
 
-    /// Returns the memory map of the process.
-    ///
-    /// This is a data structure for managing virtual memory areas (VMAs).
-    /// It replaces the older mm->mmap (linked list of VMAs) for faster lookups.
+    /// Returns the address of the maple tree of the memory regions.
     ///
     /// # Implementation Details
     ///
     /// Corresponds to `mm_struct.mm_mt`.
-    pub fn mm_mt(&self) -> Result<MapleTree<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let __mm_struct = &offsets.mm_struct;
+    pub fn mm_mt(&self) -> Va {
+        let MM_STRUCT = offset!(self.vmi, mm_struct);
 
-        Ok(MapleTree::new(
-            self.vmi,
-            self.va + __mm_struct.mm_mt.offset(),
-        ))
+        self.va + MM_STRUCT.mm_mt.offset()
     }
 
-    /// Returns the address of the `mm_mt` field.
-    pub fn mm_mt_va(&self) -> Result<Va, VmiError> {
-        let offsets = self.offsets();
-        let __mm_struct = &offsets.mm_struct;
-        Ok(self.va + __mm_struct.mm_mt.offset())
+    /// Returns an iterator over the memory regions, in the order of their
+    /// addresses.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the entries of `mm_struct.mm_mt`.
+    pub fn regions(
+        &self,
+    ) -> impl Iterator<Item = Result<LinuxRegion<'a, Driver>, VmiError>> + use<'a, Driver> {
+        let vmi = self.vmi;
+
+        MapleTreeIterator::new(vmi, self.mm_mt())
+            .map(move |result| result.map(|entry| LinuxRegion::new(vmi, entry)))
+    }
+
+    /// Returns the memory region containing the given address.
+    ///
+    /// # Implementation Details
+    ///
+    /// Looks the address up in `mm_struct.mm_mt`, as `find_vma_intersection`
+    /// does, and checks the result against `vm_start` and `vm_end`.
+    pub fn lookup_region(&self, address: Va) -> Result<Option<LinuxRegion<'a, Driver>>, VmiError> {
+        let MAPLE_TREE = offset!(self.vmi, maple_tree);
+
+        let root = self
+            .vmi
+            .read_u64(self.mm_mt() + MAPLE_TREE.ma_root.offset())?;
+
+        let entry = match maple_tree_lookup(&GuestMapleNodeReader::new(self.vmi), root, address.0)?
+        {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let region = LinuxRegion::new(self.vmi, entry);
+        if address >= region.start()? && address < region.end()? {
+            return Ok(Some(region));
+        }
+
+        Ok(None)
     }
 }

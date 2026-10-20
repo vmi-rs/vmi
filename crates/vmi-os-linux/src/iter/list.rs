@@ -2,11 +2,14 @@ use std::iter::FusedIterator;
 
 use vmi_core::{Va, VmiError, VmiState, driver::VmiRead};
 
-use crate::{ArchAdapter, LinuxOs};
+use crate::{ArchAdapter, LinuxOs, offset};
 
-/// An iterator for traversing list entries.
+/// Iterator over a `list_head` list.
 ///
-/// Iterate over entries in a linked list structure, specifically `LIST_ENTRY`.
+/// The iterator starts at the entry after the list head and stops when it
+/// comes back to the list head. For each entry, it yields the entry address
+/// minus an offset. With the offset of the `list_head` field, that is the
+/// containing structure, as the kernel's `list_entry` macro computes it.
 pub struct ListEntryIterator<'a, Driver>
 where
     Driver: VmiRead,
@@ -15,24 +18,17 @@ where
     /// VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
 
-    /// Current entry.
-    current: Option<Va>,
-
     /// Address of the list head.
     list_head: Va,
 
-    /// Offset to the containing structure.
-    ///
-    /// The offset is subtracted from the entry address to get the containing
-    /// structure, similar to the `CONTAINING_RECORD` macro in the Windows
-    /// kernel.
+    /// Offset of the `list_head` field in the containing structure.
     offset: u64,
 
-    /// Offset to the forward link pointer (`LIST_ENTRY.Flink`).
-    offset_next: u64,
+    /// Current entry.
+    current: Option<Va>,
 
-    /// Offset to the backward link pointer (`LIST_ENTRY.Blink`).
-    offset_prev: u64,
+    /// Whether the iterator read the list head.
+    initialized: bool,
 }
 
 impl<'a, Driver> ListEntryIterator<'a, Driver>
@@ -42,61 +38,123 @@ where
 {
     /// Creates a new list entry iterator.
     pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, list_head: Va, offset: u64) -> Self {
-        let __list_head = &vmi.underlying_os().offsets.list_head;
-        let (offset_next, offset_prev) = (__list_head.next.offset(), __list_head.prev.offset());
-
         Self {
             vmi,
-            current: None,
             list_head,
             offset,
-            offset_next,
-            offset_prev,
+            current: None,
+            initialized: false,
         }
     }
 
-    fn __first(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va_native(self.list_head + self.offset_next)
+    /// Returns the next entry in the list.
+    ///
+    /// Corresponds to the `list_head.next` pointer.
+    fn next_entry(&self, entry: Va) -> Result<Va, VmiError> {
+        let LIST_HEAD = offset!(self.vmi, list_head);
+
+        self.vmi.read_va_native(entry + LIST_HEAD.next.offset())
     }
 
-    fn __last(&mut self) -> Result<Va, VmiError> {
-        self.vmi.read_va_native(self.list_head + self.offset_prev)
+    /// Returns the previous entry in the list.
+    ///
+    /// Corresponds to the `list_head.prev` pointer.
+    fn previous_entry(&self, entry: Va) -> Result<Va, VmiError> {
+        let LIST_HEAD = offset!(self.vmi, list_head);
+
+        self.vmi.read_va_native(entry + LIST_HEAD.prev.offset())
     }
 
-    fn __next(&mut self) -> Result<Option<Va>, VmiError> {
-        let entry = match self.current {
-            Some(entry) => entry,
-            None => {
-                let flink = self.__first()?;
-                self.current = Some(flink);
-                flink
-            }
-        };
-
-        if entry == self.list_head {
+    /// Returns the first entry in the list.
+    ///
+    /// Returns `None` if the `list_head` is `NULL`.
+    fn first_entry(&self) -> Result<Option<Va>, VmiError> {
+        if self.list_head.is_null() {
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va_native(entry + self.offset_next)?);
+        Ok(Some(self.next_entry(self.list_head)?))
+    }
+
+    /// Returns the last entry in the list.
+    ///
+    /// Returns `None` if the `list_head` is `NULL`.
+    fn last_entry(&self) -> Result<Option<Va>, VmiError> {
+        if self.list_head.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(self.previous_entry(self.list_head)?))
+    }
+
+    /// Walks to the next entry in the list.
+    fn walk_next(&mut self) -> Result<Option<Va>, VmiError> {
+        let entry = match self.current {
+            Some(entry) => entry,
+            None => {
+                // An initialized iterator without a current entry is done,
+                // either at the list head or after an error.
+                if self.initialized {
+                    return Ok(None);
+                }
+
+                self.initialized = true;
+
+                match self.first_entry()? {
+                    Some(first_entry) => first_entry,
+                    None => return Ok(None),
+                }
+            }
+        };
+
+        if entry == self.list_head || entry.is_null() {
+            self.current = None;
+            return Ok(None);
+        }
+
+        match self.next_entry(entry) {
+            Ok(next_entry) => self.current = Some(next_entry),
+            Err(err) => {
+                // End the iteration. Otherwise callers that continue on
+                // errors read the same failing entry forever.
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
 
-    fn __next_back(&mut self) -> Result<Option<Va>, VmiError> {
+    /// Walks to the previous entry in the list.
+    fn walk_next_back(&mut self) -> Result<Option<Va>, VmiError> {
         let entry = match self.current {
             Some(entry) => entry,
             None => {
-                let blink = self.__last()?;
-                self.current = Some(blink);
-                blink
+                if self.initialized {
+                    return Ok(None);
+                }
+
+                self.initialized = true;
+
+                match self.last_entry()? {
+                    Some(last_entry) => last_entry,
+                    None => return Ok(None),
+                }
             }
         };
 
-        if entry == self.list_head {
+        if entry == self.list_head || entry.is_null() {
+            self.current = None;
             return Ok(None);
         }
 
-        self.current = Some(self.vmi.read_va_native(entry + self.offset_prev)?);
+        match self.previous_entry(entry) {
+            Ok(previous_entry) => self.current = Some(previous_entry),
+            Err(err) => {
+                self.current = None;
+                return Err(err);
+            }
+        }
 
         Ok(Some(entry - self.offset))
     }
@@ -110,7 +168,7 @@ where
     type Item = Result<Va, VmiError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.__next().transpose()
+        self.walk_next().transpose()
     }
 }
 
@@ -120,7 +178,7 @@ where
     Driver::Architecture: ArchAdapter<Driver>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.__next_back().transpose()
+        self.walk_next_back().transpose()
     }
 }
 

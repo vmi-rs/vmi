@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `OsAdapter` has a new required method,
   `user_shellcode_spawn_from_kernel_recipe`.
 - **Breaking:** `libxen` dependency updated to 0.8.
+- **Breaking:** `vmi-os-linux` is rewritten for Linux 6.8 and later on AMD64.
+  With the symbols and offsets of an isr profile, it lists processes,
+  threads, memory regions with the paths of mapped files and kernel modules,
+  finds the current process and thread, and reads syscall and function
+  arguments. `LinuxOs::find_kernel` finds the kernel banner by a scan from
+  `MSR_LSTAR`. The types follow the names of the Windows crate, such as
+  `LinuxProcess`, `LinuxThread`, `LinuxRegion` and `LinuxModule`. Images,
+  user-mode modules and `last_error` return `VmiError::NotSupported`.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the

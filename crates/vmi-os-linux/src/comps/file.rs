@@ -1,11 +1,12 @@
-use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Va, VmiError, VmiState, VmiVa, driver::VmiRead, os::VmiOsMapped};
 
-use super::{macros::impl_offsets, path::LinuxPath};
-use crate::{ArchAdapter, LinuxOs};
+use super::LinuxPath;
+use crate::{ArchAdapter, LinuxOs, offset};
 
-/// A Linux file struct.
+/// A Linux file.
 ///
-/// A `file` is a representation of a file in the Linux kernel.
+/// An open file, as the kernel keeps it for a file descriptor or a mapping
+/// of a file into memory.
 ///
 /// # Implementation Details
 ///
@@ -18,7 +19,7 @@ where
     /// The VMI state.
     vmi: VmiState<'a, LinuxOs<Driver>>,
 
-    /// The virtual address of the `file` structure.
+    /// Address of the `file` structure.
     va: Va,
 }
 
@@ -37,9 +38,7 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
-    impl_offsets!();
-
-    /// Creates a new `file`.
+    /// Creates a new Linux file.
     pub fn new(vmi: VmiState<'a, LinuxOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
     }
@@ -49,10 +48,26 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `file.f_path`.
-    pub fn path(&self) -> Result<LinuxPath<'a, Driver>, VmiError> {
-        let offsets = self.offsets();
-        let __file = &offsets.file;
+    pub fn f_path(&self) -> LinuxPath<'a, Driver> {
+        let FILE = offset!(self.vmi, file);
 
-        Ok(LinuxPath::new(self.vmi, self.va + __file.f_path.offset()))
+        LinuxPath::new(self.vmi, self.va + FILE.f_path.offset())
+    }
+}
+
+impl<'a, Driver> VmiOsMapped<'a, Driver> for LinuxFile<'a, Driver>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    type Os = LinuxOs<Driver>;
+
+    /// Returns the absolute path of the mapped file.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to [`LinuxPath::absolute`] of `file.f_path`.
+    fn path(&self) -> Result<Option<String>, VmiError> {
+        Ok(Some(self.f_path().absolute()?))
     }
 }
