@@ -24,6 +24,14 @@ where
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<LinuxKernelInformation>, VmiError>;
 
+    /// Checks whether an address lies in the part of the address space
+    /// where Linux keeps the kernel.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: The kernel lives in the upper half, with bit 63 set.
+    fn is_kernel_address(va: Va) -> bool;
+
     /// Reads a syscall argument by index.
     ///
     /// Index 0 is the first argument. Linux syscalls have at most six
@@ -84,6 +92,15 @@ where
     ///   read uses the root with the bit cleared.
     fn kpti_enabled(vmi: VmiState<LinuxOs<Driver>>) -> Result<bool, VmiError>;
 
+    /// Returns the thread pointer of the user thread on the vCPU, through
+    /// which user code reaches its thread-local storage.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: The FS base. Linux leaves the user's value in place while
+    ///   the CPU runs kernel code.
+    fn thread_pointer(vmi: VmiState<LinuxOs<Driver>>) -> Va;
+
     /// Returns the page table root that translates a virtual address for the
     /// VMI state.
     ///
@@ -103,21 +120,4 @@ where
     /// - **AMD64**: The user page table directly follows the kernel one, so
     ///   the root is the kernel root plus 4 KiB (`PTI_USER_PGTABLE_BIT`).
     fn user_translation_root(root: Pa) -> Pa;
-
-    /// Checks whether an address lies in the part of the address space
-    /// where Linux keeps the kernel.
-    ///
-    /// # Architecture-specific
-    ///
-    /// - **AMD64**: The kernel lives in the upper half, with bit 63 set.
-    fn is_kernel_address(va: Va) -> bool;
-
-    /// Returns the thread pointer of the user thread on the vCPU, through
-    /// which user code reaches its thread-local storage.
-    ///
-    /// # Architecture-specific
-    ///
-    /// - **AMD64**: The FS base. Linux leaves the user's value in place while
-    ///   the CPU runs kernel code.
-    fn thread_pointer(vmi: VmiState<LinuxOs<Driver>>) -> Va;
 }
