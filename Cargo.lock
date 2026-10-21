@@ -2408,6 +2408,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tracing",
+ "vmi-driver-mock",
  "vmi-macros",
  "zerocopy",
 ]

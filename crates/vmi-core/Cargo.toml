@@ -31,3 +31,6 @@ isr-core = { workspace = true }
 isr-macros = { workspace = true }
 
 vmi-macros = { workspace = true }
+
+[dev-dependencies]
+vmi-driver-mock = { workspace = true, features = ["arch-amd64"] }

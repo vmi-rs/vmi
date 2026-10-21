@@ -474,31 +474,25 @@ where
             return Ok(buffer);
         }
 
+        // Each later read takes a whole page, from the next page on.
+        ctx.address += buffer.len() as u64;
+
         let mut page = [0u8; 4096_usize]; // FIXME: Driver::Architecture::PAGE_SIZE
-        loop {
-            ctx.address += buffer.len() as u64;
+        while buffer.len() < limit {
             self.read(ctx, &mut page)?;
 
             let position = page.iter().position(|&b| b == 0);
 
             if let Some(position) = position {
                 buffer.extend_from_slice(&page[..position]);
-
-                if buffer.len() >= limit {
-                    buffer.truncate(limit);
-                }
-
                 break;
             }
 
             buffer.extend_from_slice(&page);
-
-            if buffer.len() >= limit {
-                buffer.truncate(limit);
-                break;
-            }
+            ctx.address += page.len() as u64;
         }
 
+        buffer.truncate(limit);
         Ok(buffer)
     }
 
@@ -543,9 +537,11 @@ where
                 .collect());
         }
 
+        // Each later read takes a whole page, from the next page on.
+        ctx.address += buffer.len() as u64;
+
         let mut page = [0u8; 4096_usize]; // FIXME: Driver::Architecture::PAGE_SIZE
-        loop {
-            ctx.address += buffer.len() as u64;
+        while buffer.len() < limit {
             self.read(ctx, &mut page)?;
 
             let (chunks, _) = page.as_chunks::<2>();
@@ -555,21 +551,14 @@ where
 
             if let Some(position) = position {
                 buffer.extend_from_slice(&page[..position * 2]);
-
-                if buffer.len() >= limit {
-                    buffer.truncate(limit);
-                }
-
                 break;
             }
 
             buffer.extend_from_slice(&page);
-
-            if buffer.len() >= limit {
-                buffer.truncate(limit);
-                break;
-            }
+            ctx.address += page.len() as u64;
         }
+
+        buffer.truncate(limit);
 
         let (chunks, _) = buffer.as_chunks::<2>();
         Ok(chunks
