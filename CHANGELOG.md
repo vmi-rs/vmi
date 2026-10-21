@@ -171,12 +171,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the write fails with `VmiError::PageFault` and leaves the memory unchanged.
 - `PageFaultErrorCode` holds the bits of the AMD64 page-fault error code.
 - `PageTableEntry::execute_disable` reads the XD flag.
+- The injector supports Linux on AMD64, from Linux 6.9 and the stable 6.8.12
+  on, with `KernelInjectorHandler` and `UserInjectorHandler` for `LinuxOs`
+  and calls with the System V calling convention. Kernel mode hijacks the
+  first thread at `x64_sys_call`. User mode traps the instruction where a
+  thread returns from a syscall. Its writes to the stack go through
+  `VmiCore::write_checked`, and their page faults go to the guest.
+- `vmi-utils` has an `os-linux` feature, which the `os-linux` feature of
+  `vmi` turns on.
 - `OsAdapter::red_zone` and `OsAdapter::copy_to_stack`, which
   `copy_to_stack!` now uses.
 - `inject!` takes a string literal as the image name, such as
-  `inject!("ld-linux-x86-64.so.2"!_dl_debug_state())`.
+  `inject!("ld-linux-x86-64.so.2"!_dl_debug_state())`. On Linux, `kernel!`
+  names the kernel, and `libc!` names `libc.so` or `libc.so.<version>`.
 - `Symbols::x64_sys_call`, and the fields `ip` and `sp` of `pt_regs`, in
   `vmi-os-linux`.
+- The examples `linux-recipe-writefile` and `linux-recipe-kernel-writefile`
+  write a file in a Linux guest from user mode and from kernel mode.
 
 ### Removed
 

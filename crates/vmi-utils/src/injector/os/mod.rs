@@ -6,6 +6,14 @@
 ))]
 mod windows;
 
+#[cfg(all(
+    feature = "arch-amd64",
+    feature = "os-linux",
+    feature = "bpm",
+    feature = "ptm"
+))]
+mod linux;
+
 use vmi_core::{Architecture, Va, VmiCore, VmiError, VmiOs, VmiState};
 
 use super::{ArchAdapter, CallBuilder};

@@ -8,8 +8,9 @@
 //!
 //! # Limitations
 //!
-//! The injector currently only supports Windows OS and AMD64 architecture.
-//! Injections into 32-bit processes are not currently supported.
+//! The injector supports Windows and Linux on the AMD64 architecture.
+//! Injections into 32-bit processes are not supported. On Linux, the injector
+//! needs `x64_sys_call`, which Linux has since 6.9 and the stable 6.8.12.
 //!
 //! # Image names
 //!
@@ -19,6 +20,8 @@
 //! - **Windows**: `nt` names the kernel. Another name, such as `kernel32`,
 //!   gets `.dll` unless it has a dot, and names an image of the current
 //!   process.
+//! - **Linux**: `kernel` names the kernel. Another name, such as `libc`, names
+//!   the library `libc.so` or `libc.so.<version>` of the current process.
 //!
 //! A string literal names an image by its file name, such as
 //! `inject!("ld-linux-x86-64.so.2"!_dl_debug_state())`.
@@ -285,16 +288,34 @@ where
 /// user mode, at `KiSystemServiceCopyEnd`. Such a thread runs at `PASSIVE_LEVEL`
 /// and holds no locks.
 ///
+/// On Linux, the injector hijacks the first thread at `x64_sys_call`, which
+/// runs every 64-bit syscall from user mode. Such a thread can sleep and holds
+/// no locks. The calls run with the credentials of its process. A page fault
+/// ends the recipe, since the kernel does not page its memory.
+///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 ///
 /// # Notes
 ///
-/// Normal kernel APCs stay enabled while the recipe runs. If the hijacked
-/// thread's process is suspended or terminated meanwhile, the thread can stop
-/// or end inside the recipe, and the injection does not finish.
+/// On Windows, normal kernel APCs stay enabled while the recipe runs. If the
+/// hijacked thread's process is suspended or terminated meanwhile, the thread
+/// can stop or end inside the recipe, and the injection does not finish.
 pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
 /// User-mode injector handler.
 ///
+/// On Linux, the injector watches `x64_sys_call` for a thread of the target
+/// process. It traps the instruction where that thread returns from its
+/// syscall and hijacks the thread there. The calls follow the System V ABI
+/// and leave the 128-byte red zone below the stack pointer alone. The writes
+/// to the stack respect the guest's page tables. A page fault on them goes to
+/// the guest, which maps or copies the page, and the step runs again.
+///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
+///
+/// # Notes
+///
+/// On Linux, the hijacked thread can hold a lock in its C library, such as
+/// the allocator's lock when the syscall comes from `malloc`. A recipe that
+/// calls a function that takes the same lock then waits forever.
 pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;

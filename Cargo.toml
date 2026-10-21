@@ -147,7 +147,10 @@ arch-amd64 = [
 driver-kdmp = ["vmi-driver-kdmp"]
 driver-xen = ["vmi-driver-xen"]
 driver-xen-core-dump = ["vmi-driver-xen-core-dump"]
-os-linux = ["vmi-os-linux"]
+os-linux = [
+    "vmi-os-linux",
+    "vmi-utils?/os-linux"
+]
 os-windows = [
     "vmi-os-windows",
     "vmi-utils?/os-windows"
@@ -196,6 +199,18 @@ name = "linux-process-list"
 path = "examples/linux-process-list.rs"
 doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-linux"]
+
+[[example]]
+name = "linux-recipe-kernel-writefile"
+path = "examples/linux-recipe-kernel-writefile.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-linux", "utils"]
+
+[[example]]
+name = "linux-recipe-writefile"
+path = "examples/linux-recipe-writefile.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-linux", "utils"]
 
 [[example]]
 name = "windows-breakpoint-manager"

@@ -30,6 +30,7 @@ isr-macros = { workspace = true }
 
 vmi-core = { workspace = true }
 vmi-arch-amd64 = { workspace = true, optional = true }
+vmi-os-linux = { workspace = true, optional = true }
 vmi-os-windows = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -40,6 +41,7 @@ vmi-driver-mock = { workspace = true, features = ["arch-amd64"] }
 default = []
 
 arch-amd64 = ["vmi-arch-amd64"]
+os-linux = ["vmi-os-linux"]
 os-windows = ["vmi-os-windows", "isr-cache/windows", "isr-dl-windows"]
 
 bpm = ["interceptor", "ptm"]
