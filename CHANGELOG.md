@@ -74,6 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PageTableEntry::supervisor` and `VaTranslation::supervisor`
   are renamed to `user`. Both return the U/S flag, which is set for user
   pages.
+- **Breaking:** the bounds of the kernel's export tables are required
+  symbols in `vmi-os-linux`. `LinuxOs::new` fails with a profile that lacks
+  them.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -138,9 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ELF header, the program headers, the dynamic section and the load bias. Its
   types and the ELF constants that the crate uses are public in
   `vmi_os_linux::elf`. For a kernel module, the exports come from
-  `module.syms` and `module.gpl_syms`. The kernel's own exports need the
-  bounds of its export tables, which the profiles that isr builds lack, and
-  give `VmiError::NotSupported`.
+  `module.syms` and `module.gpl_syms`, and for the kernel from its export
+  tables `__ksymtab` and `__ksymtab_gpl`.
 - `LinuxProcess::user_modules` and `lookup_user_module` find a process's
   images from its regions. An image is a file that the process maps from page
   offset 0 and also maps executable, or the vDSO. `LinuxUserModule` gives the
@@ -161,6 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the write fails with `VmiError::PageFault` and leaves the memory unchanged.
 - `PageFaultErrorCode` holds the bits of the AMD64 page-fault error code.
 - `PageTableEntry::execute_disable` reads the XD flag.
+- `Symbols::x64_sys_call`, and the fields `ip` and `sp` of `pt_regs`, in
+  `vmi-os-linux`.
 
 ### Removed
 

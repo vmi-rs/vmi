@@ -139,26 +139,22 @@ where
 
     /// Returns the exports of the kernel, from its export tables.
     ///
-    /// Gives `VmiError::NotSupported` when the profile lacks the bounds of
-    /// the tables, as the profiles that isr builds today do.
-    ///
     /// # Implementation Details
     ///
     /// Corresponds to the entries from `__start___ksymtab` to
     /// `__stop___ksymtab`, and from `__start___ksymtab_gpl` to
     /// `__stop___ksymtab_gpl`.
     fn kernel_exports(&self) -> Result<Vec<VmiOsImageSymbol>, VmiError> {
-        let tables = match (
-            symbol!(self.vmi, __start___ksymtab),
-            symbol!(self.vmi, __stop___ksymtab),
-            symbol!(self.vmi, __start___ksymtab_gpl),
-            symbol!(self.vmi, __stop___ksymtab_gpl),
-        ) {
-            (Some(start), Some(stop), Some(start_gpl), Some(stop_gpl)) => {
-                [(start, stop), (start_gpl, stop_gpl)]
-            }
-            _ => return Err(VmiError::NotSupported),
-        };
+        let tables = [
+            (
+                symbol!(self.vmi, __start___ksymtab),
+                symbol!(self.vmi, __stop___ksymtab),
+            ),
+            (
+                symbol!(self.vmi, __start___ksymtab_gpl),
+                symbol!(self.vmi, __stop___ksymtab_gpl),
+            ),
+        ];
 
         let mut exports = Vec::new();
 

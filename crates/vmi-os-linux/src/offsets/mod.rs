@@ -30,17 +30,14 @@ symbols! {
         linux_banner: u64,              // const char[]
         modules: u64,                   // struct list_head
         boot_cpu_data: u64,             // struct cpuinfo_x86
+        __start___ksymtab: u64,         // struct kernel_symbol[]
+        __stop___ksymtab: u64,
+        __start___ksymtab_gpl: u64,     // struct kernel_symbol[]
+        __stop___ksymtab_gpl: u64,
 
         current_task: Option<u64>,      // per-CPU struct task_struct*, Linux 6.15 and later
         pcpu_hot: Option<u64>,          // per-CPU struct pcpu_hot, Linux 6.2 to 6.14
-
-        // Bounds of the kernel's export tables. They are read-only data (`R` in
-        // `System.map`). isr keeps only `d`, `D`, `t` and `T` symbols, and the
-        // profiles that it builds today lack them.
-        __start___ksymtab: Option<u64>,     // struct kernel_symbol[]
-        __stop___ksymtab: Option<u64>,
-        __start___ksymtab_gpl: Option<u64>, // struct kernel_symbol[]
-        __stop___ksymtab_gpl: Option<u64>,
+        x64_sys_call: Option<u64>,      // Linux 6.9 and later, and the stable 6.8.12
     }
 }
 
@@ -168,6 +165,8 @@ offsets! {
             r10: Field,                 // unsigned long
             r8: Field,                  // unsigned long
             r9: Field,                  // unsigned long
+            ip: Field,                  // unsigned long
+            sp: Field,                  // unsigned long
         }
 
         // Linux 6.2 to 6.14.

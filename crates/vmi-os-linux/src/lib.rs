@@ -24,14 +24,10 @@
 //! - Memory regions with the paths of mapped files, and the images among them
 //! - User-mode modules: the executable, the shared objects and the vDSO
 //! - ELF headers of images in user space, with the types in the `elf` module
-//! - Exports of ELF images and kernel modules
+//! - Exports of ELF images, kernel modules and the kernel
 //! - Kernel modules
 //! - Syscall and function arguments and the return value
 //! - glibc's `errno` in the current thread as the last error
-//!
-//! The kernel's own exports need the bounds of its export tables, which the
-//! profiles that isr builds today lack. Their `exports` returns
-//! `VmiError::NotSupported` until then.
 //!
 //! The `vmi` crate's example `linux-process-list` lists the processes,
 //! threads, memory regions, user-mode modules and kernel modules of a guest.
