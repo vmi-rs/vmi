@@ -543,11 +543,9 @@ where
 
             // Follow the chain: RUNTIME_FUNCTION is after the unwind codes.
             let chain_rva = unwind_rva + header.codes_end_offset();
+            let parent = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(chain_rva)?;
 
-            let mut chain_buf = [0u8; 12];
-            image.read_at_rva(chain_rva, &mut chain_buf)?;
-
-            unwind_rva = u32::from_le_bytes(chain_buf[8..12].try_into().unwrap());
+            unwind_rva = parent.unwind_info_address_or_data;
             is_first = false;
             chain_count += 1;
 
