@@ -80,7 +80,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{
     Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiState,
     driver::VmiRead,
-    os::{ProcessObject, ThreadObject, VmiOs, VmiOsProcessExt as _, VmiOsUserModule as _},
+    os::{ProcessObject, ThreadObject, VmiOs, VmiOsProcess as _},
 };
 use vmi_macros::derive_trait_from_impl;
 
@@ -95,7 +95,6 @@ pub use self::comps::{
 
 pub mod elf;
 pub use self::elf::ElfImage;
-use self::elf::GuestElfReader;
 
 mod error;
 pub use self::error::LinuxError;
@@ -696,13 +695,19 @@ where
     ///
     /// # Implementation Details
     ///
-    /// glibc keeps `errno` as an initial-exec TLS variable in `libc.so.6`.
-    /// Its address is the thread pointer plus the offset that ld.so writes
-    /// into libc's slot for the `R_X86_64_TPOFF64` relocation of `errno`.
+    /// glibc keeps `errno` as an initial-exec TLS variable in its C library,
+    /// the module whose `DT_SONAME` is `libc.so.6`, even when the file has a
+    /// versioned name, as before glibc 2.34 (`libc-2.31.so`). The variable's
+    /// address is the thread pointer plus the offset that ld.so writes into
+    /// libc's slot for the `R_X86_64_TPOFF64` relocation of `errno`.
     /// Returns `None` for a kernel thread, for a thread without a thread
     /// pointer, and for a process without `libc.so.6` and its `errno`, such
     /// as a static or a musl program.
     fn last_error(vmi: VmiState<Self>) -> Result<Option<u32>, VmiError> {
+        /// The `DT_SONAME` of glibc's C library, from `libc=6` in glibc's
+        /// `sysdeps/unix/sysv/linux/shlib-versions`.
+        const LIBC_SONAME: &str = "libc.so.6";
+
         let process = vmi.os().current_process()?;
         if process.mm()?.is_none() {
             return Ok(None);
@@ -713,15 +718,16 @@ where
             return Ok(None);
         }
 
-        let libc = match process.find_user_module("libc.so.6")? {
-            Some(libc) => libc,
-            None => return Ok(None),
-        };
+        let mut slot = None;
+        for module in process.user_modules()? {
+            let module = module?;
+            if module.soname()?.as_deref() == Some(LIBC_SONAME) {
+                slot = module.tls_offset_slot("errno")?;
+                break;
+            }
+        }
 
-        let reader = GuestElfReader::new(vmi, None);
-        let image = ElfImage::parse(&reader, libc.base_address()?)?;
-
-        let slot = match image.tls_offset_slot(&reader, "errno")? {
+        let slot = match slot {
             Some(slot) => slot,
             None => return Ok(None),
         };

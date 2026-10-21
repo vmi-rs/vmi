@@ -8,7 +8,7 @@ use vmi_core::{
 use super::LinuxRegion;
 use crate::{
     ArchAdapter, LinuxError, LinuxOs,
-    elf::{ElfImage, GuestElfReader},
+    elf::{self, ElfImage, GuestElfReader},
 };
 
 /// A Linux user-mode module: an executable, a shared object or the vDSO
@@ -87,9 +87,39 @@ where
         })
     }
 
+    /// Returns the object's name from its dynamic section (`DT_SONAME`), if
+    /// it has one.
+    ///
+    /// Programs name a library by this name, which stays the same when the
+    /// file name changes. glibc 2.33 and older install the C library as a
+    /// file such as `libc-2.33.so`, under the name `libc.so.6`. The vDSO's
+    /// name is `linux-vdso.so.1`, and an executable usually has none. A
+    /// module whose file is not an ELF image has none either.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the string at `DT_SONAME` in the string table that
+    /// `DT_STRTAB` points to. The dynamic section and the string table lie in
+    /// user memory, whose pages can be absent.
+    pub fn soname(&self) -> Result<Option<String>, VmiError> {
+        let reader = self.reader();
+        if !elf::is_elf(&reader, self.region().start()?)? {
+            return Ok(None);
+        }
+
+        self.elf()?.soname(&reader)
+    }
+
     /// Returns a reader of the process's address space.
     fn reader(&self) -> GuestElfReader<'a, Driver> {
         GuestElfReader::new(self.vmi, Some(self.root))
+    }
+
+    /// Returns the address of the slot into which ld.so writes a TLS
+    /// variable's offset from the thread pointer, for a variable that the
+    /// module defines.
+    pub(crate) fn tls_offset_slot(&self, name: &str) -> Result<Option<Va>, VmiError> {
+        self.elf()?.tls_offset_slot(&self.reader(), name)
     }
 }
 

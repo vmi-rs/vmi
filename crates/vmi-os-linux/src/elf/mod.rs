@@ -117,6 +117,13 @@ pub(crate) fn architecture(
     }
 }
 
+/// Checks if the bytes at a base address start with the ELF magic number.
+pub(crate) fn is_elf(reader: &impl ElfReader, base: Va) -> Result<bool, VmiError> {
+    let mut magic = [0; ELFMAG.len()];
+    reader.read(base, &mut magic)?;
+    Ok(magic == ELFMAG)
+}
+
 /// Reads the ELF header at a base address and checks its magic number.
 fn read_header(reader: &impl ElfReader, base: Va) -> Result<FileHeader64, VmiError> {
     let mut buffer = [0; size_of::<FileHeader64>()];
@@ -505,15 +512,21 @@ impl ElfImage {
     }
 
     /// Returns the number of symbols in the symbol table, from a hash table.
+    ///
+    /// When an image has both tables, ld.so looks symbols up only through the
+    /// GNU one. The SysV table's page can then be absent from the process's
+    /// page tables, as in glibc 2.31's libc.
     fn symbol_count(&self, reader: &impl ElfReader) -> Result<usize, VmiError> {
-        // The SysV hash table holds the count as `nchain`.
-        if let Some(hash) = self.dynamic.hash {
-            let count = read_u32(reader, hash + 4)?;
-            return checked_size(u64::from(count), SYMBOLS_MAX, "ELF symbol count");
+        if let Some(gnu_hash) = self.dynamic.gnu_hash {
+            return self.gnu_hash_count(reader, gnu_hash);
         }
 
-        match self.dynamic.gnu_hash {
-            Some(gnu_hash) => self.gnu_hash_count(reader, gnu_hash),
+        // The SysV hash table holds the count as `nchain`.
+        match self.dynamic.hash {
+            Some(hash) => {
+                let count = read_u32(reader, hash + 4)?;
+                checked_size(u64::from(count), SYMBOLS_MAX, "ELF symbol count")
+            }
             None => Err(LinuxError::CorruptedImage("ELF hash table").into()),
         }
     }
@@ -739,6 +752,8 @@ impl ElfImage {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
+
     use zerocopy::IntoBytes as _;
 
     use super::*;
@@ -762,6 +777,9 @@ mod tests {
 
         /// The bytes.
         bytes: Vec<u8>,
+
+        /// Offsets whose page is absent, which reads cannot reach.
+        absent: Range<u64>,
     }
 
     impl Memory {
@@ -774,7 +792,12 @@ mod tests {
 
     impl ElfReader for Memory {
         fn read(&self, va: Va, buffer: &mut [u8]) -> Result<(), VmiError> {
-            let start = va.0.wrapping_sub(self.base) as usize;
+            let offset = va.0.wrapping_sub(self.base);
+            if offset < self.absent.end && self.absent.start < offset + buffer.len() as u64 {
+                return Err(VmiError::Other("absent page"));
+            }
+
+            let start = offset as usize;
 
             match self.bytes.get(start..start.saturating_add(buffer.len())) {
                 Some(bytes) => {
@@ -799,7 +822,10 @@ mod tests {
         /// Whether the dynamic segment is writable.
         writable: bool,
 
-        /// Whether the image has a SysV hash table instead of a GNU one.
+        /// Whether the image has a GNU hash table.
+        gnu_hash: bool,
+
+        /// Whether the image has a SysV hash table.
         sysv_hash: bool,
 
         /// Whether the TPOFF relocation names `errno` instead of symbol 0.
@@ -813,6 +839,7 @@ mod tests {
                 machine: EM_X86_64,
                 relocated: true,
                 writable: true,
+                gnu_hash: true,
                 sysv_hash: false,
                 tpoff_names_symbol: false,
             }
@@ -881,6 +908,7 @@ mod tests {
         let mut memory = Memory {
             base: BASE,
             bytes: vec![0; 0x3000],
+            absent: 0..0,
         };
 
         let pointer = |offset: u64| {
@@ -1021,14 +1049,14 @@ mod tests {
             memory.write(RELA + index as u64 * 24, relocation.as_bytes());
         }
 
-        let hash = if layout.sysv_hash {
-            (DT_HASH, pointer(HASH))
+        let mut entries = Vec::new();
+        if layout.gnu_hash {
+            entries.push((DT_GNU_HASH, pointer(GNU_HASH)));
         }
-        else {
-            (DT_GNU_HASH, pointer(GNU_HASH))
-        };
-        let entries = [
-            hash,
+        if layout.sysv_hash {
+            entries.push((DT_HASH, pointer(HASH)));
+        }
+        entries.extend([
             (DT_SYMTAB, pointer(SYMTAB)),
             (DT_STRTAB, pointer(STRTAB)),
             (DT_STRSZ, strings.len() as u64),
@@ -1039,7 +1067,7 @@ mod tests {
             (DT_RELASZ, 2 * 24),
             (DT_RELAENT, 24),
             (DT_NULL, 0),
-        ];
+        ]);
         for (index, (tag, value)) in entries.iter().enumerate() {
             let entry = Dyn64 {
                 d_tag: *tag,
@@ -1095,9 +1123,24 @@ mod tests {
         let memory = image(Layout {
             relocated: false,
             writable: false,
+            gnu_hash: false,
             sysv_hash: true,
             ..Layout::default()
         });
+
+        assert_eq!(exports(&memory)?, expected_exports());
+        Ok(())
+    }
+
+    #[test]
+    fn gnu_hash_table_comes_before_the_sysv_one() -> Result<(), VmiError> {
+        // With both tables, ld.so reads only the GNU one, and the page of the
+        // SysV table can be absent.
+        let mut memory = image(Layout {
+            sysv_hash: true,
+            ..Layout::default()
+        });
+        memory.absent = HASH..HASH + 8;
 
         assert_eq!(exports(&memory)?, expected_exports());
         Ok(())

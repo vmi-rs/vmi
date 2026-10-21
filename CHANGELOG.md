@@ -123,11 +123,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images from its regions. An image is a file that the process maps from page
   offset 0 and also maps executable, or the vDSO. `LinuxUserModule` gives the
   base, the span of the program headers as size, and the file name or the
-  vDSO's `DT_SONAME` as name. `LinuxRegion::kind` reports `MappedImage` for
+  vDSO's `DT_SONAME` as name. `LinuxUserModule::soname` reads the
+  `DT_SONAME` of any module. `LinuxRegion::kind` reports `MappedImage` for
   every region of such a file.
 - `LinuxOs::last_error` reads glibc's `errno` in the current thread. The FS
   base and the offset in libc's `R_X86_64_TPOFF64` slot for `errno` give its
-  address.
+  address. The C library is the module whose `DT_SONAME` is `libc.so.6`. That
+  also covers glibc 2.33 and older, which install it under a versioned file
+  name such as `libc-2.31.so`.
 - The `linux-process-list` example takes `--user-modules`, `--kinds`,
   `--exports` and `--module-exports`.
 
