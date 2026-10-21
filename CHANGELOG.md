@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VmiXenBusyWait` and `VmiXenDriver::with_busy_wait` choose how the Xen
   driver waits for the next request, `Off` or `Adaptive` with its own start
   and maximum time.
+- The methods of `IdtAccess` are public: `ist_index`, `typ`,
+  `descriptor_type`, `descriptor_privilege_level` and `present`.
 
 ### Removed
 
