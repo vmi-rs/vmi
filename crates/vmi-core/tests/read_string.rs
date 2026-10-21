@@ -84,6 +84,26 @@ fn utf16_string_across_three_pages_keeps_every_unit() -> Result<(), VmiError> {
 }
 
 #[test]
+fn utf16_string_at_an_odd_address_keeps_every_unit() -> Result<(), VmiError> {
+    // 15 bytes end page 1, and unit 7 spans the two pages. Bytes of 0xff
+    // follow the terminator in page 2.
+    let start = 2 * PAGE_SIZE - 15;
+    let units: Vec<u16> = (0..40).map(unit).collect();
+    let bytes = [
+        utf16_bytes(&[units.as_slice(), &[0]].concat()),
+        vec![0xff; 64],
+    ]
+    .concat();
+    let core = core_with(1..3, start, &bytes)?;
+
+    assert_eq!(
+        core.read_string_utf16_bytes_limited(Pa(start), usize::MAX)?,
+        units
+    );
+    Ok(())
+}
+
+#[test]
 fn utf16_limit_within_the_first_page_reads_no_further() -> Result<(), VmiError> {
     // 128 units without a terminator end page 1, and page 2 is absent. The
     // limit counts bytes.

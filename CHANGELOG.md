@@ -185,6 +185,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read so far, which skipped bytes in a string that spans more than two
   pages. A limit that the first page already met still read the next page,
   which failed when that page was absent.
+- `VmiCore::read_string_utf16_bytes_limited` counts code units from the
+  start of the string. Before, it counted them from the start of each page
+  after the first. For a string at an odd address, it could stop one byte
+  early and drop the last unit, or miss the terminator and read past it.
 
 ## [0.11.0] - 2026-10-09
 

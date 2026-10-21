@@ -544,17 +544,22 @@ where
         while buffer.len() < limit {
             self.read(ctx, &mut page)?;
 
-            let (chunks, _) = page.as_chunks::<2>();
+            // Code units count from the start of the string. When it starts
+            // at an odd address, a unit spans each page boundary, and the
+            // search starts at the previous page's last byte.
+            let checked = buffer.len() & !1;
+            buffer.extend_from_slice(&page);
+
+            let (chunks, _) = buffer[checked..].as_chunks::<2>();
             let position = chunks
                 .iter()
                 .position(|chunk| chunk[0] == 0 && chunk[1] == 0);
 
             if let Some(position) = position {
-                buffer.extend_from_slice(&page[..position * 2]);
+                buffer.truncate(checked + position * 2);
                 break;
             }
 
-            buffer.extend_from_slice(&page);
             ctx.address += page.len() as u64;
         }
 
