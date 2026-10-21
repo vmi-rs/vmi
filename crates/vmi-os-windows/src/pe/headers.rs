@@ -1,9 +1,9 @@
 //! On-disk PE header layouts.
 //!
-//! Mirrors the relevant `IMAGE_*` types from `object::pe` as
-//! `#[repr(C, packed)]` zerocopy structs and re-exports the PE constants.
-//! This is the only module in the crate that imports from the `object`
-//! crate. Everything else goes through [`crate::pe`].
+//! Mirrors the relevant `IMAGE_*` types from `object::pe` with
+//! `#[object_mirror]` and re-exports the PE constants. This is the only
+//! module in the crate that imports from the `object` crate. Everything else
+//! goes through [`crate::pe`].
 
 use object::ReadRef as _;
 pub use object::{
@@ -21,386 +21,81 @@ pub use object::{
     // Intentional re-export: `Export`, `ExportTable` and `ExportTarget` are good as they are.
     read::pe::{Export, ExportTable, ExportTarget},
 };
+use vmi_macros::object_mirror;
 
 /// CodeView debug directory type.
 pub const IMAGE_DEBUG_TYPE_CODEVIEW: u32 = ::object::pe::IMAGE_DEBUG_TYPE_CODEVIEW.0;
 
 use super::error::PeError;
 
-/// Reads an `object`-crate struct field as a native scalar.
+/// MS-DOS executable header at the start of every PE file.
 ///
-/// `impl_struct!` calls `to_endian(LE)` on every source field. The trait
-/// covers both `object`'s endian wrappers (`U16<E, T>`, `U32<E, T>`, `U64<E, T>`,
-/// and arrays of those) and the raw types `object` stores natively because
-/// no `U8<E>` wrapper exists (`u8` and byte arrays).
-trait ToEndian<E>
-where
-    E: ::object::Endian,
-{
-    /// Native counterpart of `Self`.
-    type Output;
-
-    /// Returns `self` decoded with `endian`.
-    fn to_endian(&self, endian: E) -> Self::Output;
-}
-
-impl<E, T> ToEndian<E> for ::object::U16<E, T>
-where
-    E: ::object::Endian,
-    T: ::object::Wrap<Inner = u16> + Copy,
-{
-    type Output = u16;
-
-    fn to_endian(&self, endian: E) -> Self::Output {
-        (*self).get(endian).into_inner()
-    }
-}
-
-impl<E, T> ToEndian<E> for ::object::U32<E, T>
-where
-    E: ::object::Endian,
-    T: ::object::Wrap<Inner = u32> + Copy,
-{
-    type Output = u32;
-
-    fn to_endian(&self, endian: E) -> Self::Output {
-        (*self).get(endian).into_inner()
-    }
-}
-
-impl<E, T> ToEndian<E> for ::object::U64<E, T>
-where
-    E: ::object::Endian,
-    T: ::object::Wrap<Inner = u64> + Copy,
-{
-    type Output = u64;
-
-    fn to_endian(&self, endian: E) -> Self::Output {
-        (*self).get(endian).into_inner()
-    }
-}
-
-impl<E: ::object::Endian> ToEndian<E> for u8 {
-    type Output = u8;
-
-    fn to_endian(&self, _endian: E) -> Self::Output {
-        *self
-    }
-}
-
-impl<E: ::object::Endian, const N: usize> ToEndian<E> for [u8; N] {
-    type Output = [u8; N];
-
-    fn to_endian(&self, _endian: E) -> Self::Output {
-        *self
-    }
-}
-
-impl<E: ::object::Endian, const N: usize> ToEndian<E> for [::object::U16<E>; N] {
-    type Output = [u16; N];
-
-    fn to_endian(&self, endian: E) -> Self::Output {
-        std::array::from_fn(|i| self[i].get(endian))
-    }
-}
-
-/// Defines a `#[repr(C, packed)]` PE struct that mirrors an `object`-crate
-/// type and verifies the layout match at compile time.
+/// Of the original DOS layout, only `e_magic` (must be `MZ`) and
+/// `e_lfanew` (file offset of the NT headers) are used by the PE loader.
+/// The rest is preserved for compatibility with the legacy format.
 ///
-/// Each invocation expands to:
+/// # Implementation Details
 ///
-/// - A struct with the requested fields, `#[repr(C, packed)]`, and the
-///   `zerocopy` derives needed for byte-level reads.
-/// - `impl From<SourceType> for $name` that decodes every field through
-///   [`ToEndian`].
-/// - Static asserts that `$name` and `SourceType` agree on size,
-///   alignment, and the offset of every field.
-///
-/// `#[from(SourceType)]` is required and must appear once. `#[derive(...)]`
-/// blocks are merged with the macro's own derives. Any other attributes
-/// pass through to the generated struct.
-///
-/// # Usage
-///
-/// ```ignore
-/// impl_struct! {
-///     /// Field descriptor for an export entry.
-///     #[derive(Debug, Clone, Copy)]
-///     #[from(::object::pe::ImageDataDirectory)]
-///     pub struct ImageDataDirectory {
-///         pub virtual_address: u32,
-///         pub size: u32,
-///     }
-/// }
-/// ```
-macro_rules! impl_struct {
-    //
-    // @parse - tokenize the attribute list before the struct body.
-    //
-    // Each arm matches one leading `#[...]`, appends it to the matching
-    // accumulator, and recurses with the rest. Specialized arms come
-    // before the catch-all so that `#[from]`, `#[doc]`, and `#[derive]`
-    // are recognized rather than forwarded blindly.
-    //
+/// Corresponds to `_IMAGE_DOS_HEADER`.
+#[object_mirror(::object::pe::ImageDosHeader)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageDosHeader {
+    /// DOS magic, must be `MZ` (`0x5A4D`).
+    pub e_magic: u16,
 
-    // Capture `#[from(SourceType)]`. Allowed once.
-    (@parse
-        from   = []
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [#[from($from:ty)] $($rest:tt)*]
-    ) => {
-        impl_struct!(@parse
-            from   = [$from]
-            doc    = [$($doc)*]
-            derive = [$($derive)*]
-            attrs  = [$($attrs)*]
-            rest   = [$($rest)*]
-        );
-    };
+    /// Bytes on the last page of the file.
+    pub e_cblp: u16,
 
-    // Reject a duplicate `#[from(...)]`.
-    (@parse
-        from   = [$_first:ty]
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [#[from($_dup:ty)] $($rest:tt)*]
-    ) => {
-        compile_error!("impl_struct!: duplicate `#[from(...)]` attribute");
-    };
+    /// Pages in the file.
+    pub e_cp: u16,
 
-    // Append a doc comment.
-    (@parse
-        from   = [$($from:tt)*]
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [#[doc = $d:literal] $($rest:tt)*]
-    ) => {
-        impl_struct!(@parse
-            from   = [$($from)*]
-            doc    = [$($doc)* #[doc = $d]]
-            derive = [$($derive)*]
-            attrs  = [$($attrs)*]
-            rest   = [$($rest)*]
-        );
-    };
+    /// Relocation count.
+    pub e_crlc: u16,
 
-    // Merge a `#[derive(...)]` block into the running derive list.
-    (@parse
-        from   = [$($from:tt)*]
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [#[derive($($d:path),* $(,)?)] $($rest:tt)*]
-    ) => {
-        impl_struct!(@parse
-            from   = [$($from)*]
-            doc    = [$($doc)*]
-            derive = [$($derive)* $($d,)*]
-            attrs  = [$($attrs)*]
-            rest   = [$($rest)*]
-        );
-    };
+    /// Header size in 16-byte paragraphs.
+    pub e_cparhdr: u16,
 
-    // Forward any other `#[...]` to the generated struct verbatim.
-    (@parse
-        from   = [$($from:tt)*]
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [#[$attr:meta] $($rest:tt)*]
-    ) => {
-        impl_struct!(@parse
-            from   = [$($from)*]
-            doc    = [$($doc)*]
-            derive = [$($derive)*]
-            attrs  = [$($attrs)* #[$attr]]
-            rest   = [$($rest)*]
-        );
-    };
+    /// Minimum extra paragraphs needed.
+    pub e_minalloc: u16,
 
-    //
-    // @parse - terminal arms.
-    //
-    // Hit when `rest` consists of just `pub struct ...`. The first emits
-    // the struct, the `From` impl, and the layout asserts. The second
-    // errors out if `#[from(...)]` was never supplied.
-    //
+    /// Maximum extra paragraphs needed.
+    pub e_maxalloc: u16,
 
-    (@parse
-        from   = [$from_ty:ty]
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [
-            $vis:vis struct $name:ident {
-                $(
-                    $(#[$field_attr:meta])*
-                    $field_vis:vis $field:ident : $field_ty:ty
-                ),* $(,)?
-            }
-        ]
-    ) => {
-        $($doc)*
-        #[derive(
-            $($derive)*
-            ::zerocopy::FromBytes,
-            ::zerocopy::IntoBytes,
-            ::zerocopy::Immutable,
-            ::zerocopy::KnownLayout,
-        )]
-        #[repr(C, packed)]
-        $($attrs)*
-        $vis struct $name {
-            $(
-                $(#[$field_attr])*
-                $field_vis $field: $field_ty,
-            )*
-        }
+    /// Initial relative SS value.
+    pub e_ss: u16,
 
-        impl ::core::convert::From<$from_ty> for $name {
-            fn from(value: $from_ty) -> Self {
-                Self {
-                    $(
-                        $field: value.$field.to_endian(::object::LittleEndian),
-                    )*
-                }
-            }
-        }
+    /// Initial SP value.
+    pub e_sp: u16,
 
-        const _: () = {
-            use ::core::mem::{align_of, size_of};
+    /// Header checksum.
+    pub e_csum: u16,
 
-            assert!(
-                size_of::<$name>() == size_of::<$from_ty>(),
-                concat!(stringify!($name), " size mismatch"),
-            );
+    /// Initial IP value.
+    pub e_ip: u16,
 
-            assert!(
-                align_of::<$name>() == align_of::<$from_ty>(),
-                concat!(stringify!($name), " alignment mismatch"),
-            );
-        };
+    /// Initial relative CS value.
+    pub e_cs: u16,
 
-        $(
-            const _: () = {
-                use ::core::mem::offset_of;
+    /// File offset of the relocation table.
+    pub e_lfarlc: u16,
 
-                assert!(
-                    offset_of!($name, $field) == offset_of!($from_ty, $field),
-                    concat!(stringify!($name), " field offset mismatch: ", stringify!($field)),
-                );
-            };
-        )*
-    };
+    /// Overlay number.
+    pub e_ovno: u16,
 
-    (@parse
-        from   = []
-        doc    = [$($doc:tt)*]
-        derive = [$($derive:tt)*]
-        attrs  = [$($attrs:tt)*]
-        rest   = [$vis:vis struct $name:ident { $($body:tt)* }]
-    ) => {
-        compile_error!(concat!(
-            "impl_struct!: missing `#[from(SourceType)]` attribute on `",
-            stringify!($name),
-            "`",
-        ));
-    };
+    /// Reserved words.
+    pub e_res: [u16; 4],
 
-    //
-    // Entry arm.
-    //
-    // Placed last so any recursive call starting with `@parse` matches one
-    // of the arms above instead of falling through here. Seeds the muncher
-    // with empty accumulators so the user-facing call doesn't thread any
-    // bookkeeping arguments.
-    //
+    /// OEM identifier qualifying `e_oeminfo`.
+    pub e_oemid: u16,
 
-    ($($input:tt)*) => {
-        impl_struct!(@parse
-            from   = []
-            doc    = []
-            derive = []
-            attrs  = []
-            rest   = [$($input)*]
-        );
-    };
-}
+    /// OEM information specific to `e_oemid`.
+    pub e_oeminfo: u16,
 
-impl_struct! {
-    /// MS-DOS executable header at the start of every PE file.
-    ///
-    /// Of the original DOS layout, only `e_magic` (must be `MZ`) and
-    /// `e_lfanew` (file offset of the NT headers) are used by the PE loader.
-    /// The rest is preserved for compatibility with the legacy format.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_DOS_HEADER`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageDosHeader)]
-    pub struct ImageDosHeader {
-        /// DOS magic, must be `MZ` (`0x5A4D`).
-        pub e_magic: u16,
+    /// Reserved words.
+    pub e_res2: [u16; 10],
 
-        /// Bytes on the last page of the file.
-        pub e_cblp: u16,
-
-        /// Pages in the file.
-        pub e_cp: u16,
-
-        /// Relocation count.
-        pub e_crlc: u16,
-
-        /// Header size in 16-byte paragraphs.
-        pub e_cparhdr: u16,
-
-        /// Minimum extra paragraphs needed.
-        pub e_minalloc: u16,
-
-        /// Maximum extra paragraphs needed.
-        pub e_maxalloc: u16,
-
-        /// Initial relative SS value.
-        pub e_ss: u16,
-
-        /// Initial SP value.
-        pub e_sp: u16,
-
-        /// Header checksum.
-        pub e_csum: u16,
-
-        /// Initial IP value.
-        pub e_ip: u16,
-
-        /// Initial relative CS value.
-        pub e_cs: u16,
-
-        /// File offset of the relocation table.
-        pub e_lfarlc: u16,
-
-        /// Overlay number.
-        pub e_ovno: u16,
-
-        /// Reserved words.
-        pub e_res: [u16; 4],
-
-        /// OEM identifier qualifying `e_oeminfo`.
-        pub e_oemid: u16,
-
-        /// OEM information specific to `e_oemid`.
-        pub e_oeminfo: u16,
-
-        /// Reserved words.
-        pub e_res2: [u16; 10],
-
-        /// File offset of the NT headers.
-        pub e_lfanew: u32,
-    }
+    /// File offset of the NT headers.
+    pub e_lfanew: u32,
 }
 
 impl ImageDosHeader {
@@ -505,243 +200,237 @@ impl From<::object::pe::ImageNtHeaders64> for ImageNtHeaders {
     }
 }
 
-impl_struct! {
-    /// COFF file header that follows the PE signature in [`ImageNtHeaders`].
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_FILE_HEADER`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageFileHeader)]
-    pub struct ImageFileHeader {
-        /// Target machine architecture, `IMAGE_FILE_MACHINE_*`.
-        pub machine: u16,
+/// COFF file header that follows the PE signature in [`ImageNtHeaders`].
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_FILE_HEADER`.
+#[object_mirror(::object::pe::ImageFileHeader)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageFileHeader {
+    /// Target machine architecture, `IMAGE_FILE_MACHINE_*`.
+    pub machine: u16,
 
-        /// Number of entries in the section table.
-        pub number_of_sections: u16,
+    /// Number of entries in the section table.
+    pub number_of_sections: u16,
 
-        /// Build timestamp, in Unix epoch seconds.
-        pub time_date_stamp: u32,
+    /// Build timestamp, in Unix epoch seconds.
+    pub time_date_stamp: u32,
 
-        /// File offset of the COFF symbol table. Deprecated, zero in modern images.
-        pub pointer_to_symbol_table: u32,
+    /// File offset of the COFF symbol table. Deprecated, zero in modern images.
+    pub pointer_to_symbol_table: u32,
 
-        /// Symbol table entry count. Deprecated, zero in modern images.
-        pub number_of_symbols: u32,
+    /// Symbol table entry count. Deprecated, zero in modern images.
+    pub number_of_symbols: u32,
 
-        /// Size in bytes of the optional header that follows.
-        pub size_of_optional_header: u16,
+    /// Size in bytes of the optional header that follows.
+    pub size_of_optional_header: u16,
 
-        /// `IMAGE_FILE_*` characteristic flags.
-        pub characteristics: u16,
-    }
+    /// `IMAGE_FILE_*` characteristic flags.
+    pub characteristics: u16,
 }
 
-impl_struct! {
-    /// PE32 optional header for 32-bit images.
-    ///
-    /// Layout differs from [`ImageOptionalHeader64`] in `image_base` and the
-    /// stack/heap size fields, which are 32-bit here, and in the presence
-    /// of `base_of_data`.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_OPTIONAL_HEADER`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageOptionalHeader32)]
-    pub struct ImageOptionalHeader32 {
-        /// PE32 magic, `0x10b`.
-        pub magic: u16,
+/// PE32 optional header for 32-bit images.
+///
+/// Layout differs from [`ImageOptionalHeader64`] in `image_base` and the
+/// stack/heap size fields, which are 32-bit here, and in the presence
+/// of `base_of_data`.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_OPTIONAL_HEADER`.
+#[object_mirror(::object::pe::ImageOptionalHeader32)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageOptionalHeader32 {
+    /// PE32 magic, `0x10b`.
+    pub magic: u16,
 
-        /// Linker version, major part.
-        pub major_linker_version: u8,
+    /// Linker version, major part.
+    pub major_linker_version: u8,
 
-        /// Linker version, minor part.
-        pub minor_linker_version: u8,
+    /// Linker version, minor part.
+    pub minor_linker_version: u8,
 
-        /// Combined size of all code sections, in bytes.
-        pub size_of_code: u32,
+    /// Combined size of all code sections, in bytes.
+    pub size_of_code: u32,
 
-        /// Combined size of all initialized data sections, in bytes.
-        pub size_of_initialized_data: u32,
+    /// Combined size of all initialized data sections, in bytes.
+    pub size_of_initialized_data: u32,
 
-        /// Combined size of all uninitialized data sections, in bytes.
-        pub size_of_uninitialized_data: u32,
+    /// Combined size of all uninitialized data sections, in bytes.
+    pub size_of_uninitialized_data: u32,
 
-        /// RVA of the entry point.
-        pub address_of_entry_point: u32,
+    /// RVA of the entry point.
+    pub address_of_entry_point: u32,
 
-        /// RVA of the start of the code section.
-        pub base_of_code: u32,
+    /// RVA of the start of the code section.
+    pub base_of_code: u32,
 
-        /// RVA of the start of the data section.
-        pub base_of_data: u32,
+    /// RVA of the start of the data section.
+    pub base_of_data: u32,
 
-        /// Preferred load address.
-        pub image_base: u32,
+    /// Preferred load address.
+    pub image_base: u32,
 
-        /// Section alignment when loaded into memory, in bytes.
-        pub section_alignment: u32,
+    /// Section alignment when loaded into memory, in bytes.
+    pub section_alignment: u32,
 
-        /// Section alignment within the file, in bytes.
-        pub file_alignment: u32,
+    /// Section alignment within the file, in bytes.
+    pub file_alignment: u32,
 
-        /// Required OS version, major part.
-        pub major_operating_system_version: u16,
+    /// Required OS version, major part.
+    pub major_operating_system_version: u16,
 
-        /// Required OS version, minor part.
-        pub minor_operating_system_version: u16,
+    /// Required OS version, minor part.
+    pub minor_operating_system_version: u16,
 
-        /// Image version, major part.
-        pub major_image_version: u16,
+    /// Image version, major part.
+    pub major_image_version: u16,
 
-        /// Image version, minor part.
-        pub minor_image_version: u16,
+    /// Image version, minor part.
+    pub minor_image_version: u16,
 
-        /// Required subsystem version, major part.
-        pub major_subsystem_version: u16,
+    /// Required subsystem version, major part.
+    pub major_subsystem_version: u16,
 
-        /// Required subsystem version, minor part.
-        pub minor_subsystem_version: u16,
+    /// Required subsystem version, minor part.
+    pub minor_subsystem_version: u16,
 
-        /// Reserved, must be zero.
-        pub win32_version_value: u32,
+    /// Reserved, must be zero.
+    pub win32_version_value: u32,
 
-        /// Total size of the image when loaded, including headers.
-        pub size_of_image: u32,
+    /// Total size of the image when loaded, including headers.
+    pub size_of_image: u32,
 
-        /// Combined size of the DOS, NT, and section headers, file-aligned.
-        pub size_of_headers: u32,
+    /// Combined size of the DOS, NT, and section headers, file-aligned.
+    pub size_of_headers: u32,
 
-        /// Image checksum. Often zero outside system images.
-        pub check_sum: u32,
+    /// Image checksum. Often zero outside system images.
+    pub check_sum: u32,
 
-        /// `IMAGE_SUBSYSTEM_*` value identifying the runtime environment.
-        pub subsystem: u16,
+    /// `IMAGE_SUBSYSTEM_*` value identifying the runtime environment.
+    pub subsystem: u16,
 
-        /// `IMAGE_DLLCHARACTERISTICS_*` flags.
-        pub dll_characteristics: u16,
+    /// `IMAGE_DLLCHARACTERISTICS_*` flags.
+    pub dll_characteristics: u16,
 
-        /// Reserved stack size.
-        pub size_of_stack_reserve: u32,
+    /// Reserved stack size.
+    pub size_of_stack_reserve: u32,
 
-        /// Initial committed stack size.
-        pub size_of_stack_commit: u32,
+    /// Initial committed stack size.
+    pub size_of_stack_commit: u32,
 
-        /// Reserved heap size.
-        pub size_of_heap_reserve: u32,
+    /// Reserved heap size.
+    pub size_of_heap_reserve: u32,
 
-        /// Initial committed heap size.
-        pub size_of_heap_commit: u32,
+    /// Initial committed heap size.
+    pub size_of_heap_commit: u32,
 
-        /// Reserved, must be zero.
-        pub loader_flags: u32,
+    /// Reserved, must be zero.
+    pub loader_flags: u32,
 
-        /// Length of the data directory array that follows the optional header.
-        pub number_of_rva_and_sizes: u32,
-    }
+    /// Length of the data directory array that follows the optional header.
+    pub number_of_rva_and_sizes: u32,
 }
 
-impl_struct! {
-    /// PE32+ optional header for 64-bit images.
-    ///
-    /// Layout differs from [`ImageOptionalHeader32`] in `image_base` and the
-    /// stack/heap size fields, which are 64-bit here, and in the absence
-    /// of `base_of_data`.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_OPTIONAL_HEADER64`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageOptionalHeader64)]
-    pub struct ImageOptionalHeader64 {
-        /// PE32+ magic, `0x20b`.
-        pub magic: u16,
+/// PE32+ optional header for 64-bit images.
+///
+/// Layout differs from [`ImageOptionalHeader32`] in `image_base` and the
+/// stack/heap size fields, which are 64-bit here, and in the absence
+/// of `base_of_data`.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_OPTIONAL_HEADER64`.
+#[object_mirror(::object::pe::ImageOptionalHeader64)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageOptionalHeader64 {
+    /// PE32+ magic, `0x20b`.
+    pub magic: u16,
 
-        /// Linker version, major part.
-        pub major_linker_version: u8,
+    /// Linker version, major part.
+    pub major_linker_version: u8,
 
-        /// Linker version, minor part.
-        pub minor_linker_version: u8,
+    /// Linker version, minor part.
+    pub minor_linker_version: u8,
 
-        /// Combined size of all code sections, in bytes.
-        pub size_of_code: u32,
+    /// Combined size of all code sections, in bytes.
+    pub size_of_code: u32,
 
-        /// Combined size of all initialized data sections, in bytes.
-        pub size_of_initialized_data: u32,
+    /// Combined size of all initialized data sections, in bytes.
+    pub size_of_initialized_data: u32,
 
-        /// Combined size of all uninitialized data sections, in bytes.
-        pub size_of_uninitialized_data: u32,
+    /// Combined size of all uninitialized data sections, in bytes.
+    pub size_of_uninitialized_data: u32,
 
-        /// RVA of the entry point.
-        pub address_of_entry_point: u32,
+    /// RVA of the entry point.
+    pub address_of_entry_point: u32,
 
-        /// RVA of the start of the code section.
-        pub base_of_code: u32,
+    /// RVA of the start of the code section.
+    pub base_of_code: u32,
 
-        /// Preferred load address.
-        pub image_base: u64,
+    /// Preferred load address.
+    pub image_base: u64,
 
-        /// Section alignment when loaded into memory, in bytes.
-        pub section_alignment: u32,
+    /// Section alignment when loaded into memory, in bytes.
+    pub section_alignment: u32,
 
-        /// Section alignment within the file, in bytes.
-        pub file_alignment: u32,
+    /// Section alignment within the file, in bytes.
+    pub file_alignment: u32,
 
-        /// Required OS version, major part.
-        pub major_operating_system_version: u16,
+    /// Required OS version, major part.
+    pub major_operating_system_version: u16,
 
-        /// Required OS version, minor part.
-        pub minor_operating_system_version: u16,
+    /// Required OS version, minor part.
+    pub minor_operating_system_version: u16,
 
-        /// Image version, major part.
-        pub major_image_version: u16,
+    /// Image version, major part.
+    pub major_image_version: u16,
 
-        /// Image version, minor part.
-        pub minor_image_version: u16,
+    /// Image version, minor part.
+    pub minor_image_version: u16,
 
-        /// Required subsystem version, major part.
-        pub major_subsystem_version: u16,
+    /// Required subsystem version, major part.
+    pub major_subsystem_version: u16,
 
-        /// Required subsystem version, minor part.
-        pub minor_subsystem_version: u16,
+    /// Required subsystem version, minor part.
+    pub minor_subsystem_version: u16,
 
-        /// Reserved, must be zero.
-        pub win32_version_value: u32,
+    /// Reserved, must be zero.
+    pub win32_version_value: u32,
 
-        /// Total size of the image when loaded, including headers.
-        pub size_of_image: u32,
+    /// Total size of the image when loaded, including headers.
+    pub size_of_image: u32,
 
-        /// Combined size of the DOS, NT, and section headers, file-aligned.
-        pub size_of_headers: u32,
+    /// Combined size of the DOS, NT, and section headers, file-aligned.
+    pub size_of_headers: u32,
 
-        /// Image checksum. Often zero outside system images.
-        pub check_sum: u32,
+    /// Image checksum. Often zero outside system images.
+    pub check_sum: u32,
 
-        /// `IMAGE_SUBSYSTEM_*` value identifying the runtime environment.
-        pub subsystem: u16,
+    /// `IMAGE_SUBSYSTEM_*` value identifying the runtime environment.
+    pub subsystem: u16,
 
-        /// `IMAGE_DLLCHARACTERISTICS_*` flags.
-        pub dll_characteristics: u16,
+    /// `IMAGE_DLLCHARACTERISTICS_*` flags.
+    pub dll_characteristics: u16,
 
-        /// Reserved stack size.
-        pub size_of_stack_reserve: u64,
+    /// Reserved stack size.
+    pub size_of_stack_reserve: u64,
 
-        /// Initial committed stack size.
-        pub size_of_stack_commit: u64,
+    /// Initial committed stack size.
+    pub size_of_stack_commit: u64,
 
-        /// Reserved heap size.
-        pub size_of_heap_reserve: u64,
+    /// Reserved heap size.
+    pub size_of_heap_reserve: u64,
 
-        /// Initial committed heap size.
-        pub size_of_heap_commit: u64,
+    /// Initial committed heap size.
+    pub size_of_heap_commit: u64,
 
-        /// Reserved, must be zero.
-        pub loader_flags: u32,
+    /// Reserved, must be zero.
+    pub loader_flags: u32,
 
-        /// Length of the data directory array that follows the optional header.
-        pub number_of_rva_and_sizes: u32,
-    }
+    /// Length of the data directory array that follows the optional header.
+    pub number_of_rva_and_sizes: u32,
 }
 
 /// Optional header in either PE32 or PE32+ form.
@@ -1028,45 +717,43 @@ impl ImageOptionalHeader {
     }
 }
 
-impl_struct! {
-    /// Single entry in the PE section table.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_SECTION_HEADER`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageSectionHeader)]
-    pub struct ImageSectionHeader {
-        /// Section name, null-padded to 8 bytes.
-        pub name: [u8; IMAGE_SIZEOF_SHORT_NAME],
+/// Single entry in the PE section table.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_SECTION_HEADER`.
+#[object_mirror(::object::pe::ImageSectionHeader)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageSectionHeader {
+    /// Section name, null-padded to 8 bytes.
+    pub name: [u8; IMAGE_SIZEOF_SHORT_NAME],
 
-        /// Section size in memory before alignment.
-        pub virtual_size: u32,
+    /// Section size in memory before alignment.
+    pub virtual_size: u32,
 
-        /// RVA of the section when loaded.
-        pub virtual_address: u32,
+    /// RVA of the section when loaded.
+    pub virtual_address: u32,
 
-        /// Size of the section's raw data in the file, file-aligned.
-        pub size_of_raw_data: u32,
+    /// Size of the section's raw data in the file, file-aligned.
+    pub size_of_raw_data: u32,
 
-        /// File offset of the section's raw data.
-        pub pointer_to_raw_data: u32,
+    /// File offset of the section's raw data.
+    pub pointer_to_raw_data: u32,
 
-        /// File offset of the relocation table. Zero for executables.
-        pub pointer_to_relocations: u32,
+    /// File offset of the relocation table. Zero for executables.
+    pub pointer_to_relocations: u32,
 
-        /// File offset of the COFF line numbers. Zero in modern images.
-        pub pointer_to_linenumbers: u32,
+    /// File offset of the COFF line numbers. Zero in modern images.
+    pub pointer_to_linenumbers: u32,
 
-        /// Relocation entry count. Zero for executables.
-        pub number_of_relocations: u16,
+    /// Relocation entry count. Zero for executables.
+    pub number_of_relocations: u16,
 
-        /// Line-number entry count. Zero in modern images.
-        pub number_of_linenumbers: u16,
+    /// Line-number entry count. Zero in modern images.
+    pub number_of_linenumbers: u16,
 
-        /// `IMAGE_SCN_*` flags.
-        pub characteristics: u32,
-    }
+    /// `IMAGE_SCN_*` flags.
+    pub characteristics: u32,
 }
 
 //
@@ -1127,79 +814,73 @@ impl ImageSectionHeader {
     }
 }
 
-impl_struct! {
-    /// Single entry in the data directory array of the optional header.
-    ///
-    /// Locates a standard PE table such as the export, import, or exception
-    /// directory by RVA and size.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_DATA_DIRECTORY`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageDataDirectory)]
-    pub struct ImageDataDirectory {
-        /// RVA of the table.
-        pub virtual_address: u32,
+/// Single entry in the data directory array of the optional header.
+///
+/// Locates a standard PE table such as the export, import, or exception
+/// directory by RVA and size.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_DATA_DIRECTORY`.
+#[object_mirror(::object::pe::ImageDataDirectory)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageDataDirectory {
+    /// RVA of the table.
+    pub virtual_address: u32,
 
-        /// Table size in bytes.
-        pub size: u32,
-    }
+    /// Table size in bytes.
+    pub size: u32,
 }
 
-impl_struct! {
-    /// Single entry in the debug directory.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_DEBUG_DIRECTORY`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageDebugDirectory)]
-    pub struct ImageDebugDirectory {
-        /// Reserved, must be zero.
-        pub characteristics: u32,
+/// Single entry in the debug directory.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_DEBUG_DIRECTORY`.
+#[object_mirror(::object::pe::ImageDebugDirectory)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageDebugDirectory {
+    /// Reserved, must be zero.
+    pub characteristics: u32,
 
-        /// Build timestamp, in Unix epoch seconds.
-        pub time_date_stamp: u32,
+    /// Build timestamp, in Unix epoch seconds.
+    pub time_date_stamp: u32,
 
-        /// Debug data format version, major part.
-        pub major_version: u16,
+    /// Debug data format version, major part.
+    pub major_version: u16,
 
-        /// Debug data format version, minor part.
-        pub minor_version: u16,
+    /// Debug data format version, minor part.
+    pub minor_version: u16,
 
-        /// `IMAGE_DEBUG_TYPE_*` identifying the debug data format.
-        pub typ: u32,
+    /// `IMAGE_DEBUG_TYPE_*` identifying the debug data format.
+    pub typ: u32,
 
-        /// Size of the debug data, in bytes.
-        pub size_of_data: u32,
+    /// Size of the debug data, in bytes.
+    pub size_of_data: u32,
 
-        /// RVA of the debug data when loaded.
-        pub address_of_raw_data: u32,
+    /// RVA of the debug data when loaded.
+    pub address_of_raw_data: u32,
 
-        /// File offset of the debug data.
-        pub pointer_to_raw_data: u32,
-    }
+    /// File offset of the debug data.
+    pub pointer_to_raw_data: u32,
 }
 
-impl_struct! {
-    /// Single entry in the `.pdata` exception directory.
-    ///
-    /// Maps a function's RVA range to its `UNWIND_INFO`.
-    ///
-    /// # Implementation Details
-    ///
-    /// Corresponds to `_IMAGE_RUNTIME_FUNCTION_ENTRY`.
-    #[derive(Debug, Clone, Copy)]
-    #[from(::object::pe::ImageRuntimeFunctionEntry)]
-    pub struct ImageRuntimeFunctionEntry {
-        /// Function start RVA.
-        pub begin_address: u32,
+/// Single entry in the `.pdata` exception directory.
+///
+/// Maps a function's RVA range to its `UNWIND_INFO`.
+///
+/// # Implementation Details
+///
+/// Corresponds to `_IMAGE_RUNTIME_FUNCTION_ENTRY`.
+#[object_mirror(::object::pe::ImageRuntimeFunctionEntry)]
+#[derive(Debug, Clone, Copy)]
+pub struct ImageRuntimeFunctionEntry {
+    /// Function start RVA.
+    pub begin_address: u32,
 
-        /// Function end RVA, exclusive.
-        pub end_address: u32,
+    /// Function end RVA, exclusive.
+    pub end_address: u32,
 
-        /// RVA of the function's `UNWIND_INFO`.
-        pub unwind_info_address_or_data: u32,
-    }
+    /// RVA of the function's `UNWIND_INFO`.
+    pub unwind_info_address_or_data: u32,
 }

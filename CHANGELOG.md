@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
   allocation or the thread creation fails.
+- `vmi-os-windows` mirrors its PE headers with `#[object_mirror]` instead of
+  its private `impl_struct!` macro.
 - The kernel-mode injector hijacks a thread at `KiSystemServiceCopyEnd` on a
   syscall from user mode, instead of at `SeAccessCheck`. On an idle guest such
   a syscall comes much sooner, and the thread holds no locks.
