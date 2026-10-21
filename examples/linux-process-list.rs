@@ -1,8 +1,9 @@
-//! This example lists the processes, threads, memory regions and kernel
-//! modules of a Linux guest running inside a Xen domain.
+//! This example lists the processes, threads, memory regions, user-mode
+//! modules and kernel modules of a Linux guest running inside a Xen domain.
 //!
 //! The output follows `ps -eLo pid,lwp,ppid,comm`, `/proc/<pid>/maps` and
-//! `/proc/modules`, for a comparison with the guest's own view.
+//! `/proc/modules`, for a comparison with the guest's own view. The images
+//! of a process and their exports come out in plain columns.
 //!
 //! # Usage
 //!
@@ -20,12 +21,13 @@ use anyhow::{Context as _, Error};
 use clap::Parser;
 use isr::cache::{Entry, IsrCache};
 use vmi::{
-    MemoryAccess, VcpuId, VmiCore, VmiSession,
+    MemoryAccess, Registers as _, VcpuId, VmiCore, VmiSession,
     arch::amd64::Amd64,
     driver::xen::VmiXenDriver,
     os::{
-        ProcessId, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _, VmiOsRegion as _,
-        VmiOsThread as _,
+        ProcessId, VmiOsImage as _, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _,
+        VmiOsProcessExt as _, VmiOsRegion as _, VmiOsRegionKind, VmiOsThread as _,
+        VmiOsUserModule as _,
         linux::{LinuxOs, LinuxOsExt as _, LinuxRegion},
     },
 };
@@ -43,9 +45,27 @@ struct Cli {
     #[arg(long = "maps", value_name = "PID")]
     maps: Vec<u32>,
 
+    /// Prints the memory regions of the process with this PID, with their
+    /// kinds.
+    #[arg(long = "kinds", value_name = "PID")]
+    kinds: Vec<u32>,
+
+    /// Prints the user-mode modules of the process with this PID.
+    #[arg(long = "user-modules", value_name = "PID")]
+    user_modules: Vec<u32>,
+
+    /// Prints the exports of a user-mode module, given as `PID:NAME`, such
+    /// as `1:libc.so.6`.
+    #[arg(long = "exports", value_name = "PID:NAME")]
+    exports: Vec<String>,
+
     /// Prints the kernel modules.
     #[arg(long)]
     modules: bool,
+
+    /// Prints the exports of the kernel module with this name.
+    #[arg(long = "module-exports", value_name = "NAME")]
+    module_exports: Vec<String>,
 }
 
 /// Driver of the example.
@@ -153,6 +173,87 @@ fn main() -> Result<(), Error> {
         }
     }
 
+    // Memory regions with their kinds: `private`, `data` or `image`.
+    for pid in cli.kinds {
+        let process = vmi
+            .os()
+            .find_process(ProcessId(pid))?
+            .with_context(|| format!("no process with PID {pid}"))?;
+
+        println!();
+        println!("kinds of {} ({}):", pid, process.name()?);
+
+        for region in process.regions()? {
+            let region = region?;
+
+            let (kind, path) = match region.kind()? {
+                VmiOsRegionKind::Private => ("private", String::new()),
+                VmiOsRegionKind::MappedData(file) => ("data", file.path()?.unwrap_or_default()),
+                VmiOsRegionKind::MappedImage(file) => ("image", file.path()?.unwrap_or_default()),
+            };
+
+            println!(
+                "{:08x}-{:08x} {} {}",
+                region.start()?.0,
+                region.end()?.0,
+                kind,
+                path
+            );
+        }
+    }
+
+    // User-mode modules, with their address ranges.
+    for pid in cli.user_modules {
+        let process = vmi
+            .os()
+            .find_process(ProcessId(pid))?
+            .with_context(|| format!("no process with PID {pid}"))?;
+
+        println!();
+        println!("user modules of {} ({}):", pid, process.name()?);
+
+        for module in process.user_modules()? {
+            let module = module?;
+            let base = module.base_address()?;
+
+            println!(
+                "{:08x}-{:08x} {}",
+                base.0,
+                base.0 + module.size()?,
+                module.name()?
+            );
+        }
+    }
+
+    // Exports of user-mode modules. The image is read through the address
+    // space of its process.
+    for spec in cli.exports {
+        let (pid, name) = spec
+            .split_once(':')
+            .with_context(|| format!("--exports takes PID:NAME, not {spec}"))?;
+        let pid = pid.parse::<u32>()?;
+
+        let process = vmi
+            .os()
+            .find_process(ProcessId(pid))?
+            .with_context(|| format!("no process with PID {pid}"))?;
+        let module = process
+            .find_user_module(name)?
+            .with_context(|| format!("no module {name} in PID {pid}"))?;
+        let base = module.base_address()?;
+
+        let mut registers = registers;
+        registers.set_translation_root(process.translation_root()?.0, base);
+        let vmi = session.with_registers(&registers);
+
+        println!();
+        println!("exports of {name} in {pid}:");
+
+        for symbol in vmi.os().image(base)?.exports()? {
+            println!("{:016x} {}", symbol.address.0, symbol.name);
+        }
+    }
+
     // Kernel modules, with the name, size and base address of
     // `/proc/modules`.
     if cli.modules {
@@ -168,6 +269,29 @@ fn main() -> Result<(), Error> {
                 module.size()?,
                 module.base_address()?
             );
+        }
+    }
+
+    // Exports of kernel modules.
+    for name in cli.module_exports {
+        let mut found = None;
+
+        for module in vmi.os().modules()? {
+            let module = module?;
+
+            if module.name()? == name {
+                found = Some(module);
+                break;
+            }
+        }
+
+        let module = found.with_context(|| format!("no kernel module {name}"))?;
+
+        println!();
+        println!("exports of module {name}:");
+
+        for symbol in vmi.os().image(module.base_address()?)?.exports()? {
+            println!("{:016x} {}", symbol.address.0, symbol.name);
         }
     }
 

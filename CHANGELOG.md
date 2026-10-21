@@ -124,6 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LinuxOs::last_error` reads glibc's `errno` in the current thread. The FS
   base and the offset in libc's `R_X86_64_TPOFF64` slot for `errno` give its
   address.
+- The `linux-process-list` example takes `--user-modules`, `--kinds`,
+  `--exports` and `--module-exports`.
 
 ### Removed
 
