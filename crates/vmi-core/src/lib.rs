@@ -15,13 +15,14 @@ use std::{cell::RefCell, num::NonZeroUsize, time::Duration};
 
 use isr_macros::Field;
 use lru::LruCache;
+use smallvec::SmallVec;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub use self::{
     arch::{Architecture, Registers},
     core::{
-        AccessContext, AddressContext, Gfn, MemoryAccess, MemoryAccessOptions, Pa,
-        TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
+        AccessContext, AddressContext, Gfn, MemoryAccess, MemoryAccessOptions, Pa, PageFault,
+        PageFaultKind, TranslationMechanism, Va, VcpuId, View, VmiInfo, VmiVa,
     },
     ctx::{
         VmiContext, VmiOsContext, VmiOsState, VmiProber, VmiSession, VmiSessionPauseGuard, VmiState,
@@ -701,13 +702,21 @@ where
     Driver: VmiRead + VmiWrite,
 {
     /// Writes memory to the virtual machine.
+    ///
+    /// The write ignores the access rights in the guest's page tables. A page
+    /// that is not mapped fails with [`VmiError::PageFault`], after the pages
+    /// before it are written. [`write_checked`] checks the access rights.
+    ///
+    /// [`write_checked`]: Self::write_checked
     pub fn write(&self, ctx: impl Into<AccessContext>, buffer: &[u8]) -> Result<(), VmiError> {
         let ctx = ctx.into();
         let mut position = 0usize;
         let mut remaining = buffer.len();
 
         while remaining > 0 {
-            let address = self.translate_access_context(ctx + position as u64)?;
+            let address = self
+                .translate_access_context(ctx + position as u64)
+                .map_err(Self::write_fault)?;
             let gfn = Driver::Architecture::gfn_from_pa(address);
             let offset = Driver::Architecture::pa_offset(address);
 
@@ -724,6 +733,76 @@ where
         }
 
         Ok(())
+    }
+
+    /// Writes memory to the virtual machine, as the guest's page tables
+    /// permit.
+    ///
+    /// Checks every page with [`Architecture::translate_access`] before it
+    /// writes the first byte. A page that refuses the write fails with
+    /// [`VmiError::PageFault`] and leaves the memory unchanged. A physical
+    /// address needs no translation and is written as by [`write`].
+    ///
+    /// The check skips the V2P cache, which holds no access rights.
+    ///
+    /// [`write`]: Self::write
+    pub fn write_checked(
+        &self,
+        ctx: impl Into<AccessContext>,
+        buffer: &[u8],
+    ) -> Result<(), VmiError> {
+        let ctx = ctx.into();
+        let root = match ctx.mechanism {
+            TranslationMechanism::Direct => return self.write(ctx, buffer),
+            TranslationMechanism::Paging { root: Some(root) } => root,
+            TranslationMechanism::Paging { root: None } => return Err(VmiError::RootNotPresent),
+        };
+
+        // Each page with the physical address and the size of its part.
+        let mut pages = SmallVec::<[(Pa, usize); 2]>::new();
+        let mut position = 0usize;
+
+        while position < buffer.len() {
+            let address = Driver::Architecture::translate_access(
+                self,
+                Va(ctx.address + position as u64),
+                root,
+                MemoryAccess::W,
+            )?;
+            let offset = Driver::Architecture::pa_offset(address);
+
+            let size = std::cmp::min(
+                buffer.len() - position,
+                (Driver::Architecture::PAGE_SIZE - offset) as usize,
+            );
+
+            pages.push((address, size));
+            position += size;
+        }
+
+        let mut position = 0usize;
+        for (address, size) in pages {
+            let gfn = Driver::Architecture::gfn_from_pa(address);
+            let offset = Driver::Architecture::pa_offset(address);
+            let content = &buffer[position..position + size];
+
+            self.driver.write_page(gfn, offset, content)?;
+
+            position += size;
+        }
+
+        Ok(())
+    }
+
+    /// Marks the page fault of a translation as a fault for a write.
+    fn write_fault(err: VmiError) -> VmiError {
+        match err {
+            VmiError::PageFault(pf) => VmiError::PageFault(PageFault {
+                access: MemoryAccess::W,
+                ..pf
+            }),
+            err => err,
+        }
     }
 
     /// Writes a single byte to the virtual machine.

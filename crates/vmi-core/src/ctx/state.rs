@@ -502,6 +502,17 @@ where
         self.core().write(ctx, buffer)
     }
 
+    /// Writes memory to the virtual machine, as the guest's page tables
+    /// permit.
+    ///
+    /// See [`VmiCore::write_checked`].
+    ///
+    /// [`VmiCore::write_checked`]: crate::VmiCore::write_checked
+    pub fn write_checked(&self, address: Va, buffer: &[u8]) -> Result<(), VmiError> {
+        self.core()
+            .write_checked(self.access_context(address), buffer)
+    }
+
     /// Writes a single byte to the virtual machine.
     pub fn write_u8(&self, address: Va, value: u8) -> Result<(), VmiError> {
         self.core().write_u8(self.access_context(address), value)

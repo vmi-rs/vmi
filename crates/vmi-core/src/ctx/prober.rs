@@ -1,13 +1,13 @@
 use std::cell::RefCell;
 
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 
-use crate::{AddressContext, VmiError};
+use crate::{AddressContext, PageFault, VmiError};
 
 /// Batches the page faults raised by a sequence of memory reads so they can be
 /// injected together, while skipping pages already known to be unserviceable.
 ///
-/// A read that touches a non-resident page returns [`VmiError::Translation`].
+/// A read that touches a non-resident page returns [`VmiError::PageFault`].
 /// Instead of aborting an operation on the first such fault, the prober lets
 /// you run a sequence of reads: each probed read that faults yields `Ok(None)`
 /// and its faulting address is recorded, unless that address is in the
@@ -20,7 +20,7 @@ use crate::{AddressContext, VmiError};
 /// 2. Run one or more reads through [`probe`] or the [`vmi_probe!`] macro. Each
 ///    returns `Ok(Some(value))` when the read succeeded, or `Ok(None)` when it
 ///    faulted (the fault is recorded unless it is suppressed).
-/// 3. Call [`error_for_page_faults`]. It returns `Err(VmiError::Translation)`
+/// 3. Call [`error_for_page_faults`]. It returns `Err(VmiError::PageFault)`
 ///    carrying every recorded, non-suppressed fault, or `Ok(())` if there were
 ///    none. Propagate that error to an event loop that injects page faults: for
 ///    example, returning it from a `vmi-utils` reactor handler makes the
@@ -59,8 +59,9 @@ pub struct VmiProber {
     /// faults on one is skipped instead of being reported for injection.
     suppressed: IndexSet<AddressContext>,
 
-    /// Non-suppressed page faults recorded by the probed reads so far.
-    page_faults: RefCell<IndexSet<AddressContext>>,
+    /// Non-suppressed page faults recorded by the probed reads so far,
+    /// indexed by their address.
+    page_faults: RefCell<IndexMap<AddressContext, PageFault>>,
 }
 
 impl VmiProber {
@@ -75,7 +76,7 @@ impl VmiProber {
     pub fn new(suppressed: &IndexSet<AddressContext>) -> Self {
         Self {
             suppressed: suppressed.clone(),
-            page_faults: RefCell::new(IndexSet::new()),
+            page_faults: RefCell::new(IndexMap::new()),
         }
     }
 
@@ -97,7 +98,7 @@ impl VmiProber {
     /// of propagating it, so the caller can keep probing further reads.
     ///
     /// A successful `result` becomes `Ok(Some(value))`. A
-    /// [`VmiError::Translation`] is recorded (unless its address is suppressed)
+    /// [`VmiError::PageFault`] is recorded (unless its address is suppressed)
     /// and becomes `Ok(None)`. Any other error is propagated unchanged. Call
     /// [`error_for_page_faults`] afterwards to surface the recorded faults for
     /// injection.
@@ -106,7 +107,7 @@ impl VmiProber {
     pub fn check_result<T>(&self, result: Result<T, VmiError>) -> Result<Option<T>, VmiError> {
         match result {
             Ok(value) => Ok(Some(value)),
-            Err(VmiError::Translation(pf)) => {
+            Err(VmiError::PageFault(pf)) => {
                 self.record(pf);
                 Ok(None)
             }
@@ -115,11 +116,11 @@ impl VmiProber {
     }
 
     /// Records the page faults that are not in the `suppressed` set.
-    fn record(&self, pf: AddressContext) {
-        let mut page_faults = self.page_faults.borrow_mut();
-        if !self.suppressed.contains(&pf) {
+    fn record(&self, pf: PageFault) {
+        let ctx = AddressContext::from(pf);
+        if !self.suppressed.contains(&ctx) {
             tracing::trace!(va = %pf.va, "page fault");
-            page_faults.insert(pf);
+            self.page_faults.borrow_mut().entry(ctx).or_insert(pf);
         }
         else {
             tracing::trace!(va = %pf.va, "page fault (suppressed)");
@@ -128,20 +129,29 @@ impl VmiProber {
 
     /// Returns the recorded page faults that are not in the `suppressed` set.
     pub fn page_faults(&self) -> IndexSet<AddressContext> {
-        &*self.page_faults.borrow() - &self.suppressed
+        self.page_faults
+            .borrow()
+            .keys()
+            .filter(|ctx| !self.suppressed.contains(*ctx))
+            .copied()
+            .collect()
     }
 
-    /// Returns `Err(VmiError::Translation)` carrying the recorded, non-suppressed
-    /// page faults, or `Ok(())` if none occurred.
+    /// Returns `Err(VmiError::PageFault)` carrying the first recorded,
+    /// non-suppressed page fault, or `Ok(())` if none occurred.
     ///
     /// The returned error is meant to be propagated to a page-fault-injecting
     /// event loop (such as the `vmi-utils` reactor). Injecting these faults
     /// pages the memory in so the probed operation can be retried.
     pub fn error_for_page_faults(&self) -> Result<(), VmiError> {
-        let pfs = self.page_faults();
-        if !pfs.is_empty() {
-            tracing::trace!(?pfs);
-            return Err(VmiError::Translation(pfs[0]));
+        let page_faults = self.page_faults.borrow();
+        let first = page_faults
+            .iter()
+            .find(|(ctx, _)| !self.suppressed.contains(*ctx));
+
+        if let Some((_, pf)) = first {
+            tracing::trace!(?pf);
+            return Err(VmiError::PageFault(*pf));
         }
 
         Ok(())

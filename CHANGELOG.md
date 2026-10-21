@@ -52,6 +52,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that the OS picks for the registers of the event (`VmiOs::translation_root`),
   not the root in the registers. Under KPTI on Linux, a user-mode breakpoint
   inserted with the root of its process thus matches when it fires.
+- **Breaking:** `VmiError::PageFault(PageFault)` replaces
+  `VmiError::Translation(AddressContext)`, and `VmiError::translation` is
+  removed. A `PageFault` holds the address and the root as before, and the
+  access that faults. Its `kind` is `NotPresent` or `Permission`, and its
+  `level` names the entry that causes the fault, counted from 1 at the leaf.
+  It converts into an `AddressContext`. A plain write to a missing page
+  reports a write access.
+- **Breaking:** `Architecture` has two new required methods,
+  `is_kernel_address` and `translate_access`, and its `Interrupt` type
+  implements the new trait `arch::Interrupt`. `vmi-os-linux` drops its
+  `ArchAdapter::is_kernel_address` for `Architecture::is_kernel_address`.
+- **Breaking:** the error code of the AMD64 `Interrupt` is an `Option<u32>`,
+  with `None` in place of `0xffff_ffff`. `Interrupt::breakpoint()` and
+  `Interrupt::page_fault(pf)` come from `arch::Interrupt`, and
+  `Interrupt::page_fault_with_error_code` takes an explicit
+  `PageFaultErrorCode`.
+- **Breaking:** `PageTableLevel` counts from 1, from `Pt = 1` to `Pml4 = 4`,
+  as the name PML4 says. It converts to its number with `u8::from` and back
+  with `PageTableLevel::try_from`.
+- **Breaking:** `PageTableEntry::supervisor` and `VaTranslation::supervisor`
+  are renamed to `user`. Both return the U/S flag, which is set for user
+  pages.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -133,6 +155,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name such as `libc-2.31.so`.
 - The `linux-process-list` example takes `--user-modules`, `--kinds`,
   `--exports` and `--module-exports`.
+- `VmiCore::write_checked` and `VmiState::write_checked` write guest memory
+  as the guest's page tables permit. They check every page with
+  `Architecture::translate_access` before the first byte. A page that refuses
+  the write fails with `VmiError::PageFault` and leaves the memory unchanged.
+- `PageFaultErrorCode` holds the bits of the AMD64 page-fault error code.
+- `PageTableEntry::execute_disable` reads the XD flag.
 
 ### Removed
 

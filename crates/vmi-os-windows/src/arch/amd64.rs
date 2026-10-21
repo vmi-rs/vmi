@@ -59,7 +59,7 @@ impl WindowsInterrupt for Interrupt {
         Self {
             vector: ExceptionVector::Apc,
             typ: InterruptType::ExternalInterrupt,
-            error_code: 0xffff_ffff,
+            error_code: None,
             instruction_length: 0,
             extra: 0,
         }
@@ -69,7 +69,7 @@ impl WindowsInterrupt for Interrupt {
         Self {
             vector: ExceptionVector::Dpc,
             typ: InterruptType::ExternalInterrupt,
-            error_code: 0xffff_ffff,
+            error_code: None,
             instruction_length: 0,
             extra: 0,
         }
@@ -108,7 +108,7 @@ where
 
             match vmi.read(base_address, &mut data) {
                 Ok(()) => {}
-                Err(VmiError::Translation(_)) => continue,
+                Err(VmiError::PageFault(_)) => continue,
                 Err(err) => return Err(err),
             }
 

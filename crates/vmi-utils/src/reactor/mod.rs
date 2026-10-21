@@ -18,7 +18,7 @@
 //! Hits arrive at [`ReactorHandler::handle_event`] as the event enum value.
 //!
 //! If `handle_event` tries to read a paged-out memory and returns
-//! [`VmiError::Translation`], the reactor will inject a page fault
+//! [`VmiError::PageFault`], the reactor will inject a page fault
 //! to the guest and wait for the next event (which should be the retry
 //! of the instruction that caused the page fault).
 //!
@@ -33,7 +33,9 @@ mod profile;
 
 use std::cell::RefCell;
 
-use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
+use vmi_arch_amd64::{
+    Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt, PageFaultErrorCode,
+};
 use vmi_core::{
     Architecture, MemoryAccess, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiOs,
     VmiSession, driver::VmiFullDriver, os::VmiOsProcess as _,
@@ -341,9 +343,12 @@ where
         //
         // Once the guest handles the page fault, it will try to retry the
         // instruction that caused the page fault.
-        if let Err(VmiError::Translation(pf)) = result {
+        if let Err(VmiError::PageFault(pf)) = result {
             tracing::debug!(va = %pf.va, "page fault");
-            vmi.inject_interrupt(event.vcpu_id(), Interrupt::page_fault(pf.va, 0))?;
+            vmi.inject_interrupt(
+                event.vcpu_id(),
+                Interrupt::page_fault_with_error_code(pf.va, PageFaultErrorCode::empty()),
+            )?;
             return Ok(VmiEventResponse::default());
         }
 

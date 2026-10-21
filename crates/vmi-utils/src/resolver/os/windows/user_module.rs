@@ -42,7 +42,7 @@ where
             return Ok(Some(response));
         }
         Ok(None) => return Ok(None),
-        Err(VmiError::Translation(_)) => (),
+        Err(VmiError::PageFault(_)) => (),
         Err(err) => return Err(err),
     }
 
@@ -57,7 +57,7 @@ where
             return Ok(Some(response));
         }
         Ok(None) => return Ok(None),
-        Err(VmiError::Translation(_)) => (),
+        Err(VmiError::PageFault(_)) => (),
         Err(err) => return Err(err),
     }
 

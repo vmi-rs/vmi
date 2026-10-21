@@ -1,4 +1,4 @@
-use crate::AddressContext;
+use crate::PageFault;
 
 /// An error that can occur when working with the VMI.
 #[derive(thiserror::Error, Debug)]
@@ -23,9 +23,9 @@ pub enum VmiError {
     #[error(transparent)]
     IsrCache(#[from] isr_cache::Error),
 
-    /// A translation error occurred.
-    #[error("translation error ({:?})", .0)]
-    Translation(AddressContext),
+    /// A guest access that the guest's page tables do not permit.
+    #[error("page fault ({:?})", .0)]
+    PageFault(PageFault),
 
     /// The given address has invalid width.
     #[error("invalid address width")]
@@ -76,9 +76,10 @@ impl VmiError {
     {
         Self::Os(Box::new(err))
     }
+}
 
-    /// Creates a new translation error.
-    pub fn translation(pf: impl Into<AddressContext>) -> Self {
-        Self::Translation(pf.into())
+impl From<PageFault> for VmiError {
+    fn from(value: PageFault) -> Self {
+        Self::PageFault(value)
     }
 }

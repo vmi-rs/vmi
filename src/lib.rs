@@ -427,7 +427,7 @@
 //!   during event handling, combining [`VmiState`] with a [`VmiEvent`].
 //!
 //! - [`VmiError`]: Represents errors that can occur during VMI operations,
-//!   including translation faults ([`Translation`]).
+//!   including page faults ([`PageFault`]).
 //!
 //! ### Relationship between `VmiCore`, `VmiSession`, `VmiState` and `VmiContext`
 //!
@@ -686,7 +686,7 @@
 //! [`VmiXenCoreDumpDriver`]: crate::driver::xen_core_dump::VmiXenCoreDumpDriver
 //! [`LinuxOs`]: crate::os::linux::LinuxOs
 //! [`WindowsOs`]: crate::os::windows::WindowsOs
-//! [`Translation`]: crate::VmiError::Translation
+//! [`PageFault`]: crate::VmiError::PageFault
 //! [`Direct`]: crate::TranslationMechanism::Direct
 //! [`Paging`]: crate::TranslationMechanism::Paging
 //! [`root`]: crate::TranslationMechanism::Paging::root

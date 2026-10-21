@@ -4,6 +4,7 @@ use vmi_arch_amd64::{
 };
 use vmi_core::{
     Architecture as _, Gfn, Pa, VcpuId, View, VmiCore, VmiError, VmiEvent, VmiEventFlags,
+    arch::Interrupt as _,
 };
 use vmi_driver_mock::arch::amd64::{Call, MockDriver, Op};
 
@@ -53,7 +54,7 @@ fn breakpoint_event(view: Option<View>, gfn: Gfn, offset: u64) -> VmiEvent<Amd64
     };
     let reason = EventReason::Interrupt(EventInterrupt {
         gfn,
-        interrupt: Interrupt::breakpoint(1),
+        interrupt: Interrupt::breakpoint(),
     });
     VmiEvent::new(VcpuId(0), VmiEventFlags::empty(), view, registers, reason)
 }
@@ -80,7 +81,7 @@ fn hardware_breakpoint_event(view: Option<View>, gfn: Gfn, offset: u64) -> VmiEv
         interrupt: Interrupt {
             vector: ExceptionVector::Breakpoint,
             typ: InterruptType::HardwareException,
-            error_code: 0,
+            error_code: None,
             instruction_length: 1,
             extra: 0,
         },

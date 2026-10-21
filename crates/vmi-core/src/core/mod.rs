@@ -3,6 +3,7 @@ mod address_context;
 mod info;
 mod macros;
 mod memory_access;
+mod page_fault;
 mod vcpu_id;
 mod view;
 
@@ -12,6 +13,7 @@ pub use self::{
     address_context::AddressContext,
     info::VmiInfo,
     memory_access::{MemoryAccess, MemoryAccessOptions},
+    page_fault::{PageFault, PageFaultKind},
     vcpu_id::VcpuId,
     view::View,
 };

@@ -6,7 +6,9 @@ use isr::{Profile, macros::symbols};
 use vmi::{
     MemoryAccess, Registers as _, View, VmiContext, VmiError, VmiEventResponse, VmiHandler,
     VmiSession,
-    arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
+    arch::amd64::{
+        Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt, PageFaultErrorCode,
+    },
     driver::VmiFullDriver,
     os::{
         ProcessId, ProcessObject, ThreadId, ThreadObject, VmiOsProcess as _, VmiOsThread as _,
@@ -353,12 +355,12 @@ where
             reason => panic!("unhandled deploy monitor event: {reason:?}"),
         };
 
-        if let Err(VmiError::Translation(page_fault)) = result {
-            tracing::warn!(?page_fault, "page fault, injecting");
+        if let Err(VmiError::PageFault(pf)) = result {
+            tracing::warn!(?pf, "page fault, injecting");
 
             vmi.inject_interrupt(
                 vmi.event().vcpu_id(),
-                Interrupt::page_fault(page_fault.va, 0),
+                Interrupt::page_fault_with_error_code(pf.va, PageFaultErrorCode::empty()),
             )?;
 
             return Ok(VmiEventResponse::default());

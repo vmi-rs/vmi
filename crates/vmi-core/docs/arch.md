@@ -17,3 +17,4 @@ architecture-specific details when needed.
 - [`Architecture`]: The core trait for implementing architecture-specific operations.
 - [`Registers`]: Trait for accessing and manipulating CPU registers.
 - [`EventReason`]: Architecture-specific reasons for VMI events.
+- [`Interrupt`]: Trait for building the interrupts and exceptions that VMI injects.

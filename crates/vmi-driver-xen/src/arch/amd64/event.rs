@@ -109,7 +109,7 @@ impl FromExt<(&VmEventDebug, ExceptionVector)> for EventInterrupt {
             interrupt: Interrupt {
                 vector: value.1,
                 typ: value.0.typ.into_ext(),
-                error_code: 0xffff_ffff,
+                error_code: None,
                 instruction_length: value.0.insn_length as u8,
                 extra: value.0.pending_dbg,
             },

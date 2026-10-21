@@ -2,7 +2,9 @@
 
 use std::fmt::Debug;
 
-use crate::{AccessContext, AddressContext, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError, VmiRead};
+use crate::{
+    AccessContext, AddressContext, Gfn, MemoryAccess, Pa, PageFault, Va, VmiCore, VmiError, VmiRead,
+};
 
 /// Defines an interface for CPU architecture-specific operations and constants.
 ///
@@ -53,11 +55,11 @@ pub trait Architecture {
     ///
     /// # Architecture-specific
     ///
-    /// - **AMD64**: PML5, PML4, PDPT, PD, PT
+    /// - **AMD64**: PML4, PDPT, PD, PT
     type PageTableLevel: Debug + Clone + Copy;
 
-    /// Various types of interrupts that can occur in the architecture.
-    type Interrupt: Debug + Clone + Copy;
+    /// The interrupts and exceptions that VMI injects into a vCPU.
+    type Interrupt: Interrupt<Architecture = Self>;
 
     /// Represents special-purpose registers in the architecture.
     ///
@@ -152,9 +154,48 @@ pub trait Architecture {
     /// hierarchy for a given virtual address.
     fn va_index_for(va: Va, level: Self::PageTableLevel) -> u64;
 
+    /// Checks if a virtual address lies in the kernel's half of the address
+    /// space.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: bit 63 is set
+    fn is_kernel_address(va: Va) -> bool;
+
     /// Performs a full page table walk to translate a virtual address to a
     /// physical address.
+    ///
+    /// Fails with [`VmiError::PageFault`] for an entry that is not present.
+    /// The access rights in the entries are not checked.
     fn translate_address<Driver>(vmi: &VmiCore<Driver>, va: Va, root: Pa) -> Result<Pa, VmiError>
+    where
+        Driver: VmiRead<Architecture = Self>;
+
+    /// Translates a virtual address for an access, as the guest's CPU would.
+    ///
+    /// Unlike [`translate_address`], this checks the access rights in every
+    /// entry on the way. It fails with [`VmiError::PageFault`] where the
+    /// guest's own access would fault. The access runs in user mode for an
+    /// address that [`is_kernel_address`] rejects, and in kernel mode
+    /// otherwise.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: a write needs the R/W flag in every entry and the dirty
+    ///   flag in the leaf. The CPU sets the dirty flag on a write, and VMI
+    ///   does not. A write to a clean page therefore faults, and the guest's
+    ///   handler sets the flag. A user-mode access needs the U/S flag in
+    ///   every entry, and an instruction fetch needs the XD flag clear.
+    ///   CR0.WP and IA32_EFER.NXE count as set.
+    ///
+    /// [`translate_address`]: Self::translate_address
+    /// [`is_kernel_address`]: Self::is_kernel_address
+    fn translate_access<Driver>(
+        vmi: &VmiCore<Driver>,
+        va: Va,
+        root: Pa,
+        access: MemoryAccess,
+    ) -> Result<Pa, VmiError>
     where
         Driver: VmiRead<Architecture = Self>;
 }
@@ -340,6 +381,31 @@ pub trait Registers: Debug + Default + Clone + Copy {
     ) -> Result<Self::GpRegisters, VmiError>
     where
         Driver: VmiRead<Architecture = Self::Architecture>;
+}
+
+/// An interrupt or exception that VMI injects into a vCPU.
+pub trait Interrupt: Debug + Clone + Copy {
+    /// The specific CPU architecture implementation.
+    type Architecture: Architecture<Interrupt = Self>;
+
+    /// Returns the exception that [`Architecture::BREAKPOINT`] raises.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `#BP` with the length of `INT3`
+    fn breakpoint() -> Self;
+
+    /// Returns the exception that the guest's CPU raises for a page fault.
+    ///
+    /// # Architecture-specific
+    ///
+    /// - **AMD64**: `#PF` for the address in `CR2`. The error code has
+    ///   `PROTECTION` for [`PageFaultKind::Permission`], and `WRITE` and
+    ///   `INSTRUCTION_FETCH` from the access. It has `USER` for an address
+    ///   that [`Architecture::is_kernel_address`] rejects.
+    ///
+    /// [`PageFaultKind::Permission`]: crate::PageFaultKind::Permission
+    fn page_fault(pf: PageFault) -> Self;
 }
 
 /// A memory access event, providing details about the accessed memory.

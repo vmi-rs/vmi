@@ -234,7 +234,7 @@ where
 
         match vmi.translate_address(breakpoint.ctx) {
             Ok(pa) => self.insert_with_hint(vmi, breakpoint, Some(pa)),
-            Err(VmiError::Translation(_)) => self.insert_with_hint(vmi, breakpoint, None),
+            Err(VmiError::PageFault(_)) => self.insert_with_hint(vmi, breakpoint, None),
             Err(err) => Err(err),
         }
     }
@@ -291,7 +291,7 @@ where
 
         match vmi.translate_address(breakpoint.ctx) {
             Ok(pa) => self.remove_with_hint(vmi, breakpoint, Some(pa)),
-            Err(VmiError::Translation(_)) => self.remove_with_hint(vmi, breakpoint, None),
+            Err(VmiError::PageFault(_)) => self.remove_with_hint(vmi, breakpoint, None),
             Err(err) => Err(err),
         }
     }

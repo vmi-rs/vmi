@@ -2,9 +2,13 @@ mod exception;
 pub use self::exception::ExceptionVector;
 
 mod idt;
+mod page_fault;
 use vmi_core::Va;
 
-pub use self::idt::{Idt, IdtAccess, IdtEntry};
+pub use self::{
+    idt::{Idt, IdtAccess, IdtEntry},
+    page_fault::PageFaultErrorCode,
+};
 
 /// Type of interrupt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +44,8 @@ pub struct Interrupt {
     /// Type of interrupt.
     pub typ: InterruptType,
 
-    /// Error code associated with the interrupt.
-    pub error_code: u32,
+    /// Error code associated with the interrupt, if it has one.
+    pub error_code: Option<u32>,
 
     /// Length of the instruction that caused the interrupt.
     pub instruction_length: u8,
@@ -54,23 +58,15 @@ pub struct Interrupt {
 }
 
 impl Interrupt {
-    /// Creates a new software breakpoint exception.
-    pub fn breakpoint(instruction_length: u8) -> Self {
-        Self {
-            vector: ExceptionVector::Breakpoint,
-            typ: InterruptType::SoftwareException,
-            error_code: 0xffff_ffff,
-            instruction_length,
-            extra: 0,
-        }
-    }
-
-    /// Creates a new page fault exception.
-    pub fn page_fault(va: Va, error_code: u32) -> Self {
+    /// Creates a new page fault exception with the given error code.
+    ///
+    /// [`vmi_core::arch::Interrupt::page_fault`] builds the error code from a
+    /// [`PageFault`](vmi_core::PageFault) instead.
+    pub fn page_fault_with_error_code(va: Va, error_code: PageFaultErrorCode) -> Self {
         Self {
             vector: ExceptionVector::PageFault,
             typ: InterruptType::HardwareException,
-            error_code,
+            error_code: Some(error_code.bits()),
             instruction_length: 0,
             extra: va.into(),
         }

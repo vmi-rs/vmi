@@ -12,6 +12,12 @@ use xen::ctrl::{
 
 use crate::{ArchAdapter, IntoExt as _, TryFromExt as _, VmiXenDriver};
 
+/// The error code that makes Xen inject an event without one.
+///
+/// `xen/include/public/hvm/dm_op.h` documents the field as "error code (or
+/// ~0 to skip)".
+const NO_ERROR_CODE: u32 = !0;
+
 impl ArchAdapter for Amd64 {
     type XenArch = xen::arch::x86::Amd64;
 
@@ -151,7 +157,7 @@ impl ArchAdapter for Amd64 {
                 vcpu.into_ext(),
                 interrupt.vector.into_ext(),
                 interrupt.typ.into_ext(),
-                interrupt.error_code,
+                interrupt.error_code.unwrap_or(NO_ERROR_CODE),
                 interrupt.instruction_length,
                 interrupt.extra,
             )
@@ -224,7 +230,7 @@ impl ArchAdapter for Amd64 {
                             event.vcpu_id,
                             data.interrupt.vector.into_ext(),
                             data.interrupt.typ.into_ext(),
-                            data.interrupt.error_code,
+                            data.interrupt.error_code.unwrap_or(NO_ERROR_CODE),
                             data.interrupt.instruction_length,
                             data.interrupt.extra,
                         )

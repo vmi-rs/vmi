@@ -37,6 +37,10 @@ impl TranslationEntry {
 }
 
 /// Collection of translation entries, typically used in page table walks.
+///
+/// The entries follow the walk from the root, and a walk that stops early has
+/// fewer of them. The index of an entry is not its level. Find an entry by
+/// its [`level`](TranslationEntry::level).
 pub type TranslationEntries = SmallVec<[TranslationEntry; 4]>;
 
 /// The result of a virtual address translation process.
@@ -55,7 +59,8 @@ pub struct VaTranslation {
 }
 
 impl VaTranslation {
-    /// Returns the page table entries traversed during the translation process.
+    /// Returns the page table entries traversed during the translation process,
+    /// from the root.
     pub fn entries(&self) -> &[TranslationEntry] {
         &self.entries
     }
@@ -86,10 +91,10 @@ impl VaTranslation {
         self.entries.iter().all(|entry| entry.entry.write())
     }
 
-    /// Checks if all page table entries in the translation path are accessible
-    /// in supervisor mode (U/S flag clear).
-    pub fn supervisor(&self) -> bool {
-        self.entries.iter().all(|entry| entry.entry.supervisor())
+    /// Checks if all page table entries in the translation path allow access
+    /// in user mode (U/S flag set).
+    pub fn user(&self) -> bool {
+        self.entries.iter().all(|entry| entry.entry.user())
     }
 }
 

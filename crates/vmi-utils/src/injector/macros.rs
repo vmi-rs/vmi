@@ -378,7 +378,7 @@ macro_rules! _private_recipe {
             // In this case, the `$image` is `ntoskrnl.exe`, the `$function` is
             // `ExAllocatePool`, and the `$($arg),*` are the arguments to the function.
             //
-            // Note that the lookup can return a [`VmiError::Translation`].
+            // Note that the lookup can return a [`VmiError::PageFault`].
             //
 
             let function = match __private::lookup_symbol(
@@ -424,7 +424,7 @@ macro_rules! _private_recipe {
             // We append `.dll` to the `$image` to form the filename of the image and
             // then look up the symbol address.
             //
-            // Note that the lookup can return a [`VmiError::Translation`].
+            // Note that the lookup can return a [`VmiError::PageFault`].
             //
 
             let function = match __private::lookup_symbol(

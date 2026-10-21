@@ -24,14 +24,6 @@ where
         registers: &<Driver::Architecture as Architecture>::Registers,
     ) -> Result<Option<LinuxKernelInformation>, VmiError>;
 
-    /// Checks whether an address lies in the part of the address space
-    /// where Linux keeps the kernel.
-    ///
-    /// # Architecture-specific
-    ///
-    /// - **AMD64**: The kernel lives in the upper half, with bit 63 set.
-    fn is_kernel_address(va: Va) -> bool;
-
     /// Reads a syscall argument by index.
     ///
     /// Index 0 is the first argument. Linux syscalls have at most six

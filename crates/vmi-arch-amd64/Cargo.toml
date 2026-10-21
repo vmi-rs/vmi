@@ -25,3 +25,6 @@ smallvec = { workspace = true, features = ["union"] }
 zerocopy = { workspace = true, features = ["derive"] }
 
 vmi-core = { workspace = true }
+
+[dev-dependencies]
+vmi-driver-mock = { workspace = true, features = ["arch-amd64"] }

@@ -2392,6 +2392,7 @@ dependencies = [
  "bitflags",
  "smallvec",
  "vmi-core",
+ "vmi-driver-mock",
  "zerocopy",
 ]
 
@@ -2406,6 +2407,7 @@ dependencies = [
  "isr-macros",
  "lru",
  "serde",
+ "smallvec",
  "thiserror",
  "tracing",
  "vmi-driver-mock",

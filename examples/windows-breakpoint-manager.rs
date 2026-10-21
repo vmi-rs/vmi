@@ -9,7 +9,9 @@ use isr::{Profile, macros::symbols};
 use vmi::{
     MemoryAccess, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse, VmiHandler,
     VmiHandlerExt as _, VmiSession,
-    arch::amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt},
+    arch::amd64::{
+        Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt, PageFaultErrorCode,
+    },
     driver::VmiFullDriver,
     os::{
         ProcessObject, VmiOsProcess as _,
@@ -479,9 +481,12 @@ where
         //
         // Once the guest handles the page fault, it will retry to execute the
         // instruction that caused the page fault.
-        if let Err(VmiError::Translation(pf)) = result {
+        if let Err(VmiError::PageFault(pf)) = result {
             tracing::warn!(?pf, "Page fault, injecting");
-            vmi.inject_interrupt(event.vcpu_id(), Interrupt::page_fault(pf.va, 0))?;
+            vmi.inject_interrupt(
+                event.vcpu_id(),
+                Interrupt::page_fault_with_error_code(pf.va, PageFaultErrorCode::empty()),
+            )?;
             return Ok(VmiEventResponse::default());
         }
 

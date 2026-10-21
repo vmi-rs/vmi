@@ -4,9 +4,16 @@ mod arch;
 
 use std::path::Path;
 
-use kdmp_parser::{gxa::Gpa, map::MappedFileReader, parse::KernelDumpParser, phys::Reader};
+use kdmp_parser::{
+    error::PxeKind,
+    gxa::{Gpa, Gva},
+    map::MappedFileReader,
+    parse::KernelDumpParser,
+    phys::Reader,
+};
+use vmi_arch_amd64::PageTableLevel;
 use vmi_core::{
-    Gfn, Pa, Va, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
+    Gfn, MemoryAccess, Pa, PageFault, Va, VcpuId, VmiDriver, VmiError, VmiInfo, VmiMappedPage,
     driver::{VmiQueryRegisters, VmiRead},
 };
 
@@ -87,18 +94,33 @@ where
 }
 
 /// Converts a [`kdmp_parser`] error into a [`VmiError`], translating page-read
-/// failures into page faults so callers see a [`VmiError::Translation`]
+/// failures into page faults so callers see a [`VmiError::PageFault`]
 /// instead of an opaque driver error.
 pub(crate) fn map_kdmp_error(err: kdmp_parser::error::Error) -> VmiError {
     match err {
         kdmp_parser::error::Error::PageRead(kdmp_parser::error::PageReadError::NotPresent {
             gva,
-            ..
-        }) => VmiError::translation((Va(u64::from(gva)), Pa(0))),
+            which_pxe,
+        }) => page_fault(gva, Some(which_pxe)),
         kdmp_parser::error::Error::PageRead(kdmp_parser::error::PageReadError::NotInDump {
-            gva: Some((gva, _)),
+            gva: Some((gva, which_pxe)),
             ..
-        }) => VmiError::translation((Va(u64::from(gva)), Pa(0))),
+        }) => page_fault(gva, which_pxe),
         other => VmiError::driver(other),
     }
+}
+
+/// Returns the page fault of a read at `gva` that misses the entry
+/// `which_pxe`, or the page itself without an entry.
+///
+/// A missing page reports the PT, the level of the entry that maps it.
+fn page_fault(gva: Gva, which_pxe: Option<PxeKind>) -> VmiError {
+    let level = match which_pxe {
+        Some(PxeKind::Pml4e) => PageTableLevel::Pml4,
+        Some(PxeKind::Pdpte) => PageTableLevel::Pdpt,
+        Some(PxeKind::Pde) => PageTableLevel::Pd,
+        Some(PxeKind::Pte) | None => PageTableLevel::Pt,
+    };
+
+    PageFault::not_present((Va(u64::from(gva)), Pa(0)), MemoryAccess::R, level.into()).into()
 }

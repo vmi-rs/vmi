@@ -7,7 +7,7 @@ use vmi_arch_amd64::{
 use vmi_core::{
     AddressContext, Architecture as _, Gfn, MemoryAccess, Pa, Va, VcpuId, View, VmiCore, VmiError,
     VmiEvent, VmiEventFlags, VmiSession,
-    arch::{EventInterrupt as _, EventReason as _},
+    arch::{EventInterrupt as _, EventReason as _, Interrupt as _},
     os::NoOS,
 };
 use vmi_driver_mock::arch::amd64::{Call, MockDriver, Op};
@@ -288,7 +288,7 @@ fn bp_event(view: Option<View>, gfn: Gfn, va: Va, root: Pa) -> VmiEvent<Amd64> {
     };
     let reason = EventReason::Interrupt(EventInterrupt {
         gfn,
-        interrupt: Interrupt::breakpoint(1),
+        interrupt: Interrupt::breakpoint(),
     });
     VmiEvent::new(VCPU, VmiEventFlags::empty(), view, registers, reason)
 }

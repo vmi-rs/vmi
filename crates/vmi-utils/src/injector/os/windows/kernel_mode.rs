@@ -1,6 +1,8 @@
 use std::ops::ControlFlow;
 
-use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
+use vmi_arch_amd64::{
+    Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt, PageFaultErrorCode,
+};
 use vmi_core::{
     MemoryAccess, Registers as _, Va, VcpuId, View, VmiContext, VmiError, VmiEventResponse,
     VmiHandler, VmiSession,
@@ -407,7 +409,7 @@ where
             Some(_) => self.recipe.abort(vmi),
             None => match self.recipe.execute(vmi) {
                 Ok(registers) => registers,
-                Err(VmiError::Translation(pf)) => return Err(VmiError::Translation(pf)),
+                Err(VmiError::PageFault(pf)) => return Err(VmiError::PageFault(pf)),
                 Err(err) => {
                     tracing::error!(%err, "recipe failed");
                     self.error = Some(err);
@@ -592,10 +594,12 @@ where
 
         match self.dispatch(&vmi) {
             Ok(response) => response,
-            Err(VmiError::Translation(pf)) => {
+            Err(VmiError::PageFault(pf)) => {
                 tracing::debug!(va = %pf.va, "injecting page fault");
-                let _ =
-                    vmi.inject_interrupt(vmi.event().vcpu_id(), Interrupt::page_fault(pf.va, 0));
+                let _ = vmi.inject_interrupt(
+                    vmi.event().vcpu_id(),
+                    Interrupt::page_fault_with_error_code(pf.va, PageFaultErrorCode::empty()),
+                );
 
                 VmiEventResponse::default()
             }

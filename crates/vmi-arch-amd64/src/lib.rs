@@ -14,8 +14,8 @@ mod segment;
 mod translation;
 
 use vmi_core::{
-    AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, Va, VmiCore, VmiError,
-    arch::GpRegisters as _, driver::VmiRead,
+    AccessContext, AddressContext, Architecture, Gfn, MemoryAccess, Pa, PageFault, PageFaultKind,
+    Va, VmiCore, VmiError, arch::GpRegisters as _, driver::VmiRead,
 };
 use zerocopy::FromBytes;
 
@@ -28,7 +28,9 @@ pub use self::{
         EventMonitor, EventReason, EventSinglestep, EventWriteCr, EventWriteMsr, HypercallMonitor,
         MemoryAccessFlags, MsrMonitor, RegisterMonitor,
     },
-    interrupt::{ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType},
+    interrupt::{
+        ExceptionVector, Idt, IdtAccess, IdtEntry, Interrupt, InterruptType, PageFaultErrorCode,
+    },
     msr::{Msr, MsrEfer},
     paging::{PageTableEntry, PageTableLevel, PagingMode},
     registers::{GpRegisters, Registers},
@@ -142,6 +144,10 @@ impl Architecture for Amd64 {
         }
     }
 
+    fn is_kernel_address(va: Va) -> bool {
+        (va.0 >> 63) & 1 != 0
+    }
+
     fn translate_address<Driver>(vmi: &VmiCore<Driver>, va: Va, root: Pa) -> Result<Pa, VmiError>
     where
         Driver: VmiRead<Architecture = Self>,
@@ -154,7 +160,7 @@ impl Architecture for Amd64 {
         let pml4e = page_table[pml4i];
 
         if !pml4e.present() {
-            return Err(VmiError::translation((va, root)));
+            return Err(Self::not_present(va, root, PageTableLevel::Pml4));
         }
 
         if pml4e.large() {
@@ -169,7 +175,7 @@ impl Architecture for Amd64 {
         let pdpte = page_table[pdpti];
 
         if !pdpte.present() {
-            return Err(VmiError::translation((va, root)));
+            return Err(Self::not_present(va, root, PageTableLevel::Pdpt));
         }
 
         if pdpte.large() {
@@ -184,7 +190,7 @@ impl Architecture for Amd64 {
         let pde = page_table[pdi];
 
         if !pde.present() {
-            return Err(VmiError::translation((va, root)));
+            return Err(Self::not_present(va, root, PageTableLevel::Pd));
         }
 
         if pde.large() {
@@ -199,10 +205,63 @@ impl Architecture for Amd64 {
         let pte = page_table[pti];
 
         if !pte.present() {
-            return Err(VmiError::translation((va, root)));
+            return Err(Self::not_present(va, root, PageTableLevel::Pt));
         }
 
         Ok(Self::pa_in_gfn_for(pte.pfn(), va, PageTableLevel::Pt))
+    }
+
+    fn translate_access<Driver>(
+        vmi: &VmiCore<Driver>,
+        va: Va,
+        root: Pa,
+        access: MemoryAccess,
+    ) -> Result<Pa, VmiError>
+    where
+        Driver: VmiRead<Architecture = Self>,
+    {
+        let user = !Self::is_kernel_address(va);
+        let mut table = Self::gfn_from_pa(root);
+        let mut level = PageTableLevel::Pml4;
+
+        // The first level from the root whose entry refuses the access.
+        let mut refused = None;
+
+        let leaf = loop {
+            let buffer = vmi.read_page(table)?;
+            let page_table = <[PageTableEntry]>::ref_from_bytes(&buffer).unwrap();
+            let entry = page_table[Self::va_index_for(va, level) as usize];
+
+            if !entry.present() {
+                return Err(PageFault::not_present((va, root), access, level.into()).into());
+            }
+
+            if refused.is_none() && !Self::permits(entry, access, user) {
+                refused = Some(level);
+            }
+
+            match level.next() {
+                Some(next) if !entry.large() => {
+                    table = entry.pfn();
+                    level = next;
+                }
+                _ => break entry,
+            }
+        };
+
+        // Access rights apply only to a translation. A missing entry below a
+        // refusing one is reported first.
+        if let Some(level) = refused {
+            return Err(PageFault::permission((va, root), access, level.into()).into());
+        }
+
+        // The CPU sets the dirty bit on a write, and VMI does not. A write to a
+        // clean page faults instead, and the guest's handler sets the bit.
+        if access.contains(MemoryAccess::W) && !leaf.dirty() {
+            return Err(PageFault::permission((va, root), access, level.into()).into());
+        }
+
+        Ok(Self::pa_in_gfn_for(leaf.pfn(), va, level))
     }
 }
 
@@ -407,6 +466,23 @@ impl Amd64 {
             pa: Some(Self::pa_in_gfn_for(pte.pfn(), va, PageTableLevel::Pt)),
         }
     }
+
+    /// Returns the error of a translation that finds a missing entry.
+    ///
+    /// A translation reads, and its page fault reports a read access.
+    fn not_present(va: Va, root: Pa, level: PageTableLevel) -> VmiError {
+        PageFault::not_present((va, root), MemoryAccess::R, level.into()).into()
+    }
+
+    /// Checks if a present entry permits an access.
+    ///
+    /// A user-mode access needs the U/S flag. CR0.WP and IA32_EFER.NXE count
+    /// as set, as Linux and Windows set them.
+    fn permits(entry: PageTableEntry, access: MemoryAccess, user: bool) -> bool {
+        (!access.contains(MemoryAccess::W) || entry.write())
+            && (!access.contains(MemoryAccess::X) || !entry.execute_disable())
+            && (!user || entry.user())
+    }
 }
 
 impl vmi_core::arch::GpRegisters for GpRegisters {
@@ -600,6 +676,39 @@ impl vmi_core::arch::EventMemoryAccess for EventMemoryAccess {
 
     fn access(&self) -> MemoryAccess {
         self.access
+    }
+}
+
+impl vmi_core::arch::Interrupt for Interrupt {
+    type Architecture = Amd64;
+
+    fn breakpoint() -> Self {
+        Self {
+            vector: ExceptionVector::Breakpoint,
+            typ: InterruptType::SoftwareException,
+            error_code: None,
+            instruction_length: Amd64::BREAKPOINT.len() as u8,
+            extra: 0,
+        }
+    }
+
+    fn page_fault(pf: PageFault) -> Self {
+        let mut error_code = PageFaultErrorCode::empty();
+        error_code.set(
+            PageFaultErrorCode::PROTECTION,
+            pf.kind == PageFaultKind::Permission,
+        );
+        error_code.set(
+            PageFaultErrorCode::WRITE,
+            pf.access.contains(MemoryAccess::W),
+        );
+        error_code.set(
+            PageFaultErrorCode::INSTRUCTION_FETCH,
+            pf.access.contains(MemoryAccess::X),
+        );
+        error_code.set(PageFaultErrorCode::USER, !Amd64::is_kernel_address(pf.va));
+
+        Self::page_fault_with_error_code(pf.va, error_code)
     }
 }
 

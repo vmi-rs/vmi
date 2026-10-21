@@ -81,7 +81,7 @@ where
 
         match vmi.read(Va(page), &mut window[overlap..]) {
             Ok(()) => {}
-            Err(VmiError::Translation(_)) => {
+            Err(VmiError::PageFault(_)) => {
                 previous_read = false;
                 continue;
             }
@@ -96,7 +96,7 @@ where
 
             let banner = match vmi.read_string_limited(address, MAX_BANNER_LENGTH) {
                 Ok(banner) => banner,
-                Err(VmiError::Translation(_)) => continue,
+                Err(VmiError::PageFault(_)) => continue,
                 Err(err) => return Err(err),
             };
 
@@ -156,10 +156,6 @@ where
         Ok(banner.map(|banner| LinuxKernelInformation {
             banner: banner.trim_end_matches('\n').to_owned(),
         }))
-    }
-
-    fn is_kernel_address(va: Va) -> bool {
-        va.0 & (1 << 63) != 0
     }
 
     fn syscall_argument(vmi: VmiState<LinuxOs<Driver>>, index: u64) -> Result<u64, VmiError> {
@@ -272,7 +268,7 @@ where
         let root = vmi.registers().translation_root(address);
         let word = match vmi.read_u32_in((address, root)) {
             Ok(word) => word,
-            Err(VmiError::Translation(_)) if root.0 & PTI_USER_PGTABLE_BIT != 0 => {
+            Err(VmiError::PageFault(_)) if root.0 & PTI_USER_PGTABLE_BIT != 0 => {
                 vmi.read_u32_in((address, Pa(root.0 & !PTI_USER_PGTABLE_BIT)))?
             }
             Err(err) => return Err(err),

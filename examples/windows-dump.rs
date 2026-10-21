@@ -93,7 +93,7 @@ type Driver = VmiKdmpDriver<Arch>;
 
 fn handle_error(err: VmiError) -> Result<String, VmiError> {
     match err {
-        VmiError::Translation(pf) => Ok(format!("PF({pf:?})")),
+        VmiError::PageFault(pf) => Ok(format!("PF({pf:?})")),
         _ => Err(err),
     }
 }
