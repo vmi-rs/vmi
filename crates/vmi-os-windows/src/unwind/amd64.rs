@@ -574,26 +574,8 @@ where
             }));
         }
 
-        // Pop return address from [RSP].
-        let return_addr = vmi.read_u64(Va(context.rsp))?;
-        context.rsp += 8;
-
-        if return_addr == 0 {
-            return Ok(Unwound::End);
-        }
-
-        context.rip = return_addr;
-
-        // Read home space from the caller's RSP (after popping the
-        // return address, RSP points to the start of the home space).
-        let params = read_params(vmi, Va(context.rsp));
-
-        Ok(Unwound::Frame(Frame {
-            instruction_pointer: Va(return_addr),
-            stack_pointer: Va(context.rsp),
-            params,
-            machine_frame: false,
-        }))
+        // The return address is at [RSP] now, as in a leaf function.
+        unwind_leaf(vmi, context)
     }
 }
 
