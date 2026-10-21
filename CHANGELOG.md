@@ -105,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tables there map almost none of the kernel, and the kernel page tables map
   the user space to the same frames. `LinuxOs::find_kernel` scans through the
   kernel page tables too when the user page tables hold no banner.
+- `#[object_mirror]` in `vmi-macros` mirrors a struct of the `object` crate as
+  a packed zerocopy struct with native fields. It implements `From` for the
+  source type and checks size, alignment and field offsets at compile time.
 
 ### Removed
 
