@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use vmi_core::{Architecture, Registers, Va, VmiError, VmiOs, VmiState, trace::Hex};
 
+use super::OsAdapter;
+
 /// The control flow of a recipe step.
 pub enum RecipeControlFlow {
     /// Continue to the next step.
@@ -136,11 +138,19 @@ where
     ///
     /// Returns the new CPU registers after executing the step.
     /// If the recipe has finished executing, returns the original registers.
+    ///
+    /// No step uses the red zone below the original stack pointer, as
+    /// [`OsAdapter::red_zone`] gives it for the original registers. A step
+    /// that starts at the original stack pointer, such as the first step or
+    /// one that runs again after a page fault, starts below the red zone.
     #[tracing::instrument(name = "recipe", skip_all)]
     pub fn execute(
         &mut self,
         vmi: &VmiState<Os>,
-    ) -> Result<Option<<Os::Architecture as Architecture>::Registers>, VmiError> {
+    ) -> Result<Option<<Os::Architecture as Architecture>::Registers>, VmiError>
+    where
+        Os: OsAdapter,
+    {
         // If the stack pointer has decreased, we are likely in a recursive call or APC.
         // In this case, we should not execute the recipe.
         if self.has_stack_pointer_decreased(vmi) {
@@ -165,6 +175,18 @@ where
                 None => break,
             };
 
+            if let Some(original_registers) = &self.original_registers {
+                let red_zone = vmi.underlying_os().red_zone(original_registers);
+                let stack_start = original_registers.stack_pointer() - red_zone;
+
+                if registers.stack_pointer() > stack_start {
+                    registers.set_stack_pointer(stack_start);
+                }
+            }
+
+            let instruction_pointer = registers.instruction_pointer();
+            let stack_pointer = registers.stack_pointer();
+
             let next = step(&mut RecipeContext {
                 vmi,
                 registers: &mut registers,
@@ -183,8 +205,8 @@ where
                     // stack pointer, it means no function call was injected.
                     // In such case, we can save one VM-exit by continuing
                     // execution without resuming the guest.
-                    if registers.instruction_pointer() == vmi.registers().instruction_pointer()
-                        && registers.stack_pointer() == vmi.registers().stack_pointer()
+                    if registers.instruction_pointer() == instruction_pointer
+                        && registers.stack_pointer() == stack_pointer
                     {
                         continue;
                     }

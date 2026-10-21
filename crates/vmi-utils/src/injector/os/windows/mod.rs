@@ -3,10 +3,14 @@ mod user_mode;
 
 use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
-    VmiCore, VmiError,
+    Va, VmiCore, VmiError, VmiState,
     driver::{
         VmiDriver, VmiEventControl, VmiQueryProtection, VmiQueryRegisters, VmiRead,
         VmiSetProtection, VmiViewControl, VmiVmControl, VmiWrite,
+    },
+    os::{
+        VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _, VmiOsProcessExt as _,
+        VmiOsRegion as _, VmiOsRegionKind, VmiOsUserModule as _,
     },
     trace::Hex,
 };
@@ -182,4 +186,90 @@ where
 
         Ok(())
     }
+
+    /// Finds an image for `inject!`.
+    ///
+    /// `nt` names the kernel, which is the kernel module `ntoskrnl.exe`.
+    /// Another name gets `.dll` unless it has a dot. It is searched among the
+    /// mapped images of the current process, then among the modules that its
+    /// user-mode loader lists. The OS can page a mapped image's path out of
+    /// memory, and the search through the regions then skips it.
+    fn find_image(vmi: &VmiState<'_, Self>, name: &str) -> Result<Option<Va>, VmiError> {
+        if name == "nt" {
+            return find_module(vmi, "ntoskrnl.exe");
+        }
+
+        let filename = if name.contains('.') {
+            name.to_owned()
+        }
+        else {
+            format!("{name}.dll")
+        };
+
+        if let Some(image_base) = find_region(vmi, &filename)? {
+            return Ok(Some(image_base));
+        }
+
+        tracing::debug!(filename, "no region path matches, searching user modules");
+
+        let current_process = vmi.os().current_process()?;
+        match current_process.find_user_module(filename.as_str())? {
+            Some(module) => Ok(Some(module.base_address()?)),
+            None => Ok(None),
+        }
+    }
+}
+
+/// Finds a first kernel module with the specified filename. The filename is
+/// case-insensitive. Returns the base address of the module if found.
+fn find_module<Driver>(
+    vmi: &VmiState<'_, WindowsOs<Driver>>,
+    filename: &str,
+) -> Result<Option<Va>, VmiError>
+where
+    Driver: VmiRead<Architecture = Amd64>,
+{
+    for module in vmi.os().modules()? {
+        let module = module?;
+
+        if module.name()?.eq_ignore_ascii_case(filename) {
+            return Ok(Some(module.base_address()?));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Finds a first mapped region with the specified filename in the current
+/// process. The filename is case-insensitive. Returns the base address of the
+/// region if found. Regions whose path cannot be read are skipped.
+fn find_region<Driver>(
+    vmi: &VmiState<'_, WindowsOs<Driver>>,
+    filename: &str,
+) -> Result<Option<Va>, VmiError>
+where
+    Driver: VmiRead<Architecture = Amd64>,
+{
+    let filename = filename.to_ascii_lowercase();
+    let current_process = vmi.os().current_process()?;
+
+    for region in current_process.regions()? {
+        let region = region?;
+
+        let mapped = match region.kind()? {
+            VmiOsRegionKind::MappedImage(mapped) => mapped,
+            _ => continue,
+        };
+
+        let path = match mapped.path() {
+            Ok(Some(path)) => path,
+            _ => continue,
+        };
+
+        if path.to_ascii_lowercase().ends_with(&filename) {
+            return Ok(Some(region.start()?));
+        }
+    }
+
+    Ok(None)
 }

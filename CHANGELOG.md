@@ -74,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PageTableEntry::supervisor` and `VaTranslation::supervisor`
   are renamed to `user`. Both return the U/S flag, which is set for user
   pages.
+- **Breaking:** `OsAdapter` has a new required method, `find_image`, which
+  turns the name in `inject!(name!function(...))` into an image. The
+  Windows adapter maps `nt` to `ntoskrnl.exe` and appends `.dll` to a name
+  without a dot, as the macro did before.
+- **Breaking:** `RecipeExecutor::execute` needs `Os: OsAdapter`. No step
+  uses the red zone below the original stack pointer that
+  `OsAdapter::red_zone` gives, also when a step runs again after a page
+  fault.
 - **Breaking:** the bounds of the kernel's export tables are required
   symbols in `vmi-os-linux`. `LinuxOs::new` fails with a profile that lacks
   them.
@@ -163,6 +171,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the write fails with `VmiError::PageFault` and leaves the memory unchanged.
 - `PageFaultErrorCode` holds the bits of the AMD64 page-fault error code.
 - `PageTableEntry::execute_disable` reads the XD flag.
+- `OsAdapter::red_zone` and `OsAdapter::copy_to_stack`, which
+  `copy_to_stack!` now uses.
+- `inject!` takes a string literal as the image name, such as
+  `inject!("ld-linux-x86-64.so.2"!_dl_debug_state())`.
 - `Symbols::x64_sys_call`, and the fields `ip` and `sp` of `pt_regs`, in
   `vmi-os-linux`.
 

@@ -175,6 +175,7 @@ impl<Driver, T, Bridge> UserInjectorHandler<Driver, T, Bridge>
 where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
+        + VmiWrite
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl,
@@ -623,6 +624,7 @@ impl<Driver, T, Bridge> VmiHandler<WindowsOs<Driver>> for UserInjectorHandler<Dr
 where
     Driver: VmiDriver<Architecture = Amd64>
         + VmiRead
+        + VmiWrite
         + VmiSetProtection
         + VmiEventControl
         + VmiViewControl

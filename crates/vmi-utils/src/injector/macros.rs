@@ -8,108 +8,24 @@ pub mod __private {
         pub use zerocopy::*;
     }
 
-    use vmi_core::{
-        Va, VmiError, VmiOs, VmiState,
-        os::{
-            VmiOsImage as _, VmiOsMapped as _, VmiOsModule as _, VmiOsProcess as _,
-            VmiOsProcessExt as _, VmiOsRegion as _, VmiOsRegionKind, VmiOsUserModule as _,
-        },
+    use vmi_core::{Va, VmiError, VmiState, os::VmiOsImage as _};
+
+    use super::super::{
+        OsAdapter,
+        recipe::{RecipeContext, SymbolCache},
     };
 
-    use super::super::recipe::{RecipeContext, SymbolCache};
-
-    /// Search kind for symbol lookup.
-    #[derive(Debug)]
-    pub enum SearchKind {
-        /// Search in kernel modules.
-        Module,
-
-        /// Search in mapped regions of the current process, then among the
-        /// modules listed by its user-mode loader.
-        Region,
-    }
-
-    /// Finds a first kernel module with the specified filename. The filename
-    /// is case-insensitive. Returns the base address of the module if found.
-    pub fn find_module<Os>(vmi: &VmiState<'_, Os>, filename: &str) -> Result<Option<Va>, VmiError>
-    where
-        Os: VmiOs,
-    {
-        for module in vmi.os().modules()? {
-            let module = module?;
-
-            if module.name()?.eq_ignore_ascii_case(filename) {
-                return Ok(Some(module.base_address()?));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Finds a first mapped region with the specified filename in the current
-    /// process. The filename is case-insensitive. Returns the base address of
-    /// the region if found. Regions whose path cannot be read are skipped.
-    pub fn find_region<Os>(vmi: &VmiState<'_, Os>, filename: &str) -> Result<Option<Va>, VmiError>
-    where
-        Os: VmiOs,
-    {
-        let current_process = vmi.os().current_process()?;
-
-        for region in current_process.regions()? {
-            let region = region?;
-
-            let mapped = match region.kind()? {
-                VmiOsRegionKind::MappedImage(mapped) => mapped,
-                _ => continue,
-            };
-
-            let path = match mapped.path() {
-                Ok(Some(path)) => path,
-                _ => continue,
-            };
-
-            if path.to_ascii_lowercase().ends_with(filename) {
-                return Ok(Some(region.start()?));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Finds a first mapped region with the specified filename in the current
-    /// process and retrieves the exported symbols from the image. The filename
-    /// is case-insensitive. Returns map of exported symbols and their virtual
-    /// addresses.
-    ///
-    /// When no region path matches, the image is searched among the modules
-    /// listed by the process's user-mode loader. The OS can page a mapped
-    /// image's path out of memory, and the region search then skips it.
+    /// Finds the image that `inject!` names and retrieves its exported
+    /// symbols. Returns map of exported symbols and their virtual addresses,
+    /// or `Ok(None)` when no image matches.
     pub fn exported_symbols<Os>(
         vmi: &VmiState<'_, Os>,
-        filename: &str,
-        kind: SearchKind,
+        name: &str,
     ) -> Result<Option<SymbolCache>, VmiError>
     where
-        Os: VmiOs,
+        Os: OsAdapter,
     {
-        let image_base = match kind {
-            SearchKind::Module => find_module(vmi, filename)?,
-            SearchKind::Region => match find_region(vmi, filename)? {
-                Some(image_base) => Some(image_base),
-                None => {
-                    tracing::debug!(filename, "no region path matches, searching user modules");
-
-                    let current_process = vmi.os().current_process()?;
-
-                    match current_process.find_user_module(filename)? {
-                        Some(module) => Some(module.base_address()?),
-                        None => None,
-                    }
-                }
-            },
-        };
-
-        let image_base = match image_base {
+        let image_base = match Os::find_image(vmi, name)? {
             Some(image_base) => image_base,
             None => return Ok(None),
         };
@@ -119,7 +35,6 @@ pub mod __private {
 
         tracing::trace!(
             va = %image_base,
-            //kind = ?region.kind()?,
             symbols = symbols.len(),
             "image found"
         );
@@ -133,22 +48,20 @@ pub mod __private {
     }
 
     /// Looks up a symbol in the function cache. If the symbol is not found, it
-    /// retrieves the exported symbols from the specified image and caches them.
-    /// The filename is case-insensitive. Returns virtual address of the symbol
-    /// if found.
+    /// retrieves the exported symbols from the image that `name` names and
+    /// caches them. Returns virtual address of the symbol if found.
     #[tracing::instrument(skip(ctx), err)]
     pub fn lookup_symbol<Os, T>(
         ctx: &mut RecipeContext<'_, Os, T>,
-        filename: &str,
+        name: &str,
         symbol: &str,
-        kind: SearchKind,
     ) -> Result<Option<Va>, VmiError>
     where
-        Os: VmiOs,
+        Os: OsAdapter,
     {
         use std::collections::hash_map::Entry;
 
-        match ctx.cache.entry(filename.to_owned()) {
+        match ctx.cache.entry(name.to_owned()) {
             Entry::Occupied(entry) => match entry.into_mut().get(symbol).copied() {
                 Some(va) => {
                     tracing::trace!(cache_hit = true, %va, "symbol found");
@@ -160,7 +73,7 @@ pub mod __private {
                 }
             },
             Entry::Vacant(entry) => {
-                let symbols = match exported_symbols(ctx.vmi, filename, kind)? {
+                let symbols = match exported_symbols(ctx.vmi, name)? {
                     Some(symbols) => symbols,
                     None => {
                         tracing::error!(cache_hit = false, "image not found");
@@ -295,6 +208,10 @@ macro_rules! _private_recipe {
                             $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
                         };
 
+                        ($image:literal!$function:ident($d($d arg:expr),*)) => {
+                            $crate::_private_recipe!(@inject ctx, $image!$function($d($d arg),*))
+                        };
+
                         ($function:ident($d($d arg:expr),*)) => {
                             $crate::_private_recipe!(@inject ctx, $function($d($d arg),*))
                         };
@@ -328,23 +245,28 @@ macro_rules! _private_recipe {
                         ($d($d name:tt)*) => {{
                             use $crate::injector::{
                                 macros::__private::{
-                                    vmi_core::{Architecture, Va, VmiCore, VmiDriver, VmiError},
+                                    vmi_core::{Architecture, Va, VmiError, VmiState},
                                     zerocopy::{Immutable, IntoBytes},
                                 },
-                                ArchAdapter,
+                                ArchAdapter, OsAdapter,
                             };
 
-                            fn __copy_to_stack<Driver, T>(
-                                vmi: &VmiCore<Driver>,
-                                registers: &mut <Driver::Architecture as Architecture>::Registers,
+                            fn __copy_to_stack<Os, T>(
+                                vmi: &VmiState<'_, Os>,
+                                registers: &mut <Os::Architecture as Architecture>::Registers,
                                 data: T,
                             ) -> Result<Va, VmiError>
                             where
-                                Driver: VmiDriver,
-                                Driver::Architecture: ArchAdapter<Driver>,
+                                Os: OsAdapter,
+                                Os::Architecture: ArchAdapter<Os::Driver>,
                                 T: IntoBytes + Immutable,
                             {
-                                Driver::Architecture::copy_to_stack(vmi, registers, data)
+                                vmi.underlying_os().copy_to_stack(
+                                    vmi,
+                                    registers,
+                                    data.as_bytes(),
+                                    align_of::<T>(),
+                                )
                             }
 
                             __copy_to_stack(vmi!(), registers!(), $d($d name)*)
@@ -361,48 +283,15 @@ macro_rules! _private_recipe {
         }
     };
 
-    (@inject $ctx:expr, nt!$function:ident($($arg:expr),*)) => {
-        'm: {
-            use $crate::injector::macros::__private::{self, vmi_core::VmiError};
-
-            //
-            // The parent macro can be invoked as follows:
-            // ```
-            // inject! {
-            //     nt!ExAllocatePool(
-            //         NonPagedPoolExecute,        // PoolType
-            //         0x1000                      // NumberOfBytes
-            //     )
-            // }
-            // ```
-            // In this case, the `$image` is `ntoskrnl.exe`, the `$function` is
-            // `ExAllocatePool`, and the `$($arg),*` are the arguments to the function.
-            //
-            // Note that the lookup can return a [`VmiError::PageFault`].
-            //
-
-            let function = match __private::lookup_symbol(
-                $ctx,
-                "ntoskrnl.exe",
-                stringify!($function),
-                __private::SearchKind::Module,
-            ) {
-                Ok(Some(function)) => function,
-                Ok(None) => break 'm Err(VmiError::Other(concat!(stringify!($function), " not found"))),
-                Err(err) => break 'm Err(err),
-            };
-
-            tracing::trace!(
-                function = stringify!($function),
-                $(arg = ?$arg,)*
-                "preparing function call"
-            );
-
-            $crate::_private_recipe!(@inject $ctx, function($($arg),*))
-        }
+    (@inject $ctx:expr, $image:ident!$function:ident($($arg:expr),*)) => {
+        $crate::_private_recipe!(@lookup $ctx, stringify!($image), $function($($arg),*))
     };
 
-    (@inject $ctx:expr, $image:ident!$function:ident($($arg:expr),*)) => {
+    (@inject $ctx:expr, $image:literal!$function:ident($($arg:expr),*)) => {
+        $crate::_private_recipe!(@lookup $ctx, $image, $function($($arg),*))
+    };
+
+    (@lookup $ctx:expr, $image:expr, $function:ident($($arg:expr),*)) => {
         'm: {
             use $crate::injector::macros::__private::{self, vmi_core::VmiError};
 
@@ -421,18 +310,14 @@ macro_rules! _private_recipe {
             // In this case, the `$image` is `kernel32`, the `$function` is `VirtualAlloc`,
             // and the `$($arg),*` are the arguments to the function.
             //
-            // We append `.dll` to the `$image` to form the filename of the image and
-            // then look up the symbol address.
+            // `OsAdapter::find_image` turns the `$image` into an image, such as
+            // `kernel32.dll` on Windows, and the symbol address comes from its
+            // exports.
             //
             // Note that the lookup can return a [`VmiError::PageFault`].
             //
 
-            let function = match __private::lookup_symbol(
-                $ctx,
-                concat!(stringify!($image), ".dll"),
-                stringify!($function),
-                __private::SearchKind::Region,
-            ) {
+            let function = match __private::lookup_symbol($ctx, $image, stringify!($function)) {
                 Ok(Some(function)) => function,
                 Ok(None) => break 'm Err(VmiError::Other(concat!(stringify!($function), " not found"))),
                 Err(err) => break 'm Err(err),

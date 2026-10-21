@@ -11,6 +11,18 @@
 //! The injector currently only supports Windows OS and AMD64 architecture.
 //! Injections into 32-bit processes are not currently supported.
 //!
+//! # Image names
+//!
+//! `inject!(name!function(...))` finds `function` among the exports of the
+//! image that `name` names:
+//!
+//! - **Windows**: `nt` names the kernel. Another name, such as `kernel32`,
+//!   gets `.dll` unless it has a dot, and names an image of the current
+//!   process.
+//!
+//! A string literal names an image by its file name, such as
+//! `inject!("ld-linux-x86-64.so.2"!_dl_debug_state())`.
+//!
 //! # Examples
 //!
 //!  Inject a `MessageBox()` call into a running process:
