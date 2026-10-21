@@ -71,21 +71,25 @@ where
         LinuxRegion::new(self.vmi, self.va)
     }
 
-    /// Returns a reader of the process's address space.
-    fn reader(&self) -> GuestElfReader<'a, Driver> {
-        GuestElfReader::new(self.vmi, Some(self.root))
-    }
-
-    /// Returns the parsed ELF image.
+    /// Returns the parsed ELF headers and dynamic section of the module.
+    ///
+    /// Only 64-bit images are read. 32-bit ones give `VmiError::NotSupported`.
+    /// A module whose file is not ELF, or whose header page is absent, gives
+    /// an error.
     ///
     /// # Notes
     ///
     /// This value is cached after the first read.
-    fn elf(&self) -> Result<&ElfImage, VmiError> {
+    pub fn elf(&self) -> Result<&ElfImage, VmiError> {
         self.elf.get_or_try_init(|| {
             let base = self.region().start()?;
             ElfImage::parse(&self.reader(), base)
         })
+    }
+
+    /// Returns a reader of the process's address space.
+    fn reader(&self) -> GuestElfReader<'a, Driver> {
+        GuestElfReader::new(self.vmi, Some(self.root))
     }
 }
 

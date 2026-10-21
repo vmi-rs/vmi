@@ -24,6 +24,7 @@ registers, and event roots match process roots.
 - Processes and threads, including the current process and thread
 - Memory regions with the paths of mapped files, and the images among them
 - User-mode modules: the executable, the shared objects and the vDSO
+- ELF headers of images in user space, with the types in the `elf` module
 - Exports of ELF images and kernel modules
 - Kernel modules
 - Syscall and function arguments and the return value

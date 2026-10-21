@@ -111,10 +111,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source type and checks size, alignment and field offsets at compile time.
 - `vmi-os-linux` reads ELF images in user space. `LinuxImage::architecture`
   reads the ELF header, and `LinuxImage::exports` gives the dynamic symbols
-  that an image defines for other objects, in their default versions. For a
-  kernel module, the exports come from `module.syms` and `module.gpl_syms`.
-  The kernel's own exports need the bounds of its export tables, which the
-  profiles that isr builds lack, and give `VmiError::NotSupported`.
+  that an image defines for other objects, in their default versions.
+  `LinuxImage::elf` and `LinuxUserModule::elf` return an `ElfImage` with the
+  ELF header, the program headers, the dynamic section and the load bias. Its
+  types and the ELF constants that the crate uses are public in
+  `vmi_os_linux::elf`. For a kernel module, the exports come from
+  `module.syms` and `module.gpl_syms`. The kernel's own exports need the
+  bounds of its export tables, which the profiles that isr builds lack, and
+  give `VmiError::NotSupported`.
 - `LinuxProcess::user_modules` and `lookup_user_module` find a process's
   images from its regions. An image is a file that the process maps from page
   offset 0 and also maps executable, or the vDSO. `LinuxUserModule` gives the

@@ -87,6 +87,24 @@ where
         }
     }
 
+    /// Returns the parsed ELF headers and dynamic section of an image in user
+    /// space.
+    ///
+    /// Only 64-bit images are read. 32-bit ones give `VmiError::NotSupported`,
+    /// as do the kernel and its modules, which have no ELF header in memory.
+    ///
+    /// # Notes
+    ///
+    /// This value is cached after the first read.
+    pub fn elf(&self) -> Result<&ElfImage, VmiError> {
+        match self.kind()? {
+            ImageKind::User => self
+                .elf
+                .get_or_try_init(|| ElfImage::parse(&GuestElfReader::new(self.vmi, None), self.va)),
+            ImageKind::Kernel | ImageKind::Module(_) => Err(VmiError::NotSupported),
+        }
+    }
+
     /// Returns what the base address names.
     ///
     /// A user address names an ELF image. A kernel address names the kernel
@@ -117,16 +135,6 @@ where
                 Err(VmiError::NotSupported)
             })
             .copied()
-    }
-
-    /// Returns the parsed ELF image.
-    ///
-    /// # Notes
-    ///
-    /// This value is cached after the first read.
-    fn elf(&self) -> Result<&ElfImage, VmiError> {
-        self.elf
-            .get_or_try_init(|| ElfImage::parse(&GuestElfReader::new(self.vmi, None), self.va))
     }
 
     /// Returns the exports of the kernel, from its export tables.

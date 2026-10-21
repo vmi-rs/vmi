@@ -23,6 +23,7 @@
 //! - Processes and threads, including the current process and thread
 //! - Memory regions with the paths of mapped files, and the images among them
 //! - User-mode modules: the executable, the shared objects and the vDSO
+//! - ELF headers of images in user space, with the types in the `elf` module
 //! - Exports of ELF images and kernel modules
 //! - Kernel modules
 //! - Syscall and function arguments and the return value
@@ -92,8 +93,9 @@ pub use self::comps::{
     LinuxProcess, LinuxRegion, LinuxThread, LinuxUserModule, LinuxVfsMount,
 };
 
-mod elf;
-use self::elf::{ElfImage, GuestElfReader};
+pub mod elf;
+pub use self::elf::ElfImage;
+use self::elf::GuestElfReader;
 
 mod error;
 pub use self::error::LinuxError;

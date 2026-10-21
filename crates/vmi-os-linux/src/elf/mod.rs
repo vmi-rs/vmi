@@ -1,5 +1,11 @@
 //! ELF images in guest memory.
 //!
+//! The types here mirror the ones in `object::elf` that the crate reads, as
+//! packed structs with native fields, and the constants are plain integers.
+//! [`ElfImage`] holds the ELF header, the program headers and the dynamic
+//! section of an image in user space, and [`LinuxImage::elf`] and
+//! [`LinuxUserModule::elf`] return it.
+//!
 //! The loaders map the ELF header, the program headers and the dynamic
 //! section of an image, and the tables that the dynamic section points to.
 //! The parser reads only those parts. Section headers are not mapped.
@@ -8,6 +14,9 @@
 //! load bias. glibc also adds the bias to the pointers in a writable dynamic
 //! section, once ld.so processes the object (`elf/get-dynamic-info.h`). The
 //! parser therefore accepts a pointer in either form.
+//!
+//! [`LinuxImage::elf`]: crate::LinuxImage::elf
+//! [`LinuxUserModule::elf`]: crate::LinuxUserModule::elf
 
 mod headers;
 
@@ -18,12 +27,12 @@ use vmi_core::{
 };
 use zerocopy::FromBytes;
 
-use self::headers::{
+pub use self::headers::{
     DT_GNU_HASH, DT_HASH, DT_NULL, DT_RELA, DT_RELAENT, DT_RELASZ, DT_SONAME, DT_STRSZ, DT_STRTAB,
     DT_SYMENT, DT_SYMTAB, DT_VERSYM, Dyn64, ELFCLASS32, ELFCLASS64, ELFDATA2LSB, ELFMAG, EM_386,
-    EM_X86_64, FileHeader64, PF_W, PT_DYNAMIC, PT_LOAD, ProgramHeader64, R_X86_64_TPOFF64, Rela64,
-    SHN_ABS, SHN_UNDEF, STB_GLOBAL, STB_GNU_UNIQUE, STB_WEAK, STT_FUNC, STT_GNU_IFUNC, STT_OBJECT,
-    STT_TLS, STV_DEFAULT, STV_PROTECTED, Sym64, VERSYM_HIDDEN,
+    EM_X86_64, FileHeader64, Ident, PF_W, PT_DYNAMIC, PT_LOAD, ProgramHeader64, R_X86_64_TPOFF64,
+    Rela64, SHN_ABS, SHN_UNDEF, STB_GLOBAL, STB_GNU_UNIQUE, STB_WEAK, STT_FUNC, STT_GNU_IFUNC,
+    STT_OBJECT, STT_TLS, STV_DEFAULT, STV_PROTECTED, Sym64, VERSYM_HIDDEN,
 };
 use crate::{ArchAdapter, LinuxError, LinuxOs};
 
@@ -273,9 +282,15 @@ fn is_export(symbol: &Sym64) -> bool {
 /// A 64-bit ELF image in guest memory, as its program headers and its
 /// dynamic section describe it.
 #[derive(Debug, Clone)]
-pub(crate) struct ElfImage {
+pub struct ElfImage {
     /// Address of the ELF header, the image base.
     base: Va,
+
+    /// The ELF header.
+    header: FileHeader64,
+
+    /// The program headers.
+    program_headers: Vec<ProgramHeader64>,
 
     /// Difference between an address in memory and the same address in the
     /// file's view, the load bias.
@@ -289,7 +304,12 @@ pub(crate) struct ElfImage {
     /// up to a page.
     span: u64,
 
-    /// The dynamic entries. An image without a dynamic segment has none.
+    /// The entries of the dynamic section before `DT_NULL`, as the section
+    /// holds them.
+    dynamic_entries: Vec<Dyn64>,
+
+    /// The dynamic entries that the parser uses. An image without a dynamic
+    /// segment has none.
     dynamic: Dynamic,
 }
 
@@ -316,6 +336,7 @@ impl ElfImage {
         let mut start = u64::MAX;
         let mut end = 0;
         let mut dynamic = None;
+        let mut program_headers = Vec::with_capacity(count);
 
         for bytes in bytes.chunks_exact(entry_size) {
             let program = parse::<ProgramHeader64>(bytes, "ELF program header")?;
@@ -333,6 +354,8 @@ impl ElfImage {
                 PT_DYNAMIC => dynamic = Some(program),
                 _ => {}
             }
+
+            program_headers.push(program);
         }
 
         if start > end {
@@ -347,14 +370,17 @@ impl ElfImage {
 
         let mut image = Self {
             base,
+            header,
+            program_headers,
             bias: base.0.wrapping_sub(start),
             start,
             span: end - start,
+            dynamic_entries: Vec::new(),
             dynamic: Dynamic::default(),
         };
 
         if let Some(program) = dynamic {
-            image.dynamic = image.read_dynamic(reader, &program)?;
+            (image.dynamic_entries, image.dynamic) = image.read_dynamic(reader, &program)?;
         }
 
         Ok(image)
@@ -362,17 +388,64 @@ impl ElfImage {
 
     /// Returns the image's size in memory, from its lowest `PT_LOAD` segment
     /// to the end of its highest one, `.bss` included.
-    pub(crate) fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.span
     }
 
+    /// Returns the load bias, which turns an address in the file's view into
+    /// the same address in memory.
+    ///
+    /// # Implementation Details
+    ///
+    /// The base address minus the lowest `PT_LOAD` address, rounded down to a
+    /// page, as `link_map.l_addr` in glibc.
+    pub fn load_bias(&self) -> u64 {
+        self.bias
+    }
+
+    /// Returns the ELF header.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `Elf64_Ehdr` at the base address.
+    pub fn file_header(&self) -> &FileHeader64 {
+        &self.header
+    }
+
+    /// Returns the program headers.
+    ///
+    /// Their addresses are in the file's view. Adding the
+    /// [load bias](Self::load_bias) gives the addresses in memory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the `Elf64_Phdr` entries at `e_phoff`.
+    pub fn program_headers(&self) -> &[ProgramHeader64] {
+        &self.program_headers
+    }
+
+    /// Returns the dynamic section's entries before `DT_NULL`. An image
+    /// without a `PT_DYNAMIC` segment has none.
+    ///
+    /// The values are as the section holds them. Once ld.so processes the
+    /// object, glibc adds the load bias to the pointers in a writable dynamic
+    /// section. A read-only one, such as the vDSO's, keeps the file's view.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the `Elf64_Dyn` entries in the `PT_DYNAMIC` segment.
+    pub fn dynamic_entries(&self) -> &[Dyn64] {
+        &self.dynamic_entries
+    }
+
     /// Reads the dynamic section that a `PT_DYNAMIC` program header points
-    /// to.
+    /// to. Returns its entries before `DT_NULL`, and the entries that the
+    /// parser uses with their pointers resolved.
     fn read_dynamic(
         &self,
         reader: &impl ElfReader,
         program: &ProgramHeader64,
-    ) -> Result<Dynamic, VmiError> {
+    ) -> Result<(Vec<Dyn64>, Dynamic), VmiError> {
         let count = checked_size(
             program.p_memsz / size_of::<Dyn64>() as u64,
             DYNAMIC_ENTRIES_MAX,
@@ -383,6 +456,7 @@ impl ElfImage {
         let address = Va(self.bias.wrapping_add(program.p_vaddr));
         let bytes = read_bytes(reader, address, count * size_of::<Dyn64>())?;
 
+        let mut entries = Vec::new();
         let mut dynamic = Dynamic::default();
 
         for bytes in bytes.as_chunks::<{ size_of::<Dyn64>() }>().0 {
@@ -404,9 +478,11 @@ impl ElfImage {
                 DT_RELAENT => dynamic.relaent = Some(value),
                 _ => {}
             }
+
+            entries.push(entry);
         }
 
-        Ok(dynamic)
+        Ok((entries, dynamic))
     }
 
     /// Resolves a pointer of the dynamic section to an address in memory.
@@ -665,7 +741,7 @@ impl ElfImage {
 mod tests {
     use zerocopy::IntoBytes as _;
 
-    use super::{headers::Ident, *};
+    use super::*;
 
     /// Where the tests load their image.
     const BASE: u64 = 0x7f12_3450_0000;
