@@ -2476,6 +2476,7 @@ dependencies = [
  "isr-core",
  "isr-macros",
  "memchr",
+ "object",
  "once_cell",
  "thiserror",
  "tracing",
@@ -2483,6 +2484,7 @@ dependencies = [
  "vmi-arch-amd64",
  "vmi-core",
  "vmi-macros",
+ "zerocopy",
 ]
 
 [[package]]

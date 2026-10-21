@@ -72,10 +72,13 @@ where
     /// Windows.
     MappedData(Os::Mapped<'a>),
 
-    /// A mapped image region of memory. Might be backed by a file.
+    /// A mapped image, an executable or a library that the loader maps.
     ///
-    /// Such regions are usually created by functions like `MapViewOfFile` on
-    /// Windows.
+    /// # Platform-specific
+    ///
+    /// - **Windows**: A view of an image section (`SEC_IMAGE`), such as a DLL.
+    /// - **Linux**: Every region of a file that the process maps from page
+    ///   offset 0 and also maps executable.
     MappedImage(Os::Mapped<'a>),
 }
 

@@ -33,6 +33,14 @@ symbols! {
 
         current_task: Option<u64>,      // per-CPU struct task_struct*, Linux 6.15 and later
         pcpu_hot: Option<u64>,          // per-CPU struct pcpu_hot, Linux 6.2 to 6.14
+
+        // Bounds of the kernel's export tables. They are read-only data (`R` in
+        // `System.map`). isr keeps only `d`, `D`, `t` and `T` symbols, and the
+        // profiles that it builds today lack them.
+        __start___ksymtab: Option<u64>,     // struct kernel_symbol[]
+        __stop___ksymtab: Option<u64>,
+        __start___ksymtab_gpl: Option<u64>, // struct kernel_symbol[]
+        __stop___ksymtab_gpl: Option<u64>,
     }
 }
 
@@ -71,6 +79,7 @@ offsets! {
             pgd: Field,                 // pgd_t*
             task_size: Field,           // unsigned long
             exe_file: Field,            // struct file*
+            saved_auxv: Field,          // unsigned long[AT_VECTOR_SIZE]
         }
 
         struct vm_area_struct {
@@ -79,6 +88,7 @@ offsets! {
             vm_flags: Field,            // vm_flags_t
             vm_pgoff: Field,            // unsigned long
             vm_file: Field,             // struct file*
+            vm_mm: Field,               // struct mm_struct*
         }
 
         struct maple_tree {
@@ -107,6 +117,10 @@ offsets! {
             list: Field,                // struct list_head
             name: Field,                // char[MODULE_NAME_LEN]
             mem: Field,                 // struct module_memory[MOD_MEM_NUM_TYPES]
+            syms: Field,                // const struct kernel_symbol*
+            num_syms: Field,            // unsigned int
+            gpl_syms: Field,            // const struct kernel_symbol*
+            num_gpl_syms: Field,        // unsigned int
         }
 
         struct module_memory {

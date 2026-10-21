@@ -186,7 +186,17 @@ pub trait VmiOs: Sized {
     /// Returns the kernel module corresponding to the given base address.
     fn module<'a>(vmi: VmiState<'a, Self>, module: Va) -> Result<Self::Module<'a>, VmiError>;
 
-    /// Returns the user-mode module corresponding to the given base address.
+    /// Returns the user-mode module that a record of the operating system
+    /// describes.
+    ///
+    /// `root` is the translation root of the module's process.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: `module` is the address of the module's
+    ///   `_LDR_DATA_TABLE_ENTRY`.
+    /// - **Linux**: `module` is the address of the `vm_area_struct` that maps
+    ///   the module's file offset 0.
     fn user_module<'a>(
         vmi: VmiState<'a, Self>,
         module: Va,
@@ -234,6 +244,9 @@ pub trait VmiOs: Sized {
     /// - **Windows**: Retrieves the value of the `NtCurrentTeb()->LastErrorValue`
     ///   field.
     ///   - See also: [`WindowsOs::last_status()`](../../../../vmi_os_windows/struct.WindowsOs.html#method.last_status)
+    /// - **Linux**: Reads glibc's `errno` in the current thread, through the
+    ///   thread pointer and the TLS offset in `libc.so.6`. Processes without
+    ///   glibc give `None`.
     fn last_error(vmi: VmiState<Self>) -> Result<Option<u32>, VmiError>;
 }
 

@@ -14,6 +14,10 @@ pub enum LinuxError {
     /// The kernel works in a way that the crate does not support.
     #[error("unsupported kernel: {0}")]
     UnsupportedKernel(&'static str),
+
+    /// An ELF image in guest memory holds a value that cannot be right.
+    #[error("corrupted image: {0}")]
+    CorruptedImage(&'static str),
 }
 
 impl From<LinuxError> for VmiError {

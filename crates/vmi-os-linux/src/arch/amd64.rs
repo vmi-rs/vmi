@@ -300,6 +300,14 @@ where
     fn user_translation_root(root: Pa) -> Pa {
         Pa(root.0 | PTI_USER_PGTABLE_BIT)
     }
+
+    fn is_kernel_address(va: Va) -> bool {
+        va.0 & (1 << 63) != 0
+    }
+
+    fn thread_pointer(vmi: VmiState<LinuxOs<Driver>>) -> Va {
+        Va(vmi.registers().fs.base)
+    }
 }
 
 /// Reads a function argument of 32-bit code, from 4-byte stack slots.

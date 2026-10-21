@@ -22,15 +22,19 @@ registers, and event roots match process roots.
 - Kernel discovery: the banner, the KASLR offset, the kernel image base and
   KPTI
 - Processes and threads, including the current process and thread
-- Memory regions of a process, with the paths of mapped files
+- Memory regions with the paths of mapped files, and the images among them
+- User-mode modules: the executable, the shared objects and the vDSO
+- Exports of ELF images and kernel modules
 - Kernel modules
 - Syscall and function arguments and the return value
+- glibc's `errno` in the current thread as the last error
 
-Images, user-mode modules and the last error are not supported yet. Their
-methods return `VmiError::NotSupported`.
+The kernel's own exports need the bounds of its export tables, which the
+profiles that isr builds today lack. Their `exports` returns
+`VmiError::NotSupported` until then.
 
-The example `linux-process-list` of the `vmi` crate lists the processes,
-threads, memory regions and kernel modules of a guest.
+The `vmi` crate's example `linux-process-list` lists the processes,
+threads, memory regions, user-mode modules and kernel modules of a guest.
 
 ## Safety Considerations
 

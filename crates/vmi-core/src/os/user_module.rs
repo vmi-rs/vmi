@@ -29,6 +29,8 @@ where
     /// # Platform-specific
     ///
     /// - **Windows**: `LDR_DATA_TABLE_ENTRY.DllBase`
+    /// - **Linux**: `vm_area_struct.vm_start` of the region that maps file
+    ///   offset 0
     fn base_address(&self) -> Result<Va, VmiError>;
 
     /// Returns the size of the module.
@@ -36,6 +38,8 @@ where
     /// # Platform-specific
     ///
     /// - **Windows**: `LDR_DATA_TABLE_ENTRY.SizeOfImage`
+    /// - **Linux**: The span of the `PT_LOAD` segments in the ELF program
+    ///   headers
     fn size(&self) -> Result<u64, VmiError>;
 
     /// Returns the file name of the module.
@@ -43,5 +47,7 @@ where
     /// # Platform-specific
     ///
     /// - **Windows**: `LDR_DATA_TABLE_ENTRY.BaseDllName`
+    /// - **Linux**: The name of the mapped file's dentry, or `DT_SONAME` for
+    ///   the vDSO
     fn name(&self) -> Result<String, VmiError>;
 }

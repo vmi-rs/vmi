@@ -43,8 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finds the current process and thread, and reads syscall and function
   arguments. `LinuxOs::find_kernel` finds the kernel banner by a scan from
   `MSR_LSTAR`. The types follow the names of the Windows crate, such as
-  `LinuxProcess`, `LinuxThread`, `LinuxRegion` and `LinuxModule`. Images,
-  user-mode modules and `last_error` return `VmiError::NotSupported`.
+  `LinuxProcess`, `LinuxThread`, `LinuxRegion` and `LinuxModule`.
 - **Breaking:** `BreakpointManager` takes the operating system as its first
   type parameter, as in `BreakpointManager<Os, Controller, Key, Tag>`. Its
   methods take a `VmiSession` instead of a `VmiCore`, and `get_by_event` and
@@ -110,6 +109,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `#[object_mirror]` in `vmi-macros` mirrors a struct of the `object` crate as
   a packed zerocopy struct with native fields. It implements `From` for the
   source type and checks size, alignment and field offsets at compile time.
+- `vmi-os-linux` reads ELF images in user space. `LinuxImage::architecture`
+  reads the ELF header, and `LinuxImage::exports` gives the dynamic symbols
+  that an image defines for other objects, in their default versions. For a
+  kernel module, the exports come from `module.syms` and `module.gpl_syms`.
+  The kernel's own exports need the bounds of its export tables, which the
+  profiles that isr builds lack, and give `VmiError::NotSupported`.
+- `LinuxProcess::user_modules` and `lookup_user_module` find a process's
+  images from its regions. An image is a file that the process maps from page
+  offset 0 and also maps executable, or the vDSO. `LinuxUserModule` gives the
+  base, the span of the program headers as size, and the file name or the
+  vDSO's `DT_SONAME` as name. `LinuxRegion::kind` reports `MappedImage` for
+  every region of such a file.
+- `LinuxOs::last_error` reads glibc's `errno` in the current thread. The FS
+  base and the offset in libc's `R_X86_64_TPOFF64` slot for `errno` give its
+  address.
 
 ### Removed
 

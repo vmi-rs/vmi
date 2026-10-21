@@ -19,9 +19,11 @@ workspace = true
 
 [dependencies]
 memchr = { workspace = true }
+object = { workspace = true }
 once_cell = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+zerocopy = { workspace = true }
 
 isr-core = { workspace = true }
 isr-macros = { workspace = true }

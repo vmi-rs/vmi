@@ -3,7 +3,7 @@ use vmi_core::{
     driver::VmiRead,
     os::{
         ProcessId, ProcessObject, ThreadObject, VmiOsImageArchitecture, VmiOsProcess,
-        VmiOsRegion as _,
+        VmiOsRegion as _, VmiOsUserModule as _,
     },
 };
 
@@ -287,22 +287,116 @@ where
         }
     }
 
-    /// Not supported yet.
+    /// Returns an iterator over the process's user-mode modules, in the
+    /// order of their addresses.
+    ///
+    /// Kernel threads have none.
+    ///
+    /// # Implementation Details
+    ///
+    /// The header regions of the image files (see
+    /// [`LinuxRegion::is_image`]), and the vDSO's region. The
+    /// `AT_SYSINFO_EHDR` entry in `mm_struct.saved_auxv` gives the vDSO.
     fn user_modules(
         &self,
     ) -> Result<
         impl Iterator<Item = Result<LinuxUserModule<'a, Driver>, VmiError>> + use<'a, Driver>,
         VmiError,
     > {
-        Err::<std::iter::Empty<_>, _>(VmiError::NotSupported)
+        let mm = match self.mm()? {
+            Some(mm) => mm,
+            None => return Ok(None.into_iter().flatten()),
+        };
+
+        let vmi = self.vmi;
+        let root = self.translation_root()?;
+        let vdso = mm.vdso_base()?;
+
+        let module = move |region: LinuxRegion<'a, Driver>| -> Result<
+            Option<LinuxUserModule<'a, Driver>>,
+            VmiError,
+        > {
+            if is_module_region(&region, vdso)? {
+                Ok(Some(LinuxUserModule::new(vmi, region.va(), root)))
+            }
+            else {
+                Ok(None)
+            }
+        };
+
+        let modules = mm
+            .regions()
+            .filter_map(move |region| region.and_then(module).transpose());
+
+        Ok(Some(modules).into_iter().flatten())
     }
 
-    /// Not supported yet.
+    /// Returns the user-mode module that contains an address.
+    ///
+    /// # Implementation Details
+    ///
+    /// Takes the region at or below the address. A region of an image file
+    /// leads to its header region, and an anonymous region right after one,
+    /// such as `.bss`, leads to the same image. The address must then lie
+    /// within the module's span, which reads its program headers. The
+    /// vDSO's region gives the vDSO.
     fn lookup_user_module(
         &self,
-        _address: Va,
+        address: Va,
     ) -> Result<Option<LinuxUserModule<'a, Driver>>, VmiError> {
-        Err(VmiError::NotSupported)
+        let mm = match self.mm()? {
+            Some(mm) => mm,
+            None => return Ok(None),
+        };
+
+        let region = match mm.region_at_or_below(address)? {
+            Some(region) => region,
+            None => return Ok(None),
+        };
+
+        let root = self.translation_root()?;
+
+        let region = match region.file()? {
+            Some(_) => region,
+            None => {
+                let start = region.start()?;
+
+                if mm.vdso_base()? == Some(start) {
+                    if address < region.end()? {
+                        return Ok(Some(LinuxUserModule::new(self.vmi, region.va(), root)));
+                    }
+
+                    return Ok(None);
+                }
+
+                // An anonymous region right after an image region, such as
+                // the image's `.bss`.
+                match mm.region_at_or_below(start - 1)? {
+                    Some(previous) if previous.end()? == start && previous.file()?.is_some() => {
+                        previous
+                    }
+                    _ => return Ok(None),
+                }
+            }
+        };
+
+        let header = match region.header_region()? {
+            Some(header) => header,
+            None => return Ok(None),
+        };
+
+        if !header.is_image()? {
+            return Ok(None);
+        }
+
+        let module = LinuxUserModule::new(self.vmi, header.va(), root);
+        let base = module.base_address()?;
+
+        if address >= base && address.0 - base.0 < module.size()? {
+            return Ok(Some(module));
+        }
+
+        Ok(None)
     }
 
     /// Returns an iterator over the threads in the process.
@@ -360,4 +454,21 @@ where
 
         Ok(Some(mm.lookup_region(address)?.is_some()))
     }
+}
+
+/// Checks if a region records a user-mode module: the header region of an
+/// image file (page offset 0), or the vDSO's region.
+fn is_module_region<Driver>(
+    region: &LinuxRegion<'_, Driver>,
+    vdso: Option<Va>,
+) -> Result<bool, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    if region.file()?.is_none() {
+        return Ok(vdso == Some(region.start()?));
+    }
+
+    Ok(region.pgoff()? == 0 && region.is_image()?)
 }

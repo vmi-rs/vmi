@@ -21,15 +21,19 @@
 //! - Kernel discovery: the banner, the KASLR offset, the kernel image base and
 //!   KPTI
 //! - Processes and threads, including the current process and thread
-//! - Memory regions of a process, with the paths of mapped files
+//! - Memory regions with the paths of mapped files, and the images among them
+//! - User-mode modules: the executable, the shared objects and the vDSO
+//! - Exports of ELF images and kernel modules
 //! - Kernel modules
 //! - Syscall and function arguments and the return value
+//! - glibc's `errno` in the current thread as the last error
 //!
-//! Images, user-mode modules and the last error are not supported yet. Their
-//! methods return `VmiError::NotSupported`.
+//! The kernel's own exports need the bounds of its export tables, which the
+//! profiles that isr builds today lack. Their `exports` returns
+//! `VmiError::NotSupported` until then.
 //!
-//! The example `linux-process-list` of the `vmi` crate lists the processes,
-//! threads, memory regions and kernel modules of a guest.
+//! The `vmi` crate's example `linux-process-list` lists the processes,
+//! threads, memory regions, user-mode modules and kernel modules of a guest.
 //!
 //! ## Safety Considerations
 //!
@@ -75,7 +79,7 @@ use once_cell::unsync::OnceCell;
 use vmi_core::{
     Architecture, Pa, Va, VmiCore, VmiDriver, VmiError, VmiState,
     driver::VmiRead,
-    os::{ProcessObject, ThreadObject, VmiOs},
+    os::{ProcessObject, ThreadObject, VmiOs, VmiOsProcessExt as _, VmiOsUserModule as _},
 };
 use vmi_macros::derive_trait_from_impl;
 
@@ -87,6 +91,9 @@ pub use self::comps::{
     LinuxDentry, LinuxFile, LinuxImage, LinuxMmStruct, LinuxModule, LinuxMount, LinuxPath,
     LinuxProcess, LinuxRegion, LinuxThread, LinuxUserModule, LinuxVfsMount,
 };
+
+mod elf;
+use self::elf::{ElfImage, GuestElfReader};
 
 mod error;
 pub use self::error::LinuxError;
@@ -634,22 +641,34 @@ where
         Ok(LinuxThread::new(vmi, ThreadObject(current_task)))
     }
 
-    /// Not supported yet.
-    fn image(_vmi: VmiState<'_, Self>, _image_base: Va) -> Result<Self::Image<'_>, VmiError> {
-        Err(VmiError::NotSupported)
+    /// Returns the image at a base address.
+    ///
+    /// # Implementation Details
+    ///
+    /// A user address names an ELF image, read through the state's address
+    /// space. The kernel image base names the kernel, and the base of a
+    /// module's code names that module.
+    fn image(vmi: VmiState<'_, Self>, image_base: Va) -> Result<Self::Image<'_>, VmiError> {
+        Ok(LinuxImage::new(vmi, image_base))
     }
 
     fn module(vmi: VmiState<'_, Self>, module: Va) -> Result<Self::Module<'_>, VmiError> {
         Ok(LinuxModule::new(vmi, module))
     }
 
-    /// Not supported yet.
+    /// Returns a user-mode module.
+    ///
+    /// # Implementation Details
+    ///
+    /// `module` is the address of the module's header region, a
+    /// `vm_area_struct`. `root` is its process's translation root, for reads
+    /// in user memory.
     fn user_module(
-        _vmi: VmiState<'_, Self>,
-        _module: Va,
-        _root: Pa,
+        vmi: VmiState<'_, Self>,
+        module: Va,
+        root: Pa,
     ) -> Result<Self::UserModule<'_>, VmiError> {
-        Err(VmiError::NotSupported)
+        Ok(LinuxUserModule::new(vmi, module, root))
     }
 
     fn region(vmi: VmiState<'_, Self>, region: Va) -> Result<Self::Region<'_>, VmiError> {
@@ -668,9 +687,47 @@ where
         Driver::Architecture::function_return_value(vmi)
     }
 
-    /// Not supported yet.
-    fn last_error(_vmi: VmiState<Self>) -> Result<Option<u32>, VmiError> {
-        Err(VmiError::NotSupported)
+    /// Returns glibc's `errno` of the current thread.
+    ///
+    /// The value is `errno` as glibc last left it. glibc does not clear it
+    /// on success.
+    ///
+    /// # Implementation Details
+    ///
+    /// glibc keeps `errno` as an initial-exec TLS variable in `libc.so.6`.
+    /// Its address is the thread pointer plus the offset that ld.so writes
+    /// into libc's slot for the `R_X86_64_TPOFF64` relocation of `errno`.
+    /// Returns `None` for a kernel thread, for a thread without a thread
+    /// pointer, and for a process without `libc.so.6` and its `errno`, such
+    /// as a static or a musl program.
+    fn last_error(vmi: VmiState<Self>) -> Result<Option<u32>, VmiError> {
+        let process = vmi.os().current_process()?;
+        if process.mm()?.is_none() {
+            return Ok(None);
+        }
+
+        let thread_pointer = Driver::Architecture::thread_pointer(vmi);
+        if thread_pointer.is_null() {
+            return Ok(None);
+        }
+
+        let libc = match process.find_user_module("libc.so.6")? {
+            Some(libc) => libc,
+            None => return Ok(None),
+        };
+
+        let reader = GuestElfReader::new(vmi, None);
+        let image = ElfImage::parse(&reader, libc.base_address()?)?;
+
+        let slot = match image.tls_offset_slot(&reader, "errno")? {
+            Some(slot) => slot,
+            None => return Ok(None),
+        };
+
+        let offset = vmi.read_u64(slot)? as i64;
+        let errno = Va(thread_pointer.0.wrapping_add_signed(offset));
+
+        Ok(Some(vmi.read_u32(errno)?))
     }
 }
 

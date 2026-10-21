@@ -184,7 +184,40 @@ struct MapleFrame {
     end: usize,
 }
 
+/// Checks the guards against a corrupt tree before a walk reads one more
+/// node, at the given depth and with the given count of nodes read.
+fn check_walk_limits(depth: usize, nodes: usize) -> Result<(), VmiError> {
+    if depth >= MAPLE_HEIGHT_MAX {
+        return Err(LinuxError::CorruptedStruct("maple tree height").into());
+    }
+
+    if nodes > MAPLE_NODES_MAX {
+        return Err(LinuxError::CorruptedStruct("maple tree size").into());
+    }
+
+    Ok(())
+}
+
 impl MapleFrame {
+    /// Reads the node of an encoded node pointer, with the highest index
+    /// that the node covers, and starts at its first slot.
+    fn read<Reader>(reader: &Reader, entry: u64, max: u64) -> Result<Self, VmiError>
+    where
+        Reader: MapleNodeReader,
+    {
+        let ty = MapleType::from_encoded(entry)?;
+        let node = reader.read_node(node_address(entry), ty)?;
+        let end = data_end(&node, ty, max)?;
+
+        Ok(Self {
+            node,
+            ty,
+            max,
+            offset: 0,
+            end,
+        })
+    }
+
     /// Returns the highest index that a slot covers.
     ///
     /// The last used slot and the slots without a pivot reach up to the
@@ -196,6 +229,17 @@ impl MapleFrame {
         else {
             self.max
         }
+    }
+
+    /// Returns the slot that covers an index, as `mtree_lookup_walk` finds
+    /// it.
+    ///
+    /// The first used slot whose pivot is at or above the index covers it.
+    /// Without one, the last used slot does.
+    fn slot_of(&self, index: u64) -> usize {
+        (0..self.end)
+            .find(|offset| self.node.pivots[*offset] >= index)
+            .unwrap_or(self.end)
     }
 }
 
@@ -231,26 +275,11 @@ where
 
     /// Reads a node and puts it on top of the path.
     fn push(&mut self, entry: u64, max: u64) -> Result<(), VmiError> {
-        if self.stack.len() >= MAPLE_HEIGHT_MAX {
-            return Err(LinuxError::CorruptedStruct("maple tree height").into());
-        }
-
         self.nodes += 1;
-        if self.nodes > MAPLE_NODES_MAX {
-            return Err(LinuxError::CorruptedStruct("maple tree size").into());
-        }
+        check_walk_limits(self.stack.len(), self.nodes)?;
 
-        let ty = MapleType::from_encoded(entry)?;
-        let node = self.reader.read_node(node_address(entry), ty)?;
-        let end = data_end(&node, ty, max)?;
-
-        self.stack.push(MapleFrame {
-            node,
-            ty,
-            max,
-            offset: 0,
-            end,
-        });
+        let frame = MapleFrame::read(&self.reader, entry, max)?;
+        self.stack.push(frame);
 
         Ok(())
     }
@@ -353,6 +382,136 @@ where
     }
 
     Err(LinuxError::CorruptedStruct("maple tree height").into())
+}
+
+/// Direction of [`maple_tree_lookup_nearest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Nearest {
+    /// The entry that covers the index, or else the nearest one below it.
+    Below,
+
+    /// The entry that covers the index, or else the nearest one above it.
+    Above,
+}
+
+/// Returns the entry that covers an index or, for an index in a gap, the
+/// nearest entry in the given direction.
+///
+/// The walk descends to the leaf of the index, as [`maple_tree_lookup`]
+/// does, and steps through the slots from there. When a node runs out of
+/// slots, the walk climbs to the parent and descends the neighbouring slot
+/// to its last or first entry. Returns `None` when no entry lies in that
+/// direction.
+pub(crate) fn maple_tree_lookup_nearest<Reader>(
+    reader: &Reader,
+    root: u64,
+    index: u64,
+    nearest: Nearest,
+) -> Result<Option<Va>, VmiError>
+where
+    Reader: MapleNodeReader,
+{
+    if !xa_is_node(root) {
+        // A tree with a single entry at index 0 keeps it in the root.
+        if root == 0 || xa_is_internal(root) {
+            return Ok(None);
+        }
+
+        return match nearest {
+            Nearest::Below => Ok(Some(Va(root))),
+            Nearest::Above if index == 0 => Ok(Some(Va(root))),
+            Nearest::Above => Ok(None),
+        };
+    }
+
+    let mut path = Vec::new();
+    let mut nodes = 0;
+
+    // Descend to the leaf that covers the index.
+    let mut entry = root;
+    let mut max = u64::MAX;
+
+    loop {
+        nodes += 1;
+        check_walk_limits(path.len(), nodes)?;
+
+        let mut frame = MapleFrame::read(reader, entry, max)?;
+        frame.offset = frame.slot_of(index);
+
+        let is_leaf = frame.ty.is_leaf();
+        let child = frame.node.slots[frame.offset];
+        let child_max = frame.slot_max(frame.offset);
+        path.push(frame);
+
+        if is_leaf {
+            break;
+        }
+
+        if child == 0 {
+            return Err(LinuxError::CorruptedStruct("maple node slot").into());
+        }
+
+        entry = child;
+        max = child_max;
+    }
+
+    // Step through the slots, from the leaf's slot of the index on.
+    loop {
+        let frame = match path.last_mut() {
+            Some(frame) => frame,
+            None => return Ok(None),
+        };
+
+        let offset = frame.offset;
+        let slot = frame.node.slots[offset];
+
+        if !frame.ty.is_leaf() {
+            if slot == 0 {
+                return Err(LinuxError::CorruptedStruct("maple node slot").into());
+            }
+
+            let child_max = frame.slot_max(offset);
+
+            nodes += 1;
+            check_walk_limits(path.len(), nodes)?;
+
+            let mut child = MapleFrame::read(reader, slot, child_max)?;
+            child.offset = match nearest {
+                Nearest::Below => child.end,
+                Nearest::Above => 0,
+            };
+
+            path.push(child);
+            continue;
+        }
+
+        if slot != 0 && !xa_is_internal(slot) {
+            return Ok(Some(Va(slot)));
+        }
+
+        // Move to the neighbouring slot, and climb out of the nodes that
+        // have none left.
+        loop {
+            let frame = match path.last_mut() {
+                Some(frame) => frame,
+                None => return Ok(None),
+            };
+
+            match nearest {
+                Nearest::Below if frame.offset > 0 => {
+                    frame.offset -= 1;
+                    break;
+                }
+                Nearest::Above if frame.offset < frame.end => {
+                    frame.offset += 1;
+                    break;
+                }
+                Nearest::Below | Nearest::Above => {
+                    path.pop();
+                }
+            }
+        }
+    }
 }
 
 /// Reads maple tree nodes from guest memory.
@@ -591,6 +750,16 @@ mod tests {
         fn lookup(&self, root: u64, index: u64) -> Result<Option<u64>, VmiError> {
             Ok(maple_tree_lookup(&self, root, index)?.map(|entry| entry.0))
         }
+
+        /// Looks up the nearest entry from the given root.
+        fn nearest(
+            &self,
+            root: u64,
+            index: u64,
+            nearest: Nearest,
+        ) -> Result<Option<u64>, VmiError> {
+            Ok(maple_tree_lookup_nearest(&self, root, index, nearest)?.map(|entry| entry.0))
+        }
     }
 
     impl MapleNodeReader for &Tree {
@@ -776,6 +945,115 @@ mod tests {
 
         assert!(tree.walk(root(encoded)).is_err());
         assert!(tree.lookup(root(encoded), 0x1000).is_err());
+        assert!(tree.nearest(root(encoded), 0x1000, Nearest::Below).is_err());
+    }
+
+    #[test]
+    fn nearest_steps_over_gaps_in_a_leaf() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
+
+        let leaf = tree.add(
+            0x90000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff, 0x2fff, 0x3fff, u64::MAX],
+            &[0, 0xa000, 0, 0xb000, 0],
+            4,
+        );
+        let root = root(leaf);
+
+        assert_eq!(tree.nearest(root, 0x0800, Nearest::Below)?, None);
+        assert_eq!(tree.nearest(root, 0x0800, Nearest::Above)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x1800, Nearest::Below)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x1800, Nearest::Above)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x2800, Nearest::Below)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x2800, Nearest::Above)?, Some(0xb000));
+        assert_eq!(
+            tree.nearest(root, 0x7fff_0000, Nearest::Below)?,
+            Some(0xb000)
+        );
+        assert_eq!(tree.nearest(root, 0x7fff_0000, Nearest::Above)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn nearest_crosses_into_the_neighbouring_leaf() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
+
+        // The left leaf ends with a gap, and the right one starts with one.
+        let left = tree.add(
+            0xa1000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff, 0x4fff],
+            &[0xa000, 0xb000, 0],
+            2,
+        );
+        let right = tree.add(
+            0xa2000,
+            MapleType::Leaf64,
+            &[0x5fff, 0x6fff, u64::MAX],
+            &[0, 0xc000, 0xd000],
+            2,
+        );
+        let inner = tree.add(
+            0xa0000,
+            MapleType::Arange64,
+            &[0x4fff, u64::MAX],
+            &[left, right],
+            1,
+        );
+        let root = root(inner);
+
+        assert_eq!(tree.nearest(root, 0x3000, Nearest::Below)?, Some(0xb000));
+        assert_eq!(tree.nearest(root, 0x3000, Nearest::Above)?, Some(0xc000));
+        assert_eq!(tree.nearest(root, 0x5800, Nearest::Below)?, Some(0xb000));
+        assert_eq!(tree.nearest(root, 0x5800, Nearest::Above)?, Some(0xc000));
+        assert_eq!(tree.nearest(root, 0, Nearest::Below)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x8000, Nearest::Above)?, Some(0xd000));
+        Ok(())
+    }
+
+    #[test]
+    fn nearest_skips_a_leaf_without_entries() -> Result<(), VmiError> {
+        let mut tree = Tree::default();
+
+        let left = tree.add(
+            0xb1000,
+            MapleType::Leaf64,
+            &[0x0fff, 0x1fff],
+            &[0xa000, 0],
+            1,
+        );
+        let middle = tree.add(0xb2000, MapleType::Leaf64, &[0x2fff, 0x3fff], &[0, 0], 1);
+        let right = tree.add(
+            0xb3000,
+            MapleType::Leaf64,
+            &[0x4fff, u64::MAX],
+            &[0, 0xc000],
+            1,
+        );
+        let inner = tree.add(
+            0xb0000,
+            MapleType::Arange64,
+            &[0x1fff, 0x3fff, u64::MAX],
+            &[left, middle, right],
+            2,
+        );
+        let root = root(inner);
+
+        assert_eq!(tree.nearest(root, 0x4800, Nearest::Below)?, Some(0xa000));
+        assert_eq!(tree.nearest(root, 0x1800, Nearest::Above)?, Some(0xc000));
+        Ok(())
+    }
+
+    #[test]
+    fn nearest_with_one_entry_in_the_root() -> Result<(), VmiError> {
+        let tree = Tree::default();
+
+        assert_eq!(tree.nearest(0xa000, 0x5000, Nearest::Below)?, Some(0xa000));
+        assert_eq!(tree.nearest(0xa000, 0, Nearest::Above)?, Some(0xa000));
+        assert_eq!(tree.nearest(0xa000, 1, Nearest::Above)?, None);
+        assert_eq!(tree.nearest(0, 0x5000, Nearest::Below)?, None);
+        Ok(())
     }
 
     #[test]
