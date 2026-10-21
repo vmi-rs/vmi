@@ -80,6 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and maximum time.
 - The methods of `IdtAccess` are public: `ist_index`, `typ`,
   `descriptor_type`, `descriptor_privilege_level` and `present`.
+- `resolve_primary_entry` resolves a `RUNTIME_FUNCTION` entry to the primary
+  entry of its function without reading the exception directory, which
+  `resolve_primary_function` reads on every call.
 
 ### Removed
 

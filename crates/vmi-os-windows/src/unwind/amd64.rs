@@ -650,6 +650,35 @@ where
     }))
 }
 
+/// Resolves a `RUNTIME_FUNCTION` entry to the primary entry of its
+/// function, by following `UNW_FLAG_CHAININFO` chains.
+///
+/// This is [`resolve_primary_function`] without the lookup in the
+/// exception directory. A caller that keeps the directory's entries
+/// resolves an entry without reading the directory again.
+///
+/// Returns `entry` itself if its `UNWIND_INFO` is not chained.
+pub fn resolve_primary_entry(
+    image: &impl PeImage,
+    entry: &ImageRuntimeFunctionEntry,
+) -> Result<ImageRuntimeFunctionEntry, VmiError> {
+    let mut entry = *entry;
+
+    for _ in 0..UNWIND_CHAIN_LIMIT {
+        let header = image.read_struct_at_rva::<UNWIND_INFO>(entry.unwind_info_address_or_data)?;
+
+        if header.flags() & UNW_FLAG_CHAININFO == 0 {
+            break;
+        }
+
+        entry = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(
+            entry.unwind_info_address_or_data + header.codes_end_offset(),
+        )?;
+    }
+
+    Ok(entry)
+}
+
 /// Resolves an RVA to the primary function's BeginAddress by following
 /// `UNW_FLAG_CHAININFO` chains in the exception directory.
 ///
@@ -673,25 +702,8 @@ pub fn resolve_primary_function(image: &impl PeImage, rva: u32) -> Result<Option
         None => return Ok(None),
     };
 
-    let mut begin_address = entry.begin_address;
-    let mut unwind_rva = entry.unwind_info_address_or_data;
-
-    for _ in 0..UNWIND_CHAIN_LIMIT {
-        let header = image.read_struct_at_rva::<UNWIND_INFO>(unwind_rva)?;
-
-        if header.flags() & UNW_FLAG_CHAININFO == 0 {
-            break;
-        }
-
-        let entry = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(
-            unwind_rva + header.codes_end_offset(),
-        )?;
-
-        begin_address = entry.begin_address;
-        unwind_rva = entry.unwind_info_address_or_data;
-    }
-
-    Ok(Some(begin_address))
+    let primary_entry = resolve_primary_entry(image, entry)?;
+    Ok(Some(primary_entry.begin_address))
 }
 
 /// Returns the number of code slots consumed by an unwind operation.
