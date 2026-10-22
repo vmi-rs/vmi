@@ -213,6 +213,12 @@ doc-scrape-examples = true
 required-features = ["arch-amd64", "driver-xen", "os-linux", "utils"]
 
 [[example]]
+name = "linux-reactor"
+path = "examples/linux-reactor/main.rs"
+doc-scrape-examples = true
+required-features = ["arch-amd64", "driver-xen", "os-linux", "utils"]
+
+[[example]]
 name = "windows-breakpoint-manager"
 path = "examples/windows-breakpoint-manager.rs"
 doc-scrape-examples = true

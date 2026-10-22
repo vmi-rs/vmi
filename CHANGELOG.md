@@ -232,6 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module's build-id in the address space of its process.
 - `LinuxModule::symbols` reads a module's kallsyms, static functions included,
   as `/proc/kallsyms` lists them.
+- The `linux-reactor` example logs file writes, TCP connections, queueing
+  discipline dumps of `sch_fq_codel` and host name lookups in `libc.so.6`.
 
 ### Removed
 
