@@ -85,6 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the bounds of the kernel's export tables are required
   symbols in `vmi-os-linux`. `LinuxOs::new` fails with a profile that lacks
   them.
+- `isr` dependency updated to 0.8.1, whose Linux profiles hold the bounds of
+  the kernel's export tables.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
