@@ -202,6 +202,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vmi-os-linux`.
 - The examples `linux-recipe-writefile` and `linux-recipe-kernel-writefile`
   write a file in a Linux guest from user mode and from kernel mode.
+- The resolver supports `LinuxOs`. `resolve_kernel_module` finds the kernel
+  under the name `kernel` and a loaded module by its name, such as
+  `sch_fq_codel`. `resolve_user_module` finds a user module by its file name
+  or its `DT_SONAME`. The debug signature is the GNU build-id.
 - `BuildId` and `LinuxImage::build_id` read the GNU build-id of the kernel, a
   kernel module or a user ELF image. `LinuxUserModule::build_id` reads a user
   module's build-id in the address space of its process.

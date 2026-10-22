@@ -1,3 +1,5 @@
+#[cfg(all(feature = "arch-amd64", feature = "os-linux"))]
+mod linux;
 #[cfg(all(feature = "arch-amd64", feature = "os-windows"))]
 mod windows;
 
@@ -14,10 +16,8 @@ pub trait OsAdapter: VmiOs {
     ///
     /// # Platform-specific
     ///
-    /// - **Windows**: [`CodeView`].
+    /// - **Windows**: `isr_cache::CodeView`.
     /// - **Linux**: GNU build-id from `.note.gnu.build-id`.
-    ///
-    /// [`CodeView`]: isr_cache::CodeView
     type DebugSignature: Debug + Clone;
 
     /// See [`resolve_kernel_module_in`].

@@ -3,8 +3,15 @@
 //!
 //! [`resolve_kernel_module`] and [`resolve_user_module`] return a
 //! [`Resolved`] value containing the module's load address and an
-//! OS-specific [`DebugSignature`]. The signature can then be passed
-//! to an [`IsrCache`] to fetch the matching debug profile.
+//! OS-specific [`DebugSignature`]. The signature identifies the debug
+//! symbols for one build of the module.
+//!
+//! # Platform-specific
+//!
+//! - **Windows**: the signature is a `CodeView` record, which an
+//!   [`IsrCache`] takes to fetch the matching debug profile.
+//! - **Linux**: the signature is the GNU build-id. Debug files and
+//!   debuginfod servers are indexed by it.
 //!
 //! [`DebugSignature`]: OsAdapter::DebugSignature
 
@@ -34,9 +41,8 @@ where
     ///
     /// # Platform-specific
     ///
-    /// - **Windows**: [`CodeView`]
-    ///
-    /// [`CodeView`]: isr_cache::CodeView
+    /// - **Windows**: `isr_cache::CodeView`
+    /// - **Linux**: `vmi_os_linux::BuildId`
     pub debug_signature: Os::DebugSignature,
 }
 
@@ -74,7 +80,13 @@ where
 /// - **Windows**:
 ///   - Walks `PsLoadedModuleList` to find the matching
 ///     `_KLDR_DATA_TABLE_ENTRY`.
-///   - Reads the [`CodeView`] directly from its `DllBase`.
+///   - Reads the `CodeView` record directly from its `DllBase`.
+/// - **Linux**:
+///   - `kernel` names the kernel image at `kernel_image_base`.
+///   - Any other name must equal a loaded module's name, such as
+///     `sch_fq_codel`, from the `modules` list.
+///   - Reads the GNU build-id from the image's notes. An image without one
+///     resolves to `Ok(None)`.
 ///
 /// # Notes
 ///
@@ -133,8 +145,36 @@ where
 /// # }
 /// ```
 ///
+/// On Linux:
+///
+/// ```no_run
+/// # use isr_cache::IsrCache;
+/// # use vmi::{
+/// #     VmiState,
+/// #     arch::amd64::Amd64,
+/// #     driver::VmiRead,
+/// #     os::{AnyProcess, linux::LinuxOs},
+/// #     utils::resolver::resolve_kernel_module,
+/// # };
+/// #
+/// # fn example<Driver>(
+/// #     vmi: &VmiState<LinuxOs<Driver>>,
+/// #     isr: &IsrCache,
+/// # ) -> Result<(), Box<dyn std::error::Error>>
+/// # where
+/// #     Driver: VmiRead<Architecture = Amd64>,
+/// # {
+/// let kernel = resolve_kernel_module(vmi, isr, "kernel", AnyProcess)?;
+/// let sch_fq_codel = resolve_kernel_module(vmi, isr, "sch_fq_codel", AnyProcess)?;
+///
+/// if let Some(sch_fq_codel) = sch_fq_codel {
+///     println!("build-id {}", sch_fq_codel.debug_signature);
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
 /// [`DebugSignature`]: OsAdapter::DebugSignature
-/// [`CodeView`]: isr_cache::CodeView
 /// [`AnyProcess`]: vmi_core::os::AnyProcess
 pub fn resolve_kernel_module<Os>(
     vmi: &VmiState<Os>,
@@ -184,17 +224,23 @@ where
 ///
 /// - **VAD**:
 ///   - Locates the module's VAD region.
-///   - Reads the [`CodeView`] from it.
+///   - Reads the `CodeView` record from it.
 ///
 /// - **PEB**:
 ///   - Walks `PEB.Ldr.InLoadOrderModuleList` to find the matching
 ///     `_LDR_DATA_TABLE_ENTRY`.
 ///   - Builds an "image signature" from its `TimeDateStamp` and `SizeOfImage`.
 ///   - Downloads the PE from the Microsoft symbol server via [`IsrCache`].
-///   - Extracts the [`CodeView`] from it.
+///   - Extracts the `CodeView` record from it.
 ///
 /// If both strategies fail (e.g. VAD and PEB are paged out), the module
 /// is considered not found and `Ok(None)` is returned.
+///
+/// **Linux** searches the user modules of the process for one whose file
+/// name or `DT_SONAME` equals the name, such as `libc.so.6`. It reads the
+/// GNU build-id from the module's `PT_NOTE` segments, with the translation
+/// root of the process. A page fault ends the search in this
+/// process with `Ok(None)`, and so does a module without a build-id.
 ///
 /// # Notes
 ///
@@ -236,8 +282,32 @@ where
 /// # }
 /// ```
 ///
+/// On Linux:
+///
+/// ```no_run
+/// # use isr_cache::IsrCache;
+/// # use vmi::{
+/// #     VmiState,
+/// #     arch::amd64::Amd64,
+/// #     driver::VmiRead,
+/// #     os::{AnyProcess, linux::LinuxOs},
+/// #     utils::resolver::resolve_user_module,
+/// # };
+/// #
+/// # fn example<Driver>(
+/// #     vmi: &VmiState<LinuxOs<Driver>>,
+/// #     isr: &IsrCache,
+/// # ) -> Result<(), Box<dyn std::error::Error>>
+/// # where
+/// #     Driver: VmiRead<Architecture = Amd64>,
+/// # {
+/// resolve_user_module(vmi, isr, "libc.so.6", "bash")?;
+/// resolve_user_module(vmi, isr, "libc.so.6", AnyProcess)?;
+/// # Ok(())
+/// # }
+/// ```
+///
 /// [`DebugSignature`]: OsAdapter::DebugSignature
-/// [`CodeView`]: isr_cache::CodeView
 /// [`AnyProcess`]: vmi_core::os::AnyProcess
 pub fn resolve_user_module<Os>(
     vmi: &VmiState<Os>,
