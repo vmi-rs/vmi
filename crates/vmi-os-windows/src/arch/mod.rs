@@ -143,7 +143,7 @@ impl StructLayout for StructLayout32 {
         Driver: VmiRead,
         Driver::Architecture: ArchAdapter<Driver>,
     {
-        vmi.core().read_va32(ctx)
+        vmi.read_va32_in(ctx)
     }
 
     fn read_unicode_string<Driver>(
@@ -172,7 +172,7 @@ impl StructLayout for StructLayout64 {
         Driver: VmiRead,
         Driver::Architecture: ArchAdapter<Driver>,
     {
-        vmi.core().read_va64(ctx)
+        vmi.read_va64_in(ctx)
     }
 
     fn read_unicode_string<Driver>(

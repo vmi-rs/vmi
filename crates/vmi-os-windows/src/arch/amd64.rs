@@ -194,7 +194,7 @@ where
     ) -> Result<bool, VmiError> {
         let registers = vmi.registers();
 
-        let translation = Amd64::translation(vmi.core(), address, registers.cr3.into());
+        let translation = Amd64::translation(&vmi, address, registers.cr3.into());
         if let Some(entry) = translation.entries().last()
             && entry.level == PageTableLevel::Pt
         {

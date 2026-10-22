@@ -134,7 +134,7 @@ where
 {
     /// Returns the return address from the current stack frame.
     pub fn return_address(&self) -> Result<Va, VmiError> {
-        self.registers().return_address(self.core())
+        self.registers().return_address(self)
     }
 
     /// Builds the general-purpose registers that make the current function
@@ -144,7 +144,7 @@ where
         value: u64,
     ) -> Result<<<Os::Architecture as Architecture>::Registers as Registers>::GpRegisters, VmiError>
     {
-        self.registers().return_from_function(self.core(), value)
+        self.registers().return_from_function(self, value)
     }
 
     /// Translates a virtual address to a physical address.
