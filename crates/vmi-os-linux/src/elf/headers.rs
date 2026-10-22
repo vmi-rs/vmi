@@ -31,6 +31,16 @@ pub const PT_LOAD: u32 = ::object::elf::PT_LOAD.0;
 /// Dynamic linking information (`PT_DYNAMIC`).
 pub const PT_DYNAMIC: u32 = ::object::elf::PT_DYNAMIC.0;
 
+/// Auxiliary information, such as notes (`PT_NOTE`).
+pub const PT_NOTE: u32 = ::object::elf::PT_NOTE.0;
+
+/// Name of the notes that the GNU tools write (`ELF_NOTE_GNU`), without its
+/// terminating null byte.
+pub const ELF_NOTE_GNU: &[u8] = ::object::elf::ELF_NOTE_GNU;
+
+/// Build-id note of the GNU tools (`NT_GNU_BUILD_ID`).
+pub const NT_GNU_BUILD_ID: u32 = ::object::elf::NT_GNU_BUILD_ID.0;
+
 /// Writable segment (`PF_W`).
 pub const PF_W: u32 = ::object::elf::PF_W.0;
 
@@ -282,4 +292,25 @@ pub struct Rela64 {
 
     /// Addend.
     pub r_addend: i64,
+}
+
+/// Header of a note in a 64-bit ELF file.
+///
+/// The note's name and its descriptor follow the header, each padded to the
+/// alignment of the notes.
+///
+/// # Implementation Details
+///
+/// Corresponds to `Elf64_Nhdr`.
+#[object_mirror(::object::elf::NoteHeader64<::object::LittleEndian>)]
+#[derive(Debug, Clone, Copy)]
+pub struct NoteHeader64 {
+    /// Length of the name, its null byte included.
+    pub n_namesz: u32,
+
+    /// Length of the descriptor.
+    pub n_descsz: u32,
+
+    /// Type of the note, such as `NT_GNU_BUILD_ID`.
+    pub n_type: u32,
 }

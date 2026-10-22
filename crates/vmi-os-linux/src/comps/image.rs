@@ -6,9 +6,11 @@ use vmi_core::{
 };
 
 use crate::{
-    ArchAdapter, LinuxError, LinuxOs,
+    ArchAdapter, BuildId, LinuxError, LinuxOs,
     elf::{self, ElfImage, GuestElfReader},
-    offset, symbol,
+    offset,
+    offsets::ModuleNotesLayout,
+    symbol,
 };
 
 /// Size of a `struct kernel_symbol`, three 32-bit offsets with
@@ -18,11 +20,20 @@ const KERNEL_SYMBOL_SIZE: usize = 12;
 /// Upper limit of the entries in an export table.
 const KERNEL_SYMBOLS_MAX: usize = 1 << 20;
 
-/// Upper limit for the span that the names in an export table cover.
+/// Upper limit for the span that the names in a symbol table cover.
 const KERNEL_NAMES_MAX: u64 = 1 << 24;
 
 /// Maximum length of a kernel symbol name (`KSYM_NAME_LEN`).
-const KSYM_NAME_LEN: usize = 512;
+pub(super) const KSYM_NAME_LEN: usize = 512;
+
+/// The notes of the kernel and its modules are aligned to this many bytes.
+const NOTE_ALIGN: usize = 4;
+
+/// Name of the notes section that holds a module's build-id.
+const BUILD_ID_SECTION: &[u8] = b".note.gnu.build-id";
+
+/// Upper limit of the notes sections in a module.
+const MODULE_NOTES_MAX: u64 = 256;
 
 /// What the base address of an image names.
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +113,29 @@ where
                 .elf
                 .get_or_try_init(|| ElfImage::parse(&GuestElfReader::new(self.vmi, None), self.va)),
             ImageKind::Kernel | ImageKind::Module(_) => Err(VmiError::NotSupported),
+        }
+    }
+
+    /// Returns the GNU build-id, if the image has one.
+    ///
+    /// The build-id is a hash that the linker writes into a note of type
+    /// `NT_GNU_BUILD_ID`. Debug files and debuginfod servers are indexed by
+    /// it.
+    ///
+    /// # Implementation Details
+    ///
+    /// For an ELF image, corresponds to the notes in its `PT_NOTE` segments.
+    /// Only 64-bit images are read. 32-bit ones give `VmiError::NotSupported`.
+    ///
+    /// For the kernel, corresponds to the notes from `__start_notes` to
+    /// `__stop_notes`. For a module, corresponds to the section
+    /// `.note.gnu.build-id` in `module.notes_attrs`. This table backs the
+    /// files in `/sys/module/<name>/notes`.
+    pub fn build_id(&self) -> Result<Option<BuildId>, VmiError> {
+        match self.kind()? {
+            ImageKind::User => self.elf()?.build_id(&GuestElfReader::new(self.vmi, None)),
+            ImageKind::Kernel => self.kernel_build_id(),
+            ImageKind::Module(module) => self.module_build_id(module),
         }
     }
 
@@ -194,6 +228,126 @@ where
 
         Ok(exports)
     }
+
+    /// Returns the build-id of the kernel.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the notes from `__start_notes` to `__stop_notes`, which
+    /// `/sys/kernel/notes` shows.
+    fn kernel_build_id(&self) -> Result<Option<BuildId>, VmiError> {
+        let start = LinuxOs::symbol_address(self.vmi, symbol!(self.vmi, __start_notes))?;
+        let stop = LinuxOs::symbol_address(self.vmi, symbol!(self.vmi, __stop_notes))?;
+
+        let length = match stop.0.checked_sub(start.0) {
+            Some(length) => length,
+            None => return Err(LinuxError::CorruptedStruct("kernel notes").into()),
+        };
+
+        elf::read_build_id(
+            &GuestElfReader::new(self.vmi, None),
+            start,
+            length,
+            NOTE_ALIGN,
+        )
+    }
+
+    /// Returns the build-id of a module.
+    ///
+    /// A module without notes sections has no `module_notes_attrs` and no
+    /// build-id.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the entry of `module.notes_attrs` whose `attr.name` is
+    /// `.note.gnu.build-id`. The entry's `private` holds the section's
+    /// address, and its `size` holds the section's length.
+    fn module_build_id(&self, module: Va) -> Result<Option<BuildId>, VmiError> {
+        let MODULE = offset!(self.vmi, module);
+        let BIN_ATTRIBUTE = offset!(self.vmi, bin_attribute);
+        let ATTRIBUTE = offset!(self.vmi, attribute);
+
+        let notes_attrs = self
+            .vmi
+            .read_va_native(module + MODULE.notes_attrs.offset())?;
+
+        if notes_attrs.is_null() {
+            return Ok(None);
+        }
+
+        for entry in self.module_notes_entries(notes_attrs)? {
+            let name = self
+                .vmi
+                .read_va_native(entry + BIN_ATTRIBUTE.attr.offset() + ATTRIBUTE.name.offset())?;
+
+            let name = self
+                .vmi
+                .read_string_bytes_limited(name, BUILD_ID_SECTION.len() + 1)?;
+
+            if name != BUILD_ID_SECTION {
+                continue;
+            }
+
+            let section = self
+                .vmi
+                .read_va_native(entry + BIN_ATTRIBUTE.private.offset())?;
+
+            let size = self.vmi.read_u64(entry + BIN_ATTRIBUTE.size.offset())?;
+
+            return elf::read_build_id(
+                &GuestElfReader::new(self.vmi, None),
+                section,
+                size,
+                NOTE_ALIGN,
+            );
+        }
+
+        Ok(None)
+    }
+
+    /// Returns the addresses of the `bin_attribute` entries in a
+    /// `module_notes_attrs`. Each notes section in the module has one entry.
+    ///
+    /// # Implementation Details
+    ///
+    /// In the layout of Linux 6.8 to 6.13, corresponds to the array `attrs`
+    /// with `notes` entries. In the layout of Linux 6.14 and later,
+    /// corresponds to the pointers in `grp.bin_attrs` before the first
+    /// `NULL`.
+    fn module_notes_entries(&self, notes_attrs: Va) -> Result<Vec<Va>, VmiError> {
+        let ATTRIBUTE_GROUP = offset!(self.vmi, attribute_group);
+        let BIN_ATTRIBUTE = offset!(self.vmi, bin_attribute);
+
+        match ModuleNotesLayout::new(LinuxOs::offsets(self.vmi))? {
+            ModuleNotesLayout::Counted { notes, attrs } => {
+                let count = u64::from(self.vmi.read_u32(notes_attrs + notes)?);
+                if count > MODULE_NOTES_MAX {
+                    return Err(LinuxError::CorruptedStruct("module_notes_attrs.notes").into());
+                }
+
+                let stride = BIN_ATTRIBUTE.len() as u64;
+                Ok((0..count)
+                    .map(|index| notes_attrs + attrs + index * stride)
+                    .collect())
+            }
+            ModuleNotesLayout::Grouped { bin_attrs } => {
+                let pointers = self.vmi.read_va_native(notes_attrs + bin_attrs)?;
+                let stride = ATTRIBUTE_GROUP.bin_attrs.size();
+
+                let mut entries = Vec::new();
+                for index in 0..=MODULE_NOTES_MAX {
+                    let entry = self.vmi.read_va_native(pointers + index * stride)?;
+                    if entry.is_null() {
+                        return Ok(entries);
+                    }
+
+                    entries.push(entry);
+                }
+
+                Err(LinuxError::CorruptedStruct("attribute_group.bin_attrs").into())
+            }
+        }
+    }
 }
 
 impl<'a, Driver> VmiOsImage<'a, Driver> for LinuxImage<'a, Driver>
@@ -280,8 +434,7 @@ fn kernel_symbol_addresses(table: Va, bytes: &[u8]) -> Vec<(Va, Va)> {
 
 /// Reads the exports of an export table with `count` entries.
 ///
-/// The names lie in `__ksymtab_strings`. One read covers all but the
-/// highest, whose end the string read finds.
+/// The names lie in `__ksymtab_strings`.
 fn read_kernel_exports<Driver>(
     vmi: VmiState<LinuxOs<Driver>>,
     table: Va,
@@ -307,14 +460,11 @@ where
         entries.iter().map(|(_, name)| name.0).min(),
         entries.iter().map(|(_, name)| name.0).max(),
     ) {
-        (Some(first), Some(last)) if last - first <= KERNEL_NAMES_MAX => (first, last),
+        (Some(first), Some(last)) => (first, last),
         _ => return Err(LinuxError::CorruptedStruct("kernel symbol names").into()),
     };
 
-    let mut names = vec![0; (last - first) as usize];
-    vmi.read(Va(first), &mut names)?;
-    names.extend_from_slice(vmi.read_string_limited(Va(last), KSYM_NAME_LEN)?.as_bytes());
-    names.push(0);
+    let names = read_symbol_names(vmi, Va(first), Va(last), "kernel symbol names")?;
 
     let mut exports = Vec::with_capacity(entries.len());
 
@@ -332,6 +482,36 @@ where
     }
 
     Ok(exports)
+}
+
+/// Reads the names in a symbol table, from the lowest name to the end of
+/// the highest.
+///
+/// `first` and `last` are the addresses of the lowest and the highest name.
+/// One read covers all names but the highest, and a string read finds the
+/// end of the highest. The returned bytes end with a null byte. A span
+/// larger than `KERNEL_NAMES_MAX` is an error.
+pub(super) fn read_symbol_names<Driver>(
+    vmi: VmiState<LinuxOs<Driver>>,
+    first: Va,
+    last: Va,
+    what: &'static str,
+) -> Result<Vec<u8>, VmiError>
+where
+    Driver: VmiRead,
+    Driver::Architecture: ArchAdapter<Driver>,
+{
+    let length = match last.0.checked_sub(first.0) {
+        Some(length) if length <= KERNEL_NAMES_MAX => length as usize,
+        _ => return Err(LinuxError::CorruptedStruct(what).into()),
+    };
+
+    let mut names = vec![0; length];
+    vmi.read(first, &mut names)?;
+    names.extend(vmi.read_string_bytes_limited(last, KSYM_NAME_LEN)?);
+    names.push(0);
+
+    Ok(names)
 }
 
 #[cfg(test)]

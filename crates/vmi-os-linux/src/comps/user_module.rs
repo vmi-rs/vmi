@@ -7,7 +7,7 @@ use vmi_core::{
 
 use super::LinuxRegion;
 use crate::{
-    ArchAdapter, LinuxError, LinuxOs,
+    ArchAdapter, BuildId, LinuxError, LinuxOs,
     elf::{self, ElfImage, GuestElfReader},
 };
 
@@ -108,6 +108,20 @@ where
         }
 
         self.elf()?.soname(&reader)
+    }
+
+    /// Returns the GNU build-id, if the module has one.
+    ///
+    /// Only 64-bit images are read. 32-bit ones give `VmiError::NotSupported`.
+    /// A module whose file is not ELF, or whose header page is absent, gives
+    /// an error.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the notes in the module's `PT_NOTE` segments. They lie
+    /// in user memory, whose pages can be absent.
+    pub fn build_id(&self) -> Result<Option<BuildId>, VmiError> {
+        self.elf()?.build_id(&self.reader())
     }
 
     /// Returns a reader of the process's address space.

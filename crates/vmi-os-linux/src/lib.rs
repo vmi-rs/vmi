@@ -25,7 +25,8 @@
 //! - User-mode modules: the executable, the shared objects and the vDSO
 //! - ELF headers of images in user space, with the types in the `elf` module
 //! - Exports of ELF images, kernel modules and the kernel
-//! - Kernel modules
+//! - GNU build-ids of ELF images, kernel modules and the kernel
+//! - Kernel modules, with the symbols of their kallsyms
 //! - Syscall and function arguments and the return value
 //! - glibc's `errno` in the current thread as the last error
 //!
@@ -90,7 +91,7 @@ pub use self::comps::{
 };
 
 pub mod elf;
-pub use self::elf::ElfImage;
+pub use self::elf::{BuildId, ElfImage};
 
 mod error;
 pub use self::error::LinuxError;
@@ -741,7 +742,7 @@ mod tests {
 
     use isr::cache::Entry;
 
-    use super::*;
+    use super::{offsets::ModuleNotesLayout, *};
 
     /// Opens the isr profile at the path in an environment variable.
     fn entry(variable: &str) -> Result<Entry, Box<dyn std::error::Error>> {
@@ -778,6 +779,59 @@ mod tests {
             CurrentTask::new(&offsets, &symbols)?,
             CurrentTask::Relocated(_)
         ));
+        Ok(())
+    }
+
+    /// Checks the profile items for module symbols and build-ids that do not
+    /// change between Linux 6.8 and 7.0.
+    fn check_module_items(offsets: &Offsets, symbols: &Symbols) {
+        assert!(symbols.__start_notes < symbols.__stop_notes);
+        assert!(symbols._text < symbols.__start_notes);
+
+        assert_ne!(offsets.module.kallsyms.offset(), 0);
+        assert_ne!(offsets.module.notes_attrs.offset(), 0);
+        assert_eq!(offsets.mod_kallsyms.symtab.offset(), 0);
+        assert_eq!(offsets.mod_kallsyms.num_symtab.offset(), 8);
+        assert_eq!(offsets.mod_kallsyms.strtab.offset(), 16);
+        assert_eq!(offsets.bin_attribute.attr.offset(), 0);
+        assert_eq!(offsets.bin_attribute.size.offset(), 16);
+        assert_eq!(offsets.bin_attribute.private.offset(), 24);
+        assert_eq!(offsets.bin_attribute.len(), 72);
+        assert_eq!(offsets.attribute.name.offset(), 0);
+    }
+
+    #[test]
+    #[ignore = "needs VMI_OS_LINUX_PROFILE_6_8, the isr profile of a Linux 6.8 kernel"]
+    fn profile_of_linux_6_8_counts_module_notes() -> Result<(), Box<dyn std::error::Error>> {
+        let entry = entry("VMI_OS_LINUX_PROFILE_6_8")?;
+        let profile = entry.profile()?;
+        let offsets = Offsets::new(&profile)?;
+        let symbols = Symbols::new(&profile)?;
+
+        check_module_items(&offsets, &symbols);
+        assert_eq!(
+            ModuleNotesLayout::new(&offsets)?,
+            ModuleNotesLayout::Counted {
+                notes: 8,
+                attrs: 16
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "needs VMI_OS_LINUX_PROFILE_7_0, the isr profile of a Linux 7.0 kernel"]
+    fn profile_of_linux_7_0_groups_module_notes() -> Result<(), Box<dyn std::error::Error>> {
+        let entry = entry("VMI_OS_LINUX_PROFILE_7_0")?;
+        let profile = entry.profile()?;
+        let offsets = Offsets::new(&profile)?;
+        let symbols = Symbols::new(&profile)?;
+
+        check_module_items(&offsets, &symbols);
+        assert_eq!(
+            ModuleNotesLayout::new(&offsets)?,
+            ModuleNotesLayout::Grouped { bin_attrs: 40 }
+        );
         Ok(())
     }
 }

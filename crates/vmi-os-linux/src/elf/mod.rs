@@ -8,6 +8,7 @@
 //!
 //! The loaders map the ELF header, the program headers and the dynamic
 //! section of an image, and the tables that the dynamic section points to.
+//! They also map the notes, which the linkers put into a `PT_LOAD` segment.
 //! The parser reads only those parts. Section headers are not mapped.
 //!
 //! Addresses in the file's view become addresses in memory by adding the
@@ -19,6 +20,7 @@
 //! [`LinuxUserModule::elf`]: crate::LinuxUserModule::elf
 
 mod headers;
+mod note;
 
 use vmi_core::{
     Pa, Va, VmiError, VmiState,
@@ -27,12 +29,17 @@ use vmi_core::{
 };
 use zerocopy::FromBytes;
 
-pub use self::headers::{
-    DT_GNU_HASH, DT_HASH, DT_NULL, DT_RELA, DT_RELAENT, DT_RELASZ, DT_SONAME, DT_STRSZ, DT_STRTAB,
-    DT_SYMENT, DT_SYMTAB, DT_VERSYM, Dyn64, ELFCLASS32, ELFCLASS64, ELFDATA2LSB, ELFMAG, EM_386,
-    EM_X86_64, FileHeader64, Ident, PF_W, PT_DYNAMIC, PT_LOAD, ProgramHeader64, R_X86_64_TPOFF64,
-    Rela64, SHN_ABS, SHN_UNDEF, STB_GLOBAL, STB_GNU_UNIQUE, STB_WEAK, STT_FUNC, STT_GNU_IFUNC,
-    STT_OBJECT, STT_TLS, STV_DEFAULT, STV_PROTECTED, Sym64, VERSYM_HIDDEN,
+pub(crate) use self::note::read_build_id;
+pub use self::{
+    headers::{
+        DT_GNU_HASH, DT_HASH, DT_NULL, DT_RELA, DT_RELAENT, DT_RELASZ, DT_SONAME, DT_STRSZ,
+        DT_STRTAB, DT_SYMENT, DT_SYMTAB, DT_VERSYM, Dyn64, ELF_NOTE_GNU, ELFCLASS32, ELFCLASS64,
+        ELFDATA2LSB, ELFMAG, EM_386, EM_X86_64, FileHeader64, Ident, NT_GNU_BUILD_ID, NoteHeader64,
+        PF_W, PT_DYNAMIC, PT_LOAD, PT_NOTE, ProgramHeader64, R_X86_64_TPOFF64, Rela64, SHN_ABS,
+        SHN_UNDEF, STB_GLOBAL, STB_GNU_UNIQUE, STB_WEAK, STT_FUNC, STT_GNU_IFUNC, STT_OBJECT,
+        STT_TLS, STV_DEFAULT, STV_PROTECTED, Sym64, VERSYM_HIDDEN,
+    },
+    note::BuildId,
 };
 use crate::{ArchAdapter, LinuxError, LinuxOs};
 
@@ -675,6 +682,27 @@ impl ElfImage {
         }
     }
 
+    /// Returns the GNU build-id, if the image has one.
+    ///
+    /// The build-id is the descriptor of the first `NT_GNU_BUILD_ID` note
+    /// with the name `GNU` in the `PT_NOTE` segments.
+    pub(crate) fn build_id(&self, reader: &impl ElfReader) -> Result<Option<BuildId>, VmiError> {
+        for program in &self.program_headers {
+            if program.p_type != PT_NOTE {
+                continue;
+            }
+
+            let address = Va(self.bias.wrapping_add(program.p_vaddr));
+            let align = note::segment_alignment(program.p_align);
+
+            if let Some(build_id) = read_build_id(reader, address, program.p_memsz, align)? {
+                return Ok(Some(build_id));
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Returns the address of the slot into which ld.so writes a TLS
     /// variable's offset from the thread pointer.
     ///
@@ -756,12 +784,16 @@ mod tests {
 
     use zerocopy::IntoBytes as _;
 
-    use super::*;
+    use super::{
+        note::tests::{BUILD_ID, push_note},
+        *,
+    };
 
     /// Where the tests load their image.
     const BASE: u64 = 0x7f12_3450_0000;
 
     /// File offsets in the test image.
+    const NOTES: u64 = 0x0200;
     const DYNAMIC: u64 = 0x1000;
     const GNU_HASH: u64 = 0x1200;
     const HASH: u64 = 0x1400;
@@ -830,6 +862,10 @@ mod tests {
 
         /// Whether the TPOFF relocation names `errno` instead of symbol 0.
         tpoff_names_symbol: bool,
+
+        /// The `p_align` of a `PT_NOTE` segment with a build-id, or `None`
+        /// for an image without notes.
+        note_align: Option<u64>,
     }
 
     impl Default for Layout {
@@ -842,6 +878,7 @@ mod tests {
                 gnu_hash: true,
                 sysv_hash: false,
                 tpoff_names_symbol: false,
+                note_align: None,
             }
         }
     }
@@ -939,7 +976,7 @@ mod tests {
             e_flags: 0,
             e_ehsize: 64,
             e_phentsize: 56,
-            e_phnum: 2,
+            e_phnum: if layout.note_align.is_some() { 3 } else { 2 },
             e_shentsize: 64,
             e_shnum: 0,
             e_shstrndx: 0,
@@ -969,6 +1006,28 @@ mod tests {
         };
         memory.write(0x40, load.as_bytes());
         memory.write(0x40 + 56, dynamic.as_bytes());
+
+        // Another note comes before the build-id, and both use the segment's
+        // alignment.
+        if let Some(p_align) = layout.note_align {
+            let align = p_align as usize;
+            let mut notes = Vec::new();
+            push_note(&mut notes, b"GNU\0", 5, &[0xaa; 12], align);
+            push_note(&mut notes, b"GNU\0", NT_GNU_BUILD_ID, &BUILD_ID, align);
+            memory.write(NOTES, &notes);
+
+            let note = ProgramHeader64 {
+                p_type: PT_NOTE,
+                p_flags: 4,
+                p_offset: NOTES,
+                p_vaddr: NOTES,
+                p_paddr: NOTES,
+                p_filesz: notes.len() as u64,
+                p_memsz: notes.len() as u64,
+                p_align,
+            };
+            memory.write(0x40 + 2 * 56, note.as_bytes());
+        }
 
         // The string table: the object's name first, then the symbols.
         let mut strings = vec![0u8];
@@ -1247,5 +1306,50 @@ mod tests {
 
         assert!(architecture(&memory, Va(BASE)).is_err());
         assert!(ElfImage::parse(&memory, Va(BASE)).is_err());
+    }
+
+    #[test]
+    fn build_id_comes_from_the_note_segment() -> Result<(), VmiError> {
+        for note_align in [4, 8] {
+            let memory = image(Layout {
+                note_align: Some(note_align),
+                ..Layout::default()
+            });
+            let image = ElfImage::parse(&memory, Va(BASE))?;
+
+            let build_id = image.build_id(&memory)?;
+            assert_eq!(
+                build_id.as_ref().map(BuildId::as_bytes),
+                Some(&BUILD_ID[..]),
+                "p_align {note_align}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn image_without_notes_has_no_build_id() -> Result<(), VmiError> {
+        let memory = image(Layout::default());
+        let image = ElfImage::parse(&memory, Va(BASE))?;
+
+        assert_eq!(image.build_id(&memory)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn oversized_note_segment_is_an_error() -> Result<(), VmiError> {
+        let mut memory = image(Layout {
+            note_align: Some(4),
+            ..Layout::default()
+        });
+
+        // These bytes hold `p_memsz` in the third program header.
+        memory.write(0x40 + 2 * 56 + 40, &(1u64 << 20).to_le_bytes());
+        let image = ElfImage::parse(&memory, Va(BASE))?;
+
+        // The size check fails before a read outside the test image, which
+        // would give `VmiError::Other`.
+        assert!(matches!(image.build_id(&memory), Err(VmiError::Os(_))));
+        Ok(())
     }
 }

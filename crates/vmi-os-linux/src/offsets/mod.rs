@@ -1,10 +1,16 @@
 //! Kernel symbols and structure offsets, read from an isr profile.
 //!
-//! Every symbol and field here exists in Linux 6.8 and later, except the
-//! per-CPU current task, which has two layouts (see [`LinuxOs`]). The crate
-//! picks between them by the symbols that the profile holds, never by the
-//! absence of a field, because isr's nested field lookup can find a field of
-//! the same name in a nested structure.
+//! Every symbol and field here exists in Linux 6.8 and later, except in two
+//! places with two layouts each:
+//!
+//! - The per-CPU current task changed in Linux 6.15 (see [`LinuxOs`]). The
+//!   crate picks its layout by the symbols that the profile holds.
+//! - `module_notes_attrs` changed in Linux 6.14. [`ModuleNotesLayout`] picks
+//!   its layout by the fields `notes` and `grp`, and it needs exactly one of
+//!   them.
+//!
+//! The absence of a field alone never picks a layout. isr's nested field
+//! lookup can find a field of the same name in a nested structure.
 //!
 //! [`LinuxOs`]: crate::LinuxOs
 
@@ -12,6 +18,8 @@
 #![allow(non_camel_case_types)]
 
 use isr_macros::{Field, offsets, symbols};
+
+use crate::LinuxError;
 
 symbols! {
     /// Linux kernel symbols used by the [`LinuxOs`] implementation.
@@ -34,6 +42,8 @@ symbols! {
         __stop___ksymtab: u64,
         __start___ksymtab_gpl: u64,     // struct kernel_symbol[]
         __stop___ksymtab_gpl: u64,
+        __start_notes: u64,             // Elf64_Nhdr[]
+        __stop_notes: u64,
 
         current_task: Option<u64>,      // per-CPU struct task_struct*, Linux 6.15 and later
         pcpu_hot: Option<u64>,          // per-CPU struct pcpu_hot, Linux 6.2 to 6.14
@@ -118,11 +128,40 @@ offsets! {
             num_syms: Field,            // unsigned int
             gpl_syms: Field,            // const struct kernel_symbol*
             num_gpl_syms: Field,        // unsigned int
+            kallsyms: Field,            // struct mod_kallsyms*
+            notes_attrs: Field,         // struct module_notes_attrs*
         }
 
         struct module_memory {
             base: Field,                // void*
             size: Field,                // unsigned int
+        }
+
+        struct mod_kallsyms {
+            symtab: Field,              // Elf64_Sym*
+            num_symtab: Field,          // unsigned int
+            strtab: Field,              // char*
+        }
+
+        // One of two layouts, which `ModuleNotesLayout` picks.
+        struct module_notes_attrs {
+            notes: Option<Field>,       // unsigned int, Linux 6.8 to 6.13
+            grp: Option<Field>,         // struct attribute_group, Linux 6.14 and later
+            attrs: Field,               // struct bin_attribute[]
+        }
+
+        struct attribute_group {
+            bin_attrs: Field,           // const struct bin_attribute* const*
+        }
+
+        struct bin_attribute {
+            attr: Field,                // struct attribute
+            size: Field,                // size_t
+            private: Field,             // void*
+        }
+
+        struct attribute {
+            name: Field,                // const char*
         }
 
         struct file {
@@ -173,6 +212,54 @@ offsets! {
         #[isr(optional)]
         struct pcpu_hot {
             current_task: Field,        // struct task_struct*
+        }
+    }
+}
+
+/// The layout of `module_notes_attrs`.
+///
+/// The kernel keeps the notes sections of a module in this structure, for
+/// the files in `/sys/module/<name>/notes`. Each section has an entry. The
+/// entry is a `bin_attribute` that holds the section's name, address and
+/// size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModuleNotesLayout {
+    /// The layout of Linux 6.8 to 6.13. The field `notes` counts the entries
+    /// in the array `attrs`.
+    Counted {
+        /// Offset of `module_notes_attrs.notes`.
+        notes: u64,
+
+        /// Offset of `module_notes_attrs.attrs`.
+        attrs: u64,
+    },
+
+    /// The layout of Linux 6.14 and later. The field `grp.bin_attrs` points
+    /// to an array of pointers to the entries, which ends with `NULL`.
+    Grouped {
+        /// Offset of `module_notes_attrs.grp.bin_attrs`.
+        bin_attrs: u64,
+    },
+}
+
+impl ModuleNotesLayout {
+    /// Picks the layout from the fields that the profile gives
+    /// `module_notes_attrs`.
+    pub(crate) fn new(offsets: &Offsets) -> Result<Self, LinuxError> {
+        let MODULE_NOTES_ATTRS = &offsets.module_notes_attrs;
+        let ATTRIBUTE_GROUP = &offsets.attribute_group;
+
+        match (&MODULE_NOTES_ATTRS.notes, &MODULE_NOTES_ATTRS.grp) {
+            (Some(notes), None) => Ok(Self::Counted {
+                notes: notes.offset(),
+                attrs: MODULE_NOTES_ATTRS.attrs.offset(),
+            }),
+            (None, Some(grp)) => Ok(Self::Grouped {
+                bin_attrs: grp.offset() + ATTRIBUTE_GROUP.bin_attrs.offset(),
+            }),
+            _ => Err(LinuxError::UnsupportedProfile(
+                "module_notes_attrs needs exactly one of notes and grp",
+            )),
         }
     }
 }

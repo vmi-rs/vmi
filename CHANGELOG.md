@@ -102,6 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in that time costs no interrupt in dom0 and three syscalls less. The time
   adapts to the gaps between requests, from 10 to 50 microseconds, and stays
   at zero while events are rare. It keeps a CPU busy while it runs.
+- **Breaking:** `vmi-os-linux` requires the symbols `__start_notes` and
+  `__stop_notes` in its profile, and the types and fields that hold a
+  module's kallsyms and notes, such as `module.kallsyms` and
+  `module_notes_attrs`. `LinuxOs::new` fails without them.
 
 ### Added
 
@@ -190,6 +194,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vmi-os-linux`.
 - The examples `linux-recipe-writefile` and `linux-recipe-kernel-writefile`
   write a file in a Linux guest from user mode and from kernel mode.
+- `BuildId` and `LinuxImage::build_id` read the GNU build-id of the kernel, a
+  kernel module or a user ELF image. `LinuxUserModule::build_id` reads a user
+  module's build-id in the address space of its process.
+- `LinuxModule::symbols` reads a module's kallsyms, static functions included,
+  as `/proc/kallsyms` lists them.
 
 ### Removed
 
