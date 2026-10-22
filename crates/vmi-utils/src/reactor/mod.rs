@@ -2,9 +2,9 @@
 //!
 //! A [`Reactor`] couples a [`BreakpointManager`] and a
 //! [`PageTableMonitor`] so that breakpoints installed at named kernel
-//! and module symbols survive page-in / page-out, and so that
-//! PatchGuard reads of the kernel image are served from the original,
-//! breakpoint-free page.
+//! and module symbols survive page-in / page-out, and so that reads of
+//! a page with breakpoints are served from the original, breakpoint-free
+//! page. Integrity checks, such as PatchGuard on Windows, make such reads.
 //!
 //! The handler describes its monitored surface through two enums:
 //! a module enum produced by [`define_modules!`] and an event enum
@@ -15,12 +15,17 @@
 //! it also emits a resolver that produces a collection of [`ResolvedEvent`]s.
 //! [`Reactor::new`] then installs breakpoints for them.
 //!
+//! The reactor runs on Windows and Linux guests. The guest's [`OsAdapter`]
+//! loads the symbols of each module and decides whether the guest can take
+//! a page fault.
+//!
 //! Hits arrive at [`ReactorHandler::handle_event`] as the event enum value.
 //!
 //! If `handle_event` tries to read a paged-out memory and returns
-//! [`VmiError::PageFault`], the reactor will inject a page fault
-//! to the guest and wait for the next event (which should be the retry
-//! of the instruction that caused the page fault).
+//! [`VmiError::PageFault`], the reactor asks [`OsAdapter::page_fault`] for
+//! an interrupt. The reactor injects the interrupt and waits for the next
+//! event, which should be the retry of the instruction that caused the page
+//! fault. Without an interrupt, the reactor skips the event.
 //!
 //! [`BreakpointManager`]: crate::bpm::BreakpointManager
 //! [`PageTableMonitor`]: crate::ptm::PageTableMonitor
@@ -29,23 +34,24 @@ mod event;
 #[doc(hidden)]
 pub mod macros;
 mod module;
+mod os;
 mod profile;
+mod symbols;
 
 use std::cell::RefCell;
 
-use vmi_arch_amd64::{
-    Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt, PageFaultErrorCode,
-};
+use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector};
 use vmi_core::{
     Architecture, MemoryAccess, View, VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiOs,
     VmiSession, driver::VmiFullDriver, os::VmiOsProcess as _,
 };
-use vmi_os_windows::WindowsOs;
 
 pub use self::{
     event::{EventMetadata, ReactorEvent, ResolvedEvent},
     module::{ModuleMetadata, ModuleMode, ModuleProcessFilter, ReactorModule, ResolvedModule},
+    os::OsAdapter,
     profile::ProfileRef,
+    symbols::ModuleSymbols,
 };
 use super::{
     bpm::{Breakpoint, BreakpointController, BreakpointManager},
@@ -128,13 +134,12 @@ where
     output: RefCell<Option<Handler::Output>>,
 }
 
-impl<Driver, Handler> Reactor<WindowsOs<Driver>, Handler>
+impl<Os, Handler> Reactor<Os, Handler>
 where
-    Driver: VmiFullDriver<Architecture = Amd64>, // TODO: relax this to any architecture
-    Driver::Architecture:
-        vmi_os_windows::ArchAdapter<Driver> + ptm::ArchAdapter<Driver, Handler::Event>,
-    Handler: ReactorHandler<WindowsOs<Driver>>,
-    <Handler::Event as ReactorEvent>::Module: ReactorModule<WindowsOs<Driver>>,
+    Os: OsAdapter<Architecture = Amd64>,
+    Os::Driver: VmiFullDriver<Architecture = Amd64>, // TODO: relax this to any architecture
+    Handler: ReactorHandler<Os>,
+    <Handler::Event as ReactorEvent>::Module: ReactorModule<Os>,
 {
     /// Creates a reactor and installs one breakpoint per resolved event.
     ///
@@ -146,7 +151,7 @@ where
     /// events, so the same EPT entry covers every process that maps the
     /// underlying physical page.
     pub fn new(
-        session: &VmiSession<WindowsOs<Driver>>,
+        session: &VmiSession<Os>,
         handler: Handler,
         events: impl AsRef<[ResolvedEvent<Handler::Event>]>,
     ) -> Result<Self, VmiError> {
@@ -206,10 +211,7 @@ where
             access = %vmi.event().reason().as_memory_access().access,
         )
     )]
-    fn memory_access(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
+    fn memory_access(&mut self, vmi: &VmiContext<Os>) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let memory_access = vmi.event().reason().as_memory_access();
 
         // Since Intel CPUs set both the `R` and `W` flags for write accesses,
@@ -252,10 +254,7 @@ where
     /// the breakpoint event was already queued) are stepped over against
     /// the default view.
     #[tracing::instrument(skip_all)]
-    fn interrupt(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
+    fn interrupt(&mut self, vmi: &VmiContext<Os>) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let tag = match self.bpm.get_by_event(vmi, vmi.event(), ()) {
             Some(breakpoint) => breakpoint.tag(),
             None => {
@@ -293,10 +292,7 @@ where
     ///
     /// [`memory_access`]: Self::memory_access
     #[tracing::instrument(skip_all)]
-    fn singlestep(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
+    fn singlestep(&mut self, vmi: &VmiContext<Os>) -> Result<VmiEventResponse<Amd64>, VmiError> {
         // Get the page table modifications by processing the dirty page table
         // entries.
         let ptm_events = self.ptm.process_dirty_entries(vmi, vmi.event().vcpu_id())?;
@@ -310,9 +306,11 @@ where
 
     /// Dispatches a VMI event to the matching handler.
     ///
-    /// Routes VMI event reasons to their per-event handlers, and turns
-    /// a translation failure into an injected page fault so the guest can
-    /// page the address in and retry the faulting instruction.
+    /// Routes VMI event reasons to their per-event handlers. A page fault
+    /// goes to [`OsAdapter::page_fault`]. The reactor injects the interrupt
+    /// that the adapter returns, and the guest pages the address in and
+    /// retries the faulting instruction. Without an interrupt, the reactor
+    /// takes the default action and skips the event.
     #[tracing::instrument(
         name = "reactor",
         skip_all,
@@ -325,10 +323,7 @@ where
             //name = vmi_core::trace::current_process_name(vmi),
         )
     )]
-    fn dispatch(
-        &mut self,
-        vmi: &VmiContext<WindowsOs<Driver>>,
-    ) -> Result<VmiEventResponse<Driver::Architecture>, VmiError> {
+    fn dispatch(&mut self, vmi: &VmiContext<Os>) -> Result<VmiEventResponse<Amd64>, VmiError> {
         let event = vmi.event();
         let result = match event.reason() {
             EventReason::MemoryAccess(_) => self.memory_access(vmi),
@@ -337,44 +332,45 @@ where
             _ => panic!("unhandled event: {:?}", event.reason()),
         };
 
-        // If VMI tries to read from a page that is not present, it will return
-        // a page fault error. In this case, we inject a page fault interrupt
-        // to the guest.
-        //
-        // Once the guest handles the page fault, it will try to retry the
+        // If VMI tries to read from a page that is not present, it returns a
+        // page fault error. The OS adapter decides whether the guest can take
+        // the page fault. Once the guest handles it, the guest retries the
         // instruction that caused the page fault.
         if let Err(VmiError::PageFault(pf)) = result {
-            tracing::debug!(va = %pf.va, "page fault");
-            vmi.inject_interrupt(
-                event.vcpu_id(),
-                Interrupt::page_fault_with_error_code(pf.va, PageFaultErrorCode::empty()),
-            )?;
-            return Ok(VmiEventResponse::default());
+            match Os::page_fault(vmi, pf) {
+                Some(interrupt) => {
+                    tracing::debug!(va = %pf.va, "page fault, injecting");
+                    vmi.inject_interrupt(event.vcpu_id(), interrupt)?;
+                    return Ok(VmiEventResponse::default());
+                }
+                None => {
+                    tracing::debug!(va = %pf.va, "page fault, skipping the event");
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+            }
         }
 
         result
     }
 }
 
-impl<Driver, Handler> VmiHandler<WindowsOs<Driver>> for Reactor<WindowsOs<Driver>, Handler>
+impl<Os, Handler> VmiHandler<Os> for Reactor<Os, Handler>
 where
-    Driver: VmiFullDriver<Architecture = Amd64>,
-    Handler: ReactorHandler<WindowsOs<Driver>>,
-    <Handler::Event as ReactorEvent>::Module: ReactorModule<WindowsOs<Driver>>,
+    Os: OsAdapter<Architecture = Amd64>,
+    Os::Driver: VmiFullDriver<Architecture = Amd64>,
+    Handler: ReactorHandler<Os>,
+    <Handler::Event as ReactorEvent>::Module: ReactorModule<Os>,
 {
     type Output = Handler::Output;
 
-    fn handle_event(
-        &mut self,
-        vmi: VmiContext<WindowsOs<Driver>>,
-    ) -> VmiEventResponse<Driver::Architecture> {
+    fn handle_event(&mut self, vmi: VmiContext<Os>) -> VmiEventResponse<Amd64> {
         // Flush the V2P cache on every event to avoid stale translations.
         vmi.flush_v2p_cache();
 
         self.dispatch(&vmi).expect("dispatch")
     }
 
-    fn cleanup(&mut self, vmi: &VmiSession<WindowsOs<Driver>>) {
+    fn cleanup(&mut self, vmi: &VmiSession<Os>) {
         if let Err(err) = vmi.switch_to_view(vmi.default_view()) {
             tracing::error!(%err, "failed to switch to default view");
         }

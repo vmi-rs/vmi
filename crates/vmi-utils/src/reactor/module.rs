@@ -6,7 +6,7 @@ use std::fmt::Debug;
 
 use vmi_core::{Va, VmiError, VmiOs, os::ProcessObject};
 
-use super::ProfileRef;
+use super::ModuleSymbols;
 
 /// Module set monitored by a reactor.
 ///
@@ -43,7 +43,12 @@ pub enum ModuleProcessFilter<Os>
 where
     Os: VmiOs + 'static,
 {
-    /// Match by exact image name, case-insensitive.
+    /// Match by process name, case-insensitive.
+    ///
+    /// # Platform-specific
+    ///
+    /// - **Windows**: the image file name, such as `lsass.exe`.
+    /// - **Linux**: `task_struct.comm`, which keeps at most 15 characters.
     Name(&'static str),
 
     /// Match by user-supplied predicate over the process.
@@ -59,7 +64,8 @@ where
     Module: ReactorModule<Os>,
     Os: VmiOs + 'static,
 {
-    /// Image filename (e.g. `"ntdll.dll"`), or `"kernel"` for the kernel slot.
+    /// Image name, such as `"ntdll.dll"` or `"libc.so.6"`, or `"kernel"` for
+    /// the kernel slot.
     pub name: &'static str,
 
     /// Process filter selecting which process maps this module,
@@ -86,6 +92,6 @@ pub struct ResolvedModule<'a> {
     /// Base address at which the module is loaded in the guest.
     pub base_address: Va,
 
-    /// Symbol profile for the module.
-    pub profile: ProfileRef<'a>,
+    /// Symbols of the module.
+    pub symbols: ModuleSymbols<'a>,
 }

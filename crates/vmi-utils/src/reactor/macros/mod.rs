@@ -16,19 +16,13 @@ pub mod __private {
         pub use vmi_core::*;
     }
 
-    pub mod vmi_os_windows {
-        pub use vmi_os_windows::*;
-    }
-
     use isr_cache::{Entry as IsrEntry, IsrCache};
-    use vmi_core::{
-        VmiError, VmiOs, VmiSession, driver::VmiFullDriver, os::AnyProcess, trace::Hex,
-    };
-    use vmi_os_windows::{ArchAdapter, WindowsOs};
+    use vmi_arch_amd64::Amd64;
+    use vmi_core::{Va, VmiError, VmiSession, driver::VmiFullDriver, os::AnyProcess, trace::Hex};
 
     use super::super::{
-        EventMetadata, ModuleMode, ModuleProcessFilter, ReactorEvent, ReactorModule, ResolvedEvent,
-        ResolvedModule,
+        EventMetadata, ModuleMode, ModuleProcessFilter, ModuleSymbols, OsAdapter, ReactorEvent,
+        ReactorModule, ResolvedEvent, ResolvedModule,
     };
 
     type CacheSlots = [Option<IsrEntry>];
@@ -42,23 +36,22 @@ pub mod __private {
     /// optional process filter. Without a filter, a kernel module resolves in
     /// the system process and a user module resolves across any process.
     ///
-    /// Resolved [`CodeView`] signatures are loaded through the ISR cache,
-    /// and the resulting profile references are stored in the module table.
-    /// Optional modules that cannot be found are skipped. Non-optional missing
-    /// modules cause an error.
+    /// [`OsAdapter::module_symbols`] loads the symbols of each resolved
+    /// module and may keep an isr cache entry in the module's cache slot.
+    /// The module table stores the symbols. Optional modules that cannot be
+    /// found are skipped. Non-optional missing modules cause an error.
     ///
     /// [`Module::METADATA`]: ReactorModule::METADATA
-    /// [`CodeView`]: isr_cache::CodeView
-    pub fn resolve_modules<'a, Driver, Module>(
-        session: &VmiSession<WindowsOs<Driver>>,
+    pub fn resolve_modules<'a, Os, Module>(
+        session: &VmiSession<Os>,
         isr: &IsrCache,
         cache: &'a mut CacheSlots,
         modules: &mut ModuleSlots<'a>,
     ) -> Result<(), VmiError>
     where
-        Driver: VmiFullDriver,
-        Driver::Architecture: ArchAdapter<Driver> + crate::resolver::ArchAdapter<Driver>,
-        Module: ReactorModule<WindowsOs<Driver>>,
+        Os: OsAdapter + 'static,
+        Os::Driver: VmiFullDriver<Architecture = Amd64>,
+        Module: ReactorModule<Os>,
     {
         debug_assert_eq!(
             Module::METADATA.len(),
@@ -110,12 +103,11 @@ pub mod __private {
 
             match resolved {
                 Some(resolved) => {
-                    let entry = isr.entry_from_codeview(resolved.debug_signature)?;
-                    let profile = cache_slot.insert(entry).profile()?;
+                    let symbols = Os::module_symbols(&vmi, isr, &resolved, cache_slot)?;
                     *table_slot = Some(ResolvedModule {
                         process: Some(resolved.process),
                         base_address: resolved.image_base,
-                        profile: profile.into(),
+                        symbols,
                     });
                 }
                 None if meta.optional => {
@@ -137,8 +129,9 @@ pub mod __private {
     /// The event's module tag selects either the kernel slot or the slot
     /// returned by [`ReactorModule::slot`]. The primary symbol name is tried
     /// first, followed by aliases in declaration order. A match returns a
-    /// [`ResolvedEvent`] whose address is the module base plus the symbol
-    /// offset.
+    /// [`ResolvedEvent`] with the address of the symbol. A profile symbol
+    /// lies at the module base plus [`OsAdapter::profile_symbol_offset`],
+    /// and an address symbol lies at its own address.
     ///
     /// If the module or symbol is absent and either the event or its owning
     /// module is optional, `Ok(None)` is returned. Otherwise the missing
@@ -160,7 +153,7 @@ pub mod __private {
     where
         Event: ReactorEvent,
         Event::Module: ReactorModule<Os>,
-        Os: VmiOs + 'static,
+        Os: OsAdapter + 'static,
     {
         let slot = meta
             .module
@@ -183,29 +176,24 @@ pub mod __private {
             }
         };
 
-        if let Some(offset) = module.profile.find_symbol(meta.name) {
-            tracing::debug!(offset = %Hex(offset), "symbol found");
+        if let Some(address) = symbol_address::<Os>(module, meta.name, false) {
             return Ok(Some(ResolvedEvent {
                 process: module.process,
-                address: module.base_address + offset,
+                address,
                 event: meta.event,
             }));
         }
 
-        match meta.alias.iter().find_map(|&alias| {
-            module
-                .profile
-                .find_symbol(alias)
-                .map(|offset| (alias, offset))
-        }) {
-            Some((alias, offset)) => {
-                tracing::debug!(offset = %Hex(offset), alias, "symbol found");
-                Ok(Some(ResolvedEvent {
-                    process: module.process,
-                    address: module.base_address + offset,
-                    event: meta.event,
-                }))
-            }
+        match meta
+            .alias
+            .iter()
+            .find_map(|&alias| symbol_address::<Os>(module, alias, true))
+        {
+            Some(address) => Ok(Some(ResolvedEvent {
+                process: module.process,
+                address,
+                event: meta.event,
+            })),
             None if meta.optional => {
                 tracing::debug!("symbol not found (event optional)");
                 Ok(None)
@@ -221,6 +209,40 @@ pub mod __private {
         }
     }
 
+    /// Returns the address of a symbol in a resolved module, or `None` when
+    /// the module has no symbol with that name.
+    ///
+    /// A profile value that [`OsAdapter::profile_symbol_offset`] rejects
+    /// counts as absent. `alias` tells whether `name` is an alias. The log
+    /// line for a found symbol then names the alias.
+    fn symbol_address<Os>(module: &ResolvedModule, name: &str, alias: bool) -> Option<Va>
+    where
+        Os: OsAdapter,
+    {
+        let alias = alias.then_some(name);
+
+        match &module.symbols {
+            ModuleSymbols::Profile(profile) => {
+                let value = profile.find_symbol(name)?;
+                match Os::profile_symbol_offset(profile, value) {
+                    Some(offset) => {
+                        tracing::debug!(offset = %Hex(offset), alias, "symbol found");
+                        Some(module.base_address + offset)
+                    }
+                    None => {
+                        tracing::debug!(value = %Hex(value), alias, "symbol outside the module");
+                        None
+                    }
+                }
+            }
+            ModuleSymbols::Addresses(symbols) => {
+                let address = symbols.iter().find(|symbol| symbol.name == name)?.address;
+                tracing::debug!(%address, alias, "symbol found");
+                Some(address)
+            }
+        }
+    }
+
     /// Resolves all events declared by an event enum.
     ///
     /// Events are processed in metadata order. Entries that resolve to `Some`
@@ -232,7 +254,7 @@ pub mod __private {
     where
         Event: ReactorEvent,
         Event::Module: ReactorModule<Os>,
-        Os: VmiOs + 'static,
+        Os: OsAdapter + 'static,
     {
         let mut events = Vec::new();
         for meta in Event::METADATA {
@@ -249,8 +271,12 @@ pub mod __private {
 // compiler exercises every shape of `define_modules!` / `define_events!`.
 #[cfg(test)]
 mod tests {
-    use vmi_core::{VmiError, VmiOs, driver::VmiRead};
-    use vmi_os_windows::{ArchAdapter, WindowsOs, WindowsProcess};
+    use vmi_core::{VmiError, VmiOs};
+    #[cfg(feature = "os-windows")]
+    use {
+        vmi_core::driver::VmiRead,
+        vmi_os_windows::{ArchAdapter, WindowsOs, WindowsProcess},
+    };
 
     use super::super::{define_events, define_modules};
 
@@ -265,6 +291,7 @@ mod tests {
 
     /// Windows-specific predicate, callable from the anchored impl form
     /// (`#[os(<Driver: VmiRead> WindowsOs<Driver> where ...)]`).
+    #[cfg(feature = "os-windows")]
     fn match_windows_process<Driver>(_process: &WindowsProcess<Driver>) -> Result<bool, VmiError>
     where
         Driver: VmiRead,
@@ -408,6 +435,7 @@ mod tests {
     /// Anchored form with generic param and where clause. Exercises the
     /// most common shape: one OS family bound to a `Driver` generic, complex
     /// bounds in the where clause, and a Driver-typed predicate.
+    #[cfg(feature = "os-windows")]
     #[test]
     fn test_anchored_with_generic_where() {
         define_modules! {
@@ -436,6 +464,7 @@ mod tests {
 
     /// Anchored form with a generic carrying no inline bound (everything in
     /// the where clause).
+    #[cfg(feature = "os-windows")]
     #[test]
     fn test_anchored_bare_generic_all_in_where() {
         define_modules! {
@@ -505,6 +534,7 @@ mod tests {
     /// `#[os(...)]` position-independence: before rustdoc, after rustdoc,
     /// between other attributes. The walker in `@walk_enum_attrs` peels it
     /// out wherever it appears.
+    #[cfg(feature = "os-windows")]
     #[test]
     fn test_os_attr_positions() {
         define_modules! {

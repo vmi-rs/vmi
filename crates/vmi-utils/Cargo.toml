@@ -49,8 +49,8 @@ bridge = []
 injector = ["bridge"]
 interceptor = []
 ptm = []
-# TODO: remove dependency on `arch-amd64` and `os-windows`
-reactor = ["arch-amd64", "bpm", "os-windows", "resolver"]
+# TODO: remove dependency on `arch-amd64`
+reactor = ["arch-amd64", "bpm", "resolver"]
 resolver = []
 shellcode = ["injector"]
 tracker = ["dep:foldhash"]

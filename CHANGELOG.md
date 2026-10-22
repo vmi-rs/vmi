@@ -110,10 +110,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   address. One key cannot hold two breakpoints at one physical address that
   an event could not tell apart. Inserting the second one fails, and a page-in
   leaves it pending.
+- **Breaking:** the `reactor` feature of `vmi-utils` no longer turns on
+  `os-windows`. The Windows reactor builds with `os-windows` and the Linux
+  reactor with `os-linux`. A crate that turned on `utils` without
+  `os-windows` no longer gets the Windows reactor.
+- **Breaking:** `Reactor` and the `resolve` method that `#[cache]` emits work
+  with any `Os` that implements the new `reactor::OsAdapter`, instead of
+  `WindowsOs` only.
+- **Breaking:** the field `profile` of `ResolvedModule` is now `symbols`. Its
+  `ModuleSymbols` holds an isr profile or symbols with their addresses, such
+  as exports. The `with_kernel`, `with_module` and `with_module_in_process`
+  methods that `define_modules!` emits take `impl Into<ModuleSymbols>`, which
+  a `Profile`, a `&Profile` and a `ProfileRef` convert into.
 - **Breaking:** `vmi-os-linux` requires the symbols `__start_notes` and
   `__stop_notes` in its profile, and the types and fields that hold a
   module's kallsyms and notes, such as `module.kallsyms` and
   `module_notes_attrs`. `LinuxOs::new` fails without them.
+- The reactor asks `reactor::OsAdapter::page_fault` whether the guest can
+  take a page fault from a handler. Without an interrupt, it skips the event.
+  On Windows it injects the page fault as before.
 
 ### Added
 
@@ -202,6 +217,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vmi-os-linux`.
 - The examples `linux-recipe-writefile` and `linux-recipe-kernel-writefile`
   write a file in a Linux guest from user mode and from kernel mode.
+- `reactor::OsAdapter` - loads the symbols of a module that the resolver
+  found, turns a profile symbol into an offset from the module base, and
+  decides whether the guest can take a page fault from a handler.
+  `WindowsOs` and `LinuxOs` implement it. On Linux, a kernel module's symbols
+  come from its kallsyms. The kernel's and a user library's symbols come from
+  their exports, unless `with_kernel` gives the kernel its profile.
 - The resolver supports `LinuxOs`. `resolve_kernel_module` finds the kernel
   under the name `kernel` and a loaded module by its name, such as
   `sch_fq_codel`. `resolve_user_module` finds a user module by its file name

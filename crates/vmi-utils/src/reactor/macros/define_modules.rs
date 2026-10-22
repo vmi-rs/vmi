@@ -9,8 +9,8 @@
 //! - If `#[resolver]` is present, a resolver wrapper parameterized over
 //!   `Os` with `with_kernel`, `with_module`, `into_events`.
 //! - If `#[resolver]` and `#[cache]` are both present, a symbol cache
-//!   struct plus a `resolve` method on the resolver, available only when
-//!   `Os = WindowsOs<Driver>`.
+//!   struct plus a `resolve` method on the resolver, available when `Os`
+//!   implements the reactor's `OsAdapter`, as `WindowsOs` and `LinuxOs` do.
 //!
 //! [`define_modules!`]: super::super::define_modules
 
@@ -27,6 +27,8 @@ macro_rules! _private_modules_unit {
 /// Defines a [`ReactorModule`] enum for the modules monitored by a [`Reactor`].
 ///
 /// # Usage
+///
+/// A Windows guest names its drivers and DLLs by their image file names:
 ///
 /// ```no_run
 /// # use vmi_core::{VmiError, driver::VmiRead};
@@ -86,6 +88,39 @@ macro_rules! _private_modules_unit {
 /// }
 /// ```
 ///
+/// A Linux guest names a kernel module as `lsmod` shows it, and a shared
+/// library by its file name or `DT_SONAME`. The name `kernel` is reserved for
+/// the kernel image.
+///
+/// ```no_run
+/// # use vmi_utils::reactor::define_modules;
+/// #
+/// define_modules! {
+///     /// Modules monitored by the reactor.
+///     pub enum Module {
+///         // Kernel module, such as a network scheduler.
+///         #[module(name = "sch_fq_codel")]
+///         SchFqCodel,
+///
+///         // Shared library with no process filter. The resolver picks the
+///         // first process that maps it.
+///         #[module(name = "libc.so.6", mode = user)]
+///         Libc,
+///
+///         // Shared library pinned to a process by its name
+///         // (`task_struct.comm`, case-insensitive).
+///         #[module(name = "libssl.so.3", mode = user, process = "sshd")]
+///         LibsslInSshd,
+///     }
+///
+///     #[resolver]
+///     pub struct ModuleResolver;
+///
+///     #[cache]
+///     pub struct SymbolCache;
+/// }
+/// ```
+///
 /// # Attributes
 ///
 /// - `#[os(...)]` on the enum: anchors the generated `ReactorModule`
@@ -95,7 +130,8 @@ macro_rules! _private_modules_unit {
 ///     spelled by the caller and emitted verbatim, e.g.
 ///     `#[os(<Driver: VmiRead> WindowsOs<Driver> where Driver::Architecture: ArchAdapter<Driver>)]`.
 ///   - `#[os($os_ty)]` - no generic parameters, the impl binds to a
-///     concrete type or alias, e.g. `#[os(WindowsOs<VmiXenDriver<Amd64>>)]`.
+///     concrete type or alias, such as `#[os(WindowsOs<VmiXenDriver<Amd64>>)]`
+///     or `#[os(LinuxOs<VmiXenDriver<Amd64>>)]`.
 ///
 ///   Omitting `#[os(...)]` emits a blanket
 ///   `impl<Os: VmiOs + 'static> ReactorModule<Os>` covering every OS
@@ -105,12 +141,13 @@ macro_rules! _private_modules_unit {
 /// - `#[module(...)]` on each variant: required. Arguments are
 ///   position-independent.
 ///
-///   - `name = "..."` (required): image filename, e.g. `"ntdll.dll"`.
+///   - `name = "..."` (required): image name, such as `"ntdll.dll"` on
+///     Windows, or `"libc.so.6"` and `"sch_fq_codel"` on Linux.
 ///   - `mode = kernel` (default): kernel address space.
 ///   - `mode = user`: user-mode process address space.
 ///   - `process = ...` (optional): pin the module to a process, in either
 ///     mode. Accepts either a `"literal"` matched case-insensitively
-///     against the image name, or a predicate `path` (a bare ident or a
+///     against the process name, or a predicate `path` (a bare ident or a
 ///     fully qualified path) with signature
 ///     `fn(&Os::Process<'_>) -> Result<bool, VmiError>`. A kernel image
 ///     mapped only in some processes (e.g. `win32k.sys`) uses this to
@@ -121,9 +158,10 @@ macro_rules! _private_modules_unit {
 ///   wrapper named `$Name`. Rustdoc and other attributes on the marker
 ///   struct are not permitted.
 ///
-/// - `#[cache] $vis struct $Name;` (optional): emit a profile cache
+/// - `#[cache] $vis struct $Name;` (optional): emit a symbol cache
 ///   named `$Name`. Requires `#[resolver]`. Backs the resolver's
-///   Windows-anchored `.resolve(...)`.
+///   `.resolve(...)`, which works for every OS that implements the
+///   reactor's `OsAdapter`.
 ///
 /// # Generated code
 ///
@@ -134,7 +172,7 @@ macro_rules! _private_modules_unit {
 ///   `default()`, `with_kernel`, `with_module`, `with_module_in_process`,
 ///   and `into_events()`.
 /// - If `#[resolver]` and `#[cache]` are both present: a `$Cache` struct
-///   (an array of profiles) and a
+///   (an array of isr cache entries) and a
 ///   `.resolve(session, isr, &mut cache) -> Result<Self, VmiError>`.
 ///
 /// [`ReactorModule`]: super::super::ReactorModule
@@ -1148,26 +1186,25 @@ macro_rules! _private_define_modules {
         }
 
         #[allow(dead_code)]
-        impl<'a, __Driver> $resolver<'a, $crate::reactor::macros::__private::vmi_os_windows::WindowsOs<__Driver>>
+        impl<'a, __Os> $resolver<'a, __Os>
         where
-            __Driver: $crate::reactor::macros::__private::vmi_core::driver::VmiFullDriver,
-            __Driver::Architecture:
-                $crate::reactor::macros::__private::vmi_os_windows::ArchAdapter<__Driver> +
-                $crate::resolver::ArchAdapter<__Driver>,
+            __Os: $crate::reactor::OsAdapter + 'static,
+            __Os::Driver: $crate::reactor::macros::__private::vmi_core::driver::VmiFullDriver<
+                Architecture = $crate::reactor::macros::__private::vmi_arch_amd64::Amd64,
+            >,
+            $name: $crate::reactor::ReactorModule<__Os>,
         {
             /// Resolves the kernel and every module that has not been pre-populated.
             pub fn resolve(
                 mut self,
-                session: &$crate::reactor::macros::__private::vmi_core::VmiSession<
-                    $crate::reactor::macros::__private::vmi_os_windows::WindowsOs<__Driver>
-                >,
+                session: &$crate::reactor::macros::__private::vmi_core::VmiSession<__Os>,
                 isr: &$crate::reactor::macros::__private::isr_cache::IsrCache,
                 entries: &'a mut $cache,
             ) -> ::std::result::Result<
                 Self,
                 $crate::reactor::macros::__private::vmi_core::VmiError,
             > {
-                $crate::reactor::macros::__private::resolve_modules::<__Driver, $name>(
+                $crate::reactor::macros::__private::resolve_modules::<__Os, $name>(
                     session,
                     isr,
                     entries.__inner.as_mut_slice(),
@@ -1234,12 +1271,12 @@ macro_rules! _private_define_modules {
             pub fn with_kernel(
                 mut self,
                 base_address: $crate::reactor::macros::__private::vmi_core::Va,
-                profile: impl ::std::convert::Into<$crate::reactor::ProfileRef<'a>>,
+                symbols: impl ::std::convert::Into<$crate::reactor::ModuleSymbols<'a>>,
             ) -> Self {
-                let profile = profile.into();
+                let symbols = symbols.into();
                 self.__inner[<$name as $crate::reactor::ReactorModule<__Os>>::KERNEL_SLOT] =
                     ::std::option::Option::Some(
-                        $crate::reactor::ResolvedModule { process: None, base_address, profile },
+                        $crate::reactor::ResolvedModule { process: None, base_address, symbols },
                     );
                 self
             }
@@ -1249,12 +1286,12 @@ macro_rules! _private_define_modules {
                 mut self,
                 module: $name,
                 base_address: $crate::reactor::macros::__private::vmi_core::Va,
-                profile: impl ::std::convert::Into<$crate::reactor::ProfileRef<'a>>,
+                symbols: impl ::std::convert::Into<$crate::reactor::ModuleSymbols<'a>>,
             ) -> Self {
-                let profile = profile.into();
+                let symbols = symbols.into();
                 let slot = <$name as $crate::reactor::ReactorModule<__Os>>::slot(module);
                 self.__inner[slot] = ::std::option::Option::Some(
-                    $crate::reactor::ResolvedModule { process: None, base_address, profile },
+                    $crate::reactor::ResolvedModule { process: None, base_address, symbols },
                 );
                 self
             }
@@ -1265,12 +1302,12 @@ macro_rules! _private_define_modules {
                 module: $name,
                 process: $crate::reactor::macros::__private::vmi_core::os::ProcessObject,
                 base_address: $crate::reactor::macros::__private::vmi_core::Va,
-                profile: impl ::std::convert::Into<$crate::reactor::ProfileRef<'a>>,
+                symbols: impl ::std::convert::Into<$crate::reactor::ModuleSymbols<'a>>,
             ) -> Self {
-                let profile = profile.into();
+                let symbols = symbols.into();
                 let slot = <$name as $crate::reactor::ReactorModule<__Os>>::slot(module);
                 self.__inner[slot] = ::std::option::Option::Some(
-                    $crate::reactor::ResolvedModule { process: Some(process), base_address, profile },
+                    $crate::reactor::ResolvedModule { process: Some(process), base_address, symbols },
                 );
                 self
             }
@@ -1283,6 +1320,7 @@ macro_rules! _private_define_modules {
                 $crate::reactor::macros::__private::vmi_core::VmiError,
             >
             where
+                __Os: $crate::reactor::OsAdapter,
                 Event: $crate::reactor::ReactorEvent<Module = $name>,
             {
                 $crate::reactor::macros::__private::resolve_events::<Event, __Os>(
