@@ -24,9 +24,8 @@ pub(super) type PendingBreakpoints<Key, Tag> = HashMap<Key, Breakpoint<Key, Tag>
 /// A breakpoint is defined by its address context, view, and optional metadata
 /// in the form of a key and tag.
 ///
-/// If the breakpoint is global, it will be triggered regardless of the
-/// translation root, e.g., only [`AddressContext::va`] will be considered
-/// during breakpoint matching.
+/// If the breakpoint is global, it matches in every address space that maps
+/// its page, whatever the virtual address and the translation root are there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Breakpoint<Key, Tag>
 where
@@ -45,10 +44,10 @@ where
     Key: KeyType,
     Tag: TagType,
 {
-    /// Returns the address context of the breakpoint.
+    /// Returns the address context of the breakpoint, as it was inserted.
     ///
-    /// If the breakpoint is global, only [`AddressContext::va`] will be
-    /// considered during breakpoint matching.
+    /// An event at another virtual address of the same physical address can
+    /// match a global breakpoint. The context then differs from the event's.
     pub fn ctx(&self) -> AddressContext {
         self.ctx
     }
@@ -60,9 +59,9 @@ where
 
     /// Returns whether the breakpoint is global.
     ///
-    /// A global breakpoint will be triggered regardless of the translation
-    /// root, e.g., only [`AddressContext::va`] will be considered during
-    /// breakpoint matching.
+    /// A global breakpoint matches in every address space that maps its page,
+    /// whatever the virtual address and the translation root are there.
+    /// Another breakpoint matches only under its own root.
     pub fn global(&self) -> bool {
         self.global
     }
@@ -148,9 +147,8 @@ impl BreakpointBuilder {
 
     /// Sets the breakpoint as global.
     ///
-    /// A global breakpoint will be triggered regardless of the translation
-    /// root, e.g., only [`AddressContext::va`] will be considered during
-    /// breakpoint matching.
+    /// A global breakpoint matches in every address space that maps its page,
+    /// whatever the virtual address and the translation root are there.
     pub fn global(self) -> Self {
         Self {
             global: true,

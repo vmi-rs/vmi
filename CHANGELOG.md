@@ -102,6 +102,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in that time costs no interrupt in dom0 and three syscalls less. The time
   adapts to the gaps between requests, from 10 to 50 microseconds, and stays
   at zero while events are rare. It keeps a CPU busy while it runs.
+- **Breaking:** `BreakpointManager` finds an event's breakpoint by the
+  physical address of its instruction. A global breakpoint matches in every
+  address space that maps its page, whatever the virtual address is there.
+  Each Linux process, for example, maps a shared library at its own address.
+  A breakpoint that is not global matches under its own root at any virtual
+  address. One key cannot hold two breakpoints at one physical address that
+  an event could not tell apart. Inserting the second one fails, and a page-in
+  leaves it pending.
 - **Breaking:** `vmi-os-linux` requires the symbols `__start_notes` and
   `__stop_notes` in its profile, and the types and fields that hold a
   module's kallsyms and notes, such as `module.kallsyms` and

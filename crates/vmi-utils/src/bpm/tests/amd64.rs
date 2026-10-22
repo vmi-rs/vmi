@@ -231,6 +231,10 @@ const ROOT2: Pa = Pa(0x3000);
 /// same physical address.
 const VA_BASE: u64 = 0xffff_f800_0004_0000;
 
+/// A second page-aligned virtual base. Another address space maps the same
+/// physical pages here, as Linux maps a shared library in each process.
+const OTHER_VA_BASE: u64 = 0x0000_7f12_3456_0000;
+
 /// Primary in-page offset used for breakpoints.
 const OFFSET: u64 = 0x100;
 
@@ -248,6 +252,17 @@ fn pa_at(gfn: Gfn, offset: u64) -> Pa {
 /// Returns the canonical virtual address carrying `offset`.
 fn va_at(offset: u64) -> Va {
     Va(VA_BASE | offset)
+}
+
+/// Returns the virtual address carrying `offset` in the second mapping.
+fn other_va_at(offset: u64) -> Va {
+    Va(OTHER_VA_BASE | offset)
+}
+
+/// Builds an address context for `offset` in the second mapping under
+/// translation root `root`.
+fn other_ctx_at(offset: u64, root: Pa) -> AddressContext {
+    AddressContext::new(other_va_at(offset), root)
 }
 
 /// Builds an address context for `offset` under translation root `root`.
@@ -1697,6 +1712,287 @@ fn non_global_breakpoint_onto_a_global_context_is_rejected() -> Result<(), VmiEr
     assert!(rec_calls().is_empty());
     let foreign_root = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
     assert!(manager.contains_by_event(&vmi, &foreign_root, ()));
+
+    Ok(())
+}
+
+#[test]
+fn global_breakpoint_matches_at_another_virtual_address() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW)
+            .global()
+            .with_tag("a"),
+        Some(pa_at(CODE_GFN, OFFSET)),
+    )?;
+
+    // Another address space runs the same page at another virtual address.
+    let event = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT2);
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
+    assert_eq!(breakpoint.tag(), "a");
+    assert_eq!(breakpoint.ctx(), ctx_at(OFFSET, ROOT1));
+
+    // Another byte of the page holds no breakpoint.
+    let event = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET2), ROOT2);
+    assert!(manager.get_by_event(&vmi, &event, ()).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn non_global_breakpoint_matches_its_root_at_another_virtual_address() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa_at(CODE_GFN, OFFSET)))?;
+
+    // The same address space maps the page a second time.
+    let own_root = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT1);
+    assert!(manager.contains_by_event(&vmi, &own_root, ()));
+
+    // Another address space does not match.
+    let foreign_root = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT2);
+    assert!(!manager.contains_by_event(&vmi, &foreign_root, ()));
+
+    Ok(())
+}
+
+#[test]
+fn remove_by_event_at_another_virtual_address_removes_the_global_breakpoint() -> Result<(), VmiError>
+{
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    manager.insert_with_hint(
+        &vmi,
+        bp_global(OFFSET, ROOT1, VIEW),
+        Some(pa_at(CODE_GFN, OFFSET)),
+    )?;
+    rec_clear_log();
+
+    let event = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT2);
+    assert_eq!(manager.remove_by_event(&vmi, &event, ())?, Some(true));
+    assert_eq!(rec_count(is_remove), 1);
+    assert_eq!(rec_count(is_unmonitor), 1);
+    assert!(!manager.contains_by_address(ctx_at(OFFSET, ROOT1), ()));
+
+    Ok(())
+}
+
+#[test]
+fn second_global_breakpoint_of_a_key_at_one_physical_address_is_rejected() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW)
+            .global()
+            .with_tag("a"),
+        Some(pa),
+    )?;
+    rec_clear_log();
+
+    // An event could not tell the two global breakpoints apart.
+    let result = manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW)
+            .global()
+            .with_tag("b"),
+        Some(pa),
+    );
+    assert!(matches!(result, Err(VmiError::Other(_))));
+
+    // The rejected insertion leaves the first breakpoint as it was.
+    assert!(rec_calls().is_empty());
+    let event = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT2);
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
+    assert_eq!(breakpoint.tag(), "a");
+
+    Ok(())
+}
+
+#[test]
+fn second_breakpoint_of_a_key_and_root_at_one_physical_address_is_rejected() -> Result<(), VmiError>
+{
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    // One address space maps the page at two virtual addresses.
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?;
+    rec_clear_log();
+
+    let result = manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT1), VIEW),
+        Some(pa),
+    );
+    assert!(matches!(result, Err(VmiError::Other(_))));
+    assert!(rec_calls().is_empty());
+    assert!(!manager.contains_by_address(other_ctx_at(OFFSET, ROOT1), ()));
+
+    Ok(())
+}
+
+#[test]
+fn global_and_non_global_breakpoints_of_a_key_at_one_physical_address_are_rejected()
+-> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let pa = pa_at(CODE_GFN, OFFSET);
+
+    // The global breakpoint comes first.
+    let mut manager = RecManager::new();
+    manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?;
+    let result = manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW),
+        Some(pa),
+    );
+    assert!(matches!(result, Err(VmiError::Other(_))));
+
+    // The breakpoint that is not global comes first.
+    let mut manager = RecManager::new();
+    manager.insert_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?;
+    let result = manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW).global(),
+        Some(pa),
+    );
+    assert!(matches!(result, Err(VmiError::Other(_))));
+
+    Ok(())
+}
+
+#[test]
+fn breakpoints_of_a_key_under_distinct_roots_share_a_physical_address() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    // Two address spaces map the page at different virtual addresses.
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW).with_tag("a"),
+        Some(pa),
+    )?;
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW).with_tag("b"),
+        Some(pa),
+    )?;
+
+    // Each event finds the breakpoint of its own root.
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
+    assert_eq!(breakpoint.tag(), "a");
+    let event = bp_event(Some(VIEW), CODE_GFN, other_va_at(OFFSET), ROOT2);
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
+    assert_eq!(breakpoint.tag(), "b");
+
+    // Removing one leaves the other matching.
+    manager.remove_with_hint(&vmi, bp(OFFSET, ROOT1, VIEW), Some(pa))?;
+    assert!(manager.contains_by_event(&vmi, &event, ()));
+
+    Ok(())
+}
+
+#[test]
+fn distinct_keys_share_a_physical_address_at_different_virtual_addresses() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = BreakpointManager::<NoOS<MockDriver>, RecordingController, u32>::new();
+
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(ctx_at(OFFSET, ROOT1), VIEW)
+            .global()
+            .with_key(1u32),
+        Some(pa),
+    )?;
+    manager.insert_with_hint(
+        &vmi,
+        Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW)
+            .global()
+            .with_key(2u32),
+        Some(pa),
+    )?;
+
+    // Each key finds its own breakpoint at either virtual address.
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT2);
+    let breakpoint = manager
+        .get_by_event(&vmi, &event, 1u32)
+        .expect("breakpoint");
+    assert_eq!(breakpoint.ctx(), ctx_at(OFFSET, ROOT1));
+    let breakpoint = manager
+        .get_by_event(&vmi, &event, 2u32)
+        .expect("breakpoint");
+    assert_eq!(breakpoint.ctx(), other_ctx_at(OFFSET, ROOT2));
+
+    Ok(())
+}
+
+#[test]
+fn page_in_keeps_a_conflicting_breakpoint_pending() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?;
+
+    // A global breakpoint of the same key waits for its page in another
+    // address space, which turns out to be the same physical page.
+    let other: Breakpoint<(), &'static str> = Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW)
+        .global()
+        .into();
+    manager.insert_with_hint(&vmi, other, None)?;
+    rec_clear_log();
+
+    let update = PageEntryUpdate {
+        view: VIEW,
+        ctx: other_ctx_at(OFFSET, ROOT2),
+        pa,
+    };
+    manager.handle_ptm_event(&vmi, &PageTableMonitorEvent::PageIn(update))?;
+
+    // The page-in installs nothing, and the breakpoint stays pending.
+    assert!(rec_calls().is_empty());
+    assert!(!manager.contains_by_address(other_ctx_at(OFFSET, ROOT2), ()));
+    assert!(!manager.insert_with_hint(&vmi, other, None)?);
+
+    Ok(())
+}
+
+#[test]
+fn removing_a_breakpoint_releases_its_physical_address() -> Result<(), VmiError> {
+    let core = make_vmi(MockDriver::new())?;
+    let vmi = VmiSession::new(&core, &NO_OS);
+    let mut manager = RecManager::new();
+
+    let pa = pa_at(CODE_GFN, OFFSET);
+    manager.insert_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?;
+    manager.remove_with_hint(&vmi, bp_global(OFFSET, ROOT1, VIEW), Some(pa))?;
+
+    // The physical address is free for a breakpoint at another virtual
+    // address, which then matches at the first one as well.
+    let other = Breakpoint::new(other_ctx_at(OFFSET, ROOT2), VIEW).global();
+    assert!(manager.insert_with_hint(&vmi, other, Some(pa))?);
+    let event = bp_event(Some(VIEW), CODE_GFN, va_at(OFFSET), ROOT1);
+    let breakpoint = manager.get_by_event(&vmi, &event, ()).expect("breakpoint");
+    assert_eq!(breakpoint.ctx(), other_ctx_at(OFFSET, ROOT2));
 
     Ok(())
 }

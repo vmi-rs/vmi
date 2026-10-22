@@ -13,6 +13,12 @@
 //! addresses that aren't currently mapped to physical memory - these will be
 //! automatically activated once the address translation becomes available.
 //!
+//! An event finds its breakpoint by the physical address of the breakpoint
+//! instruction that it hit. A global breakpoint therefore matches in every
+//! address space that maps its page, whatever virtual address the page has
+//! there. A shared library on Linux, for example, has a different virtual
+//! address in each process.
+//!
 //! # Consistency on error
 //!
 //! Inserting, removing, and clearing breakpoints each perform several VMI
@@ -85,12 +91,27 @@ where
     /// * Value: Map of breakpoints, where each breakpoint is identified by
     ///   (Key, AddressContext)
     ///
-    /// This map is synchronized with `active_global_breakpoints`, `active_locations`,
-    /// and `active_gfns_by_view`.
+    /// This map is synchronized with `active_claims_by_pa`,
+    /// `active_global_breakpoints`, `active_locations`, and
+    /// `active_gfns_by_view`.
     ///
     /// Breakpoints move between `active_breakpoints` and `pending_breakpoints`
     /// based on page-in and page-out events.
     active_breakpoints: HashMap<(View, Gfn), ActiveBreakpoints<Key, Tag>>,
+
+    /// Maps the physical addresses of active breakpoints to the claims that
+    /// keys hold there.
+    ///
+    /// * Key: (View, Physical Address, Key)
+    /// * Value: The key's claim, with the address contexts of its breakpoints
+    ///   at this physical address
+    ///
+    /// Events look breakpoints up here. A breakpoint instruction lives in
+    /// physical memory, and every address space that maps its page runs it, at
+    /// whatever virtual address the page has there.
+    ///
+    /// This map is kept in sync with `active_breakpoints`.
+    active_claims_by_pa: HashMap<(View, Pa, Key), PhysicalClaim>,
 
     /// Stores global breakpoints indexed by their virtual addresses.
     ///
@@ -98,6 +119,10 @@ where
     /// * Value: Global Breakpoint information, including the root address (e.g.,
     ///   `CR3` on x86 architectures) for which the global breakpoint was
     ///   initially registered.
+    ///
+    /// Insertion and removal fold the root of a global breakpoint onto this
+    /// root. A global breakpoint can therefore be inserted and removed with
+    /// any root.
     ///
     /// Note: Each VA is associated with a single root address. If support for
     /// multiple roots per VA is needed, this structure may need to be adjusted.
@@ -161,6 +186,21 @@ struct GlobalBreakpoint {
     gfns: HashMap<Gfn, usize>,
 }
 
+/// The claim that one key holds on the physical address of active
+/// breakpoints.
+///
+/// An event tells the breakpoints of one key apart by its translation root
+/// only. A key therefore holds either one global breakpoint at a physical
+/// address or one breakpoint for each root.
+#[derive(Debug)]
+enum PhysicalClaim {
+    /// A global breakpoint, which matches under every root.
+    Global(AddressContext),
+
+    /// Breakpoints that match under one root each, indexed by that root.
+    PerRoot(HashMap<Pa, AddressContext>),
+}
+
 /*
 impl<Controller, Key, Tag> Drop for Tap<Controller, Key, Tag>
 where
@@ -197,6 +237,7 @@ where
     pub fn new() -> Self {
         Self {
             active_breakpoints: HashMap::new(),
+            active_claims_by_pa: HashMap::new(),
             active_global_breakpoints: HashMap::new(),
             active_locations: HashMap::new(),
             active_gfns_by_view: HashMap::new(),
@@ -316,7 +357,7 @@ where
     ) -> Result<bool, VmiError> {
         let breakpoint = breakpoint.into();
         let Breakpoint {
-            mut ctx,
+            ctx,
             view,
             global,
             key,
@@ -346,11 +387,7 @@ where
         // under a second root cannot be removed with that root.
         //
 
-        if global
-            && let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va))
-        {
-            ctx.root = global_breakpoint.root;
-        }
+        let ctx = self.canonical_ctx(ctx, view, global);
 
         let active_removed = self
             .remove_active_breakpoint(vmi, ctx, pa, key, view)?
@@ -377,7 +414,7 @@ where
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> Result<Option<bool>, VmiError> {
-        let (ctx, pa, view) = match self.address_for_event(vmi, event) {
+        let (ctx, pa, view) = match self.address_for_event(vmi, event, key) {
             Some((ctx, pa, view)) => (ctx, pa, view),
             None => return Ok(None),
         };
@@ -451,6 +488,10 @@ where
 
     /// Returns the breakpoint registered under `key` for the given event.
     ///
+    /// The event finds the breakpoint by the physical address of the
+    /// breakpoint instruction. A global breakpoint matches there whatever
+    /// virtual address and root the event has.
+    ///
     /// For a breakpoint that is not global, the operating system picks the
     /// root from the registers of the event ([`VmiOs::translation_root`]). It
     /// can differ from the root in the registers, such as under KPTI on Linux,
@@ -461,7 +502,7 @@ where
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> Option<Breakpoint<Key, Tag>> {
-        let (ctx, pa, view) = self.address_for_event(vmi, event)?;
+        let (ctx, pa, view) = self.address_for_event(vmi, event, key)?;
         let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
 
         let breakpoints_by_ctx = self.active_breakpoints.get(&(view, gfn))?;
@@ -481,18 +522,7 @@ where
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
         key: Key,
     ) -> bool {
-        let (ctx, pa, view) = match self.address_for_event(vmi, event) {
-            Some((ctx, pa, view)) => (ctx, pa, view),
-            None => return false,
-        };
-
-        let gfn = <Interface::Driver as VmiDriver>::Architecture::gfn_from_pa(pa);
-        let breakpoints = match self.active_breakpoints.get(&(view, gfn)) {
-            Some(breakpoints) => breakpoints,
-            None => return false,
-        };
-
-        breakpoints.contains_key(&(key, ctx))
+        self.get_by_event(vmi, event, key).is_some()
     }
 
     /// Checks if a breakpoint is active for the given address.
@@ -528,6 +558,7 @@ where
         }
 
         debug_assert!(self.active_breakpoints.is_empty());
+        debug_assert!(self.active_claims_by_pa.is_empty());
         debug_assert!(self.active_global_breakpoints.is_empty());
         debug_assert!(self.active_locations.is_empty());
         debug_assert!(self.active_gfns_by_view.is_empty());
@@ -606,6 +637,25 @@ where
         };
 
         for breakpoint in breakpoints.into_values() {
+            //
+            // Another breakpoint of this key can hold the physical address
+            // already, reached through another virtual address. An event could
+            // not tell the two apart, and this one stays pending instead.
+            //
+
+            let ctx = self.canonical_ctx(breakpoint.ctx, view, breakpoint.global);
+            if let Err(err) =
+                self.check_physical_claim(view, pa, breakpoint.key, ctx, breakpoint.global)
+            {
+                tracing::warn!(
+                    %err, %pa, %ctx, %view, key = ?breakpoint.key,
+                    "breakpoint stays pending"
+                );
+
+                self.insert_pending_breakpoint(breakpoint)?;
+                continue;
+            }
+
             self.insert_active_breakpoint(vmi, breakpoint, pa)?;
         }
 
@@ -675,7 +725,7 @@ where
         //
 
         let Breakpoint {
-            mut ctx,
+            ctx,
             view,
             global,
             key,
@@ -691,11 +741,7 @@ where
         // duplicates do not inflate the page reference count.
         //
 
-        if global
-            && let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va))
-        {
-            ctx.root = global_breakpoint.root;
-        }
+        let ctx = self.canonical_ctx(ctx, view, global);
 
         //
         // An address already claimed by this key keeps the breakpoint it was
@@ -709,6 +755,14 @@ where
         {
             self.check_existing_breakpoint(existing, &breakpoint)?;
         }
+
+        //
+        // An event finds this breakpoint by its physical address, which another
+        // breakpoint of this key can hold already. This check also runs before
+        // anything is mutated.
+        //
+
+        self.check_physical_claim(view, pa, key, ctx, global)?;
 
         // Activating a breakpoint supersedes any pending copy of it, so the
         // same breakpoint is never both pending and active at once.
@@ -754,6 +808,8 @@ where
             if global {
                 self.register_global_breakpoint(gfn, view, ctx.root, ctx.va);
             }
+
+            self.register_physical_claim(view, pa, key, ctx, global);
 
             //
             // REVIEW:
@@ -1150,6 +1206,133 @@ where
         }
     }
 
+    /// Returns `ctx` with the canonical root of a global breakpoint.
+    ///
+    /// The first root that a global breakpoint is registered with at its
+    /// virtual address becomes the canonical one, and other roots fold onto
+    /// it. A breakpoint that is not global keeps its own root.
+    fn canonical_ctx(&self, mut ctx: AddressContext, view: View, global: bool) -> AddressContext {
+        if global
+            && let Some(global_breakpoint) = self.active_global_breakpoints.get(&(view, ctx.va))
+        {
+            ctx.root = global_breakpoint.root;
+        }
+
+        ctx
+    }
+
+    /// Checks that `key` can claim the physical address `pa` for the
+    /// breakpoint at `ctx`.
+    ///
+    /// An event finds its breakpoint by the physical address, the key and,
+    /// for a breakpoint that is not global, the root. Together they must name
+    /// one breakpoint. A key therefore holds either one global breakpoint at a
+    /// physical address or one breakpoint for each root. A claim against this
+    /// rule is rejected, such as a second virtual address that maps the same
+    /// physical address under the same root.
+    fn check_physical_claim(
+        &self,
+        view: View,
+        pa: Pa,
+        key: Key,
+        ctx: AddressContext,
+        global: bool,
+    ) -> Result<(), VmiError> {
+        let available = match self.active_claims_by_pa.get(&(view, pa, key)) {
+            Some(PhysicalClaim::Global(claimed_ctx)) => global && *claimed_ctx == ctx,
+            Some(PhysicalClaim::PerRoot(claimed_ctxs)) => {
+                !global
+                    && claimed_ctxs
+                        .get(&ctx.root)
+                        .is_none_or(|claimed_ctx| *claimed_ctx == ctx)
+            }
+            None => true,
+        };
+
+        if !available {
+            return Err(VmiError::Other(
+                "breakpoint already registered at the same physical address",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Records the claim that `key` holds on the physical address `pa` with
+    /// the breakpoint at `ctx`.
+    fn register_physical_claim(
+        &mut self,
+        view: View,
+        pa: Pa,
+        key: Key,
+        ctx: AddressContext,
+        global: bool,
+    ) {
+        match self.active_claims_by_pa.entry((view, pa, key)) {
+            Entry::Occupied(mut entry) => {
+                //
+                // `check_physical_claim` admits a second breakpoint of a key
+                // at a physical address only under another root.
+                //
+
+                let ctx_was_inserted = match entry.get_mut() {
+                    PhysicalClaim::PerRoot(claimed_ctxs) if !global => {
+                        claimed_ctxs.insert(ctx.root, ctx).is_none()
+                    }
+                    _ => false,
+                };
+
+                debug_assert!(
+                    ctx_was_inserted,
+                    "desynchronized active_breakpoints and active_claims_by_pa"
+                );
+            }
+            Entry::Vacant(entry) => {
+                let claim = if global {
+                    PhysicalClaim::Global(ctx)
+                }
+                else {
+                    PhysicalClaim::PerRoot(HashMap::from([(ctx.root, ctx)]))
+                };
+
+                entry.insert(claim);
+            }
+        }
+    }
+
+    /// Releases the claim that `key` holds on the physical address `pa` with
+    /// the breakpoint at `ctx`.
+    fn unregister_physical_claim(&mut self, view: View, pa: Pa, key: Key, ctx: AddressContext) {
+        let mut entry = match self.active_claims_by_pa.entry((view, pa, key)) {
+            Entry::Occupied(entry) => entry,
+            Entry::Vacant(_) => {
+                panic!("trying to unregister a physical claim that is not registered");
+            }
+        };
+
+        let claim_was_emptied = match entry.get_mut() {
+            PhysicalClaim::Global(claimed_ctx) => {
+                debug_assert_eq!(
+                    *claimed_ctx, ctx,
+                    "desynchronized active_breakpoints and active_claims_by_pa"
+                );
+                true
+            }
+            PhysicalClaim::PerRoot(claimed_ctxs) => {
+                let ctx_was_removed = claimed_ctxs.remove(&ctx.root).is_some();
+                debug_assert!(
+                    ctx_was_removed,
+                    "desynchronized active_breakpoints and active_claims_by_pa"
+                );
+                claimed_ctxs.is_empty()
+            }
+        };
+
+        if claim_was_emptied {
+            entry.remove();
+        }
+    }
+
     fn insert_monitored_location(&mut self, gfn: Gfn, view: View) {
         //
         // Verify that the active breakpoint is inserted before monitoring the
@@ -1280,6 +1463,8 @@ where
             self.unregister_global_breakpoint(gfn, view, ctx.va);
         }
 
+        self.unregister_physical_claim(view, pa, key, ctx);
+
         match self.active_locations.entry((key, ctx)) {
             Entry::Occupied(mut entry) => {
                 let view_gfns = entry.get_mut();
@@ -1347,33 +1532,30 @@ where
     }
 
     /// Returns the address context, the physical address and the view of the
-    /// breakpoint that caused an event.
+    /// breakpoint that `key` holds at an event's instruction.
+    ///
+    /// The instruction's physical address finds the claim that `key` holds.
+    /// A global breakpoint matches under every root. For another breakpoint,
+    /// the operating system picks the root from the registers of the event,
+    /// which need not be the root that the registers hold.
     fn address_for_event(
         &self,
         vmi: &VmiSession<Os>,
         event: &VmiEvent<<Interface::Driver as VmiDriver>::Architecture>,
+        key: Key,
     ) -> Option<(AddressContext, Pa, View)> {
-        let (view, gfn) = match self.controller.check_event(event) {
-            Some((view, gfn)) => (view, gfn),
-            None => return None,
-        };
+        let (view, gfn) = self.controller.check_event(event)?;
 
         let ip = Va(event.registers().instruction_pointer());
         let pa = <Interface::Driver as VmiDriver>::Architecture::pa_in_gfn(gfn, ip);
 
-        //
-        // If there is a global breakpoint for this address, fix the root
-        // with the one it was registered with. Otherwise, the operating
-        // system picks the root for the registers of the event, which need
-        // not be the root that the registers hold.
-        //
-
-        let root = match self.active_global_breakpoints.get(&(view, ip)) {
-            Some(global_breakpoint) => global_breakpoint.root,
-            None => vmi.with_registers(event.registers()).translation_root(ip),
+        let ctx = match self.active_claims_by_pa.get(&(view, pa, key))? {
+            PhysicalClaim::Global(claimed_ctx) => *claimed_ctx,
+            PhysicalClaim::PerRoot(claimed_ctxs) => {
+                let root = vmi.with_registers(event.registers()).translation_root(ip);
+                *claimed_ctxs.get(&root)?
+            }
         };
-
-        let ctx = AddressContext::new(ip, root);
 
         Some((ctx, pa, view))
     }
