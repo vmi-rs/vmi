@@ -1,4 +1,5 @@
 mod control_area;
+mod device_map;
 pub(crate) mod handle_table;
 mod handle_table_entry;
 pub(crate) mod hive;
@@ -24,6 +25,7 @@ mod wow64;
 
 pub use self::{
     control_area::WindowsControlArea,
+    device_map::WindowsDeviceMap,
     handle_table::WindowsHandleTable,
     handle_table_entry::WindowsHandleTableEntry,
     hive::{

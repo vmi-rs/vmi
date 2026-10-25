@@ -209,6 +209,11 @@ offsets! {
 
         struct _OBJECT_DIRECTORY {
             HashBuckets: Field,             // struct _OBJECT_DIRECTORY_ENTRY* [37]
+            DeviceMap: Field,               // struct _DEVICE_MAP*
+        }
+
+        struct _DEVICE_MAP {
+            DriveMap: Field,                // ULONG
         }
 
         struct _OBJECT_DIRECTORY_ENTRY {

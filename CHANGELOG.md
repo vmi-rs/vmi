@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layout too.
 - `WindowsSid::to_sid_string` returns the string form of a SID, such as
   `S-1-5-18`, or the error of a failed read, where `Debug` writes `?`.
+- `WindowsDirectoryObject::device_map` returns the device map of an object
+  directory. `WindowsDeviceMap::drive_map` returns the drive letters that the
+  map lists as a bit mask, and `drive_letters` as `char`s.
 
 ### Removed
 

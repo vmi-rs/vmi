@@ -1,7 +1,7 @@
 use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::{FromWindowsObject, WindowsObject, WindowsObjectTypeKind};
-use crate::{ArchAdapter, DirectoryObjectIterator, WindowsOs, offset};
+use crate::{ArchAdapter, DirectoryObjectIterator, WindowsDeviceMap, WindowsOs, offset};
 
 /// A Windows directory object.
 ///
@@ -64,6 +64,29 @@ where
     /// Creates a new Windows directory object.
     pub fn new(vmi: VmiState<'a, WindowsOs<Driver>>, va: Va) -> Self {
         Self { vmi, va }
+    }
+
+    /// Returns the device map of the directory, or `None` for a directory
+    /// without one.
+    ///
+    /// A directory that holds DOS device names has a device map, such as
+    /// `\GLOBAL??`, which has the system's device map.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_OBJECT_DIRECTORY.DeviceMap`.
+    pub fn device_map(&self) -> Result<Option<WindowsDeviceMap<'a, Driver>>, VmiError> {
+        let OBJECT_DIRECTORY = offset!(self.vmi, _OBJECT_DIRECTORY);
+
+        let device_map = self
+            .vmi
+            .read_va_native(self.va + OBJECT_DIRECTORY.DeviceMap.offset())?;
+
+        if device_map.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsDeviceMap::new(self.vmi, device_map)))
     }
 
     /// Iterates over the objects in the directory.
