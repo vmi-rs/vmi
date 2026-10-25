@@ -133,6 +133,38 @@ where
             })
             .map(Vec::as_slice)
     }
+
+    /// Returns the SID in its string form, such as `S-1-5-18`.
+    ///
+    /// The authority is decimal when it fits in 32 bits and twelve hex digits
+    /// otherwise, as the SID string format of MS-DTYP asks. Unlike the
+    /// `Debug` implementation, this method returns the error of a failed
+    /// read.
+    ///
+    /// # Implementation Details
+    ///
+    /// Formats [`revision`], [`authority`] and [`sub_authorities`].
+    ///
+    /// [`revision`]: Self::revision
+    /// [`authority`]: Self::authority
+    /// [`sub_authorities`]: Self::sub_authorities
+    pub fn to_sid_string(&self) -> Result<String, VmiError> {
+        let revision = self.revision()?;
+        let authority = self.authority()?;
+        let sub_authorities = self.sub_authorities()?;
+
+        let mut result = match authority {
+            authority if authority < (1 << 32) => format!("S-{revision}-{authority}"),
+            authority => format!("S-{revision}-0x{authority:012X}"),
+        };
+
+        for sub_authority in sub_authorities {
+            result.push('-');
+            result.push_str(&sub_authority.to_string());
+        }
+
+        Ok(result)
+    }
 }
 
 impl<Driver> std::fmt::Debug for WindowsSid<'_, Driver>
@@ -146,33 +178,10 @@ where
     /// matching `RtlConvertSidToUnicodeString`. A read failure on any
     /// field aborts rendering and writes `?` instead.
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let revision = match self.revision() {
-            Ok(revision) => revision,
-            Err(_) => return write!(f, "?"),
-        };
-
-        let authority = match self.authority() {
-            Ok(authority) => authority,
-            Err(_) => return write!(f, "?"),
-        };
-
-        let sub_authorities = match self.sub_authorities() {
-            Ok(sub_authorities) => sub_authorities,
-            Err(_) => return write!(f, "?"),
-        };
-
-        write!(f, "S-{revision}-")?;
-
-        match authority {
-            authority if authority < (1 << 32) => write!(f, "{authority}")?,
-            authority => write!(f, "0x{authority:012X}")?,
+        match self.to_sid_string() {
+            Ok(sid_string) => f.write_str(&sid_string),
+            Err(_) => write!(f, "?"),
         }
-
-        for sub_authority in sub_authorities {
-            write!(f, "-{sub_authority}")?;
-        }
-
-        Ok(())
     }
 }
 

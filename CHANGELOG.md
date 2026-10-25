@@ -93,6 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsProcessParameters::environment`, `environment_bytes` and
   `environment_size` read the environment block of a process, in the 32-bit
   layout too.
+- `WindowsSid::to_sid_string` returns the string form of a SID, such as
+  `S-1-5-18`, or the error of a failed read, where `Debug` writes `?`.
 
 ### Removed
 
