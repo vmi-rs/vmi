@@ -29,7 +29,7 @@ pub use self::{
     hive::{
         WindowsHive, WindowsHiveBaseBlock, WindowsHiveCellIndex, WindowsHiveMapDirectory,
         WindowsHiveMapEntry, WindowsHiveMapTable, WindowsHiveStorageType, WindowsKeyControlBlock,
-        WindowsKeyIndex, WindowsKeyNode, WindowsKeyValue, WindowsKeyValueData,
+        WindowsKeyIndex, WindowsKeyNode, WindowsKeyNodeFlags, WindowsKeyValue, WindowsKeyValueData,
         WindowsKeyValueFlags, WindowsKeyValueType,
     },
     image::WindowsImage,
@@ -39,10 +39,10 @@ pub use self::{
     name_info::WindowsObjectHeaderNameInfo,
     object::{
         FromWindowsObject, ParseObjectTypeError, WindowsDirectoryObject, WindowsFileObject,
-        WindowsImpersonationLevel, WindowsObject, WindowsObjectType, WindowsObjectTypeKind,
-        WindowsPrivilege, WindowsProcess, WindowsSectionObject, WindowsThread, WindowsThreadState,
-        WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
-        WindowsTokenSource, WindowsTokenType,
+        WindowsImpersonationLevel, WindowsKey, WindowsObject, WindowsObjectKind, WindowsObjectType,
+        WindowsObjectTypeKind, WindowsPrivilege, WindowsProcess, WindowsSectionObject,
+        WindowsThread, WindowsThreadState, WindowsThreadWaitReason, WindowsToken,
+        WindowsTokenFlags, WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
     },
     object_attributes::WindowsObjectAttributes,
     peb::{Peb, PebLayout, WindowsPeb, WindowsPebBase},

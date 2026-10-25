@@ -129,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compared the `BalancedRoot` sentinel itself, whose starting VPN is 0, and
   returned it as the VAD of an address in the first page. The sentinel lies
   inside `_EPROCESS`, so its fields read as a VAD were garbage.
+- `WindowsObjectKind`, `WindowsKey` and `WindowsKeyNodeFlags` are exported.
+  `WindowsObject::kind`, `WindowsObject::as_key` and `WindowsKeyNode::flags`
+  return them, but code outside the crate could not name them.
 
 ## [0.11.0] - 2026-10-09
 

@@ -9,7 +9,7 @@ use vmi_core::{Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 pub use self::{
     key_control_block::WindowsKeyControlBlock,
     key_index::WindowsKeyIndex,
-    key_node::WindowsKeyNode,
+    key_node::{WindowsKeyNode, WindowsKeyNodeFlags},
     key_value::{WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags, WindowsKeyValueType},
 };
 use crate::{
