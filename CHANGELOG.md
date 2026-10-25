@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `OsAdapter` has a new required method,
   `user_shellcode_spawn_from_kernel_recipe`.
 - **Breaking:** `libxen` dependency updated to 0.8.
+- **Breaking:** `RtlUserProcessParameters` has two new required constants,
+  `OFFSET_ENVIRONMENT` and `OFFSET_ENVIRONMENT_SIZE`.
 - `VmiCore::monitor_enable` and `monitor_disable` accept anything that
   converts into an `EventMonitor`, such as an `MsrMonitor`.
 - The user-mode shellcode recipes log the guest's last error code when the
@@ -88,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `drive_index` its drive index, and `drive_letter` the drive letter that the
   link defines. `WindowsObject::as_symbolic_link` and the variant
   `WindowsObjectKind::SymbolicLink` return an object as a symbolic link.
+- `WindowsProcessParameters::environment`, `environment_bytes` and
+  `environment_size` read the environment block of a process, in the 32-bit
+  layout too.
 
 ### Removed
 

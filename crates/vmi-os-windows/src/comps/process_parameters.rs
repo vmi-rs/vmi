@@ -1,4 +1,4 @@
-use vmi_core::{Pa, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
+use vmi_core::{Architecture, Pa, Registers as _, Va, VmiError, VmiState, VmiVa, driver::VmiRead};
 
 use super::WindowsWow64Kind;
 use crate::{
@@ -22,6 +22,12 @@ where
 
     /// Offset of the `CommandLine` field.
     const OFFSET_COMMAND_LINE: u64;
+
+    /// Offset of the `Environment` field.
+    const OFFSET_ENVIRONMENT: u64;
+
+    /// Offset of the `EnvironmentSize` field.
+    const OFFSET_ENVIRONMENT_SIZE: u64;
 }
 
 /// `_RTL_USER_PROCESS_PARAMETERS` structure layout.
@@ -32,6 +38,8 @@ impl RtlUserProcessParameters<StructLayout32> for RtlUserProcessParametersLayout
     const OFFSET_DLL_PATH: u64 = 0x30;
     const OFFSET_IMAGE_PATH_NAME: u64 = 0x38;
     const OFFSET_COMMAND_LINE: u64 = 0x40;
+    const OFFSET_ENVIRONMENT: u64 = 0x48;
+    const OFFSET_ENVIRONMENT_SIZE: u64 = 0x290;
 }
 
 impl RtlUserProcessParameters<StructLayout64> for RtlUserProcessParametersLayout {
@@ -39,6 +47,8 @@ impl RtlUserProcessParameters<StructLayout64> for RtlUserProcessParametersLayout
     const OFFSET_DLL_PATH: u64 = 0x50;
     const OFFSET_IMAGE_PATH_NAME: u64 = 0x60;
     const OFFSET_COMMAND_LINE: u64 = 0x70;
+    const OFFSET_ENVIRONMENT: u64 = 0x80;
+    const OFFSET_ENVIRONMENT_SIZE: u64 = 0x3f0;
 }
 
 /// Field offsets for a `_CURDIR` structure.
@@ -164,6 +174,96 @@ where
             ),
         )
     }
+
+    /// Returns the size of the environment block in bytes.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.EnvironmentSize`.
+    pub fn environment_size(&self) -> Result<u64, VmiError> {
+        // `EnvironmentSize` is a `SIZE_T`, which is as wide as a pointer.
+        let size = Layout::read_va(
+            self.vmi,
+            (
+                self.va + RtlUserProcessParametersLayout::OFFSET_ENVIRONMENT_SIZE,
+                self.root,
+            ),
+        )?;
+
+        Ok(size.0)
+    }
+
+    /// Returns the environment block as a UTF-16 multi-string.
+    ///
+    /// The block is a sequence of `NAME=VALUE` strings, each ending with a
+    /// null, followed by an empty string. The result covers the
+    /// [`environment_size`] bytes of the block, terminators included. A
+    /// process without an environment block gives an empty vector.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.Environment`.
+    ///
+    /// # Notes
+    ///
+    /// This operation might fail as the block can be paged out.
+    ///
+    /// [`environment_size`]: Self::environment_size
+    pub fn environment_bytes(&self) -> Result<Vec<u16>, VmiError> {
+        let environment = Layout::read_va(
+            self.vmi,
+            (
+                self.va + RtlUserProcessParametersLayout::OFFSET_ENVIRONMENT,
+                self.root,
+            ),
+        )?;
+
+        let size = self.environment_size()?;
+
+        if environment.is_null() || size == 0 {
+            return Ok(Vec::new());
+        }
+
+        // The size comes from guest memory and can be wrong. The block is
+        // therefore read one page at a time, and the buffer grows only by
+        // the pages that the read reaches.
+        let mut buffer = Vec::new();
+        let mut position = 0;
+        while position < size {
+            let address = environment + position;
+            let page_offset = address.0 & !Driver::Architecture::PAGE_MASK;
+            let length = (Driver::Architecture::PAGE_SIZE - page_offset).min(size - position);
+
+            let start = buffer.len();
+            buffer.resize(start + length as usize, 0);
+            self.vmi
+                .read_in((address, self.root), &mut buffer[start..])?;
+
+            position += length;
+        }
+
+        let (chunks, _) = buffer.as_chunks::<2>();
+        Ok(chunks
+            .iter()
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect())
+    }
+
+    /// Returns the `NAME=VALUE` strings of the environment block.
+    ///
+    /// Splits [`environment_bytes`] at the nulls and stops at the empty
+    /// string.
+    ///
+    /// [`environment_bytes`]: Self::environment_bytes
+    pub fn environment(&self) -> Result<Vec<String>, VmiError> {
+        let environment = self.environment_bytes()?;
+
+        Ok(environment
+            .split(|&unit| unit == 0)
+            .take_while(|entry| !entry.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect())
+    }
 }
 
 enum WindowsProcessParametersWrapper<'a, Driver>
@@ -221,6 +321,27 @@ where
         match self {
             Self::W32(inner) => inner.command_line(),
             Self::W64(inner) => inner.command_line(),
+        }
+    }
+
+    fn environment_size(&self) -> Result<u64, VmiError> {
+        match self {
+            Self::W32(inner) => inner.environment_size(),
+            Self::W64(inner) => inner.environment_size(),
+        }
+    }
+
+    fn environment_bytes(&self) -> Result<Vec<u16>, VmiError> {
+        match self {
+            Self::W32(inner) => inner.environment_bytes(),
+            Self::W64(inner) => inner.environment_bytes(),
+        }
+    }
+
+    fn environment(&self) -> Result<Vec<String>, VmiError> {
+        match self {
+            Self::W32(inner) => inner.environment(),
+            Self::W64(inner) => inner.environment(),
         }
     }
 }
@@ -360,5 +481,44 @@ where
     /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.CommandLine`.
     pub fn command_line(&self) -> Result<String, VmiError> {
         self.inner.command_line()
+    }
+
+    /// Returns the size of the environment block in bytes.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.EnvironmentSize`.
+    pub fn environment_size(&self) -> Result<u64, VmiError> {
+        self.inner.environment_size()
+    }
+
+    /// Returns the environment block as a UTF-16 multi-string.
+    ///
+    /// The block is a sequence of `NAME=VALUE` strings, each ending with a
+    /// null, followed by an empty string. The result covers the
+    /// [`environment_size`] bytes of the block, terminators included. A
+    /// process without an environment block gives an empty vector.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_RTL_USER_PROCESS_PARAMETERS.Environment`.
+    ///
+    /// # Notes
+    ///
+    /// This operation might fail as the block can be paged out.
+    ///
+    /// [`environment_size`]: Self::environment_size
+    pub fn environment_bytes(&self) -> Result<Vec<u16>, VmiError> {
+        self.inner.environment_bytes()
+    }
+
+    /// Returns the `NAME=VALUE` strings of the environment block.
+    ///
+    /// Splits [`environment_bytes`] at the nulls and stops at the empty
+    /// string.
+    ///
+    /// [`environment_bytes`]: Self::environment_bytes
+    pub fn environment(&self) -> Result<Vec<String>, VmiError> {
+        self.inner.environment()
     }
 }
