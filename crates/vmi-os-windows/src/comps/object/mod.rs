@@ -4,6 +4,7 @@ mod key;
 mod object_type;
 mod process;
 mod section;
+mod symbolic_link;
 mod thread;
 mod token;
 
@@ -20,6 +21,7 @@ pub use self::{
     object_type::WindowsObjectType,
     process::WindowsProcess,
     section::WindowsSectionObject,
+    symbolic_link::WindowsSymbolicLinkObject,
     thread::{WindowsThread, WindowsThreadState, WindowsThreadWaitReason},
     token::{
         WindowsImpersonationLevel, WindowsPrivilege, WindowsToken, WindowsTokenFlags,
@@ -283,6 +285,9 @@ where
             Some(WindowsObjectTypeKind::Section) => {
                 WindowsObjectKind::Section(WindowsSectionObject::new(self.vmi, self.va))
             }
+            Some(WindowsObjectTypeKind::SymbolicLink) => {
+                WindowsObjectKind::SymbolicLink(WindowsSymbolicLinkObject::new(self.vmi, self.va))
+            }
             Some(WindowsObjectTypeKind::Thread) => {
                 WindowsObjectKind::Thread(WindowsThread::new(self.vmi, ThreadObject(self.va)))
             }
@@ -334,6 +339,16 @@ where
     pub fn as_section(&self) -> Result<Option<WindowsSectionObject<'a, Driver>>, VmiError> {
         match self.kind()? {
             Some(WindowsObjectKind::Section(section)) => Ok(Some(section)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Returns the object as a symbolic link (`_OBJECT_SYMBOLIC_LINK`).
+    pub fn as_symbolic_link(
+        &self,
+    ) -> Result<Option<WindowsSymbolicLinkObject<'a, Driver>>, VmiError> {
+        match self.kind()? {
+            Some(WindowsObjectKind::SymbolicLink(symbolic_link)) => Ok(Some(symbolic_link)),
             _ => Ok(None),
         }
     }
@@ -848,6 +863,9 @@ where
 
     /// A section object (`_SECTION_OBJECT`).
     Section(WindowsSectionObject<'a, Driver>),
+
+    /// A symbolic link object (`_OBJECT_SYMBOLIC_LINK`).
+    SymbolicLink(WindowsSymbolicLinkObject<'a, Driver>),
 
     /// A thread object (`_ETHREAD`).
     Thread(WindowsThread<'a, Driver>),

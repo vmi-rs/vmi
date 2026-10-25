@@ -222,6 +222,12 @@ offsets! {
             Name: Field,                    // _UNICODE_STRING
         }
 
+        struct _OBJECT_SYMBOLIC_LINK {
+            LinkTarget: Field,              // _UNICODE_STRING
+            DosDeviceDriveIndex: Field,     // ULONG
+            Flags: Option<Field>,           // ULONG (Windows 10+)
+        }
+
         struct _OBJECT_TYPE {
             Name: Field,
         }

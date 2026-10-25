@@ -118,10 +118,10 @@ pub use self::comps::{
     WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess, WindowsProcessParameters,
     WindowsProcessParametersBase, WindowsProcessorMode, WindowsRegion, WindowsSectionObject,
     WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes,
-    WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState, WindowsThreadWaitReason,
-    WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
-    WindowsTrapFrame, WindowsUnloadedDriver, WindowsUserModule, WindowsUserModuleBase,
-    WindowsWow64Kind,
+    WindowsSymbolicLinkObject, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
+    WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
+    WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUnloadedDriver,
+    WindowsUserModule, WindowsUserModuleBase, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.

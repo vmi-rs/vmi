@@ -83,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `resolve_primary_entry` resolves a `RUNTIME_FUNCTION` entry to the primary
   entry of its function without reading the exception directory, which
   `resolve_primary_function` reads on every call.
+- `WindowsSymbolicLinkObject` reads a symbolic link object.
+  `WindowsSymbolicLinkObject::link_target` returns the link's target,
+  `drive_index` its drive index, and `drive_letter` the drive letter that the
+  link defines. `WindowsObject::as_symbolic_link` and the variant
+  `WindowsObjectKind::SymbolicLink` return an object as a symbolic link.
 
 ### Removed
 
