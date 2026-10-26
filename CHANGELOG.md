@@ -156,6 +156,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsObjectKind`, `WindowsKey` and `WindowsKeyNodeFlags` are exported.
   `WindowsObject::kind`, `WindowsObject::as_key` and `WindowsKeyNode::flags`
   return them, but code outside the crate could not name them.
+- `WindowsOs::exception_record` reads `NumberParameters` as the `ULONG` that
+  it is, followed by 4 bytes of padding (`__unusedAlignment` of
+  `EXCEPTION_RECORD64`). Before, it read 8 bytes, so stale bytes in the
+  padding could turn a record with one parameter into one with 15, the
+  last 14 of them garbage.
 
 ## [0.11.0] - 2026-10-09
 

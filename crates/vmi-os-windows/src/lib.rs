@@ -752,7 +752,8 @@ where
             ExceptionFlags: u32,
             ExceptionRecord: u64,
             ExceptionAddress: u64,
-            NumberParameters: u64,
+            NumberParameters: u32,
+            __unusedAlignment: u32,
             ExceptionInformation: [u64; 15],
         }
 
@@ -764,7 +765,7 @@ where
             record: record.ExceptionRecord.into(),
             address: record.ExceptionAddress.into(),
             information: record.ExceptionInformation
-                [..u64::min(record.NumberParameters, 15) as usize]
+                [..u32::min(record.NumberParameters, 15) as usize]
                 .to_vec(),
         })
     }
