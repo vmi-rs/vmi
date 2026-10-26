@@ -444,6 +444,7 @@ offsets! {
             PreviousMode: Field,            // CCHAR - KPROCESSOR_MODE enum
             WaitMode: Field,                // CCHAR - KPROCESSOR_MODE enum
             WaitReason: Field,              // UCHAR - KWAIT_REASON enum
+            SystemCallNumber: Field,        // ULONG
             Teb: Field,
             Process: Field,
             ThreadListEntry: Field,         // _LIST_ENTRY

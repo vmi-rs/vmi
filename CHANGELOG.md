@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WindowsObjectKind::AlpcPort` return an object as an ALPC port.
 - `WindowsProcess::exit_status` reads the exit status of a process from
   `_EPROCESS.ExitStatus`.
+- `WindowsThread::syscall_number` reads the number of a thread's last syscall
+  from user mode from `_KTHREAD.SystemCallNumber`.
 
 ### Removed
 
