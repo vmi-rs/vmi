@@ -107,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_EPROCESS.ExitStatus`.
 - `WindowsThread::syscall_number` reads the number of a thread's last syscall
   from user mode from `_KTHREAD.SystemCallNumber`.
+- `vmi::os::windows::unwind::amd64::resolve_indirect_entry` resolves a
+  `RUNTIME_FUNCTION` entry to the entry that describes its code, by following
+  indirect entries, whose unwind data is the RVA of another entry.
 
 ### Removed
 
