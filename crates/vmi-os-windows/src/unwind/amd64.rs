@@ -630,6 +630,40 @@ where
     }))
 }
 
+/// Resolves a `RUNTIME_FUNCTION` entry to the entry that describes its code,
+/// by following indirect entries.
+///
+/// The unwind data of an indirect entry, with its low bit set, points to
+/// another entry instead of an `UNWIND_INFO`. The Windows 7 kernel, for
+/// example, describes code that the compiler split off a function with such
+/// entries. A caller that finds an entry in the exception directory resolves
+/// it before it reads the `UNWIND_INFO` of the entry.
+///
+/// Returns `entry` itself if it is not indirect.
+pub fn resolve_indirect_entry(
+    image: &impl PeImage,
+    entry: &ImageRuntimeFunctionEntry,
+) -> Result<ImageRuntimeFunctionEntry, VmiError> {
+    /// The flag in the unwind data of an indirect entry.
+    ///
+    /// Corresponds to `RUNTIME_FUNCTION_INDIRECT` of `winnt.h`.
+    const RUNTIME_FUNCTION_INDIRECT: u32 = 0x1;
+
+    let mut entry = *entry;
+
+    for _ in 0..UNWIND_CHAIN_LIMIT {
+        if entry.unwind_info_address_or_data & RUNTIME_FUNCTION_INDIRECT == 0 {
+            break;
+        }
+
+        entry = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(
+            entry.unwind_info_address_or_data & !RUNTIME_FUNCTION_INDIRECT,
+        )?;
+    }
+
+    Ok(entry)
+}
+
 /// Resolves a `RUNTIME_FUNCTION` entry to the primary entry of its
 /// function, by following `UNW_FLAG_CHAININFO` chains.
 ///
