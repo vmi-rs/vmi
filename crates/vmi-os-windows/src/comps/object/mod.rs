@@ -1,3 +1,4 @@
+mod alpc_port;
 mod directory;
 mod file;
 mod key;
@@ -15,6 +16,7 @@ use vmi_core::{
 };
 
 pub use self::{
+    alpc_port::WindowsAlpcPort,
     directory::WindowsDirectoryObject,
     file::WindowsFileObject,
     key::WindowsKey,
@@ -270,6 +272,9 @@ where
     /// Returns the specific kind of this object.
     pub fn kind(&self) -> Result<Option<WindowsObjectKind<'a, Driver>>, VmiError> {
         let result = match self.type_kind()? {
+            Some(WindowsObjectTypeKind::AlpcPort) => {
+                WindowsObjectKind::AlpcPort(WindowsAlpcPort::new(self.vmi, self.va))
+            }
             Some(WindowsObjectTypeKind::Directory) => {
                 WindowsObjectKind::Directory(WindowsDirectoryObject::new(self.vmi, self.va))
             }
@@ -301,6 +306,14 @@ where
         };
 
         Ok(Some(result))
+    }
+
+    /// Returns the object as an ALPC port (`_ALPC_PORT`).
+    pub fn as_alpc_port(&self) -> Result<Option<WindowsAlpcPort<'a, Driver>>, VmiError> {
+        match self.kind()? {
+            Some(WindowsObjectKind::AlpcPort(alpc_port)) => Ok(Some(alpc_port)),
+            _ => Ok(None),
+        }
     }
 
     /// Returns the object as a directory (`_OBJECT_DIRECTORY`).
@@ -849,6 +862,9 @@ where
     Driver: VmiRead,
     Driver::Architecture: ArchAdapter<Driver>,
 {
+    /// An ALPC port object (`_ALPC_PORT`).
+    AlpcPort(WindowsAlpcPort<'a, Driver>),
+
     /// A directory object (`_OBJECT_DIRECTORY`).
     Directory(WindowsDirectoryObject<'a, Driver>),
 

@@ -237,6 +237,15 @@ offsets! {
             Name: Field,
         }
 
+        struct _ALPC_PORT {
+            CommunicationInfo: Field,       // _ALPC_COMMUNICATION_INFO*
+            OwnerProcess: Field,            // _EPROCESS*
+        }
+
+        struct _ALPC_COMMUNICATION_INFO {
+            ConnectionPort: Field,          // _ALPC_PORT*
+        }
+
         /*
 
         Win7:
