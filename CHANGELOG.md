@@ -103,6 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection port of a communication port. `WindowsOs::alpc_port` returns the
   ALPC port at an address. `WindowsObject::as_alpc_port` and the variant
   `WindowsObjectKind::AlpcPort` return an object as an ALPC port.
+- `WindowsProcess::exit_status` reads the exit status of a process from
+  `_EPROCESS.ExitStatus`.
 
 ### Removed
 

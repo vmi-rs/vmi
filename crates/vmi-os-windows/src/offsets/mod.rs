@@ -474,6 +474,7 @@ offsets! {
             UniqueProcessId: Field,
             CreateTime: Field,              // _LARGE_INTEGER
             ExitTime: Field,                // _LARGE_INTEGER
+            ExitStatus: Field,              // NTSTATUS
             ActiveProcessLinks: Field,      // _LIST_ENTRY
             SessionProcessLinks: Field,     // _LIST_ENTRY
             SectionBaseAddress: Field,
