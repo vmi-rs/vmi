@@ -107,21 +107,22 @@ pub use self::comps::{
     ParseObjectTypeError, Peb, PebLayout, PebLdrData, PebLdrDataLayout, RtlUserProcessParameters,
     RtlUserProcessParametersLayout, Teb, TebLayout, WOW64_TLS_APCLIST, WOW64_TLS_CPURESERVED,
     WOW64_TLS_FILESYSREDIR, WOW64_TLS_TEMPLIST, WOW64_TLS_USERCALLBACKDATA, WOW64_TLS_WOW64INFO,
-    WindowsControlArea, WindowsDeviceMap, WindowsDirectoryObject, WindowsFileObject,
-    WindowsHandleTable, WindowsHandleTableEntry, WindowsHive, WindowsHiveBaseBlock,
-    WindowsHiveCellIndex, WindowsHiveMapDirectory, WindowsHiveMapEntry, WindowsHiveMapTable,
-    WindowsHiveStorageType, WindowsImage, WindowsImpersonationLevel, WindowsKernelProcessorBlock,
-    WindowsKey, WindowsKeyControlBlock, WindowsKeyIndex, WindowsKeyNode, WindowsKeyNodeFlags,
-    WindowsKeyValue, WindowsKeyValueData, WindowsKeyValueFlags, WindowsKeyValueType, WindowsLuid,
-    WindowsModule, WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo,
-    WindowsObjectKind, WindowsObjectType, WindowsObjectTypeKind, WindowsPeb, WindowsPebBase,
-    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess,
-    WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsRegion,
-    WindowsSectionObject, WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes,
-    WindowsSidAttributes, WindowsSymbolicLinkObject, WindowsTeb, WindowsTebBase, WindowsThread,
-    WindowsThreadState, WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags,
-    WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType, WindowsTrapFrame,
-    WindowsUnloadedDriver, WindowsUserModule, WindowsUserModuleBase, WindowsWow64Kind,
+    WindowsAlpcPort, WindowsControlArea, WindowsDeviceMap, WindowsDirectoryObject,
+    WindowsFileObject, WindowsHandleTable, WindowsHandleTableEntry, WindowsHive,
+    WindowsHiveBaseBlock, WindowsHiveCellIndex, WindowsHiveMapDirectory, WindowsHiveMapEntry,
+    WindowsHiveMapTable, WindowsHiveStorageType, WindowsImage, WindowsImpersonationLevel,
+    WindowsKernelProcessorBlock, WindowsKey, WindowsKeyControlBlock, WindowsKeyIndex,
+    WindowsKeyNode, WindowsKeyNodeFlags, WindowsKeyValue, WindowsKeyValueData,
+    WindowsKeyValueFlags, WindowsKeyValueType, WindowsLuid, WindowsModule, WindowsObject,
+    WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectKind, WindowsObjectType,
+    WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
+    WindowsPrivilege, WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase,
+    WindowsProcessorMode, WindowsRegion, WindowsSectionObject, WindowsSegment, WindowsSession,
+    WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes, WindowsSymbolicLinkObject,
+    WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState, WindowsThreadWaitReason,
+    WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
+    WindowsTrapFrame, WindowsUnloadedDriver, WindowsUserModule, WindowsUserModuleBase,
+    WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -995,6 +996,14 @@ where
         path: impl AsRef<str>,
     ) -> Result<Option<WindowsObject<'a, Driver>>, VmiError> {
         Self::object_root_directory(vmi)?.lookup(path)
+    }
+
+    /// Returns the Windows ALPC port.
+    pub fn alpc_port<'a>(
+        vmi: VmiState<'a, Self>,
+        va: Va,
+    ) -> Result<WindowsAlpcPort<'a, Driver>, VmiError> {
+        Ok(WindowsAlpcPort::new(vmi, va))
     }
 
     /// Returns an iterator over all loaded registry hives.

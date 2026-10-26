@@ -98,6 +98,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsDirectoryObject::device_map` returns the device map of an object
   directory. `WindowsDeviceMap::drive_map` returns the drive letters that the
   map lists as a bit mask, and `drive_letters` as `char`s.
+- `WindowsAlpcPort` reads an ALPC port object. `WindowsAlpcPort::owner_process`
+  returns the process that owns the port, and `connection_port` the server's
+  connection port of a communication port. `WindowsOs::alpc_port` returns the
+  ALPC port at an address. `WindowsObject::as_alpc_port` and the variant
+  `WindowsObjectKind::AlpcPort` return an object as an ALPC port.
 
 ### Removed
 
