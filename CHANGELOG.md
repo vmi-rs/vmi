@@ -159,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsObjectKind`, `WindowsKey` and `WindowsKeyNodeFlags` are exported.
   `WindowsObject::kind`, `WindowsObject::as_key` and `WindowsKeyNode::flags`
   return them, but code outside the crate could not name them.
+- `UnwinderAmd64`, `resolve_primary_entry` and `resolve_primary_function`
+  follow indirect `RUNTIME_FUNCTION` entries, whose unwind data, with the low
+  bit set, points to another entry (`RUNTIME_FUNCTION_INDIRECT` of
+  `winnt.h`). The Windows 7 kernel describes code that the compiler split off
+  a function this way, as for a chunk of `NtQueryInformationThread`. Before,
+  they read the unwind data as an `UNWIND_INFO` and failed with an invalid
+  RVA.
 - `WindowsOs::exception_record` reads `NumberParameters` as the `ULONG` that
   it is, followed by 4 bytes of padding (`__unusedAlignment` of
   `EXCEPTION_RECORD64`). Before, it read 8 bytes, so stale bytes in the

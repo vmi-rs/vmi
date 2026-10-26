@@ -380,7 +380,7 @@ where
         let runtime_function = exception_dir.as_ref().and_then(|dir| dir.find(rva));
 
         let entry = match runtime_function {
-            Some(entry) => entry,
+            Some(entry) => resolve_indirect_entry(image, entry)?,
             None => {
                 // Leaf function: return address is at [RSP].
                 return unwind_leaf(vmi, context);
@@ -392,8 +392,10 @@ where
         let mut unwind_rva = unwind_data_rva;
 
         // RIP offset within the function, for prolog detection.
-        // Only meaningful for the first (non-chained) UNWIND_INFO.
-        let rip_offset = rva.saturating_sub(begin_address);
+        // Only meaningful for the first (non-chained) UNWIND_INFO. An indirect
+        // entry describes code outside its own range, and the wrapped offset
+        // of such code is past every prolog, as in `RtlVirtualUnwind`.
+        let rip_offset = rva.wrapping_sub(begin_address);
         let mut is_first = true;
         let mut machine_frame = false;
         let mut chain_count = 0u32;
@@ -544,6 +546,7 @@ where
             // Follow the chain: RUNTIME_FUNCTION is after the unwind codes.
             let chain_rva = unwind_rva + header.codes_end_offset();
             let parent = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(chain_rva)?;
+            let parent = resolve_indirect_entry(image, &parent)?;
 
             unwind_rva = parent.unwind_info_address_or_data;
             is_first = false;
@@ -665,18 +668,19 @@ pub fn resolve_indirect_entry(
 }
 
 /// Resolves a `RUNTIME_FUNCTION` entry to the primary entry of its
-/// function, by following `UNW_FLAG_CHAININFO` chains.
+/// function, by following indirect entries and `UNW_FLAG_CHAININFO` chains.
 ///
 /// This is [`resolve_primary_function`] without the lookup in the
 /// exception directory. A caller that keeps the directory's entries
 /// resolves an entry without reading the directory again.
 ///
-/// Returns `entry` itself if its `UNWIND_INFO` is not chained.
+/// Returns `entry` itself if it is not indirect and its `UNWIND_INFO` is
+/// not chained.
 pub fn resolve_primary_entry(
     image: &impl PeImage,
     entry: &ImageRuntimeFunctionEntry,
 ) -> Result<ImageRuntimeFunctionEntry, VmiError> {
-    let mut entry = *entry;
+    let mut entry = resolve_indirect_entry(image, entry)?;
 
     for _ in 0..UNWIND_CHAIN_LIMIT {
         let header = image.read_struct_at_rva::<UNWIND_INFO>(entry.unwind_info_address_or_data)?;
@@ -688,21 +692,24 @@ pub fn resolve_primary_entry(
         entry = image.read_struct_at_rva::<ImageRuntimeFunctionEntry>(
             entry.unwind_info_address_or_data + header.codes_end_offset(),
         )?;
+        entry = resolve_indirect_entry(image, &entry)?;
     }
 
     Ok(entry)
 }
 
 /// Resolves an RVA to the primary function's BeginAddress by following
-/// `UNW_FLAG_CHAININFO` chains in the exception directory.
+/// indirect entries and `UNW_FLAG_CHAININFO` chains in the exception
+/// directory.
 ///
 /// MSVC can split a single function into non-contiguous chunks scattered
 /// across the binary (common with SEH and large functions). Each chunk
 /// has its own `RUNTIME_FUNCTION` entry in `.pdata`, with the chunk's
 /// `UNWIND_INFO` carrying the `UNW_FLAG_CHAININFO` flag and a pointer
-/// to the parent entry. This function follows that chain back to the
-/// primary (non-chained) entry whose `BeginAddress` is the real
-/// function start - the address that maps to the symbol in the PDB.
+/// to the parent entry, or with an indirect entry that points to such an
+/// entry. This function follows that chain back to the primary
+/// (non-chained) entry whose `BeginAddress` is the real function start -
+/// the address that maps to the symbol in the PDB.
 ///
 /// Returns `None` if the RVA is not covered by any `RUNTIME_FUNCTION`.
 pub fn resolve_primary_function(image: &impl PeImage, rva: u32) -> Result<Option<u32>, VmiError> {
