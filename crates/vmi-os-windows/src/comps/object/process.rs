@@ -108,6 +108,17 @@ where
         self.vmi.read_u64(self.va + EPROCESS.ExitTime.offset())
     }
 
+    /// Returns the exit status of the process.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.ExitStatus`.
+    pub fn exit_status(&self) -> Result<u32, VmiError> {
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
+
+        self.vmi.read_u32(self.va + EPROCESS.ExitStatus.offset())
+    }
+
     /// Checks if the process is a WoW64 process.
     ///
     /// # Implementation Details
