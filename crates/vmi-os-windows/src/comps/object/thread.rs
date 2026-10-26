@@ -434,6 +434,29 @@ where
         Ok(WindowsProcessorMode::from(value))
     }
 
+    /// Returns the number of the thread's last syscall from user mode.
+    ///
+    /// The kernel's syscall dispatcher stores the caller's `EAX` before it
+    /// runs the service, and the value stays after the service returns. The
+    /// kernel's own `Zw*` calls do not change it.
+    ///
+    /// # Notes
+    ///
+    /// The value is raw. Bits 0 to 11 are the index, bit 12 selects the
+    /// service table, and the kernel ignores the bits above. A thread that
+    /// never made a syscall from user mode returns 0, which is also the
+    /// number of the first service.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.SystemCallNumber`.
+    pub fn syscall_number(&self) -> Result<u32, VmiError> {
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+
+        self.vmi
+            .read_u32(self.va + KTHREAD.SystemCallNumber.offset())
+    }
+
     /// Returns whether the thread is currently alertable.
     ///
     /// # Notes
