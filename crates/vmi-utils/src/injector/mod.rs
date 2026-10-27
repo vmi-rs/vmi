@@ -79,7 +79,7 @@
 //! # }
 //! ```
 
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, time::Duration};
 
 use vmi_core::{VmiContext, VmiError, VmiEventResponse, VmiHandler, VmiSession, os::ProcessId};
 
@@ -163,6 +163,21 @@ where
 {
     /// Restricts injection to a specific process.
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError>;
+
+    /// Sets the grace period in which the injector skips threads that the
+    /// guest would delay.
+    ///
+    /// The recipe runs on the hijacked thread and is only as fast as that
+    /// thread. The guest can hold a thread back for seconds, for example a
+    /// thread of a process whose CPU use a job limits. During the grace
+    /// period, the injector skips such threads and waits for another one.
+    /// After it, the injector takes the next thread anyway and logs a
+    /// warning.
+    ///
+    /// The Windows injectors default to one second. A longer period waits
+    /// longer for a better thread. Zero switches skipping off, and the
+    /// injector takes the first thread that it can hijack.
+    fn with_grace_timeout(self, timeout: Duration) -> Result<Self, VmiError>;
 }
 
 /// Generic injector handler that delegates to an OS- and mode-specific
@@ -235,6 +250,17 @@ where
             _marker: std::marker::PhantomData,
         })
     }
+
+    /// Sets the grace period in which the injector waits for a thread that
+    /// it can hijack without delay.
+    ///
+    /// See [`InjectorHandlerAdapter::with_grace_timeout`].
+    pub fn with_grace_timeout(self, timeout: Duration) -> Result<Self, VmiError> {
+        Ok(Self {
+            inner: self.inner.with_grace_timeout(timeout)?,
+            _marker: std::marker::PhantomData,
+        })
+    }
 }
 
 impl<Os, Mode, T, Bridge> VmiHandler<Os> for InjectorHandler<Os, Mode, T, Bridge>
@@ -271,7 +297,9 @@ where
 ///
 /// On Windows, the injector hijacks the first thread that makes a syscall from
 /// user mode, at `KiSystemServiceCopyEnd`. Such a thread runs at `PASSIVE_LEVEL`
-/// and holds no locks.
+/// and holds no locks. During its grace period, the injector skips a thread
+/// that its scheduling group holds back on its processor. See
+/// [`InjectorHandler::with_grace_timeout`].
 ///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 ///
@@ -283,6 +311,12 @@ where
 pub type KernelInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, KernelMode, T, Bridge>;
 
 /// User-mode injector handler.
+///
+/// On Windows, the injector follows context switches through the writes to
+/// `KERNEL_GS_BASE`. It hijacks the thread of the target process that the
+/// scheduler switched to last, at that thread's next user-mode instruction.
+/// During its grace period, it skips a thread that its scheduling group holds
+/// back on its processor. See [`InjectorHandler::with_grace_timeout`].
 ///
 /// Attach a custom [`BridgeDispatch`] with [`InjectorHandler::with_bridge`].
 pub type UserInjectorHandler<Os, T, Bridge = ()> = InjectorHandler<Os, UserMode, T, Bridge>;

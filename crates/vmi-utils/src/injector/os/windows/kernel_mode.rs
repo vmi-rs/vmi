@@ -1,4 +1,7 @@
-use std::ops::ControlFlow;
+use std::{
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, ExceptionVector, Interrupt};
 use vmi_core::{
@@ -13,9 +16,12 @@ use vmi_core::{
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _, WindowsProcessorMode};
 
-use super::super::super::{
-    InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, KernelMode, Recipe,
-    RecipeExecutor,
+use super::{
+    super::super::{
+        InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, KernelMode,
+        Recipe, RecipeExecutor,
+    },
+    DEFAULT_GRACE_TIMEOUT,
 };
 use crate::{
     bpm::{Breakpoint, BreakpointController, BreakpointManager},
@@ -79,6 +85,14 @@ where
 
     /// Executor for running the injection recipe.
     recipe: RecipeExecutor<WindowsOs<Driver>, T>,
+
+    /// The start of the grace period. The injector starts it when it skips
+    /// its first thread.
+    grace_since: Option<Instant>,
+
+    /// Grace period in which the injector skips threads that their
+    /// scheduling group holds back.
+    grace_timeout: Duration,
 
     /// Bridge for guest-host communication.
     bridge: Bridge,
@@ -158,6 +172,8 @@ where
             bpm,
             ptm,
             recipe: RecipeExecutor::new(recipe),
+            grace_since: None,
+            grace_timeout: DEFAULT_GRACE_TIMEOUT,
             bridge: (),
             state: InjectorState::PreHijack,
             output: None,
@@ -182,6 +198,8 @@ where
             bpm: self.bpm,
             ptm: self.ptm,
             recipe: self.recipe,
+            grace_since: self.grace_since,
+            grace_timeout: self.grace_timeout,
             bridge,
             state: InjectorState::PreHijack,
             output: None,
@@ -207,6 +225,13 @@ where
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
         Ok(Self {
             pid: Some(pid),
+            ..self
+        })
+    }
+
+    fn with_grace_timeout(self, timeout: Duration) -> Result<Self, VmiError> {
+        Ok(Self {
+            grace_timeout: timeout,
             ..self
         })
     }
@@ -362,12 +387,35 @@ where
 
                 let current_pid = current_process.id()?;
 
+                if let Some(pid) = self.pid
+                    && current_pid != pid
+                {
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
+                //
+                // Skip a thread that its scheduling group holds back on this
+                // processor while the grace period runs. The recipe would
+                // wait with the thread, for seconds on a busy guest.
+                //
+
+                let prcb = vmi.os().current_kprcb()?;
+                let held_back = current_thread.is_held_back_by_scheduling_group(&prcb)?;
+                if held_back
+                    && self.grace_since.get_or_insert_with(Instant::now).elapsed()
+                        < self.grace_timeout
+                {
+                    tracing::trace!(
+                        %current_pid,
+                        %current_tid,
+                        "skipping thread that its scheduling group holds back"
+                    );
+                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
+                }
+
                 if self.pid.is_none() {
                     tracing::trace!(%current_pid, "hijacking process");
                     self.pid = Some(current_pid);
-                }
-                else if Some(current_pid) != self.pid {
-                    return Ok(VmiEventResponse::fast_singlestep(vmi.default_view()));
                 }
 
                 self.tid = Some(current_tid);
@@ -386,6 +434,14 @@ where
                         .unwrap_or("<unknown>"),
                     "thread hijacked"
                 );
+
+                if held_back {
+                    tracing::warn!(
+                        %current_pid,
+                        %current_tid,
+                        "hijacked thread is held back by its scheduling group"
+                    );
+                }
 
                 // A payload that the recipe starts in a user process reports
                 // through the bridge from user mode.

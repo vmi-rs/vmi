@@ -1,6 +1,8 @@
 mod kernel_mode;
 mod user_mode;
 
+use std::time::Duration;
+
 use vmi_arch_amd64::{Amd64, Registers};
 use vmi_core::{
     VmiCore, VmiError,
@@ -20,6 +22,9 @@ use super::{
     },
     OsAdapter,
 };
+
+/// The default grace period of the Windows injectors.
+const DEFAULT_GRACE_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl<Driver, T, Bridge> InjectorExecutionAdapter<KernelMode, T, Bridge> for WindowsOs<Driver>
 where

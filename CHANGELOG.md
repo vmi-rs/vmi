@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `InjectorHandlerAdapter` has a new required method,
+  `with_grace_timeout`.
+- The Windows injectors skip a thread that its scheduling group holds back
+  on its processor, during a grace period that starts at the first such
+  thread. A job that limits the CPU rate of its processes puts their threads
+  in a scheduling group. Once the group uses its share of a processor, such
+  a thread can wait for seconds on a busy guest before it runs again, and
+  the injector would wait with it. After the grace period, the injectors
+  take such a thread too. An injector that hijacks a held-back thread logs a
+  warning.
+
 ### Added
 
+- `InjectorHandler::with_grace_timeout` sets the grace period. The default
+  is one second, and zero switches the skipping off.
 - `WindowsSchedulingGroup` reads a scheduling group (`_KSCHEDULING_GROUP`),
   and `WindowsSchedulingGroup::scb` returns its queue on a processor.
 - `WindowsSchedulingControlBlock` reads such a queue (`_KSCB`): `inserted`,
