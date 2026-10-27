@@ -1,4 +1,7 @@
-use std::ops::ControlFlow;
+use std::{
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 use vmi_arch_amd64::{Amd64, EventMonitor, EventReason, Interrupt, Msr};
 use vmi_core::{
@@ -13,9 +16,12 @@ use vmi_core::{
 };
 use vmi_os_windows::{WindowsOs, WindowsOsExt as _};
 
-use super::super::super::{
-    InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, Recipe,
-    RecipeExecutor, UserMode,
+use super::{
+    super::super::{
+        InjectorExecutionAdapter, InjectorHandlerAdapter, InjectorHandlerFactory, Recipe,
+        RecipeExecutor, UserMode,
+    },
+    DEFAULT_GRACE_TIMEOUT,
 };
 use crate::bridge::{BridgeDispatch, BridgePacket};
 
@@ -72,6 +78,14 @@ where
     /// Physical address of the instruction pointer in the hijacked thread.
     ip_pa: Option<Pa>,
 
+    /// The start of the grace period. The injector starts it when it skips
+    /// its first thread.
+    grace_since: Option<Instant>,
+
+    /// Grace period in which the injector skips threads that their
+    /// scheduling group holds back.
+    grace_timeout: Duration,
+
     /// Executor for running the injection recipe.
     recipe: RecipeExecutor<WindowsOs<Driver>, T>,
 
@@ -118,6 +132,8 @@ where
             view,
             ip_va: None,
             ip_pa: None,
+            grace_since: None,
+            grace_timeout: DEFAULT_GRACE_TIMEOUT,
             recipe: RecipeExecutor::new(recipe),
             bridge: (),
             state: InjectorState::PreHijack,
@@ -142,6 +158,8 @@ where
             view: self.view,
             ip_va: self.ip_va,
             ip_pa: self.ip_pa,
+            grace_since: self.grace_since,
+            grace_timeout: self.grace_timeout,
             recipe: self.recipe,
             bridge,
             state: InjectorState::PreHijack,
@@ -166,6 +184,13 @@ where
     fn with_pid(self, pid: ProcessId) -> Result<Self, VmiError> {
         Ok(Self {
             pid: Some(pid),
+            ..self
+        })
+    }
+
+    fn with_grace_timeout(self, timeout: Duration) -> Result<Self, VmiError> {
+        Ok(Self {
+            grace_timeout: timeout,
             ..self
         })
     }
@@ -258,6 +283,25 @@ where
 
         if !vmi.os().is_valid_user_address(ip_va)? {
             tracing::trace!(%ip_va, "skipping invalid pc");
+
+            return Ok(VmiEventResponse::default());
+        }
+
+        //
+        // Skip a thread that its scheduling group holds back on this
+        // processor while the grace period runs. The recipe would wait with
+        // the thread, for seconds on a busy guest.
+        //
+
+        let prcb = vmi.os().current_kprcb()?;
+        if current_thread.is_held_back_by_scheduling_group(&prcb)?
+            && self.grace_since.get_or_insert_with(Instant::now).elapsed() < self.grace_timeout
+        {
+            tracing::trace!(
+                %current_pid,
+                %current_tid,
+                "skipping thread that its scheduling group holds back"
+            );
 
             return Ok(VmiEventResponse::default());
         }
@@ -442,6 +486,15 @@ where
                     .unwrap_or("<unknown>"),
                 "thread hijacked"
             );
+
+            let prcb = vmi.os().current_kprcb()?;
+            if current_thread.is_held_back_by_scheduling_group(&prcb)? {
+                tracing::warn!(
+                    %current_pid,
+                    %current_tid,
+                    "hijacked thread is held back by its scheduling group"
+                );
+            }
 
             if !Bridge::EMPTY {
                 vmi.monitor_enable(EventMonitor::hypercall().allow_userspace(true))?;
