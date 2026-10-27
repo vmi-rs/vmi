@@ -464,7 +464,10 @@ offsets! {
             State: Field,                   // UCHAR - KTHREAD_STATE enum
             KernelStack: Field,             // PVOID
 
+            Priority: Field,                // SCHAR
             SchedulingGroup: Option<Field>, // _KSCHEDULING_GROUP* (Windows 8+)
+            #[isr(alias = "ChargeOnlyGroup")] // Windows 8
+            ChargeOnlySchedulingGroup: Option<Bitfield>, // part of ULONG ThreadFlags (Windows 8+)
         }
 
         struct _ETHREAD {

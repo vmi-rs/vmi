@@ -6,8 +6,8 @@ use vmi_core::{
 
 use super::{
     super::{
-        WindowsProcessorMode, WindowsSchedulingGroup, WindowsTeb, WindowsTrapFrame,
-        WindowsWow64Kind,
+        WindowsKernelProcessorBlock, WindowsProcessorMode, WindowsSchedulingGroup, WindowsTeb,
+        WindowsTrapFrame, WindowsWow64Kind,
     },
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess, WindowsToken,
 };
@@ -632,6 +632,101 @@ where
             self.vmi,
             scheduling_group,
         )))
+    }
+
+    /// Checks if the thread's scheduling group can hold the thread back.
+    ///
+    /// A job that limits the CPU rate of its processes puts their threads in
+    /// a scheduling group. Once the group uses its share of a processor, the
+    /// scheduler queues its ready threads apart from the others. Such a
+    /// thread runs only when no other thread of priority 1 or higher is
+    /// ready on that processor, which can take seconds on a busy guest. The
+    /// group does not hold back a thread of priority 16 or higher, or a
+    /// thread that only charges its CPU time to the group.
+    ///
+    /// Windows 7 has no scheduling groups, and its threads return `false`.
+    ///
+    /// # Notes
+    ///
+    /// The result does not say whether the group uses its share at the
+    /// moment. A thread that returns `true` runs as usual while its group
+    /// stays below its share. [`is_held_back_by_scheduling_group`] checks
+    /// the share too.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.SchedulingGroup != NULL` together with
+    /// `KiIsThreadConstrainedBySchedulingGroup`, which checks
+    /// `_KTHREAD.Priority < 16` and `_KTHREAD.ChargeOnlySchedulingGroup == 0`.
+    /// Kernels before Windows 11 22H2 make the same checks inline.
+    ///
+    /// [`is_held_back_by_scheduling_group`]: Self::is_held_back_by_scheduling_group
+    pub fn is_constrained_by_scheduling_group(&self) -> Result<bool, VmiError> {
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+
+        let ChargeOnlySchedulingGroup = match &KTHREAD.ChargeOnlySchedulingGroup {
+            Some(ChargeOnlySchedulingGroup) => ChargeOnlySchedulingGroup,
+            None => return Ok(false),
+        };
+
+        if self.scheduling_group()?.is_none() {
+            return Ok(false);
+        }
+
+        let priority = self.vmi.read_u8(self.va + KTHREAD.Priority.offset())? as i8;
+        if priority >= 16 {
+            return Ok(false);
+        }
+
+        let flags = self.vmi.read_field(self.va, ChargeOnlySchedulingGroup)?;
+        Ok(ChargeOnlySchedulingGroup.extract(flags) == 0)
+    }
+
+    /// Checks if the thread's scheduling group holds the thread back on a
+    /// processor at the moment.
+    ///
+    /// The scheduler keeps a ready thread back when its group's queue on the
+    /// processor, or the queue of a parent group, is over its hard cap or
+    /// has a non-zero rank. See [`is_constrained_by_scheduling_group`] for
+    /// the threads that a group can hold back at all.
+    ///
+    /// # Notes
+    ///
+    /// The result holds for the moment of the call. The group can use up its
+    /// share a moment later, and the scheduler then holds the thread back
+    /// after all.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `KiGetThreadEffectiveRankNonZero`, which walks the
+    /// `_KSCB` chain from `_KTHREAD.SchedulingGroup + _KPRCB.ScbOffset`
+    /// through `_KSCB.Parent` and checks `_KSCB.MaxOverQuota` and
+    /// `_KSCB.Rank`.
+    ///
+    /// [`is_constrained_by_scheduling_group`]: Self::is_constrained_by_scheduling_group
+    pub fn is_held_back_by_scheduling_group(
+        &self,
+        prcb: &WindowsKernelProcessorBlock<'a, Driver>,
+    ) -> Result<bool, VmiError> {
+        if !self.is_constrained_by_scheduling_group()? {
+            return Ok(false);
+        }
+
+        let scheduling_group = match self.scheduling_group()? {
+            Some(scheduling_group) => scheduling_group,
+            None => return Ok(false),
+        };
+
+        let mut scb = Some(scheduling_group.scb(prcb)?);
+        while let Some(current) = scb {
+            if current.max_over_quota()? || current.rank()? != 0 {
+                return Ok(true);
+            }
+
+            scb = current.parent()?;
+        }
+
+        Ok(false)
     }
 
     /// Returns the saved kernel stack pointer for this thread.
