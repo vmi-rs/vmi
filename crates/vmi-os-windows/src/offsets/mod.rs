@@ -147,11 +147,24 @@ offsets! {
             IdleThread: Field,
             ProcessorState: Field,          // _KPROCESSOR_STATE
             Context: Field,                 // _CONTEXT* (bugcheck saved context)
+            ScbOffset: Option<Field>,       // ULONG (Windows 8+)
         }
 
         struct _KPROCESSOR_STATE {
             SpecialRegisters: Field,        // _KSPECIAL_REGISTERS
             ContextFrame: Field,            // _CONTEXT
+        }
+
+        #[isr(optional)]                    // Windows 8+
+        struct _KSCB {
+            Inserted: Bitfield,             // UCHAR : 1 (USHORT : 1 on Windows 11 24H2+)
+            #[isr(alias = "OverQuota")]     // Windows 8 and 8.1
+            MaxOverQuota: Bitfield,         // UCHAR : 1 (USHORT : 1 on Windows 11 24H2+)
+            #[isr(alias = "OverQuota")]     // Windows 8 and 8.1
+            MinOverQuota: Bitfield,         // UCHAR : 1 (USHORT : 1 on Windows 11 24H2+)
+            HardCap: Option<Bitfield>,      // UCHAR : 1 (Windows 8 and 8.1)
+            Rank: Field,                    // ULONG
+            Parent: Option<Field>,          // _KSCB* (Windows 10+)
         }
 
         #[isr(alias = "_LDR_DATA_TABLE_ENTRY")]
@@ -450,6 +463,8 @@ offsets! {
             ThreadListEntry: Field,         // _LIST_ENTRY
             State: Field,                   // UCHAR - KTHREAD_STATE enum
             KernelStack: Field,             // PVOID
+
+            SchedulingGroup: Option<Field>, // _KSCHEDULING_GROUP* (Windows 8+)
         }
 
         struct _ETHREAD {

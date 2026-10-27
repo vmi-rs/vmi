@@ -106,6 +106,26 @@ where
         Ok(WindowsThread::new(self.vmi, ThreadObject(result)))
     }
 
+    /// Returns the offset of this processor's queue in a scheduling group.
+    ///
+    /// Each scheduling group keeps one queue per processor. The kernel finds
+    /// the queue of this processor at this offset from the start of the
+    /// group. Windows 7 has no scheduling groups and returns `None`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KPRCB.ScbOffset`.
+    pub fn scb_offset(&self) -> Result<Option<u32>, VmiError> {
+        let KPRCB = offset!(self.vmi, _KPRCB);
+
+        let ScbOffset = match &KPRCB.ScbOffset {
+            Some(ScbOffset) => ScbOffset,
+            None => return Ok(None),
+        };
+
+        Ok(Some(self.vmi.read_u32(self.va + ScbOffset.offset())?))
+    }
+
     /// Returns the processor's special registers.
     ///
     /// # Implementation Details

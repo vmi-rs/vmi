@@ -117,12 +117,12 @@ pub use self::comps::{
     WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectKind, WindowsObjectType,
     WindowsObjectTypeKind, WindowsPeb, WindowsPebBase, WindowsPebLdrData, WindowsPebLdrDataBase,
     WindowsPrivilege, WindowsProcess, WindowsProcessParameters, WindowsProcessParametersBase,
-    WindowsProcessorMode, WindowsRegion, WindowsSectionObject, WindowsSegment, WindowsSession,
-    WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes, WindowsSymbolicLinkObject,
-    WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState, WindowsThreadWaitReason,
-    WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType,
-    WindowsTrapFrame, WindowsUnloadedDriver, WindowsUserModule, WindowsUserModuleBase,
-    WindowsWow64Kind,
+    WindowsProcessorMode, WindowsRegion, WindowsSchedulingControlBlock, WindowsSchedulingGroup,
+    WindowsSectionObject, WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes,
+    WindowsSidAttributes, WindowsSymbolicLinkObject, WindowsTeb, WindowsTebBase, WindowsThread,
+    WindowsThreadState, WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags,
+    WindowsTokenPrivilege, WindowsTokenSource, WindowsTokenType, WindowsTrapFrame,
+    WindowsUnloadedDriver, WindowsUserModule, WindowsUserModuleBase, WindowsWow64Kind,
 };
 
 /// VMI operations for the Windows operating system.
@@ -352,6 +352,19 @@ macro_rules! offset_ext_v2 {
 }
 
 pub(crate) use offset_ext_v2;
+
+// Resolves an optional offset struct (`#[isr(optional)]`) to a `Result`. A
+// kernel whose profile lacks the struct gives `VmiError::NotSupported`.
+macro_rules! offset_optional {
+    ($vmi:expr, $field:ident) => {
+        match &$vmi.underlying_os().offsets.$field {
+            Some(offsets) => Ok(offsets),
+            None => Err(vmi_core::VmiError::NotSupported),
+        }
+    };
+}
+
+pub(crate) use offset_optional;
 
 macro_rules! symbol {
     ($vmi:expr, $field:ident) => {

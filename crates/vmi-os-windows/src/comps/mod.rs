@@ -14,6 +14,7 @@ mod peb;
 mod peb_ldr_data;
 mod process_parameters;
 mod region;
+mod scheduling_group;
 mod segment;
 mod session;
 mod sid;
@@ -58,6 +59,7 @@ pub use self::{
         WindowsProcessParameters, WindowsProcessParametersBase,
     },
     region::WindowsRegion,
+    scheduling_group::{WindowsSchedulingControlBlock, WindowsSchedulingGroup},
     segment::WindowsSegment,
     session::WindowsSession,
     sid::{WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes},
