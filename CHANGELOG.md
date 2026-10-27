@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsKernelProcessorBlock::scb_offset` returns the offset of the
   processor's queue in a scheduling group.
 - `WindowsThread::scheduling_group` returns the thread's scheduling group.
+- `WindowsThread::is_constrained_by_scheduling_group` checks if the
+  thread's scheduling group can hold the thread back at all, and
+  `WindowsThread::is_held_back_by_scheduling_group` checks if it holds the
+  thread back on a processor at the moment.
 
 ## [0.12.0] - 2026-10-26
 
