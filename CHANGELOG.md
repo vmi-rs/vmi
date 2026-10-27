@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `WindowsSchedulingGroup` reads a scheduling group (`_KSCHEDULING_GROUP`),
+  and `WindowsSchedulingGroup::scb` returns its queue on a processor.
+- `WindowsSchedulingControlBlock` reads such a queue (`_KSCB`): `inserted`,
+  `min_over_quota`, `max_over_quota`, `rank` and `parent`. On Windows 8 and
+  8.1, `min_over_quota` reads `OverQuota`, and `max_over_quota` reads
+  `OverQuota` together with `HardCap`.
+- `WindowsKernelProcessorBlock::scb_offset` returns the offset of the
+  processor's queue in a scheduling group.
+- `WindowsThread::scheduling_group` returns the thread's scheduling group.
+
 ## [0.12.0] - 2026-10-26
 
 ### Changed

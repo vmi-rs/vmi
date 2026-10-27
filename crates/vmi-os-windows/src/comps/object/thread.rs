@@ -5,7 +5,10 @@ use vmi_core::{
 };
 
 use super::{
-    super::{WindowsProcessorMode, WindowsTeb, WindowsTrapFrame, WindowsWow64Kind},
+    super::{
+        WindowsProcessorMode, WindowsSchedulingGroup, WindowsTeb, WindowsTrapFrame,
+        WindowsWow64Kind,
+    },
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsProcess, WindowsToken,
 };
 use crate::{ArchAdapter, WindowsOs, WindowsOsExt as _, offset};
@@ -599,6 +602,36 @@ where
 
         let value = self.vmi.read_u8(self.va + KTHREAD.State.offset())?;
         Ok(WindowsThreadState::from(value))
+    }
+
+    /// Returns the thread's scheduling group, or `None` for a thread outside
+    /// any group.
+    ///
+    /// Windows 7 has no scheduling groups, and its threads return `None`.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_KTHREAD.SchedulingGroup`.
+    pub fn scheduling_group(&self) -> Result<Option<WindowsSchedulingGroup<'a, Driver>>, VmiError> {
+        let KTHREAD = offset!(self.vmi, _KTHREAD);
+
+        let SchedulingGroup = match &KTHREAD.SchedulingGroup {
+            Some(SchedulingGroup) => SchedulingGroup,
+            None => return Ok(None),
+        };
+
+        let scheduling_group = self
+            .vmi
+            .read_va_native(self.va + SchedulingGroup.offset())?;
+
+        if scheduling_group.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(WindowsSchedulingGroup::new(
+            self.vmi,
+            scheduling_group,
+        )))
     }
 
     /// Returns the saved kernel stack pointer for this thread.
