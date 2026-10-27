@@ -119,6 +119,42 @@ where
         self.vmi.read_u32(self.va + EPROCESS.ExitStatus.offset())
     }
 
+    /// Returns the root of the process's clone descriptors, or `None` if
+    /// the process has none.
+    ///
+    /// The memory manager creates clone descriptors when it copies the
+    /// address space of a process into a new process, which makes the new
+    /// process a clone. It adds them to the clone and to the process that it
+    /// copies.
+    ///
+    /// A prime example is the Windows Error Reporting. On Windows 10 and later,
+    /// WerFault.exe clones a crashed process before it reports the crash.
+    /// Process snapshotting with `PSS_CAPTURE_VA_CLONE` makes clones too.
+    ///
+    /// # Notes
+    ///
+    /// On Windows 10 and later, a copy can leave the new process without
+    /// descriptors, when the copied process has no private page to share
+    /// and no descriptor of an earlier copy.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_EPROCESS.CloneRoot`, a pointer on Windows 7 and the
+    /// root of an `_RTL_AVL_TREE` on Windows 10 and later.
+    pub fn clone_root(&self) -> Result<Option<Va>, VmiError> {
+        let EPROCESS = offset!(self.vmi, _EPROCESS);
+
+        let clone_root = self
+            .vmi
+            .read_va_native(self.va + EPROCESS.CloneRoot.offset())?;
+
+        if clone_root.is_null() {
+            return Ok(None);
+        }
+
+        Ok(Some(clone_root))
+    }
+
     /// Checks if the process is a WoW64 process.
     ///
     /// # Implementation Details

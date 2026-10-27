@@ -505,6 +505,8 @@ offsets! {
             #[isr(alias = "Wow64Process")]
             WoW64Process: Field,
             ImageFileName: Field,
+            CloneRoot: Field,               // PVOID (Windows 7)
+                                            // _RTL_AVL_TREE (Windows 10+)
             VadRoot: Field,                 // _MM_AVL_TABLE (Windows 7, contains BalancedRoot at offset 0)
                                             // _RTL_AVL_TREE (Windows 10+)
             VadHint: Option<Field>,         // PVOID (Windows 10+, _MM_AVL_TABLE.NodeHint on Windows 7)
