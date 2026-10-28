@@ -378,15 +378,18 @@ where
             tracing::error!(%err, "failed to disable singlestep");
         }
 
-        if let Err(err) = vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
-        {
-            tracing::error!(%err, "failed to disable breakpoint interrupt");
-        }
-
+        // Remove the breakpoints before the breakpoint monitor is turned off,
+        // so that no vCPU can execute one while nothing intercepts it. Xen
+        // would hand that #BP to the guest, and the guest would crash.
         match self.bpm.remove_by_view(vmi, self.view) {
             Ok(true) => {}
             Ok(false) => tracing::warn!("no breakpoints to remove"),
             Err(err) => tracing::error!(%err, "failed to remove breakpoints"),
+        }
+
+        if let Err(err) = vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
+        {
+            tracing::error!(%err, "failed to disable breakpoint interrupt");
         }
 
         self.ptm.unmonitor_all(vmi);

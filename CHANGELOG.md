@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switch to the default view. Before, such a vCPU could hit a breakpoint
   after the monitor was off. The guest then handled the breakpoint itself,
   and Windows crashed with a bugcheck.
+- `Reactor` removes its breakpoints in `cleanup` before it turns off the
+  breakpoint monitor. Before, if the guest could not be paused for the
+  cleanup, a vCPU could hit a breakpoint that was still in memory after the
+  monitor was off, and the guest crashed.
 
 ## [0.12.0] - 2026-10-26
 
