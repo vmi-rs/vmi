@@ -1203,3 +1203,80 @@ impl_struct! {
         pub unwind_info_address_or_data: u32,
     }
 }
+
+/// Offsets of the fields of `IMAGE_LOAD_CONFIG_DIRECTORY32` or
+/// `IMAGE_LOAD_CONFIG_DIRECTORY64` that [`PeLoadConfigDirectory`] reads.
+///
+/// The offsets of the fields that `object` declares come from `object`.
+/// `object` ends both structures at `VolatileMetadataPointer`. The offsets of
+/// the XFG fields and the size of the whole structure therefore come from the
+/// Windows SDK's `winnt.h`.
+///
+/// [`PeLoadConfigDirectory`]: super::PeLoadConfigDirectory
+pub struct LoadConfigLayout {
+    /// The size of the whole structure in bytes, up to `UmaFunctionPointers`.
+    pub size: usize,
+
+    /// The size of an address field in bytes, 4 or 8.
+    pub address_size: usize,
+
+    /// The offset of `GuardCFCheckFunctionPointer`.
+    pub guard_cf_check_function_pointer: usize,
+
+    /// The offset of `GuardCFDispatchFunctionPointer`.
+    pub guard_cf_dispatch_function_pointer: usize,
+
+    /// The offset of `GuardFlags`.
+    pub guard_flags: usize,
+
+    /// The offset of `GuardXFGCheckFunctionPointer`.
+    pub guard_xfg_check_function_pointer: usize,
+
+    /// The offset of `GuardXFGDispatchFunctionPointer`.
+    pub guard_xfg_dispatch_function_pointer: usize,
+
+    /// The offset of `GuardXFGTableDispatchFunctionPointer`.
+    pub guard_xfg_table_dispatch_function_pointer: usize,
+}
+
+impl LoadConfigLayout {
+    /// The layout of `IMAGE_LOAD_CONFIG_DIRECTORY32`.
+    pub const DIRECTORY32: Self = {
+        use ::core::mem::offset_of;
+        use ::object::pe::ImageLoadConfigDirectory32 as Directory;
+
+        Self {
+            size: 0xc4,
+            address_size: 4,
+            guard_cf_check_function_pointer: offset_of!(Directory, guard_cf_check_function_pointer),
+            guard_cf_dispatch_function_pointer: offset_of!(
+                Directory,
+                guard_cf_dispatch_function_pointer
+            ),
+            guard_flags: offset_of!(Directory, guard_flags),
+            guard_xfg_check_function_pointer: 0xac,
+            guard_xfg_dispatch_function_pointer: 0xb0,
+            guard_xfg_table_dispatch_function_pointer: 0xb4,
+        }
+    };
+
+    /// The layout of `IMAGE_LOAD_CONFIG_DIRECTORY64`.
+    pub const DIRECTORY64: Self = {
+        use ::core::mem::offset_of;
+        use ::object::pe::ImageLoadConfigDirectory64 as Directory;
+
+        Self {
+            size: 0x148,
+            address_size: 8,
+            guard_cf_check_function_pointer: offset_of!(Directory, guard_cf_check_function_pointer),
+            guard_cf_dispatch_function_pointer: offset_of!(
+                Directory,
+                guard_cf_dispatch_function_pointer
+            ),
+            guard_flags: offset_of!(Directory, guard_flags),
+            guard_xfg_check_function_pointer: 0x118,
+            guard_xfg_dispatch_function_pointer: 0x120,
+            guard_xfg_table_dispatch_function_pointer: 0x128,
+        }
+    };
+}

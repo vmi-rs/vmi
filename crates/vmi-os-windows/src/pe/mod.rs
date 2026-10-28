@@ -2,16 +2,19 @@
 //!
 //! Parses PE/COFF binaries from VMI memory or file buffers, exposing the
 //! DOS and NT headers, the data directory array, and the standard export,
-//! debug, and exception directory layouts.
+//! debug, exception, and load configuration directory layouts.
 
 mod error;
 mod file;
 mod headers;
+#[cfg(test)]
+mod tests;
 
 pub use isr_dl_windows::CodeView; // Intentional re-export.
-use vmi_core::VmiError;
+use vmi_core::{Va, VmiError};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use self::headers::LoadConfigLayout;
 pub use self::{
     error::PeError,
     file::PeFile,
@@ -78,6 +81,14 @@ pub trait PeImage: Sized {
     ///
     /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG]`.
     fn debug_directory(&self) -> Result<Option<PeDebugDirectory<'_, Self>>, VmiError>;
+
+    /// Returns the load configuration directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]`.
+    fn load_config_directory(&self) -> Result<Option<PeLoadConfigDirectory<'_, Self>>, VmiError>;
 }
 
 /// Extension methods on [`PeImage`].
@@ -311,6 +322,172 @@ impl<'a, Image: PeImage> PeDebugDirectory<'a, Image> {
             guid,
             age: info.age & 0xf,
         }))
+    }
+}
+
+/// PE load configuration directory accessor.
+///
+/// Holds the image's `IMAGE_LOAD_CONFIG_DIRECTORY32` or
+/// `IMAGE_LOAD_CONFIG_DIRECTORY64`. Linkers write newer versions of the
+/// structure with more fields, and the structure's `Size` field says which
+/// of them an image has.
+///
+/// # Implementation Details
+///
+/// Corresponds to
+/// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]`.
+pub struct PeLoadConfigDirectory<'a, Image: PeImage> {
+    /// Owning image.
+    #[expect(unused)]
+    image: &'a Image,
+
+    /// Field offsets of the structure for the image's bitness.
+    layout: &'static LoadConfigLayout,
+
+    /// The structure's `Size` field.
+    size: u32,
+
+    /// Raw bytes read at the directory's RVA, as many as `size` gives and
+    /// at most the whole structure.
+    data: Vec<u8>,
+}
+
+impl<'a, Image: PeImage> PeLoadConfigDirectory<'a, Image> {
+    /// Creates a new PE load configuration directory parser.
+    ///
+    /// Reads the structure at the entry's RVA. The structure's `Size` field
+    /// gives the number of bytes to read, at most the whole structure. The
+    /// entry's own size plays no part. An older image can give less there,
+    /// such as 0x40 bytes for a structure of 0x48 bytes in the 32-bit
+    /// `ntdll.dll` of Windows 7 SP1.
+    pub(crate) fn new(image: &'a Image, entry: ImageDataDirectory) -> Result<Self, VmiError> {
+        let layout = match image.nt_headers()?.optional_header {
+            ImageOptionalHeader::ImageOptionalHeader32(_) => &LoadConfigLayout::DIRECTORY32,
+            ImageOptionalHeader::ImageOptionalHeader64(_) => &LoadConfigLayout::DIRECTORY64,
+        };
+
+        let size = image.read_struct_at_rva::<u32>(entry.virtual_address)?;
+        let mut data = vec![0; std::cmp::min(size as usize, layout.size)];
+        image.read_at_rva(entry.virtual_address, &mut data)?;
+
+        Ok(Self {
+            image,
+            layout,
+            size,
+            data,
+        })
+    }
+
+    /// Returns the size of the directory in bytes.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `IMAGE_LOAD_CONFIG_DIRECTORY64.Size`.
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    /// Returns the address of the slot that holds the check routine of
+    /// Control Flow Guard, or `None` if the directory is too short for it.
+    ///
+    /// # Notes
+    ///
+    /// The loader writes the routine into the slot before the image's code
+    /// runs. Read the slot to find the routine.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardCFCheckFunctionPointer`.
+    pub fn guard_cf_check_function_pointer(&self) -> Option<Va> {
+        self.address(self.layout.guard_cf_check_function_pointer)
+    }
+
+    /// Returns the address of the slot that holds the dispatch routine of
+    /// Control Flow Guard, or `None` if the directory is too short for it.
+    ///
+    /// # Notes
+    ///
+    /// The loader writes the routine into the slot before the image's code
+    /// runs. Read the slot to find the routine.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardCFDispatchFunctionPointer`.
+    pub fn guard_cf_dispatch_function_pointer(&self) -> Option<Va> {
+        self.address(self.layout.guard_cf_dispatch_function_pointer)
+    }
+
+    /// Returns the flags of Control Flow Guard, or `None` if the directory
+    /// is too short for them.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardFlags`.
+    pub fn guard_flags(&self) -> Option<u32> {
+        let offset = self.layout.guard_flags;
+        let field = self.data.get(offset..offset + size_of::<u32>())?;
+        Some(u32::from_le_bytes(field.try_into().ok()?))
+    }
+
+    /// Returns the address of the slot that holds the XFG check routine, or
+    /// `None` if the directory is too short for it.
+    ///
+    /// # Notes
+    ///
+    /// The loader writes the routine into the slot before the image's code
+    /// runs. Read the slot to find the routine.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardXFGCheckFunctionPointer`.
+    pub fn guard_xfg_check_function_pointer(&self) -> Option<Va> {
+        self.address(self.layout.guard_xfg_check_function_pointer)
+    }
+
+    /// Returns the address of the slot that holds the XFG dispatch routine,
+    /// or `None` if the directory is too short for it.
+    ///
+    /// # Notes
+    ///
+    /// The loader writes the routine into the slot before the image's code
+    /// runs. Read the slot to find the routine.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardXFGDispatchFunctionPointer`.
+    pub fn guard_xfg_dispatch_function_pointer(&self) -> Option<Va> {
+        self.address(self.layout.guard_xfg_dispatch_function_pointer)
+    }
+
+    /// Returns the address of the slot that holds the XFG table dispatch
+    /// routine, or `None` if the directory is too short for it.
+    ///
+    /// # Notes
+    ///
+    /// The loader writes the routine into the slot before the image's code
+    /// runs. Read the slot to find the routine.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `IMAGE_LOAD_CONFIG_DIRECTORY64.GuardXFGTableDispatchFunctionPointer`.
+    pub fn guard_xfg_table_dispatch_function_pointer(&self) -> Option<Va> {
+        self.address(self.layout.guard_xfg_table_dispatch_function_pointer)
+    }
+
+    /// Returns the address in the field at `offset`, or `None` if the field
+    /// does not fit in the bytes read.
+    fn address(&self, offset: usize) -> Option<Va> {
+        let field = self.data.get(offset..offset + self.layout.address_size)?;
+
+        // A 32-bit image stores 4 bytes, which zero-extend to the address.
+        let mut address = [0; size_of::<u64>()];
+        address[..field.len()].copy_from_slice(field);
+        Some(Va(u64::from_le_bytes(address)))
     }
 }
 

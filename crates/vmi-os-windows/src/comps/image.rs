@@ -9,9 +9,9 @@ use crate::{
     ArchAdapter, WindowsError, WindowsOs,
     pe::{
         ExportTarget, IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION,
-        IMAGE_DIRECTORY_ENTRY_EXPORT, ImageDataDirectory, ImageDosHeader, ImageNtHeaders,
-        ImageOptionalHeader, PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader,
-        PeImage,
+        IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory,
+        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory,
+        PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage, PeLoadConfigDirectory,
     },
 };
 
@@ -149,6 +149,15 @@ where
 
         let data = self.read_data_directory(&entry)?;
         Ok(Some(PeDebugDirectory::new(self, data)))
+    }
+
+    fn load_config_directory(&self) -> Result<Option<PeLoadConfigDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        Ok(Some(PeLoadConfigDirectory::new(self, entry)?))
     }
 }
 

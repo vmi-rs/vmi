@@ -5,10 +5,12 @@ use zerocopy::FromBytes as _;
 
 use super::{
     PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage,
+    PeLoadConfigDirectory,
     error::PeError,
     headers::{
         IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        ImageDataDirectory, ImageDosHeader, ImageNtHeaders, ImageSectionHeader,
+        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory, ImageDosHeader, ImageNtHeaders,
+        ImageSectionHeader,
     },
 };
 use crate::WindowsError;
@@ -129,5 +131,14 @@ impl PeImage for PeFile<'_> {
 
         let data = self.read_data_directory(&entry)?;
         Ok(Some(PeDebugDirectory::new(self, data)))
+    }
+
+    fn load_config_directory(&self) -> Result<Option<PeLoadConfigDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        Ok(Some(PeLoadConfigDirectory::new(self, entry)?))
     }
 }

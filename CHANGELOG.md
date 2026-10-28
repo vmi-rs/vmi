@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `PeImage` has a new required method, `load_config_directory`,
+  which returns the image's load configuration directory. `WindowsImage` and
+  `PeFile` implement it.
+
 ### Added
 
 - `WindowsProcess::clone_root` returns the root of the clone descriptors
   that the memory manager gives a process when it copies an address space
   (`_EPROCESS.CloneRoot`).
+- `PeLoadConfigDirectory` reads a load configuration directory
+  (`IMAGE_LOAD_CONFIG_DIRECTORY32` or `IMAGE_LOAD_CONFIG_DIRECTORY64`):
+  `size`, `guard_flags` and the slots of the check and dispatch routines of
+  Control Flow Guard, the XFG routines included. A field past the
+  directory's `Size` reads as `None`.
 
 ## [0.13.0] - 2026-10-28
 
