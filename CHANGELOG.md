@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Control Flow Guard, the XFG routines included. A field past the
   directory's `Size` reads as `None`.
 
+### Fixed
+
+- `PeExportDirectory::exports` leaves out an export whose forwarder string
+  does not parse. Before, such an export failed the whole table with
+  `PeError::InvalidExportTable`, and so did `WindowsImage::exports`.
+  Windows 7's `shlwapi.dll` has one, which forwards to
+  `SHUNIMPL.#UNIMPL_SHCreateStreamWrapper` with a name after the `#` that
+  marks an ordinal.
+
 ## [0.13.0] - 2026-10-28
 
 ### Changed

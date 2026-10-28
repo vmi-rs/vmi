@@ -137,13 +137,44 @@ impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
     }
 
     /// Returns the list of exported symbols.
+    ///
+    /// # Notes
+    ///
+    /// An export whose forwarder string does not parse is left out. Windows
+    /// 7's `shlwapi.dll` has one, which forwards to
+    /// `SHUNIMPL.#UNIMPL_SHCreateStreamWrapper` with a name after the `#`
+    /// that marks an ordinal.
     pub fn exports(&self) -> Result<Vec<Export<'_>>, PeError> {
         let export_table = ExportTable::parse(&self.data, self.entry.virtual_address)
             .map_err(|_| PeError::InvalidExportTable)?;
 
-        export_table
-            .exports()
-            .map_err(|_| PeError::InvalidExportTable)
+        // `ExportTable::exports` fails on such a forwarder, so the exports
+        // are read here one by one.
+        let mut exports = export_table
+            .address_iter()
+            .map(|(_index, ordinal, address)| {
+                let target = export_table.target_from_address(address).ok()?;
+                Some(Export {
+                    ordinal,
+                    name: None,
+                    target,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for (name_pointer, index) in export_table.name_iter() {
+            let name = export_table
+                .name_from_pointer(name_pointer)
+                .map_err(|_| PeError::InvalidExportTable)?;
+
+            match exports.get_mut(usize::from(index.0)) {
+                Some(Some(export)) => export.name = Some(name),
+                Some(None) => {}
+                None => return Err(PeError::InvalidExportTable),
+            }
+        }
+
+        Ok(exports.into_iter().flatten().collect())
     }
 }
 
