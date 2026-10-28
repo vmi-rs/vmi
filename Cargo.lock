@@ -1057,9 +1057,9 @@ dependencies = [
 
 [[package]]
 name = "libxen"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "594b6da42799039d689683ff5fbeb96d66355553664cb92e6b13583157f9262f"
+checksum = "c7809239ece893dbd525b93745411afad36077c882739956e1debda621fafc6b"
 dependencies = [
  "bitflags",
  "libc",
@@ -1070,9 +1070,9 @@ dependencies = [
 
 [[package]]
 name = "libxen-sys"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "864608788757f8ef57dc9c6d77311cc397ce0497a61191c8f87ef4f20059f142"
+checksum = "de5c939bf08034a990b7004a684f44f5f5afc11ffca0f13e554412f14f00426a"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -2164,7 +2164,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vmi"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-arch-amd64"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bitflags",
  "indexmap",
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-kdmp"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "kdmp-parser",
  "memmap2",
@@ -2230,7 +2230,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-mock"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "vmi-arch-amd64",
  "vmi-core",
@@ -2238,7 +2238,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "libc",
  "libxen",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-driver-xen-core-dump"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "elf",
  "libxen",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-macros"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2273,7 +2273,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-linux"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "isr-core",
  "isr-macros",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-os-windows"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bitflags",
  "isr",
@@ -2307,7 +2307,7 @@ dependencies = [
 
 [[package]]
 name = "vmi-utils"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "foldhash",
  "isr-cache",
