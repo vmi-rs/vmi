@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WindowsThread::is_held_back_by_scheduling_group` checks if it holds the
   thread back on a processor at the moment.
 
+### Fixed
+
+- The kernel-mode injector removes its breakpoints before it turns off the
+  breakpoint monitor, both when the injection finishes and in `cleanup`. The
+  guest keeps running while the injection finishes, and a vCPU whose fast
+  singlestep was answered earlier returns to the injector's view after the
+  switch to the default view. Before, such a vCPU could hit a breakpoint
+  after the monitor was off. The guest then handled the breakpoint itself,
+  and Windows crashed with a bugcheck.
+
 ## [0.12.0] - 2026-10-26
 
 ### Changed

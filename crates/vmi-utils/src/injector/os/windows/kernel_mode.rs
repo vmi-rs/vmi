@@ -521,10 +521,19 @@ where
             // (returning without the SINGLESTEP flag), and the global monitor
             // is disabled later in `cleanup`.
             vmi.switch_to_view(vmi.default_view())?;
-            vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
 
+            // Remove the breakpoints before the breakpoint monitor is turned
+            // off. The guest is running here, and a vCPU can enter our view
+            // again after the switch above. A fast singlestep answered before
+            // it returns the vCPU to the view it was taken in. If the monitor
+            // were already off, that vCPU could execute a breakpoint still in
+            // memory, Xen would hand the #BP to the guest, and the guest would
+            // crash. With the breakpoints removed first, a late hit is a stale
+            // event and is ignored.
             self.bpm.remove_by_view(vmi, self.view)?;
             self.ptm.unmonitor_view(vmi, self.view);
+
+            vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))?;
 
             vmi.destroy_view(self.view)?;
 
@@ -708,17 +717,18 @@ where
         // In `PreHijack`, `Executing`, or `Teardown` states, we are guaranteed to
         // have enabled the breakpoint monitor, so we must disable it.
         if disable_interrupt {
-            if let Err(err) =
-                vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
-            {
-                tracing::error!(%err, "failed to disable breakpoint monitor");
-            }
-
+            // Breakpoints first, monitor second, as in the `Teardown` path.
             if let Err(err) = self.bpm.remove_by_view(vmi, self.view) {
                 tracing::error!(%err, "failed to remove breakpoints");
             }
 
             self.ptm.unmonitor_view(vmi, self.view);
+
+            if let Err(err) =
+                vmi.monitor_disable(EventMonitor::interrupt(ExceptionVector::Breakpoint))
+            {
+                tracing::error!(%err, "failed to disable breakpoint monitor");
+            }
 
             if let Err(err) = vmi.switch_to_view(vmi.default_view()) {
                 tracing::error!(%err, "failed to switch to default view");
