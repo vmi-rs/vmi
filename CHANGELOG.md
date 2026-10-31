@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it overwrote the value, and a write to the entry that waited for
   `process_dirty_entries` then gave the other addresses no page-in or
   page-out.
+- `CONTEXT_X86` declares the debug registers in the order of Windows'
+  `CONTEXT` for x86 code: `Dr0`, `Dr1`, `Dr2`, `Dr3`, `Dr6` and `Dr7`, at
+  offsets 0x4 to 0x18. Before, `Dr7` came first, and each debug register
+  read the slot of another one, also through `WindowsContext::dr0` to `dr7`
+  and `WindowsRegistersAdapter::write_context`.
 
 ## [0.13.0] - 2026-10-28
 

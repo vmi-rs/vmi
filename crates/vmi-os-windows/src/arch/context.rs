@@ -31,12 +31,12 @@ const _: () = assert!(size_of::<FLOATING_SAVE_AREA>() == 0x70);
 pub struct CONTEXT_X86 {
     pub ContextFlags: u32,
 
-    pub Dr7: u32,
     pub Dr0: u32,
     pub Dr1: u32,
     pub Dr2: u32,
     pub Dr3: u32,
     pub Dr6: u32,
+    pub Dr7: u32,
 
     pub FloatSave: FLOATING_SAVE_AREA,
 
@@ -63,6 +63,8 @@ pub struct CONTEXT_X86 {
 }
 
 const _: () = assert!(size_of::<CONTEXT_X86>() == 0x2cc);
+const _: () = assert!(core::mem::offset_of!(CONTEXT_X86, Dr0) == 0x4);
+const _: () = assert!(core::mem::offset_of!(CONTEXT_X86, Dr7) == 0x18);
 
 #[allow(missing_docs, non_camel_case_types, non_snake_case)]
 #[repr(C, align(16))]
