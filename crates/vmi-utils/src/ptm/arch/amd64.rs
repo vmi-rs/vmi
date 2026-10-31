@@ -501,7 +501,10 @@ where
                 cached_pte: pte,
                 va_levels: HashMap::new(),
             });
-            entry.cached_pte = pte;
+            // Don't overwrite cached_pte if the entry already existed, as
+            // walk_subtree does not: a write to the entry may wait for its
+            // dirty processing, and the old value is what tells the other VAs
+            // that depend on the entry that they moved.
             entry.va_levels.insert(va_key, level);
 
             entry_keys.push(entry_key);

@@ -2115,3 +2115,60 @@ fn walk_subtree_does_not_mask_pending_dirty_entry() -> Result<(), VmiError> {
 
     Ok(())
 }
+
+#[test]
+fn monitor_does_not_mask_pending_dirty_entry() -> Result<(), VmiError> {
+    // `monitor` must not overwrite the cached value of an entry that exists
+    // already, as `walk_subtree` must not: a write to the entry may wait for
+    // its processing, and the old value is what tells its addresses that they
+    // moved.
+    //
+    // TEST_VA and SECOND_VA share the PML4, PDPT and PD entries. The PD entry
+    // changes to a new PT that maps TEST_VA to a new data page, and SECOND_VA
+    // is monitored before the write is processed.
+    let driver = MockDriver::new();
+    build_full_hierarchy(&driver);
+
+    let second_va = Va(0x2000);
+    let new_pt_gfn = Gfn(60);
+    let new_data_gfn = Gfn(61);
+    let second_data_gfn = Gfn(62);
+    driver.insert_page(new_pt_gfn);
+    driver.insert_page(new_data_gfn);
+    driver.insert_page(second_data_gfn);
+    driver.write_pte(
+        Amd64::pa_from_gfn(new_pt_gfn) + Amd64::va_index_for(TEST_VA, PageTableLevel::Pt) * 8,
+        make_pte(new_data_gfn),
+    );
+    driver.write_pte(
+        Amd64::pa_from_gfn(new_pt_gfn) + Amd64::va_index_for(second_va, PageTableLevel::Pt) * 8,
+        make_pte(second_data_gfn),
+    );
+
+    let vmi = make_vmi(driver)?;
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
+
+    ptm.monitor(&vmi, test_ctx(), VIEW, "first")?;
+
+    vmi.driver().write_pte(pd_entry_pa(), make_pte(new_pt_gfn));
+    assert!(ptm.mark_dirty_entry(pd_entry_pa(), VCPU));
+
+    let second_ctx = AddressContext::new(second_va, root_pa());
+    ptm.monitor(&vmi, second_ctx, VIEW, "second")?;
+
+    let events = ptm.process_dirty_entries(&vmi, VCPU)?;
+    assert!(
+        events.iter().any(|event| matches!(event,
+            PageTableMonitorEvent::PageOut(u) if u.ctx == test_ctx() && u.pa == expected_data_pa())),
+        "TEST_VA must get a PageOut for its old data page"
+    );
+    assert!(
+        events.iter().any(|event| matches!(event,
+            PageTableMonitorEvent::PageIn(u)
+                if u.ctx == test_ctx() && u.pa == Amd64::pa_in_gfn(new_data_gfn, TEST_VA))),
+        "TEST_VA must get a PageIn for its new data page"
+    );
+    assert_eq!(ptm.paged_in_entries(), 2);
+
+    Ok(())
+}

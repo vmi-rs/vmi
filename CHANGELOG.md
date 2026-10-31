@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   makes it. Before, `mark_dirty_entry` marked the entry in the view that the
   caller named, and a view that missed the write did not follow a new table
   page below the entry, so its addresses missed their page-ins.
+- `PageTableMonitor::monitor` keeps the cached value of an entry that other
+  addresses monitor already, as the walk of a changed subtree does. Before,
+  it overwrote the value, and a write to the entry that waited for
+  `process_dirty_entries` then gave the other addresses no page-in or
+  page-out.
 
 ## [0.13.0] - 2026-10-28
 
