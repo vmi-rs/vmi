@@ -155,8 +155,9 @@ where
     /// Stops monitoring all virtual addresses associated with a view.
     fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View);
 
-    /// Marks a page table entry as dirty after a write to a monitored page.
-    fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool;
+    /// Marks a page table entry as dirty in every view that monitors it,
+    /// after a write to a monitored page.
+    fn mark_dirty_entry(&mut self, entry_pa: Pa, vcpu_id: VcpuId) -> bool;
 
     /// Processes dirty entries for a vCPU, returning page-in/page-out events.
     fn process_dirty_entries(
@@ -254,10 +255,18 @@ where
 
     /// Marks a page table entry as dirty after a write to a monitored page.
     ///
-    /// Returns `true` if the entry is being monitored (and was marked),
+    /// A page table page is one guest frame for all views, while the monitor
+    /// keeps the entries of each view apart, and the write traps only in the
+    /// view of the vCPU that makes it. The entry is therefore marked in every
+    /// view that monitors it, and [`process_dirty_entries`] reports the change
+    /// once for each view.
+    ///
+    /// Returns `true` if some view monitors the entry (and it was marked),
     /// `false` otherwise.
-    pub fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool {
-        self.inner.mark_dirty_entry(entry_pa, view, vcpu_id)
+    ///
+    /// [`process_dirty_entries`]: Self::process_dirty_entries
+    pub fn mark_dirty_entry(&mut self, entry_pa: Pa, vcpu_id: VcpuId) -> bool {
+        self.inner.mark_dirty_entry(entry_pa, vcpu_id)
     }
 
     /// Processes dirty entries for a vCPU, returning page-in/page-out events.

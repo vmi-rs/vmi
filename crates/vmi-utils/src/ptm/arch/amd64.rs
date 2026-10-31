@@ -6,7 +6,7 @@
 //!
 //! # Architecture
 //!
-//! The implementation maintains three indexes:
+//! The implementation maintains four indexes:
 //!
 //! - **VA index** (`vas`): Maps each monitored virtual address (identified by
 //!   [`AddressContext`] and [`View`]) to its state: the tag, reference count,
@@ -24,6 +24,10 @@
 //!   and a reference count of monitored entries within it. Write protection is
 //!   applied when the first entry on a page is monitored, and the original
 //!   permissions are restored when the last is unmonitored.
+//!
+//! - **View index** (`views`): Maps each view that write-protects a page
+//!   table page to the number of such pages. `mark_dirty_entry` looks for
+//!   the written entry in each of these views.
 //!
 //! # Dirty Processing Order
 //!
@@ -137,6 +141,9 @@ where
     entries: HashMap<EntryKey, MonitoredEntry>,
     /// Write-protected page table pages with reference counts.
     tables: HashMap<TableKey, MonitoredTable>,
+    /// Views with write-protected page table pages, each with the number of
+    /// its pages.
+    views: HashMap<View, usize>,
     /// Dirty entries pending processing, tracked per-vCPU.
     ///
     /// Dirty entries must be per-vCPU because the singlestep mechanism is
@@ -198,6 +205,7 @@ where
                 previous_access,
             },
         );
+        *self.views.entry(view).or_insert(0) += 1;
 
         Ok(())
     }
@@ -222,6 +230,12 @@ where
 
         let previous_access = table.previous_access;
         self.tables.remove(&table_key);
+        if let Some(tables) = self.views.get_mut(&view) {
+            *tables -= 1;
+            if *tables == 0 {
+                self.views.remove(&view);
+            }
+        }
 
         tracing::trace!(
             %gfn,
@@ -409,6 +423,7 @@ where
             entries: HashMap::new(),
             tables: HashMap::new(),
             dirty: HashMap::new(),
+            views: HashMap::new(),
         }
     }
 
@@ -545,6 +560,7 @@ where
         self.entries.clear();
         self.vas.clear();
         self.dirty.clear();
+        self.views.clear();
     }
 
     fn unmonitor_view(&mut self, vmi: &VmiCore<Driver>, view: View) {
@@ -561,14 +577,16 @@ where
         }
     }
 
-    fn mark_dirty_entry(&mut self, entry_pa: Pa, view: View, vcpu_id: VcpuId) -> bool {
-        let entry_key = (view, entry_pa);
-
-        if !self.entries.contains_key(&entry_key) {
-            return false;
+    fn mark_dirty_entry(&mut self, entry_pa: Pa, vcpu_id: VcpuId) -> bool {
+        let mut marked = false;
+        for &view in self.views.keys() {
+            let entry_key = (view, entry_pa);
+            if self.entries.contains_key(&entry_key) {
+                self.dirty.entry(vcpu_id).or_default().insert(entry_key);
+                marked = true;
+            }
         }
-
-        self.dirty.entry(vcpu_id).or_default().insert(entry_key)
+        marked
     }
 
     fn process_dirty_entries(

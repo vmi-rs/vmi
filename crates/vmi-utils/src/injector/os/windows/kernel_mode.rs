@@ -290,7 +290,7 @@ where
             // The page table entry is marked as dirty in the page table monitor
             // and a singlestep is performed to process the dirty entries.
             self.ptm
-                .mark_dirty_entry(memory_access.pa, self.view, vmi.event().vcpu_id());
+                .mark_dirty_entry(memory_access.pa, vmi.event().vcpu_id());
 
             Ok(VmiEventResponse::singlestep().with_view(vmi.default_view()))
         }

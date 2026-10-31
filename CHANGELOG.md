@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PeImage` has a new required method, `load_config_directory`,
   which returns the image's load configuration directory. `WindowsImage` and
   `PeFile` implement it.
+- **Breaking:** `PageTableMonitor::mark_dirty_entry` marks the entry in every
+  view that monitors it and no longer takes a view, and so does
+  `PageTableMonitorAdapter::mark_dirty_entry`.
 
 ### Added
 
@@ -32,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Windows 7's `shlwapi.dll` has one, which forwards to
   `SHUNIMPL.#UNIMPL_SHCreateStreamWrapper` with a name after the `#` that
   marks an ordinal.
+- A write to a monitored page table no longer leaves the copies of the
+  entry in the other views stale. Each view keeps its own copy of a
+  monitored entry, and the write traps only in the view of the vCPU that
+  makes it. Before, `mark_dirty_entry` marked the entry in the view that the
+  caller named, and a view that missed the write did not follow a new table
+  page below the entry, so its addresses missed their page-ins.
 
 ## [0.13.0] - 2026-10-28
 

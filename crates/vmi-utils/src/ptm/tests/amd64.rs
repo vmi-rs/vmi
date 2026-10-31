@@ -420,7 +420,7 @@ fn different_roots_are_independent() -> Result<(), VmiError> {
     // Page out root1's PT entry.
     vmi.driver()
         .write_pte(pt_entry_pa(), make_not_present_pte());
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
     assert_eq!(events.len(), 1);
@@ -453,7 +453,7 @@ fn page_change_pfn_at_pt_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pt_entry_pa(), make_pte(new_data_gfn));
 
-    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -492,7 +492,7 @@ fn page_change_pfn_at_pd_level() -> Result<(), VmiError> {
     // Change the PD entry to point to the new PT page.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(new_pt_gfn));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -539,7 +539,7 @@ fn page_change_pfn_at_pdpt_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pdpt_entry_pa(), make_pte(new_pd_gfn));
 
-    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -592,7 +592,7 @@ fn page_change_pfn_at_pml4_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pml4_entry_pa(), make_pte(new_pdpt_gfn));
 
-    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -627,7 +627,7 @@ fn permission_bit_change_produces_no_events() -> Result<(), VmiError> {
     assert_eq!(modified_pte.pfn(), original_pte.pfn());
 
     vmi.driver().write_pte(pt_entry_pa(), modified_pte);
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
     // No structural change → no events.
@@ -657,7 +657,7 @@ fn page_out_at_pt_level() -> Result<(), VmiError> {
         .write_pte(pt_entry_pa(), make_not_present_pte());
 
     // Mark the PT entry as dirty and process.
-    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -684,7 +684,7 @@ fn page_out_at_pd_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -716,7 +716,7 @@ fn page_out_at_pdpt_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pdpt_entry_pa(), make_not_present_pte());
 
-    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -748,7 +748,7 @@ fn page_out_at_pml4_level() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pml4_entry_pa(), make_not_present_pte());
 
-    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -791,7 +791,7 @@ fn page_out_at_shared_level_affects_all_vas() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
 
-    ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     // Both VAs should get PageOut events.
@@ -826,7 +826,7 @@ fn page_in_at_pt_level() -> Result<(), VmiError> {
     // Restore the PT entry to make it present.
     vmi.driver().write_pte(pt_entry_pa(), make_pte(DATA_GFN));
 
-    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -859,7 +859,7 @@ fn page_in_at_pd_level() -> Result<(), VmiError> {
     // the PT entry already points to DATA, so we should get a PageIn.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(PT_GFN));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -893,7 +893,7 @@ fn page_in_at_pdpt_level() -> Result<(), VmiError> {
     // Restore the PDPT entry - PD/PT/DATA chain is already intact.
     vmi.driver().write_pte(pdpt_entry_pa(), make_pte(PD_GFN));
 
-    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -926,7 +926,7 @@ fn page_in_at_pml4_level() -> Result<(), VmiError> {
     // Restore the PML4 entry - the entire PDPT/PD/PT/DATA chain is intact.
     vmi.driver().write_pte(pml4_entry_pa(), make_pte(PDPT_GFN));
 
-    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pml4_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -959,7 +959,7 @@ fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
     // Page out at PT level.
     vmi.driver()
         .write_pte(pt_entry_pa(), make_not_present_pte());
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
@@ -967,7 +967,7 @@ fn page_out_then_page_in_round_trip() -> Result<(), VmiError> {
 
     // Page back in at PT level.
     vmi.driver().write_pte(pt_entry_pa(), make_pte(DATA_GFN));
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     assert_eq!(events.len(), 1);
     assert!(
@@ -994,7 +994,7 @@ fn page_out_at_pd_then_page_in_restores_subtree() -> Result<(), VmiError> {
     // Page out at PD level.
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
-    ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], PageTableMonitorEvent::PageOut(..)));
@@ -1003,7 +1003,7 @@ fn page_out_at_pd_then_page_in_restores_subtree() -> Result<(), VmiError> {
 
     // Restore PD entry → PT subtree should be re-walked.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(PT_GFN));
-    ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     assert_eq!(events.len(), 1);
     assert!(
@@ -1038,8 +1038,8 @@ fn hierarchical_dirty_ordering() -> Result<(), VmiError> {
     // The PT entry is also dirty, but after processing the PD entry page-out,
     // the PT entry should be gone from monitoring.
 
-    ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
@@ -1086,7 +1086,7 @@ fn mark_dirty_nonexistent_entry_returns_false() -> Result<(), VmiError> {
 
     // Mark dirty an address that isn't a monitored entry.
     let bogus_pa = Pa(0xDEAD_0000);
-    let marked = ptm.mark_dirty_entry(bogus_pa, VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(bogus_pa, VCPU);
     assert!(!marked);
 
     Ok(())
@@ -1103,7 +1103,7 @@ fn dirty_entry_unchanged_produces_no_events() -> Result<(), VmiError> {
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
     // Mark dirty without changing the entry value.
-    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1132,9 +1132,9 @@ fn multiple_dirty_marks_same_entry_deduplicates() -> Result<(), VmiError> {
     // Change PTE and mark dirty multiple times.
     vmi.driver()
         .write_pte(pt_entry_pa(), make_pte(new_data_gfn));
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
     // Should deduplicate: only one PageOut + one PageIn.
@@ -1156,7 +1156,7 @@ fn process_dirty_after_unmonitor_is_safe() -> Result<(), VmiError> {
 
     ptm.monitor(&vmi, test_ctx(), VIEW, "test")?;
 
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU);
     ptm.unmonitor(&vmi, test_ctx(), VIEW)?;
 
     // Processing after unmonitor should produce no events.
@@ -1211,7 +1211,7 @@ fn shared_higher_level_pfn_change_rebuilds_both_vas() -> Result<(), VmiError> {
 
     // Change PD entry to point to new PT page.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(new_pt_gfn));
-    ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
     // 2 PageOuts + 2 PageIns.
@@ -1332,7 +1332,7 @@ fn shared_physical_page_at_different_levels_across_roots() -> Result<(), VmiErro
     // Change the shared PTE from Gfn(4) to Gfn(20).
     vmi.driver().write_pte(shared_pa, make_pte(new_gfn));
 
-    ptm.mark_dirty_entry(shared_pa, VIEW, VCPU);
+    ptm.mark_dirty_entry(shared_pa, VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
     // Root1 (PD level): non-leaf PFN change → PageOut + walk into Gfn(20)
@@ -1459,7 +1459,7 @@ fn large_page_pfn_change() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_large_pte(new_data_gfn));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1489,7 +1489,7 @@ fn large_page_page_out() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_not_present_pte());
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1519,7 +1519,7 @@ fn large_page_page_in() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_large_pte(DATA_GFN));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1590,7 +1590,7 @@ fn large_page_1gb_pfn_change() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pdpt_entry_pa(), make_large_pte(new_data_gfn));
 
-    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pdpt_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1626,7 +1626,7 @@ fn large_page_transition_regular_to_large_same_pfn() -> Result<(), VmiError> {
     vmi.driver()
         .write_pte(pd_entry_pa(), make_large_pte(PT_GFN));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1661,7 +1661,7 @@ fn large_page_transition_regular_to_large_different_pfn() -> Result<(), VmiError
     vmi.driver()
         .write_pte(pd_entry_pa(), make_large_pte(new_data_gfn));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1694,7 +1694,7 @@ fn large_page_transition_large_to_regular_same_pfn() -> Result<(), VmiError> {
     // PT entry will be not-present, so no PageIn for the new mapping.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(DATA_GFN));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1727,7 +1727,7 @@ fn large_page_transition_large_to_regular_different_pfn() -> Result<(), VmiError
     // Since new_pt_gfn is zeroed, the PT entry is not present.
     vmi.driver().write_pte(pd_entry_pa(), make_pte(new_pt_gfn));
 
-    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VIEW, VCPU);
+    let marked = ptm.mark_dirty_entry(pd_entry_pa(), VCPU);
     assert!(marked);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
@@ -1768,7 +1768,7 @@ fn large_page_transition_large_to_large_pfn_change_at_pdpt() -> Result<(), VmiEr
     // Change PFN of 1GB large page.
     vmi.driver()
         .write_pte(pdpt_entry_pa(), make_large_pte(new_gfn));
-    ptm.mark_dirty_entry(pdpt_entry_pa(), VIEW, VCPU);
+    ptm.mark_dirty_entry(pdpt_entry_pa(), VCPU);
     let events = ptm.process_dirty_entries(&vmi, VCPU)?;
 
     assert_eq!(events.len(), 2);
@@ -1807,7 +1807,7 @@ fn dirty_entry_is_per_vcpu() -> Result<(), VmiError> {
     // Change PT entry and mark dirty on vcpu 0.
     vmi.driver()
         .write_pte(pt_entry_pa(), make_pte(new_data_gfn));
-    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU_0);
+    let marked = ptm.mark_dirty_entry(pt_entry_pa(), VCPU_0);
     assert!(marked);
 
     // Process on vcpu 1 - should see nothing.
@@ -1861,11 +1861,11 @@ fn independent_dirty_entries_across_vcpus() -> Result<(), VmiError> {
 
     // vcpu 0 changes VA1's PT entry.
     vmi.driver().write_pte(pt_entry_pa(), make_pte(new_data1));
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU_0);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU_0);
 
     // vcpu 1 changes VA2's PT entry.
     vmi.driver().write_pte(pt_entry_pa2, make_pte(new_data2));
-    ptm.mark_dirty_entry(pt_entry_pa2, VIEW, VCPU_1);
+    ptm.mark_dirty_entry(pt_entry_pa2, VCPU_1);
 
     // Process vcpu 1 first - should only see VA2's change.
     let events = ptm.process_dirty_entries(&vmi, VCPU_1)?;
@@ -1921,8 +1921,8 @@ fn same_entry_marked_dirty_by_multiple_vcpus() -> Result<(), VmiError> {
     assert_eq!(ptm.paged_in_entries(), 1);
 
     // Both vcpus mark the same entry dirty.
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU_0);
-    ptm.mark_dirty_entry(pt_entry_pa(), VIEW, VCPU_1);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU_0);
+    ptm.mark_dirty_entry(pt_entry_pa(), VCPU_1);
 
     // Change the PTE.
     vmi.driver()
@@ -1942,6 +1942,49 @@ fn same_entry_marked_dirty_by_multiple_vcpus() -> Result<(), VmiError> {
         "vcpu 1 should see no change after vcpu 0 already processed"
     );
     assert_eq!(ptm.paged_in_entries(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn mark_dirty_entry_marks_the_entry_in_every_view() -> Result<(), VmiError> {
+    // A page table is one guest frame for all views, but each view keeps its
+    // own copy of the entry. A write marked in every view moves the address
+    // in every view.
+    let driver = MockDriver::new();
+    build_full_hierarchy(&driver);
+
+    let new_data_gfn = Gfn(10);
+    driver.insert_page(new_data_gfn);
+
+    let view0 = View(0);
+    let view1 = View(1);
+
+    let vmi = make_vmi(driver)?;
+    let mut ptm = PageTableMonitor::<MockDriver>::new();
+
+    ptm.monitor(&vmi, test_ctx(), view0, "v0")?;
+    ptm.monitor(&vmi, test_ctx(), view1, "v1")?;
+
+    vmi.driver()
+        .write_pte(pt_entry_pa(), make_pte(new_data_gfn));
+    assert!(ptm.mark_dirty_entry(pt_entry_pa(), VCPU));
+
+    let events = ptm.process_dirty_entries(&vmi, VCPU)?;
+    let new_pa = Amd64::pa_in_gfn(new_data_gfn, TEST_VA);
+    for view in [view0, view1] {
+        assert!(
+            events.iter().any(|event| matches!(event,
+                PageTableMonitorEvent::PageIn(u) if u.view == view && u.pa == new_pa)),
+            "{view} must get a PageIn for the new data page"
+        );
+    }
+    assert_eq!(events.len(), 4);
+
+    // An entry that no view monitors is not marked.
+    let unmonitored = Amd64::pa_from_gfn(DATA_GFN);
+    assert!(!ptm.mark_dirty_entry(unmonitored, VCPU));
+    assert!(ptm.process_dirty_entries(&vmi, VCPU)?.is_empty());
 
     Ok(())
 }
@@ -2044,8 +2087,8 @@ fn walk_subtree_does_not_mask_pending_dirty_entry() -> Result<(), VmiError> {
         .write_pte(shared_pt_entry_pa, make_pte(new_data_2));
 
     // Mark both dirty on the same vcpu.
-    ptm.mark_dirty_entry(pd_1_entry_pa, VIEW, VCPU_0);
-    ptm.mark_dirty_entry(shared_pt_entry_pa, VIEW, VCPU_0);
+    ptm.mark_dirty_entry(pd_1_entry_pa, VCPU_0);
+    ptm.mark_dirty_entry(shared_pt_entry_pa, VCPU_0);
 
     let events = ptm.process_dirty_entries(&vmi, VCPU_0)?;
 
