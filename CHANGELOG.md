@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offsets 0x4 to 0x18. Before, `Dr7` came first, and each debug register
   read the slot of another one, also through `WindowsContext::dr0` to `dr7`
   and `WindowsRegistersAdapter::write_context`.
+- `TreeNodeIterator` ends after a read that fails, as `ListEntryIterator`
+  does, and so does the walk of `WindowsProcess::regions`. Before, a failed
+  read of a child or a parent left the iterator at the same node, and a
+  failed search for the first node left it uninitialized. A caller that
+  went on after the error then read the same node again without end.
 
 ## [0.13.0] - 2026-10-28
 

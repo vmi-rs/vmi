@@ -177,55 +177,65 @@ where
                     return Ok(None);
                 }
 
-                let first = match self.find_first()? {
+                self.initialized = true;
+
+                match self.find_first()? {
                     Some(first) => first,
                     None => return Ok(None),
-                };
-
-                self.current = Some(first);
-                self.initialized = true;
-                first
+                }
             }
         };
 
-        let mut current = result;
-        let right = self.right_child(current)?;
+        match self.successor(result) {
+            Ok(next) => self.current = next,
+            Err(err) => {
+                // Terminate iteration so that callers who `continue` on
+                // errors do not spin forever on the same failing node.
+                self.current = None;
+                return Err(err);
+            }
+        }
+
+        Ok(Some(result))
+    }
+
+    /// Returns the node that follows a node in order.
+    ///
+    /// Returns `None` after the last node.
+    fn successor(&self, node: Va) -> Result<Option<Va>, VmiError> {
+        let right = self.right_child(node)?;
 
         if !right.is_null() {
-            current = right;
+            let mut current = right;
 
             loop {
                 let left = self.left_child(current)?;
 
                 if left.is_null() {
-                    self.current = Some(current);
-                    break;
+                    return Ok(Some(current));
                 }
 
                 current = left;
             }
         }
-        else {
-            loop {
-                let parent = self.parent_node(current)?;
 
-                if parent.is_null() || parent == current {
-                    self.current = None;
-                    break;
-                }
+        let mut current = node;
 
-                let left = self.left_child(parent)?;
+        loop {
+            let parent = self.parent_node(current)?;
 
-                if left == current {
-                    self.current = Some(parent);
-                    break;
-                }
-
-                current = parent;
+            if parent.is_null() || parent == current {
+                return Ok(None);
             }
-        }
 
-        Ok(Some(result))
+            let left = self.left_child(parent)?;
+
+            if left == current {
+                return Ok(Some(parent));
+            }
+
+            current = parent;
+        }
     }
 }
 
