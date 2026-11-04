@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsPte` holds a PTE (`_MMPTE`) in one of its formats, with the
   protection that the format holds. `WindowsOs::pte` decodes a PTE of a page
   table, and `WindowsOs::prototype_pte` decodes a prototype PTE.
+- `WindowsOs::pfn_database` is public. It returns the address of the PFN
+  database (`MmPfnDatabase`).
 
 ### Fixed
 

@@ -870,7 +870,7 @@ where
     /// # Implementation Details
     ///
     /// Corresponds to `MmPfnDatabase` symbol.
-    fn pfn_database(vmi: VmiState<Self>) -> Result<Va, VmiError> {
+    pub fn pfn_database(vmi: VmiState<Self>) -> Result<Va, VmiError> {
         this!(vmi)
             .mm_pfn_database
             .get_or_try_init(|| {
