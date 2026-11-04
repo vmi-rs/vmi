@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `MemoryAccess`.
 - `WindowsPageProtection` holds a Windows page protection (`PAGE_*`), as
   `VirtualProtect` takes it.
+- `WindowsPte` holds a PTE (`_MMPTE`) in one of its formats, with the
+  protection that the format holds. `WindowsOs::pte` decodes a PTE of a page
+  table, and `WindowsOs::prototype_pte` decodes a prototype PTE.
 
 ### Fixed
 

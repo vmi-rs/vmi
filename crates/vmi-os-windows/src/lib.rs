@@ -117,9 +117,9 @@ pub use self::comps::{
     WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectKind,
     WindowsObjectType, WindowsObjectTypeKind, WindowsPageProtection, WindowsPeb, WindowsPebBase,
     WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess,
-    WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsRegion,
-    WindowsSchedulingControlBlock, WindowsSchedulingGroup, WindowsSectionObject, WindowsSegment,
-    WindowsSession, WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes,
+    WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsPte,
+    WindowsRegion, WindowsSchedulingControlBlock, WindowsSchedulingGroup, WindowsSectionObject,
+    WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes,
     WindowsSymbolicLinkObject, WindowsTeb, WindowsTebBase, WindowsThread, WindowsThreadState,
     WindowsThreadWaitReason, WindowsToken, WindowsTokenFlags, WindowsTokenPrivilege,
     WindowsTokenSource, WindowsTokenType, WindowsTrapFrame, WindowsUnloadedDriver,
@@ -880,6 +880,85 @@ where
                 vmi.read_va_native(kernel_image_base + MmPfnDatabase)
             })
             .copied()
+    }
+
+    /// Decodes a PTE of a page table.
+    ///
+    /// # Implementation Details
+    ///
+    /// The first of these bits that is set picks the format:
+    ///
+    /// - `_MMPTE_HARDWARE.Valid` picks `_MMPTE_HARDWARE`.
+    /// - `_MMPTE_SOFTWARE.Prototype` picks `_MMPTE_PROTOTYPE`.
+    /// - `_MMPTE_SOFTWARE.Transition` picks `_MMPTE_TRANSITION`.
+    ///
+    /// A PTE without these bits is a `_MMPTE_SOFTWARE`.
+    pub fn pte(vmi: VmiState<Self>, value: u64) -> WindowsPte {
+        let MMPTE_HARDWARE = offset!(vmi, _MMPTE_HARDWARE);
+        let MMPTE_SOFTWARE = offset!(vmi, _MMPTE_SOFTWARE);
+        let MMPTE_TRANSITION = offset!(vmi, _MMPTE_TRANSITION);
+
+        if MMPTE_HARDWARE.Valid.extract(value) != 0 {
+            WindowsPte::Hardware
+        }
+        else if MMPTE_SOFTWARE.Prototype.extract(value) != 0 {
+            WindowsPte::Prototype
+        }
+        else if MMPTE_SOFTWARE.Transition.extract(value) != 0 {
+            let protection = MMPTE_TRANSITION.Protection.extract(value) as u8;
+            WindowsPte::Transition {
+                protection: WindowsMmProtection::from(protection),
+            }
+        }
+        else {
+            let protection = MMPTE_SOFTWARE.Protection.extract(value) as u8;
+            WindowsPte::Software {
+                protection: WindowsMmProtection::from(protection),
+            }
+        }
+    }
+
+    /// Decodes a prototype PTE.
+    ///
+    /// The memory manager keeps the prototype PTEs of a section in its
+    /// segment. The original PTE in a PFN entry decodes the same way.
+    ///
+    /// # Implementation Details
+    ///
+    /// The first of these bits that is set picks the format:
+    ///
+    /// - `_MMPTE_HARDWARE.Valid` picks `_MMPTE_HARDWARE`.
+    /// - `_MMPTE_SOFTWARE.Prototype` picks `_MMPTE_SUBSECTION`.
+    /// - `_MMPTE_SOFTWARE.Transition` picks `_MMPTE_TRANSITION`.
+    ///
+    /// A PTE without these bits is a `_MMPTE_SOFTWARE`.
+    pub fn prototype_pte(vmi: VmiState<Self>, value: u64) -> WindowsPte {
+        let MMPTE_HARDWARE = offset!(vmi, _MMPTE_HARDWARE);
+        let MMPTE_SOFTWARE = offset!(vmi, _MMPTE_SOFTWARE);
+        let MMPTE_TRANSITION = offset!(vmi, _MMPTE_TRANSITION);
+        let MMPTE_SUBSECTION = offset!(vmi, _MMPTE_SUBSECTION);
+
+        if MMPTE_HARDWARE.Valid.extract(value) != 0 {
+            WindowsPte::Hardware
+        }
+        else if MMPTE_SOFTWARE.Prototype.extract(value) != 0 {
+            let protection = MMPTE_SUBSECTION.Protection.extract(value) as u8;
+            WindowsPte::Subsection {
+                protection: WindowsMmProtection::from(protection),
+            }
+        }
+        else if MMPTE_SOFTWARE.Transition.extract(value) != 0 {
+            let protection = MMPTE_TRANSITION.Protection.extract(value) as u8;
+            WindowsPte::Transition {
+                protection: WindowsMmProtection::from(protection),
+            }
+        }
+        else {
+            let protection = MMPTE_SOFTWARE.Protection.extract(value) as u8;
+            WindowsPte::Software {
+                protection: WindowsMmProtection::from(protection),
+            }
+        }
     }
 
     /// Returns the Windows object.

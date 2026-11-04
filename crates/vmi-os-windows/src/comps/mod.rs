@@ -15,6 +15,7 @@ mod page_protection;
 mod peb;
 mod peb_ldr_data;
 mod process_parameters;
+mod pte;
 mod region;
 mod scheduling_group;
 mod segment;
@@ -62,6 +63,7 @@ pub use self::{
         CurDir, CurDirLayout, RtlUserProcessParameters, RtlUserProcessParametersLayout,
         WindowsProcessParameters, WindowsProcessParametersBase,
     },
+    pte::WindowsPte,
     region::WindowsRegion,
     scheduling_group::{WindowsSchedulingControlBlock, WindowsSchedulingGroup},
     segment::WindowsSegment,

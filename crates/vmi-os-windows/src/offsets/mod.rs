@@ -655,6 +655,30 @@ offsets! {
             PageLocation: Bitfield,
         }
 
+        //
+        // The formats of a PTE. Each invalid format keeps its prototype bit
+        // where `_MMPTE_SOFTWARE` keeps it. A format with a transition bit
+        // keeps that bit there too.
+        //
+
+        struct _MMPTE_HARDWARE {
+            Valid: Bitfield,                // ULONGLONG (1 bit)
+        }
+
+        struct _MMPTE_SOFTWARE {
+            Protection: Bitfield,           // ULONGLONG (5 bits)
+            Prototype: Bitfield,            // ULONGLONG (1 bit)
+            Transition: Bitfield,           // ULONGLONG (1 bit)
+        }
+
+        struct _MMPTE_TRANSITION {
+            Protection: Bitfield,           // ULONGLONG (5 bits)
+        }
+
+        struct _MMPTE_SUBSECTION {
+            Protection: Bitfield,           // ULONGLONG (5 bits)
+        }
+
         struct _MMVAD_FLAGS {
             // VadFlags: Field,             // _MMVAD_FLAGS
             VadType: Bitfield,              // ULONG (3 bits)
