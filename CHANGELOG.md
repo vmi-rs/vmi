@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table, and `WindowsOs::prototype_pte` decodes a prototype PTE.
 - `WindowsOs::pfn_database` is public. It returns the address of the PFN
   database (`MmPfnDatabase`).
+- `WindowsOs::pfn` returns the PFN entry of a page frame as a `WindowsPfn`
+  (`_MMPFN`), and `WindowsPfn::original_pte` returns the entry's original
+  PTE (`_MMPFN.OriginalPte`).
 
 ### Fixed
 

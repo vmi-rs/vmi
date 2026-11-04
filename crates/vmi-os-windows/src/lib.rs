@@ -62,7 +62,7 @@ use isr_core::Profile;
 use once_cell::unsync::OnceCell;
 use vmi_core::{
     AccessContext, Architecture, Gfn, Pa, Registers as _, Va, VcpuId, VmiCore, VmiDriver, VmiError,
-    VmiState,
+    VmiState, VmiVa as _,
     driver::{VmiRead, VmiWrite},
     os::{ProcessObject, ThreadObject, VmiOs, VmiOsThread},
     trace::Hex,
@@ -116,7 +116,7 @@ pub use self::comps::{
     WindowsKeyValueFlags, WindowsKeyValueType, WindowsLuid, WindowsMmProtection, WindowsModule,
     WindowsObject, WindowsObjectAttributes, WindowsObjectHeaderNameInfo, WindowsObjectKind,
     WindowsObjectType, WindowsObjectTypeKind, WindowsPageProtection, WindowsPeb, WindowsPebBase,
-    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPrivilege, WindowsProcess,
+    WindowsPebLdrData, WindowsPebLdrDataBase, WindowsPfn, WindowsPrivilege, WindowsProcess,
     WindowsProcessParameters, WindowsProcessParametersBase, WindowsProcessorMode, WindowsPte,
     WindowsRegion, WindowsSchedulingControlBlock, WindowsSchedulingGroup, WindowsSectionObject,
     WindowsSegment, WindowsSession, WindowsSid, WindowsSidAndAttributes, WindowsSidAttributes,
@@ -882,6 +882,18 @@ where
             .copied()
     }
 
+    /// Returns the PFN entry of a page frame.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `&MmPfnDatabase[pfn]`.
+    pub fn pfn<'a>(vmi: VmiState<'a, Self>, pfn: Gfn) -> Result<WindowsPfn<'a, Driver>, VmiError> {
+        let MMPFN = offset!(vmi, _MMPFN);
+
+        let entry = Self::pfn_database(vmi)? + u64::from(pfn) * MMPFN.len() as u64;
+        Ok(WindowsPfn::new(vmi, entry))
+    }
+
     /// Decodes a PTE of a page table.
     ///
     /// # Implementation Details
@@ -1613,7 +1625,7 @@ where
         const ActiveAndValid: u16 = 6;
         // const TransitionPage: u16 = 7;
 
-        let pfn = Self::pfn_database(vmi)? + u64::from(pfn) * MMPFN.len() as u64;
+        let pfn = Self::pfn(vmi, pfn)?.va();
 
         //
         // In the _MMPFN structure, the fields are like this:

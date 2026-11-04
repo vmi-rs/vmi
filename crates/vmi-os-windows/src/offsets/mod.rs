@@ -637,6 +637,7 @@ offsets! {
 
         struct _MMPFN {
             ReferenceCount: Field,          // USHORT
+            OriginalPte: Field,             // _MMPTE
 
             //
             // NOTE: The PageLocation field is located INSIDE the e1 field.

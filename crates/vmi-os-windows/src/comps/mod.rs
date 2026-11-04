@@ -14,6 +14,7 @@ mod object_attributes;
 mod page_protection;
 mod peb;
 mod peb_ldr_data;
+mod pfn;
 mod process_parameters;
 mod pte;
 mod region;
@@ -59,6 +60,7 @@ pub use self::{
         LdrDataTableEntry, LdrDataTableEntryLayout, PebLdrData, PebLdrDataLayout,
         WindowsPebLdrData, WindowsPebLdrDataBase,
     },
+    pfn::WindowsPfn,
     process_parameters::{
         CurDir, CurDirLayout, RtlUserProcessParameters, RtlUserProcessParametersLayout,
         WindowsProcessParameters, WindowsProcessParametersBase,
