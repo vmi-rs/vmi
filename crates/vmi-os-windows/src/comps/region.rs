@@ -338,17 +338,7 @@ where
     ///
     /// Calculated from `_MMVAD_SHORT.VadFlags.Protection` field.
     fn protection(&self) -> Result<MemoryAccess, VmiError> {
-        match self.vad_protection()? {
-            WindowsMmProtection::ZERO_ACCESS => Ok(MemoryAccess::default()),
-            WindowsMmProtection::READONLY => Ok(MemoryAccess::R),
-            WindowsMmProtection::EXECUTE => Ok(MemoryAccess::X),
-            WindowsMmProtection::EXECUTE_READ => Ok(MemoryAccess::RX),
-            WindowsMmProtection::READWRITE => Ok(MemoryAccess::RW),
-            WindowsMmProtection::WRITECOPY => Ok(MemoryAccess::RW), // REVIEW: is this correct?
-            WindowsMmProtection::EXECUTE_READWRITE => Ok(MemoryAccess::RWX),
-            WindowsMmProtection::EXECUTE_WRITECOPY => Ok(MemoryAccess::RWX), // REVIEW: is this correct?
-            _ => Ok(MemoryAccess::default()),
-        }
+        Ok(self.vad_protection()?.memory_access())
     }
 
     /// Returns the memory region's kind.

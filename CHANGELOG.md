@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read of a child or a parent left the iterator at the same node, and a
   failed search for the first node left it uninitialized. A caller that
   went on after the error then read the same node again without end.
+- `WindowsRegion::protection` gives a protection with a modifier, such as a
+  guard page, the rights of its base protection. Before, such a protection
+  gave no rights.
 
 ## [0.13.0] - 2026-10-28
 
