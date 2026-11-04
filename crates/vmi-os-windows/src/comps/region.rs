@@ -5,7 +5,7 @@ use vmi_core::{
     os::{VmiOsRegion, VmiOsRegionKind},
 };
 
-use super::WindowsControlArea;
+use super::{WindowsControlArea, WindowsMmProtection};
 use crate::{ArchAdapter, OffsetsExt, WindowsOs, offset};
 
 /// A Windows memory region.
@@ -148,13 +148,13 @@ where
     /// # Implementation Details
     ///
     /// Calculated from `_MMVAD_SHORT.VadFlags.Protection` field.
-    pub fn vad_protection(&self) -> Result<u8, VmiError> {
+    pub fn vad_protection(&self) -> Result<WindowsMmProtection, VmiError> {
         let MMVAD_FLAGS = offset!(self.vmi, _MMVAD_FLAGS);
 
         let flags = self.vad_flags()?;
         let protection = MMVAD_FLAGS.Protection.extract(flags) as u8;
 
-        Ok(protection)
+        Ok(WindowsMmProtection::from(protection))
     }
 
     /// Checks if the VAD represents private memory.
@@ -338,24 +338,15 @@ where
     ///
     /// Calculated from `_MMVAD_SHORT.VadFlags.Protection` field.
     fn protection(&self) -> Result<MemoryAccess, VmiError> {
-        const MM_ZERO_ACCESS: u8 = 0; // this value is not used.
-        const MM_READONLY: u8 = 1;
-        const MM_EXECUTE: u8 = 2;
-        const MM_EXECUTE_READ: u8 = 3;
-        const MM_READWRITE: u8 = 4; // bit 2 is set if this is writable.
-        const MM_WRITECOPY: u8 = 5;
-        const MM_EXECUTE_READWRITE: u8 = 6;
-        const MM_EXECUTE_WRITECOPY: u8 = 7;
-
         match self.vad_protection()? {
-            MM_ZERO_ACCESS => Ok(MemoryAccess::default()),
-            MM_READONLY => Ok(MemoryAccess::R),
-            MM_EXECUTE => Ok(MemoryAccess::X),
-            MM_EXECUTE_READ => Ok(MemoryAccess::RX),
-            MM_READWRITE => Ok(MemoryAccess::RW),
-            MM_WRITECOPY => Ok(MemoryAccess::RW), // REVIEW: is this correct?
-            MM_EXECUTE_READWRITE => Ok(MemoryAccess::RWX),
-            MM_EXECUTE_WRITECOPY => Ok(MemoryAccess::RWX), // REVIEW: is this correct?
+            WindowsMmProtection::ZERO_ACCESS => Ok(MemoryAccess::default()),
+            WindowsMmProtection::READONLY => Ok(MemoryAccess::R),
+            WindowsMmProtection::EXECUTE => Ok(MemoryAccess::X),
+            WindowsMmProtection::EXECUTE_READ => Ok(MemoryAccess::RX),
+            WindowsMmProtection::READWRITE => Ok(MemoryAccess::RW),
+            WindowsMmProtection::WRITECOPY => Ok(MemoryAccess::RW), // REVIEW: is this correct?
+            WindowsMmProtection::EXECUTE_READWRITE => Ok(MemoryAccess::RWX),
+            WindowsMmProtection::EXECUTE_WRITECOPY => Ok(MemoryAccess::RWX), // REVIEW: is this correct?
             _ => Ok(MemoryAccess::default()),
         }
     }

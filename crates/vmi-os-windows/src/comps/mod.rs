@@ -6,10 +6,12 @@ pub(crate) mod hive;
 mod image;
 mod kprcb;
 mod luid;
+mod mm_protection;
 mod module;
 mod name_info;
 mod object;
 mod object_attributes;
+mod page_protection;
 mod peb;
 mod peb_ldr_data;
 mod process_parameters;
@@ -38,6 +40,7 @@ pub use self::{
     image::WindowsImage,
     kprcb::WindowsKernelProcessorBlock,
     luid::WindowsLuid,
+    mm_protection::WindowsMmProtection,
     module::WindowsModule,
     name_info::WindowsObjectHeaderNameInfo,
     object::{
@@ -49,6 +52,7 @@ pub use self::{
         WindowsTokenSource, WindowsTokenType,
     },
     object_attributes::WindowsObjectAttributes,
+    page_protection::WindowsPageProtection,
     peb::{Peb, PebLayout, WindowsPeb, WindowsPebBase},
     peb_ldr_data::{
         LdrDataTableEntry, LdrDataTableEntryLayout, PebLdrData, PebLdrDataLayout,

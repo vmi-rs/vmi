@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PageTableMonitor::mark_dirty_entry` marks the entry in every
   view that monitors it and no longer takes a view, and so does
   `PageTableMonitorAdapter::mark_dirty_entry`.
+- **Breaking:** `WindowsRegion::vad_protection` returns a
+  `WindowsMmProtection` instead of a `u8`.
 
 ### Added
 
@@ -26,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `size`, `guard_flags` and the slots of the check and dispatch routines of
   Control Flow Guard, the XFG routines included. A field past the
   directory's `Size` reads as `None`.
+- `WindowsMmProtection` holds a protection of the memory manager (`MM_*`).
+  VADs and invalid PTEs keep it as a 5-bit value. It gives its base
+  protection, its modifier, whether it marks a guard page or a no-access
+  page, the `WindowsPageProtection` that `MmProtectToValue` gives it, and
+  its `MemoryAccess`.
+- `WindowsPageProtection` holds a Windows page protection (`PAGE_*`), as
+  `VirtualProtect` takes it.
 
 ### Fixed
 

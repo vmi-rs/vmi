@@ -9,8 +9,8 @@ use vmi_core::{
 
 use super::{
     super::{
-        WindowsHandleTable, WindowsPeb, WindowsRegion, WindowsSession, WindowsUserModule,
-        WindowsWow64Kind,
+        WindowsHandleTable, WindowsMmProtection, WindowsPeb, WindowsRegion, WindowsSession,
+        WindowsUserModule, WindowsWow64Kind,
     },
     FromWindowsObject, WindowsObject, WindowsObjectTypeKind, WindowsThread, WindowsToken,
 };
@@ -749,15 +749,13 @@ where
             None => return Ok(Some(false)),
         };
 
-        const MM_ZERO_ACCESS: u8 = 0; // this value is not used.
-        const MM_DECOMMIT: u8 = 0x10; // NO_ACCESS, Guard page
-        const MM_NOACCESS: u8 = 0x18; // NO_ACCESS, Guard_page, nocache.
-
         const VadImageMap: u8 = 2;
 
         if matches!(
             vad.vad_protection()?,
-            MM_ZERO_ACCESS | MM_DECOMMIT | MM_NOACCESS
+            WindowsMmProtection::ZERO_ACCESS
+                | WindowsMmProtection::DECOMMIT
+                | WindowsMmProtection::NOACCESS
         ) {
             return Ok(Some(false));
         }
