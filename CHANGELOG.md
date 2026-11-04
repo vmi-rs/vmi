@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PageTableMonitorAdapter::mark_dirty_entry`.
 - **Breaking:** `WindowsRegion::vad_protection` returns a
   `WindowsMmProtection` instead of a `u8`.
+- **Breaking:** `PeImage` has a new required method, `iat_directory`,
+  which returns the image's import address table directory. `WindowsImage`
+  and `PeFile` implement it.
 
 ### Added
 
@@ -43,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WindowsOs::pfn` returns the PFN entry of a page frame as a `WindowsPfn`
   (`_MMPFN`), and `WindowsPfn::original_pte` returns the entry's original
   PTE (`_MMPFN.OriginalPte`).
+- `PeIatDirectory` locates an image's import address tables
+  (`IMAGE_DIRECTORY_ENTRY_IAT`) by `virtual_address` and `size`, without
+  reading the tables.
 
 ### Fixed
 

@@ -4,13 +4,13 @@ use vmi_core::VmiError;
 use zerocopy::FromBytes as _;
 
 use super::{
-    PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader, PeImage,
+    PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader, PeIatDirectory, PeImage,
     PeLoadConfigDirectory,
     error::PeError,
     headers::{
         IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory, ImageDosHeader, ImageNtHeaders,
-        ImageSectionHeader,
+        IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory,
+        ImageDosHeader, ImageNtHeaders, ImageSectionHeader,
     },
 };
 use crate::WindowsError;
@@ -140,5 +140,14 @@ impl PeImage for PeFile<'_> {
         };
 
         Ok(Some(PeLoadConfigDirectory::new(self, entry)?))
+    }
+
+    fn iat_directory(&self) -> Result<Option<PeIatDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_IAT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        Ok(Some(PeIatDirectory::new(self, entry)))
     }
 }

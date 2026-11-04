@@ -1,14 +1,15 @@
-//! Tests of the export and load configuration directories on PE images built
-//! in a buffer.
+//! Tests of the export, load configuration and import address table
+//! directories on PE images built in a buffer.
 
 use vmi_core::{Va, VmiError};
 use zerocopy::{FromZeros as _, IntoBytes as _};
 
 use super::{
-    ExportTarget, IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
-    IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC,
-    IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES, ImageDataDirectory, ImageDosHeader,
-    ImageFileHeader, ImageOptionalHeader32, ImageOptionalHeader64, PeFile, PeImage as _,
+    ExportTarget, IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_IAT,
+    IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC,
+    IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
+    ImageDataDirectory, ImageDosHeader, ImageFileHeader, ImageOptionalHeader32,
+    ImageOptionalHeader64, PeFile, PeImage as _,
 };
 use crate::WindowsError;
 
@@ -210,6 +211,18 @@ fn misses_field_that_size_cuts() -> Result<(), VmiError> {
     assert_eq!(load_config.guard_cf_dispatch_function_pointer(), None);
     assert_eq!(load_config.guard_flags(), None);
 
+    Ok(())
+}
+
+#[test]
+fn locates_import_address_table_without_reading_it() -> Result<(), VmiError> {
+    let image = image(&optional_header64(), IMAGE_DIRECTORY_ENTRY_IAT, 0x1000, &[]);
+
+    let file = PeFile::new(&image).map_err(WindowsError::from)?;
+    let iat = file.iat_directory()?.expect("import address table");
+
+    assert_eq!(iat.virtual_address(), DIRECTORY_RVA);
+    assert_eq!(iat.size(), 0x1000);
     Ok(())
 }
 

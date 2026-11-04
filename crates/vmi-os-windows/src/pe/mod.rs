@@ -2,7 +2,8 @@
 //!
 //! Parses PE/COFF binaries from VMI memory or file buffers, exposing the
 //! DOS and NT headers, the data directory array, and the standard export,
-//! debug, exception, and load configuration directory layouts.
+//! debug, exception, load configuration and import address table directory
+//! layouts.
 
 mod error;
 mod file;
@@ -89,6 +90,14 @@ pub trait PeImage: Sized {
     /// Corresponds to
     /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]`.
     fn load_config_directory(&self) -> Result<Option<PeLoadConfigDirectory<'_, Self>>, VmiError>;
+
+    /// Returns the import address table directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT]`.
+    fn iat_directory(&self) -> Result<Option<PeIatDirectory<'_, Self>>, VmiError>;
 }
 
 /// Extension methods on [`PeImage`].
@@ -519,6 +528,54 @@ impl<'a, Image: PeImage> PeLoadConfigDirectory<'a, Image> {
         let mut address = [0; size_of::<u64>()];
         address[..field.len()].copy_from_slice(field);
         Some(Va(u64::from_le_bytes(address)))
+    }
+}
+
+/// PE import address table directory accessor.
+///
+/// The import address tables hold the addresses of the imported functions,
+/// which the loader writes when it loads the image.
+///
+/// # Notes
+///
+/// The accessor reads only the data directory entry, not the tables, so it
+/// works while the tables are paged out.
+///
+/// # Implementation Details
+///
+/// Corresponds to
+/// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT]`.
+pub struct PeIatDirectory<'a, Image: PeImage> {
+    /// Owning image.
+    #[expect(unused)]
+    image: &'a Image,
+
+    /// Data directory entry of the import address tables.
+    entry: ImageDataDirectory,
+}
+
+impl<'a, Image: PeImage> PeIatDirectory<'a, Image> {
+    /// Creates a new PE import address table directory accessor.
+    pub(crate) fn new(image: &'a Image, entry: ImageDataDirectory) -> Self {
+        Self { image, entry }
+    }
+
+    /// Returns the RVA of the import address tables.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `IMAGE_DATA_DIRECTORY.VirtualAddress`.
+    pub fn virtual_address(&self) -> u32 {
+        self.entry.virtual_address
+    }
+
+    /// Returns the size of the tables in bytes.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `IMAGE_DATA_DIRECTORY.Size`.
+    pub fn size(&self) -> u32 {
+        self.entry.size
     }
 }
 
