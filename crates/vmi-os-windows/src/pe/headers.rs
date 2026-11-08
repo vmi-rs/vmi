@@ -8,18 +8,20 @@
 use object::ReadRef as _;
 pub use object::{
     pe::{
-        IMAGE_DIRECTORY_ENTRY_ARCHITECTURE, IMAGE_DIRECTORY_ENTRY_BASERELOC,
-        IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR,
-        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
-        IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        IMAGE_DIRECTORY_ENTRY_GLOBALPTR, IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_IMPORT,
-        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, IMAGE_DIRECTORY_ENTRY_RESOURCE,
-        IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DOS_SIGNATURE,
-        IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE,
-        IMAGE_NUMBEROF_DIRECTORY_ENTRIES, IMAGE_SIZEOF_SHORT_NAME,
+        IMAGE_DELAYLOAD_RVA_BASED, IMAGE_DIRECTORY_ENTRY_ARCHITECTURE,
+        IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR, IMAGE_DIRECTORY_ENTRY_DEBUG,
+        IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT, IMAGE_DIRECTORY_ENTRY_EXCEPTION,
+        IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_GLOBALPTR, IMAGE_DIRECTORY_ENTRY_IAT,
+        IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
+        IMAGE_DIRECTORY_ENTRY_RESOURCE, IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS,
+        IMAGE_DOS_SIGNATURE, IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC,
+        IMAGE_NT_SIGNATURE, IMAGE_NUMBEROF_DIRECTORY_ENTRIES, IMAGE_ORDINAL_FLAG32,
+        IMAGE_ORDINAL_FLAG64, IMAGE_SIZEOF_SHORT_NAME,
     },
-    // Intentional re-export: `Export`, `ExportTable` and `ExportTarget` are good as they are.
-    read::pe::{Export, ExportTable, ExportTarget},
+    // Intentional re-export: `Export`, `ExportTable`, `ExportTarget` and `Import` are good as
+    // they are, and `ImportTable` and `DelayLoadImportTable` parse the import directories.
+    read::pe::{DelayLoadImportTable, Export, ExportTable, ExportTarget, Import, ImportTable},
 };
 
 /// CodeView debug directory type.
@@ -1144,6 +1146,75 @@ impl_struct! {
 
         /// Table size in bytes.
         pub size: u32,
+    }
+}
+
+impl_struct! {
+    /// Single entry in the import directory.
+    ///
+    /// Describes the imports from one DLL.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_IMAGE_IMPORT_DESCRIPTOR`.
+    #[derive(Debug, Clone, Copy)]
+    #[from(::object::pe::ImageImportDescriptor)]
+    pub struct ImageImportDescriptor {
+        /// RVA of the import name table. A descriptor without the table
+        /// holds 0 or an RVA past the image's `SizeOfImage`.
+        pub original_first_thunk: u32,
+
+        /// 0 in an unbound image. In a bound image, the field holds the bound
+        /// DLL's time stamp, or -1 when the image's bound import directory
+        /// holds the time stamp.
+        pub time_date_stamp: u32,
+
+        /// Index of the first forwarder reference, -1 without one.
+        pub forwarder_chain: u32,
+
+        /// RVA of the DLL's name.
+        pub name: u32,
+
+        /// RVA of the import address table.
+        pub first_thunk: u32,
+    }
+}
+
+impl_struct! {
+    /// Single entry in the delay-load import directory.
+    ///
+    /// Describes the delay-loaded imports from one DLL.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to `_IMAGE_DELAYLOAD_DESCRIPTOR`.
+    #[derive(Debug, Clone, Copy)]
+    #[from(::object::pe::ImageDelayloadDescriptor)]
+    pub struct ImageDelayloadDescriptor {
+        /// Flags, with `IMAGE_DELAYLOAD_RVA_BASED` set when the other fields
+        /// hold RVAs.
+        pub attributes: u32,
+
+        /// RVA of the DLL's name.
+        pub dll_name_rva: u32,
+
+        /// RVA of the variable that keeps the DLL's module handle.
+        pub module_handle_rva: u32,
+
+        /// RVA of the delay-load import address table.
+        pub import_address_table_rva: u32,
+
+        /// RVA of the delay-load import name table.
+        pub import_name_table_rva: u32,
+
+        /// RVA of the bound import address table, 0 without one.
+        pub bound_import_address_table_rva: u32,
+
+        /// RVA of the unload information table, 0 without one.
+        pub unload_information_table_rva: u32,
+
+        /// 0 in an unbound image, or the bound DLL's time stamp.
+        pub time_date_stamp: u32,
     }
 }
 

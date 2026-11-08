@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PeImage` has a new required method, `iat_directory`,
   which returns the image's import address table directory. `WindowsImage`
   and `PeFile` implement it.
+- **Breaking:** `PeImage` has two new required methods, `import_directory`
+  and `delay_import_directory`, which return the image's import directory
+  and its delay-load import directory. `WindowsImage` and `PeFile`
+  implement them.
 
 ### Added
 
@@ -49,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PeIatDirectory` locates an image's import address tables
   (`IMAGE_DIRECTORY_ENTRY_IAT`) by `virtual_address` and `size`, without
   reading the tables.
+- `PeImportDirectory` and `PeDelayImportDirectory` read an image's import
+  directory (`IMAGE_DIRECTORY_ENTRY_IMPORT`) and its delay-load import
+  directory (`IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT`): the descriptors as
+  `ImageImportDescriptor`s and `ImageDelayloadDescriptor`s, the name of a
+  descriptor's DLL, and a descriptor's imports by their index as `object`'s
+  `Import`. The import directory's accessor reads the section that holds
+  the descriptors from the descriptors on, and the delay-load accessor reads
+  the whole section. The crate re-exports `Import` and
+  `IMAGE_DELAYLOAD_RVA_BASED`, and `PeError` gains `InvalidImportTable` and
+  `InvalidDelayImportTable`.
 
 ### Fixed
 

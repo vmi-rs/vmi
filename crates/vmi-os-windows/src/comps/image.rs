@@ -1,18 +1,22 @@
+use std::ops::Range;
+
 use once_cell::unsync::OnceCell;
 use vmi_core::{
     Architecture, Va, VmiError, VmiState, VmiVa,
     driver::VmiRead,
     os::{NoOS, VmiOsImage, VmiOsImageArchitecture, VmiOsImageSymbol},
 };
+use zerocopy::{FromZeros as _, IntoBytes as _};
 
 use crate::{
     ArchAdapter, WindowsError, WindowsOs,
     pe::{
-        ExportTarget, IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION,
-        IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
-        ImageDataDirectory, ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, PeDebugDirectory,
-        PeExceptionDirectory, PeExportDirectory, PeHeader, PeIatDirectory, PeImage,
-        PeLoadConfigDirectory,
+        ExportTarget, IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_IAT,
+        IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory,
+        ImageDosHeader, ImageNtHeaders, ImageOptionalHeader, ImageSectionHeader, PeDebugDirectory,
+        PeDelayImportDirectory, PeError, PeExceptionDirectory, PeExportDirectory, PeHeader,
+        PeIatDirectory, PeImage, PeImportDirectory, PeLoadConfigDirectory,
     },
 };
 
@@ -36,6 +40,9 @@ where
 
     /// Cached PE header.
     pe_header: OnceCell<PeHeader>,
+
+    /// Cached section table.
+    sections: OnceCell<Vec<ImageSectionHeader>>,
 }
 
 impl<Driver> VmiVa for WindowsImage<'_, Driver>
@@ -66,6 +73,7 @@ where
             vmi,
             va,
             pe_header: OnceCell::new(),
+            sections: OnceCell::new(),
         }
     }
 
@@ -103,6 +111,67 @@ where
             Ok(PeHeader::parse(&data).map_err(WindowsError::from)?)
         })
     }
+
+    /// Returns the section table, which the first call reads.
+    fn sections(&self) -> Result<&[ImageSectionHeader], VmiError> {
+        let sections = self.sections.get_or_try_init(|| -> Result<_, VmiError> {
+            let pe_header = self.pe()?;
+            let nt_headers = pe_header.nt_headers();
+
+            let section_table_offset = pe_header.section_table_offset();
+            let number_of_sections = nt_headers.file_header.number_of_sections as usize;
+
+            if number_of_sections * size_of::<ImageSectionHeader>()
+                > Self::MAX_DATA_DIRECTORY_SIZE as usize
+            {
+                return Err(WindowsError::from(PeError::InvalidSectionTable).into());
+            }
+
+            let mut sections = vec![ImageSectionHeader::new_zeroed(); number_of_sections];
+            self.vmi
+                .read(self.va + section_table_offset, sections.as_mut_bytes())?;
+
+            Ok(sections)
+        })?;
+
+        Ok(sections)
+    }
+
+    /// Returns the RVAs of the section that holds `rva`, or `None` when no
+    /// section holds it.
+    ///
+    /// A section takes its `VirtualSize` from its `VirtualAddress` on, or
+    /// its `SizeOfRawData` when `VirtualSize` is 0.
+    fn section_range(&self, rva: u32) -> Result<Option<Range<u32>>, VmiError> {
+        for section in self.sections()? {
+            let size = if section.virtual_size != 0 {
+                section.virtual_size
+            }
+            else {
+                section.size_of_raw_data
+            };
+
+            let range = section.virtual_address..section.virtual_address.saturating_add(size);
+            if range.contains(&rva) {
+                return Ok(Some(range));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Reads the bytes at the RVAs of `range`, or returns `None` when the
+    /// range takes more than `MAX_DATA_DIRECTORY_SIZE` bytes.
+    fn read_range(&self, range: Range<u32>) -> Result<Option<Vec<u8>>, VmiError> {
+        if range.len() > Self::MAX_DATA_DIRECTORY_SIZE as usize {
+            return Ok(None);
+        }
+
+        let mut data = vec![0; range.len()];
+        self.vmi.read(self.va + range.start as u64, &mut data)?;
+
+        Ok(Some(data))
+    }
 }
 
 impl<'a, Driver> PeImage for WindowsImage<'a, Driver>
@@ -130,6 +199,25 @@ where
 
         let data = self.read_data_directory(&entry)?;
         Ok(Some(PeExportDirectory::new(self, entry, data)))
+    }
+
+    fn import_directory(&self) -> Result<Option<PeImportDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_IMPORT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let section = match self.section_range(entry.virtual_address)? {
+            Some(section) => section,
+            None => return Err(WindowsError::from(PeError::InvalidImportTable).into()),
+        };
+
+        let data = match self.read_range(entry.virtual_address..section.end)? {
+            Some(data) => data,
+            None => return Ok(None),
+        };
+
+        Ok(Some(PeImportDirectory::new(self, entry, data)?))
     }
 
     fn exception_directory(&self) -> Result<Option<PeExceptionDirectory<'_, Self>>, VmiError> {
@@ -168,6 +256,30 @@ where
         };
 
         Ok(Some(PeIatDirectory::new(self, entry)))
+    }
+
+    fn delay_import_directory(&self) -> Result<Option<PeDelayImportDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let section = match self.section_range(entry.virtual_address)? {
+            Some(section) => section,
+            None => return Err(WindowsError::from(PeError::InvalidDelayImportTable).into()),
+        };
+
+        let data = match self.read_range(section.clone())? {
+            Some(data) => data,
+            None => return Ok(None),
+        };
+
+        Ok(Some(PeDelayImportDirectory::new(
+            self,
+            entry,
+            section.start,
+            data,
+        )?))
     }
 }
 

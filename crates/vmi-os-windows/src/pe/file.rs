@@ -4,12 +4,13 @@ use vmi_core::VmiError;
 use zerocopy::FromBytes as _;
 
 use super::{
-    PeDebugDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader, PeIatDirectory, PeImage,
-    PeLoadConfigDirectory,
+    PeDebugDirectory, PeDelayImportDirectory, PeExceptionDirectory, PeExportDirectory, PeHeader,
+    PeIatDirectory, PeImage, PeImportDirectory, PeLoadConfigDirectory,
     error::PeError,
     headers::{
-        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT,
-        IMAGE_DIRECTORY_ENTRY_IAT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory,
+        IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
+        IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_IAT,
+        IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, ImageDataDirectory,
         ImageDosHeader, ImageNtHeaders, ImageSectionHeader,
     },
 };
@@ -113,6 +114,24 @@ impl PeImage for PeFile<'_> {
         Ok(Some(PeExportDirectory::new(self, entry, data)))
     }
 
+    fn import_directory(&self) -> Result<Option<PeImportDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_IMPORT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let data = match self
+            .sections
+            .iter()
+            .find_map(|section| section.pe_data_at(self.data, entry.virtual_address))
+        {
+            Some(data) => data,
+            None => return Err(WindowsError::from(PeError::InvalidImportTable).into()),
+        };
+
+        Ok(Some(PeImportDirectory::new(self, entry, data.to_vec())?))
+    }
+
     fn exception_directory(&self) -> Result<Option<PeExceptionDirectory<'_, Self>>, VmiError> {
         let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_EXCEPTION)? {
             Some(entry) => entry,
@@ -149,5 +168,33 @@ impl PeImage for PeFile<'_> {
         };
 
         Ok(Some(PeIatDirectory::new(self, entry)))
+    }
+
+    fn delay_import_directory(&self) -> Result<Option<PeDelayImportDirectory<'_, Self>>, VmiError> {
+        let entry = match self.find_data_directory(IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT)? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        let section = match self
+            .sections
+            .iter()
+            .find(|section| section.pe_file_range_at(entry.virtual_address).is_some())
+        {
+            Some(section) => section,
+            None => return Err(WindowsError::from(PeError::InvalidDelayImportTable).into()),
+        };
+
+        let data = match section.pe_data(self.data) {
+            Some(data) => data,
+            None => return Err(WindowsError::from(PeError::InvalidDelayImportTable).into()),
+        };
+
+        Ok(Some(PeDelayImportDirectory::new(
+            self,
+            entry,
+            section.virtual_address,
+            data.to_vec(),
+        )?))
     }
 }

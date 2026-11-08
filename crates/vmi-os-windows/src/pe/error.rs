@@ -37,6 +37,14 @@ pub enum PeError {
     #[error("invalid export table")]
     InvalidExportTable,
 
+    /// Invalid import table.
+    #[error("invalid import table")]
+    InvalidImportTable,
+
+    /// Invalid delay-load import table.
+    #[error("invalid delay-load import table")]
+    InvalidDelayImportTable,
+
     /// Invalid section table.
     #[error("invalid section table")]
     InvalidSectionTable,

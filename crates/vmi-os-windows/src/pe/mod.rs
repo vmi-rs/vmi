@@ -2,8 +2,8 @@
 //!
 //! Parses PE/COFF binaries from VMI memory or file buffers, exposing the
 //! DOS and NT headers, the data directory array, and the standard export,
-//! debug, exception, load configuration and import address table directory
-//! layouts.
+//! import, debug, exception, load configuration, import address table and
+//! delay-load import directory layouts.
 
 mod error;
 mod file;
@@ -15,12 +15,14 @@ pub use isr_dl_windows::CodeView; // Intentional re-export.
 use vmi_core::{Va, VmiError};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use self::headers::LoadConfigLayout;
+use self::headers::{
+    DelayLoadImportTable, IMAGE_ORDINAL_FLAG32, IMAGE_ORDINAL_FLAG64, ImportTable, LoadConfigLayout,
+};
 pub use self::{
     error::PeError,
     file::PeFile,
     headers::{
-        Export, ExportTable, ExportTarget, IMAGE_DEBUG_TYPE_CODEVIEW,
+        Export, ExportTable, ExportTarget, IMAGE_DEBUG_TYPE_CODEVIEW, IMAGE_DELAYLOAD_RVA_BASED,
         IMAGE_DIRECTORY_ENTRY_ARCHITECTURE, IMAGE_DIRECTORY_ENTRY_BASERELOC,
         IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR,
         IMAGE_DIRECTORY_ENTRY_DEBUG, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT,
@@ -29,9 +31,10 @@ pub use self::{
         IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, IMAGE_DIRECTORY_ENTRY_RESOURCE,
         IMAGE_DIRECTORY_ENTRY_SECURITY, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DOS_SIGNATURE,
         IMAGE_NT_OPTIONAL_HDR32_MAGIC, IMAGE_NT_OPTIONAL_HDR64_MAGIC, IMAGE_NT_SIGNATURE,
-        IMAGE_NUMBEROF_DIRECTORY_ENTRIES, ImageDataDirectory, ImageDebugDirectory, ImageDosHeader,
-        ImageFileHeader, ImageNtHeaders, ImageOptionalHeader, ImageOptionalHeader32,
-        ImageOptionalHeader64, ImageRuntimeFunctionEntry, ImageSectionHeader,
+        IMAGE_NUMBEROF_DIRECTORY_ENTRIES, ImageDataDirectory, ImageDebugDirectory,
+        ImageDelayloadDescriptor, ImageDosHeader, ImageFileHeader, ImageImportDescriptor,
+        ImageNtHeaders, ImageOptionalHeader, ImageOptionalHeader32, ImageOptionalHeader64,
+        ImageRuntimeFunctionEntry, ImageSectionHeader, Import,
     },
 };
 
@@ -69,6 +72,14 @@ pub trait PeImage: Sized {
     /// Corresponds to `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]`.
     fn export_directory(&self) -> Result<Option<PeExportDirectory<'_, Self>>, VmiError>;
 
+    /// Returns the import directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]`.
+    fn import_directory(&self) -> Result<Option<PeImportDirectory<'_, Self>>, VmiError>;
+
     /// Returns the exception directory (.pdata section).
     ///
     /// # Implementation Details
@@ -98,6 +109,14 @@ pub trait PeImage: Sized {
     /// Corresponds to
     /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT]`.
     fn iat_directory(&self) -> Result<Option<PeIatDirectory<'_, Self>>, VmiError>;
+
+    /// Returns the delay-load import directory.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to
+    /// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT]`.
+    fn delay_import_directory(&self) -> Result<Option<PeDelayImportDirectory<'_, Self>>, VmiError>;
 }
 
 /// Extension methods on [`PeImage`].
@@ -184,6 +203,165 @@ impl<'a, Image: PeImage> PeExportDirectory<'a, Image> {
         }
 
         Ok(exports.into_iter().flatten().collect())
+    }
+}
+
+/// PE import directory accessor.
+///
+/// The import directory holds one descriptor for each DLL whose exports the
+/// image imports. A descriptor's import name table gives the name or the
+/// ordinal of each import. The descriptor's import address table holds the
+/// import's address at the same index. The loader writes the addresses when
+/// it loads the image.
+///
+/// # Notes
+///
+/// The accessor reads the bytes from the descriptors to the end of the
+/// section that holds them when it is created. Its methods look for the
+/// import name tables and the names in those bytes only, and fail with
+/// [`PeError::InvalidImportTable`] for one that lies elsewhere. A read of a
+/// page that is not present fails with [`VmiError::Translation`].
+///
+/// # Implementation Details
+///
+/// Corresponds to
+/// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]`.
+pub struct PeImportDirectory<'a, Image: PeImage> {
+    /// Owning image.
+    #[expect(unused)]
+    image: &'a Image,
+
+    /// Data directory entry of the import descriptors.
+    entry: ImageDataDirectory,
+
+    /// Raw bytes from the descriptors to the end of their section.
+    data: Vec<u8>,
+
+    /// Size of an import name table entry, which is 4 bytes in a 32-bit
+    /// image and 8 bytes in a 64-bit image.
+    thunk_size: usize,
+
+    /// The image's `SizeOfImage`.
+    size_of_image: u32,
+}
+
+impl<'a, Image: PeImage> PeImportDirectory<'a, Image> {
+    /// Creates a new PE import directory accessor.
+    ///
+    /// `data` holds the bytes from the entry's RVA to the end of the section
+    /// that holds it. The size of an import name table entry and
+    /// `SizeOfImage` come from the image's optional header.
+    pub(crate) fn new(
+        image: &'a Image,
+        entry: ImageDataDirectory,
+        data: Vec<u8>,
+    ) -> Result<Self, VmiError> {
+        let nt_headers = image.nt_headers()?;
+        let optional_header = &nt_headers.optional_header;
+
+        Ok(Self {
+            image,
+            entry,
+            data,
+            thunk_size: Thunk::size(optional_header),
+            size_of_image: optional_header.size_of_image(),
+        })
+    }
+
+    /// Returns the import descriptors, without the descriptor that ends the
+    /// array.
+    ///
+    /// # Notes
+    ///
+    /// The walk ends at the first descriptor whose `Name` or `FirstThunk`
+    /// is 0. Windows' loader ends its walk at the same descriptor. The
+    /// directory's size bounds neither walk. The walk fails with
+    /// [`PeError::InvalidImportTable`] when the bytes end before that
+    /// descriptor.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the array of `_IMAGE_IMPORT_DESCRIPTOR` at the
+    /// directory's RVA.
+    pub fn descriptors(&self) -> Result<&[ImageImportDescriptor], PeError> {
+        let (descriptors, _) = <[ImageImportDescriptor]>::ref_from_prefix_with_elems(
+            &self.data,
+            self.data.len() / size_of::<ImageImportDescriptor>(),
+        )
+        .map_err(|_| PeError::InvalidImportTable)?;
+
+        match descriptors
+            .iter()
+            .position(|descriptor| descriptor.name == 0 || descriptor.first_thunk == 0)
+        {
+            Some(count) => Ok(&descriptors[..count]),
+            None => Err(PeError::InvalidImportTable),
+        }
+    }
+
+    /// Returns the name of a descriptor's DLL, without its terminating NUL.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the string at `_IMAGE_IMPORT_DESCRIPTOR.Name`.
+    pub fn name(&self, descriptor: &ImageImportDescriptor) -> Result<&[u8], PeError> {
+        self.table()
+            .name(descriptor.name)
+            .map_err(|_| PeError::InvalidImportTable)
+    }
+
+    /// Returns an import of a descriptor, or `None` at the entry that ends
+    /// the import name table and for a descriptor without that table.
+    ///
+    /// `index` picks the entry of the descriptor's import name table. The
+    /// descriptor's import address table holds the import's address at the
+    /// same index, in the slot at `first_thunk` plus `index` times the size
+    /// of an address. An address takes 4 bytes in a 32-bit image and 8 bytes
+    /// in a 64-bit image.
+    ///
+    /// # Notes
+    ///
+    /// Some linkers write no import name table. A descriptor without the
+    /// table holds 0 in `original_first_thunk`, or an RVA past the image's
+    /// `SizeOfImage`, and Windows' loader then takes the names from the
+    /// import address table. In a loaded image that table holds addresses
+    /// instead of the names.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to an `IMAGE_THUNK_DATA32` or `IMAGE_THUNK_DATA64` of the
+    /// array at `_IMAGE_IMPORT_DESCRIPTOR.OriginalFirstThunk`, and to the
+    /// `IMAGE_IMPORT_BY_NAME` that an import by name points to.
+    pub fn import(
+        &self,
+        descriptor: &ImageImportDescriptor,
+        index: usize,
+    ) -> Result<Option<Import<'_>>, PeError> {
+        let table_rva = descriptor.original_first_thunk;
+        if table_rva == 0 || table_rva >= self.size_of_image {
+            return Ok(None);
+        }
+
+        Thunk::read(
+            &self.data,
+            self.entry.virtual_address,
+            table_rva,
+            index,
+            self.thunk_size,
+        )
+        .ok_or(PeError::InvalidImportTable)?
+        .import(|rva| self.table().hint_name(rva))
+        .map_err(|_| PeError::InvalidImportTable)
+    }
+
+    /// Returns `object`'s parser of the import table, over the bytes that the
+    /// accessor read.
+    fn table(&self) -> ImportTable<'_> {
+        ImportTable::new(
+            &self.data,
+            self.entry.virtual_address,
+            self.entry.virtual_address,
+        )
     }
 }
 
@@ -576,6 +754,248 @@ impl<'a, Image: PeImage> PeIatDirectory<'a, Image> {
     /// Corresponds to `IMAGE_DATA_DIRECTORY.Size`.
     pub fn size(&self) -> u32 {
         self.entry.size
+    }
+}
+
+/// PE delay-load import directory accessor.
+///
+/// The delay-load import directory holds one descriptor for each DLL that
+/// the image loads at the first call of one of its imports. A descriptor's
+/// import name table gives the name or the ordinal of each import. The
+/// descriptor's import address table holds the import's slot at the same
+/// index. A resolver, such as `ResolveDelayLoadedAPI`, writes the import's
+/// address into the slot at the first call.
+///
+/// # Notes
+///
+/// The accessor reads the whole section that holds the descriptors when it
+/// is created. Its methods look for the import name tables and the names in
+/// that section only, and fail with [`PeError::InvalidDelayImportTable`] for
+/// one that lies elsewhere. A read of a page that is not present fails with
+/// [`VmiError::Translation`].
+///
+/// A descriptor without `IMAGE_DELAYLOAD_RVA_BASED` in its attributes holds
+/// addresses instead of RVAs. `name` and `import` fail for such a
+/// descriptor with [`PeError::InvalidDelayImportTable`].
+///
+/// # Implementation Details
+///
+/// Corresponds to
+/// `_IMAGE_OPTIONAL_HEADER.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT]`.
+pub struct PeDelayImportDirectory<'a, Image: PeImage> {
+    /// Owning image.
+    #[expect(unused)]
+    image: &'a Image,
+
+    /// Data directory entry of the delay-load descriptors.
+    entry: ImageDataDirectory,
+
+    /// RVA of the section that holds the descriptors.
+    section_address: u32,
+
+    /// Raw bytes of that section.
+    data: Vec<u8>,
+
+    /// Size of an import name table entry, which is 4 bytes in a 32-bit
+    /// image and 8 bytes in a 64-bit image.
+    thunk_size: usize,
+}
+
+impl<'a, Image: PeImage> PeDelayImportDirectory<'a, Image> {
+    /// Creates a new PE delay-load import directory accessor.
+    ///
+    /// `data` holds the section that starts at `section_address` and holds
+    /// the entry's RVA. The size of an import name table entry comes from
+    /// the image's optional header.
+    pub(crate) fn new(
+        image: &'a Image,
+        entry: ImageDataDirectory,
+        section_address: u32,
+        data: Vec<u8>,
+    ) -> Result<Self, VmiError> {
+        let thunk_size = Thunk::size(&image.nt_headers()?.optional_header);
+
+        Ok(Self {
+            image,
+            entry,
+            section_address,
+            data,
+            thunk_size,
+        })
+    }
+
+    /// Returns the delay-load descriptors, without the descriptor that ends
+    /// the array.
+    ///
+    /// # Notes
+    ///
+    /// The walk ends at the first descriptor whose fields are all 0, as the
+    /// walk of `object`'s `DelayLoadImportTable` does. The directory's size
+    /// does not bound it. The walk fails with
+    /// [`PeError::InvalidDelayImportTable`] when the section ends before
+    /// that descriptor.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the array of `_IMAGE_DELAYLOAD_DESCRIPTOR` at the
+    /// directory's RVA.
+    pub fn descriptors(&self) -> Result<&[ImageDelayloadDescriptor], PeError> {
+        let data = self
+            .entry
+            .virtual_address
+            .checked_sub(self.section_address)
+            .and_then(|offset| self.data.get(offset as usize..))
+            .ok_or(PeError::InvalidDelayImportTable)?;
+
+        let (descriptors, _) = <[ImageDelayloadDescriptor]>::ref_from_prefix_with_elems(
+            data,
+            data.len() / size_of::<ImageDelayloadDescriptor>(),
+        )
+        .map_err(|_| PeError::InvalidDelayImportTable)?;
+
+        match descriptors
+            .iter()
+            .position(|descriptor| descriptor.as_bytes().iter().all(|byte| *byte == 0))
+        {
+            Some(count) => Ok(&descriptors[..count]),
+            None => Err(PeError::InvalidDelayImportTable),
+        }
+    }
+
+    /// Returns the name of a descriptor's DLL, without its terminating NUL.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to the string at `_IMAGE_DELAYLOAD_DESCRIPTOR.DllNameRVA`.
+    pub fn name(&self, descriptor: &ImageDelayloadDescriptor) -> Result<&[u8], PeError> {
+        if descriptor.attributes & IMAGE_DELAYLOAD_RVA_BASED == 0 {
+            return Err(PeError::InvalidDelayImportTable);
+        }
+
+        self.table()
+            .name(descriptor.dll_name_rva)
+            .map_err(|_| PeError::InvalidDelayImportTable)
+    }
+
+    /// Returns an import of a descriptor, or `None` at the entry that ends
+    /// the import name table.
+    ///
+    /// `index` picks the entry of the descriptor's import name table. The
+    /// descriptor's import address table holds the import's slot at the same
+    /// index, at `import_address_table_rva` plus `index` times the size of
+    /// an address.
+    ///
+    /// # Implementation Details
+    ///
+    /// Corresponds to an `IMAGE_THUNK_DATA32` or `IMAGE_THUNK_DATA64` of the
+    /// array at `_IMAGE_DELAYLOAD_DESCRIPTOR.ImportNameTableRVA`, and to the
+    /// `IMAGE_IMPORT_BY_NAME` that an import by name points to.
+    pub fn import(
+        &self,
+        descriptor: &ImageDelayloadDescriptor,
+        index: usize,
+    ) -> Result<Option<Import<'_>>, PeError> {
+        if descriptor.attributes & IMAGE_DELAYLOAD_RVA_BASED == 0 {
+            return Err(PeError::InvalidDelayImportTable);
+        }
+
+        Thunk::read(
+            &self.data,
+            self.section_address,
+            descriptor.import_name_table_rva,
+            index,
+            self.thunk_size,
+        )
+        .ok_or(PeError::InvalidDelayImportTable)?
+        .import(|rva| self.table().hint_name(rva))
+        .map_err(|_| PeError::InvalidDelayImportTable)
+    }
+
+    /// Returns `object`'s parser of the delay-load import table, over the
+    /// bytes that the accessor read.
+    fn table(&self) -> DelayLoadImportTable<'_> {
+        DelayLoadImportTable::new(&self.data, self.section_address, self.entry.virtual_address)
+    }
+}
+
+/// An entry of an import name table.
+///
+/// # Implementation Details
+///
+/// Corresponds to an `IMAGE_THUNK_DATA32` or `IMAGE_THUNK_DATA64`.
+enum Thunk {
+    /// The entry that ends the table.
+    End,
+
+    /// An import by ordinal, with the ordinal from the entry's low 16 bits.
+    Ordinal(u16),
+
+    /// An import by name, with the RVA of its `IMAGE_IMPORT_BY_NAME`.
+    Name(u32),
+}
+
+impl Thunk {
+    /// Returns the size of an entry in an image with `optional_header`,
+    /// which is 4 bytes in a 32-bit image and 8 bytes in a 64-bit image.
+    fn size(optional_header: &ImageOptionalHeader) -> usize {
+        match optional_header {
+            ImageOptionalHeader::ImageOptionalHeader32(_) => size_of::<u32>(),
+            ImageOptionalHeader::ImageOptionalHeader64(_) => size_of::<u64>(),
+        }
+    }
+
+    /// Reads an entry of an import name table from `data`, or returns `None`
+    /// when the entry lies outside `data`.
+    ///
+    /// `data` holds an image's bytes from the RVA `data_rva` on. The table
+    /// starts at the RVA `table_rva`, `index` picks the entry, and `size` is
+    /// the size of an entry.
+    fn read(data: &[u8], data_rva: u32, table_rva: u32, index: usize, size: usize) -> Option<Self> {
+        let offset =
+            (table_rva.checked_sub(data_rva)? as usize).checked_add(index.checked_mul(size)?)?;
+        let entry = data.get(offset..offset.checked_add(size)?)?;
+
+        // A 32-bit image stores 4 bytes, which zero-extend to the entry.
+        let mut value = [0; size_of::<u64>()];
+        value[..entry.len()].copy_from_slice(entry);
+        let value = u64::from_le_bytes(value);
+
+        let ordinal_flag = if size == size_of::<u64>() {
+            IMAGE_ORDINAL_FLAG64
+        }
+        else {
+            u64::from(IMAGE_ORDINAL_FLAG32)
+        };
+
+        if value == 0 {
+            Some(Self::End)
+        }
+        else if value & ordinal_flag != 0 {
+            Some(Self::Ordinal(value as u16))
+        }
+        else {
+            // The RVA takes the entry's low 31 bits.
+            Some(Self::Name(value as u32 & 0x7fff_ffff))
+        }
+    }
+
+    /// Returns the import that the entry gives, or `None` for the entry
+    /// that ends the table.
+    ///
+    /// `hint_name` reads the hint and the name of an import by name at the
+    /// RVA of its `IMAGE_IMPORT_BY_NAME`.
+    fn import<'data, E>(
+        self,
+        hint_name: impl FnOnce(u32) -> Result<(u16, &'data [u8]), E>,
+    ) -> Result<Option<Import<'data>>, E> {
+        match self {
+            Self::End => Ok(None),
+            Self::Ordinal(ordinal) => Ok(Some(Import::Ordinal(ordinal))),
+            Self::Name(rva) => {
+                let (hint, name) = hint_name(rva)?;
+                Ok(Some(Import::Name(hint, name)))
+            }
+        }
     }
 }
 
