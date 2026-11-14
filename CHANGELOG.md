@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the whole section. The crate re-exports `Import` and
   `IMAGE_DELAYLOAD_RVA_BASED`, and `PeError` gains `InvalidImportTable` and
   `InvalidDelayImportTable`.
+- `Tracker::is_process_retired` and `Tracker::is_thread_retired` tell
+  whether a stored process or thread is retired. A missing entry counts as
+  not retired.
 
 ### Fixed
 

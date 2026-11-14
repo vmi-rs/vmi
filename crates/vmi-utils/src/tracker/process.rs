@@ -82,6 +82,13 @@ impl<P> ProcessMap<P> {
         Some(&mut process.value)
     }
 
+    /// Checks whether an entry is retired.
+    pub fn is_retired(&self, process_object: ProcessObject) -> bool {
+        self.entries
+            .get(&process_object)
+            .is_some_and(|process| process.retired)
+    }
+
     /// Removes and returns retired entries during iteration.
     pub fn extract_retired(&mut self) -> impl Iterator<Item = (ProcessObject, P)> {
         self.entries

@@ -210,6 +210,13 @@ impl<P, T> Tracker<P, T> {
         self.processes.retire(process_object)
     }
 
+    /// Checks whether a stored process is retired.
+    ///
+    /// Returns `false` if the process is not stored.
+    pub fn is_process_retired(&self, process_object: ProcessObject) -> bool {
+        self.processes.is_retired(process_object)
+    }
+
     /// Removes a process entry and all thread entries still linked to it.
     pub fn remove_process(&mut self, process_object: ProcessObject) -> Option<P> {
         let process = self.processes.remove(process_object)?;
@@ -275,6 +282,13 @@ impl<P, T> Tracker<P, T> {
         thread_object: ThreadObject,
     ) -> Option<&mut T> {
         self.threads.retire(process_object, thread_object)
+    }
+
+    /// Checks whether a stored thread is retired.
+    ///
+    /// Returns `false` if the thread is not stored.
+    pub fn is_thread_retired(&self, thread_object: ThreadObject) -> bool {
+        self.threads.is_retired(thread_object)
     }
 
     /// Removes saved thread data and removes it from its process's thread list.

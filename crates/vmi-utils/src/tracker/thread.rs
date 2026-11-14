@@ -222,6 +222,13 @@ impl<T> ThreadMap<T> {
         Some(&mut thread.value)
     }
 
+    /// Checks whether a thread entry is retired.
+    pub fn is_retired(&self, thread_object: ThreadObject) -> bool {
+        self.entries
+            .get(&thread_object)
+            .is_some_and(|thread| thread.retired)
+    }
+
     /// Returns saved thread data.
     pub fn get(&self, thread_object: ThreadObject) -> Option<&T> {
         self.entries.get(&thread_object).map(|thread| &thread.value)
